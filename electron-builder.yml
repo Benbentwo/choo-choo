@@ -22,3 +22,8 @@ mac:
       arch: [arm64]
 dmg:
   title: Choo Choo
+publish:
+  provider: github
+  owner: Benbentwo
+  repo: choo-choo
+  releaseType: release

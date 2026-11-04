@@ -69,11 +69,11 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 ### Platform
 - ✅ macOS menus and shortcuts, desktop notifications
 - ✅ dmg/zip build, release workflow (signs and notarizes when secrets are set)
-- ⬜ Auto-update
+- ✅ Auto-update from GitHub releases (needs a signed build on macOS)
 
 ## Build sequence
 1. **Foundation**: app scaffold, layout, repos, worktree sessions, agent chat, Changes + diff, terminal.
 2. **Workflow**: Create PR, Setup/Run scripts, @mentions, /commands, folders, archive, unread, auto-naming.
 3. **Review & polish**: Checks, Review, Artifacts, All files, ⌘K, Settings, checkpoints, clone, notifications.
 4. **Ship**: images, plan mode, packaging, release workflow.
-5. **Next**: auto-update, inline review comments.
+5. **Next**: inline review comments, per-tool permission prompts, x64 build.

@@ -59,7 +59,9 @@ const api: Api = {
   openExternal: inv('shell:open') as Api['openExternal'],
   revealInFinder: inv('shell:reveal') as Api['revealInFinder'],
   onMenu: (cb) => on<[string]>('menu', cb),
-  onStateChanged: (cb) => on<[]>('state:changed', cb)
+  onStateChanged: (cb) => on<[]>('state:changed', cb),
+  onUpdateReady: (cb) => on<[string]>('update:ready', cb),
+  installUpdate: inv('update:install') as Api['installUpdate']
 }
 
 contextBridge.exposeInMainWorld('api', api)
