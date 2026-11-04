@@ -2,19 +2,20 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Chat, ChatItem } from '@shared/types'
-import { useStore, reportError } from '../store'
+import { useStore, reportError, removePermission } from '../store'
 import { setDraft } from './Composer'
 import { IconDown, IconRight, IconTool } from '../icons'
 
 export function ChatView({ chat }: { chat: Chat }) {
   const items = useStore((s) => s.items[chat.id]) ?? []
+  const pendingCount = useStore((s) => s.permissions[chat.id]?.length ?? 0)
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
   useEffect(() => {
     const el = ref.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [items])
+  }, [items, pendingCount])
 
   return (
     <div
@@ -35,7 +36,8 @@ export function ChatView({ chat }: { chat: Chat }) {
         {items.map((it) => (
           <Item key={it.id} item={it} chat={chat} />
         ))}
-        {chat.status === 'running' && (
+        <PermissionCards chat={chat} />
+        {chat.status === 'running' && !pendingCount && (
           <div className="mt-3 flex items-center gap-2 text-faint">
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-faint border-t-fg" /> Working…
           </div>
@@ -185,5 +187,39 @@ function PlanItem({ item, chat }: { item: Extract<ChatItem, { kind: 'tool' }>; c
         </div>
       )}
     </div>
+  )
+}
+
+function PermissionCards({ chat }: { chat: Chat }) {
+  const reqs = useStore((s) => s.permissions[chat.id]) ?? []
+  const answer = (id: string, d: 'allow' | 'always' | 'deny') => {
+    window.api.respondPermission(id, d)
+    removePermission(id)
+  }
+  return (
+    <>
+      {reqs.map((r) => {
+        const summary = toolSummary(r.toolName, r.input)
+        return (
+          <div key={r.id} className="my-3 rounded-xl border border-sky-500/40 bg-sky-500/5">
+            <div className="px-4 pt-3 text-[12px] font-medium text-sky-400">Allow {r.toolName}?</div>
+            <pre className="mx-4 my-2 max-h-48 overflow-auto rounded-md bg-bg px-3 py-2 font-mono text-[11px] whitespace-pre-wrap">
+              {summary || JSON.stringify(r.input, null, 2)}
+            </pre>
+            <div className="flex gap-2 px-4 pb-3">
+              <button className="rounded-md bg-fg px-3 py-1 font-medium text-bg hover:opacity-90" onClick={() => answer(r.id, 'allow')}>
+                Allow
+              </button>
+              <button className="rounded-md border border-line px-3 py-1 hover:bg-hover" onClick={() => answer(r.id, 'always')}>
+                Always allow {r.toolName}
+              </button>
+              <button className="rounded-md px-3 py-1 text-del hover:bg-hover" onClick={() => answer(r.id, 'deny')}>
+                Deny
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </>
   )
 }

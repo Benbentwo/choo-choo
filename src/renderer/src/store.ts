@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { DEFAULT_SETTINGS, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
+import { DEFAULT_SETTINGS, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
 
 export interface Doc {
   kind: 'diff' | 'file'
@@ -14,6 +14,8 @@ interface UI {
   chats: Chat[]
   items: Record<string, ChatItem[]>
   stats: Record<string, DiffStats>
+  /** Tool calls waiting for the user's OK, per chat. */
+  permissions: Record<string, PermissionRequest[]>
   selectedWs: string | null
   activeChat: Record<string, string>
   /** Diff or file open in the center instead of the chat, per workspace. */
@@ -47,6 +49,7 @@ export const useStore = create<UI>((set, get) => ({
   chats: [],
   items: {},
   stats: {},
+  permissions: {},
   selectedWs: null,
   activeChat: {},
   openDoc: {},
@@ -184,4 +187,17 @@ export async function restoreWorkspace(wsId: string) {
   } catch (e) {
     reportError(e)
   }
+}
+
+export function addPermission(req: PermissionRequest) {
+  const s = useStore.getState()
+  const list = (s.permissions[req.chatId] ?? []).filter((r) => r.id !== req.id)
+  s.set({ permissions: { ...s.permissions, [req.chatId]: [...list, req] } })
+}
+
+export function removePermission(id: string) {
+  const s = useStore.getState()
+  const next: Record<string, PermissionRequest[]> = {}
+  for (const [k, v] of Object.entries(s.permissions)) next[k] = v.filter((r) => r.id !== id)
+  s.set({ permissions: next })
 }

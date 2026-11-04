@@ -24,6 +24,8 @@ export interface Workspace {
 
 export type ModelId = 'opus' | 'sonnet' | 'haiku' | 'codex'
 export type Effort = 'low' | 'medium' | 'high'
+/** full: never ask (Conductor's default). edits: auto-accept file edits, ask for the rest. ask: ask before every tool that changes something. */
+export type Permission = 'full' | 'edits' | 'ask'
 
 export interface Chat {
   id: string
@@ -35,6 +37,9 @@ export interface Chat {
   status: 'idle' | 'running' | 'error'
   /** Finished a turn the user has not looked at yet. */
   unread?: boolean
+  permission?: Permission
+  /** Tools the user chose "Always allow" for in this chat. */
+  alwaysAllow?: string[]
   /** This chat is a code review whose findings show in the Review tab and inline in diffs. */
   review?: boolean
   /** Plan mode: the agent researches and proposes a plan without editing files. */
@@ -126,6 +131,7 @@ export interface DiffStats {
 export interface Settings {
   defaultModel: ModelId
   defaultEffort: Effort
+  defaultPermission: Permission
   /** Branch prefix; empty uses the GitHub user or git user.name. */
   branchPrefix: string
   /** Optional. Without it the agent uses your Claude Code login. */
@@ -136,6 +142,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   defaultModel: 'opus',
   defaultEffort: 'high',
+  defaultPermission: 'full',
   branchPrefix: '',
   anthropicApiKey: '',
   notifications: true
@@ -170,10 +177,22 @@ export interface FilePreview {
   reason?: string
 }
 
+export interface PermissionRequest {
+  id: string
+  chatId: string
+  toolName: string
+  input: unknown
+}
+
+export type PermissionDecision = 'allow' | 'always' | 'deny'
+
 export interface ChatEvent {
   chatId: string
   item?: ChatItem
   chat?: Chat
+  permission?: PermissionRequest
+  /** A pending permission request that no longer needs an answer. */
+  permissionDone?: string
 }
 
 export interface Api {
@@ -189,7 +208,9 @@ export interface Api {
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
-  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review'>>): Promise<Chat>
+  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'permission'>>): Promise<Chat>
+  respondPermission(requestId: string, decision: PermissionDecision): void
+  pendingPermissions(): Promise<PermissionRequest[]>
   addChatFolder(chatId: string): Promise<Chat>
   removeChatFolder(chatId: string, dir: string): Promise<Chat>
   listFiles(workspaceId: string): Promise<string[]>

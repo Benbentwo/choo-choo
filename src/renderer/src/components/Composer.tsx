@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Chat, Effort, ModelId, SlashCommandInfo, Workspace } from '@shared/types'
+import type { Chat, Effort, ModelId, Permission, SlashCommandInfo, Workspace } from '@shared/types'
 import { useStore, reportError } from '../store'
 import { IconDown, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
@@ -11,6 +11,11 @@ export const MODELS: { id: ModelId; label: string }[] = [
   { id: 'codex', label: 'Codex' }
 ]
 export const EFFORTS: Effort[] = ['low', 'medium', 'high']
+export const PERMISSIONS: { id: Permission; label: string }[] = [
+  { id: 'full', label: 'Full access' },
+  { id: 'edits', label: 'Ask for commands' },
+  { id: 'ask', label: 'Ask for edits and commands' }
+]
 
 // Drafts survive switching tabs.
 const drafts: Record<string, string> = {}
@@ -119,7 +124,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
     }
   }
 
-  const update = async (patch: Partial<Pick<Chat, 'model' | 'effort' | 'planMode'>>) => {
+  const update = async (patch: Partial<Pick<Chat, 'model' | 'effort' | 'planMode' | 'permission'>>) => {
     useStore.getState().upsertChat(await window.api.updateChat(chat.id, patch))
   }
   const addFolder = async () => useStore.getState().upsertChat(await window.api.addChatFolder(chat.id))
@@ -244,10 +249,11 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
             <button className="flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-hover" onClick={() => setPicker(!picker)}>
               <span>{model}</span>
               <span className="text-muted capitalize">{chat.effort}</span>
+              {chat.permission && chat.permission !== 'full' && chat.model !== 'codex' && <span className="text-sky-400">· asks</span>}
               <IconDown className="text-faint" />
             </button>
             {picker && (
-              <div className="absolute bottom-8 left-0 z-20 w-48 rounded-lg border border-line bg-raised p-1 shadow-xl" onMouseLeave={() => setPicker(false)}>
+              <div className="absolute bottom-8 left-0 z-20 w-56 rounded-lg border border-line bg-raised p-1 shadow-xl" onMouseLeave={() => setPicker(false)}>
                 <div className="px-2 py-1 text-[11px] text-faint">Model</div>
                 {MODELS.map((m) => (
                   <button key={m.id} onClick={() => void update({ model: m.id })} className={`block w-full rounded px-2 py-1 text-left hover:bg-hover ${chat.model === m.id ? 'text-fg' : 'text-muted'}`}>
@@ -262,6 +268,17 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
                     {e}
                   </button>
                 ))}
+                {chat.model !== 'codex' && (
+                  <>
+                    <div className="mt-1 border-t border-line px-2 pt-2 pb-1 text-[11px] text-faint">Permissions</div>
+                    {PERMISSIONS.map((p) => (
+                      <button key={p.id} onClick={() => void update({ permission: p.id })} className={`block w-full rounded px-2 py-1 text-left hover:bg-hover ${(chat.permission ?? 'full') === p.id ? 'text-fg' : 'text-muted'}`}>
+                        {(chat.permission ?? 'full') === p.id ? '✓ ' : '  '}
+                        {p.label}
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             )}
           </div>

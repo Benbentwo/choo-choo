@@ -50,7 +50,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Next unread (button and ⌘⇧U)
 - ✅ Revert to here: restores files and forks the conversation
 - ✅ Codex agent (via the `codex` CLI)
-- ⬜ Per-tool permission prompts
+- ✅ Per-tool permission prompts (Full access, Ask for commands, Ask for edits and commands)
 
 ### Right panel
 - ✅ Changes: committed, uncommitted and untracked vs merge base, with diff view
