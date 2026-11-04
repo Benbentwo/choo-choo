@@ -69,7 +69,16 @@ function Item({ item, chat }: { item: ChatItem; chat: Chat }) {
               Revert to here
             </button>
           )}
-          <div className="max-w-[85%] rounded-xl bg-raised px-4 py-2.5 whitespace-pre-wrap">{item.text}</div>
+          <div className="max-w-[85%] rounded-xl bg-raised px-4 py-2.5 whitespace-pre-wrap">
+            {item.images && item.images.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {item.images.map((src, i) => (
+                  <img key={i} src={src} className="max-h-40 max-w-60 rounded-md border border-line object-contain" />
+                ))}
+              </div>
+            )}
+            {item.text}
+          </div>
         </div>
       )
     case 'note':
@@ -81,6 +90,7 @@ function Item({ item, chat }: { item: ChatItem; chat: Chat }) {
         </div>
       )
     case 'tool':
+      if (item.name === 'ExitPlanMode') return <PlanItem item={item} chat={chat} />
       return <ToolItem item={item} />
     case 'result':
       return (
@@ -144,6 +154,34 @@ function ToolItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
           {item.result !== undefined && (
             <pre className={`mt-2 max-h-80 overflow-auto border-t border-line pt-2 whitespace-pre-wrap ${item.isError ? 'text-del' : 'text-fg/80'}`}>{item.result}</pre>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PlanItem({ item, chat }: { item: Extract<ChatItem, { kind: 'tool' }>; chat: Chat }) {
+  const plan = String((item.input as { plan?: string })?.plan ?? '')
+  const approve = async () => {
+    try {
+      useStore.getState().upsertChat(await window.api.updateChat(chat.id, { planMode: false }))
+      await window.api.sendMessage(chat.id, 'The plan is approved. Go ahead and implement it.')
+    } catch (e) {
+      reportError(e)
+    }
+  }
+  return (
+    <div className="my-3 rounded-xl border border-amber-500/40 bg-amber-500/5">
+      <div className="border-b border-amber-500/20 px-4 py-2 text-[12px] font-medium text-amber-400">Plan</div>
+      <div className="prose-chat px-4 py-1">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{plan}</ReactMarkdown>
+      </div>
+      {chat.planMode && chat.status !== 'running' && (
+        <div className="flex gap-2 px-4 pb-3">
+          <button className="rounded-md bg-fg px-3 py-1 font-medium text-bg hover:opacity-90" onClick={() => void approve()}>
+            Approve and build
+          </button>
+          <span className="self-center text-[12px] text-faint">or reply below to change the plan</span>
         </div>
       )}
     </div>

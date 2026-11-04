@@ -1,4 +1,5 @@
 import { tmpdir } from 'node:os'
+import { claudeExecutable } from './claudeBinary'
 
 const STOP = new Set(['the', 'a', 'an', 'to', 'and', 'or', 'of', 'for', 'in', 'on', 'with', 'please', 'can', 'you', 'we', 'i', 'it', 'this', 'that', 'my', 'our', 'be', 'is', 'are', 'make', 'let', "let's"])
 
@@ -27,7 +28,7 @@ export async function suggestName(prompt: string): Promise<{ title: string; slug
         'Name this coding task. Reply with only JSON like {"title":"Automate photo upload","branch":"automate-photo-upload"}. ' +
         'Title: 2-5 words, sentence case. Branch: 2-5 lowercase words, kebab-case.\n\nTask:\n' +
         prompt.slice(0, 2000),
-      options: { model: 'haiku', maxTurns: 1, tools: [], cwd: tmpdir(), persistSession: false, settingSources: [] } as never
+      options: { pathToClaudeCodeExecutable: claudeExecutable(), model: 'haiku', maxTurns: 1, tools: [], cwd: tmpdir(), persistSession: false, settingSources: [] } as never
     })
     let text = ''
     for await (const m of q as AsyncIterable<any>) {

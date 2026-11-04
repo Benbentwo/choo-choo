@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Chat, Effort, ModelId, SlashCommandInfo, Workspace } from '@shared/types'
 import { useStore, reportError } from '../store'
-import { IconDown, IconPlus, IconStop, IconUp, IconX } from '../icons'
+import { IconDown, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
 
 export const MODELS: { id: ModelId; label: string }[] = [
@@ -27,6 +27,8 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const [sel, setSel] = useState(0)
   const [files, setFiles] = useState<string[] | null>(null)
   const [commands, setCommands] = useState<SlashCommandInfo[] | null>(null)
+  const [images, setImages] = useState<string[]>([])
+  const [dragging, setDragging] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
   const running = chat.status === 'running'
 
@@ -89,19 +91,34 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
     })
   }
 
+  const addImageFiles = (files: FileList | File[]) => {
+    for (const f of Array.from(files)) {
+      if (!/^image\/(png|jpeg|gif|webp)$/.test(f.type)) continue
+      if (f.size > 5 * 1024 * 1024) {
+        reportError(new Error(`${f.name || 'Image'} is larger than 5 MB`))
+        continue
+      }
+      const r = new FileReader()
+      r.onload = () => setImages((imgs) => [...imgs, String(r.result)].slice(0, 10))
+      r.readAsDataURL(f)
+    }
+  }
+
   const submit = async () => {
-    const t = text.trim()
+    const t = text.trim() || (images.length ? 'See the attached image.' : '')
     if (!t || running) return
+    const imgs = images
     setText('')
+    setImages([])
     setTrigger(null)
     try {
-      await window.api.sendMessage(chat.id, t)
+      await window.api.sendMessage(chat.id, t, imgs)
     } catch (e) {
       reportError(e)
     }
   }
 
-  const update = async (patch: Partial<Pick<Chat, 'model' | 'effort'>>) => {
+  const update = async (patch: Partial<Pick<Chat, 'model' | 'effort' | 'planMode'>>) => {
     useStore.getState().upsertChat(await window.api.updateChat(chat.id, patch))
   }
   const addFolder = async () => useStore.getState().upsertChat(await window.api.addChatFolder(chat.id))
@@ -112,7 +129,21 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
 
   return (
     <div className="shrink-0 px-8 pb-5">
-      <div className="relative mx-auto max-w-3xl rounded-xl border border-line bg-panel focus-within:border-faint">
+      <div
+        className={`relative mx-auto max-w-3xl rounded-xl border bg-panel focus-within:border-faint ${dragging ? 'border-sky-400' : chat.planMode ? 'border-amber-500/60' : 'border-line'}`}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('Files')) {
+            e.preventDefault()
+            setDragging(true)
+          }
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragging(false)
+          addImageFiles(e.dataTransfer.files)
+        }}
+      >
         {showPopup && (
           <div className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-72 overflow-y-auto rounded-lg border border-line bg-raised p-1 shadow-xl">
             {options.map((o, i) => (
@@ -143,8 +174,30 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
             ))}
           </div>
         )}
+        {images.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-3 pt-3">
+            {images.map((src, i) => (
+              <div key={i} className="group relative">
+                <img src={src} className="h-14 w-14 rounded-md border border-line object-cover" />
+                <button
+                  className="absolute -top-1.5 -right-1.5 hidden rounded-full bg-raised p-0.5 text-muted group-hover:block hover:text-fg"
+                  onClick={() => setImages(images.filter((_, j) => j !== i))}
+                >
+                  <IconX width={10} height={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={ta}
+          onPaste={(e) => {
+            const files = Array.from(e.clipboardData.files)
+            if (files.some((f) => f.type.startsWith('image/'))) {
+              e.preventDefault()
+              addImageFiles(files)
+            }
+          }}
           value={text}
           onChange={(e) => {
             setText(e.target.value)
@@ -170,6 +223,10 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
                 e.preventDefault()
                 return setTrigger(null)
               }
+            }
+            if (e.key === 'Tab' && e.shiftKey) {
+              e.preventDefault()
+              return void update({ planMode: !chat.planMode })
             }
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
@@ -207,7 +264,18 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
               </div>
             )}
           </div>
+          <button
+            className={`rounded px-1.5 py-1 ${chat.planMode ? 'bg-amber-500/15 text-amber-400' : 'text-faint hover:bg-hover hover:text-fg'}`}
+            title="Plan mode: the agent proposes a plan before editing (⇧Tab)"
+            onClick={() => void update({ planMode: !chat.planMode })}
+          >
+            Plan
+          </button>
           <div className="flex-1" />
+          <label className="cursor-pointer rounded p-1.5 text-muted hover:bg-hover hover:text-fg" title="Attach images">
+            <IconImage />
+            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple className="hidden" onChange={(e) => e.target.files && addImageFiles(e.target.files)} />
+          </label>
           <button className="rounded p-1.5 text-muted hover:bg-hover hover:text-fg" title="Add folder" onClick={() => void addFolder()}>
             <IconPlus />
           </button>
@@ -216,7 +284,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
               <IconStop />
             </button>
           ) : (
-            <button className="rounded-md bg-fg p-1.5 text-bg hover:opacity-90 disabled:opacity-30" disabled={!text.trim()} title="Send (Enter)" onClick={() => void submit()}>
+            <button className="rounded-md bg-fg p-1.5 text-bg hover:opacity-90 disabled:opacity-30" disabled={!text.trim() && images.length === 0} title="Send (Enter)" onClick={() => void submit()}>
               <IconUp />
             </button>
           )}

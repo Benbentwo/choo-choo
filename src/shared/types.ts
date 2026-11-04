@@ -34,6 +34,8 @@ export interface Chat {
   status: 'idle' | 'running' | 'error'
   /** Finished a turn the user has not looked at yet. */
   unread?: boolean
+  /** Plan mode: the agent researches and proposes a plan without editing files. */
+  planMode?: boolean
   /** Extra folders the agent may read and edit. */
   additionalDirectories?: string[]
   /** UUID of the last session entry of the last finished turn. */
@@ -72,6 +74,8 @@ export type ChatItem =
       id: string
       kind: 'user'
       text: string
+      /** Attached images as data URLs. */
+      images?: string[]
       ts: number
       /** Worktree snapshot taken just before this turn ran. */
       checkpoint?: { head: string; tree: string }
@@ -179,7 +183,7 @@ export interface Api {
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
-  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread'>>): Promise<Chat>
+  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode'>>): Promise<Chat>
   addChatFolder(chatId: string): Promise<Chat>
   removeChatFolder(chatId: string, dir: string): Promise<Chat>
   listFiles(workspaceId: string): Promise<string[]>
@@ -198,7 +202,7 @@ export interface Api {
   saveSettings(patch: Partial<Settings>): Promise<Settings>
   cloneRepo(url: string): Promise<Repo>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
-  sendMessage(chatId: string, text: string): Promise<void>
+  sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
   stopChat(chatId: string): Promise<void>
   onChatEvent(cb: (e: ChatEvent) => void): () => void
   getChanges(workspaceId: string): Promise<FileChange[]>

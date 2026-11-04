@@ -258,6 +258,7 @@ function registerIpc() {
     if (patch.effort) c.effort = patch.effort
     if (patch.title) c.title = patch.title
     if (patch.unread !== undefined) c.unread = patch.unread
+    if (patch.planMode !== undefined) c.planMode = patch.planMode
     store.save()
     return c
   })
@@ -315,7 +316,7 @@ function registerIpc() {
     if (!pr) throw new Error('No pull request for this branch')
     await gh.mergePr(ws.path, pr.number)
   })
-  h('chat:send', (id: string, text: string) => {
+  h('chat:send', (id: string, text: string, images: string[] = []) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
     if (!ws.named) void nameWorkspace(ws, text)
@@ -323,7 +324,7 @@ function registerIpc() {
     const env = workspaceEnv(ws)
     const key = store.get().settings.anthropicApiKey.trim()
     if (key) env.ANTHROPIC_API_KEY = key
-    void agent.send(chat, ws, text, env, (chatId, payload) => send('chat:event', { chatId, ...payload }), notifyDone)
+    void agent.send(chat, ws, text, env, (chatId, payload) => send('chat:event', { chatId, ...payload }), notifyDone, images.slice(0, 10))
   })
   h('chat:stop', (id: string) => agent.stop(id))
   h('git:changes', (wsId: string) => {

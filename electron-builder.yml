@@ -6,11 +6,19 @@ directories:
 files:
   - out/**
   - package.json
+# Native code must live outside the asar archive to load or execute.
 asarUnpack:
   - node_modules/node-pty/**
-  - node_modules/@anthropic-ai/**
+  - node_modules/@anthropic-ai/claude-agent-sdk-*/**
 mac:
   category: public.app-category.developer-tools
+  icon: resources/icon.png
+  hardenedRuntime: true
+  # The Claude binary comes from the platform package installed by npm, so build each arch on a matching machine.
   target:
     - target: dmg
-      arch: [arm64, x64]
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+dmg:
+  title: Choo Choo

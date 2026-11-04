@@ -69,3 +69,6 @@ export const IconGear = (p: SVGProps<SVGSVGElement>) => (
 export const IconTool = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" /></svg>
 )
+export const IconImage = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="2" /><path d="m21 16-5-5-9 9" /></svg>
+)

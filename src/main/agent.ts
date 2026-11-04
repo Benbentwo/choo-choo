@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Chat, ChatItem, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
+import { claudeExecutable } from './claudeBinary'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat }) => void
 
@@ -43,11 +44,30 @@ export async function stop(chatId: string) {
   }
 }
 
-export async function send(chat: Chat, ws: Workspace, text: string, env: Record<string, string>, emit: Emit, onDone?: (chat: Chat) => void) {
+function dataUrlToBlock(url: string) {
+  const m = url.match(/^data:(image\/(?:png|jpeg|gif|webp));base64,(.+)$/)
+  if (!m) return null
+  return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } }
+}
+
+async function* userMessage(text: string, images: string[]) {
+  const content = [...images.map(dataUrlToBlock).filter(Boolean), { type: 'text', text }]
+  yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null }
+}
+
+export async function send(
+  chat: Chat,
+  ws: Workspace,
+  text: string,
+  env: Record<string, string>,
+  emit: Emit,
+  onDone?: (chat: Chat) => void,
+  images: string[] = []
+) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
   const now = Date.now()
   const checkpoint = (await git.snapshot(ws.path)) ?? undefined
-  const userItem: ChatItem = { id: randomUUID(), kind: 'user', text, ts: now, checkpoint, resumeAt: chat.lastUuid }
+  const userItem: ChatItem = { id: randomUUID(), kind: 'user', text, images: images.length ? images : undefined, ts: now, checkpoint, resumeAt: chat.lastUuid }
   store.upsertItem(chat.id, userItem)
   emit(chat.id, { item: userItem })
 
@@ -77,8 +97,9 @@ export async function send(chat: Chat, ws: Workspace, text: string, env: Record<
   try {
     const { query } = await loadSdk()
     const q = query({
-      prompt: text,
+      prompt: images.length ? (userMessage(text, images) as never) : text,
       options: {
+        pathToClaudeCodeExecutable: claudeExecutable(),
         cwd: ws.path,
         model: chat.model,
         effort: chat.effort,
@@ -86,7 +107,7 @@ export async function send(chat: Chat, ws: Workspace, text: string, env: Record<
         ...(forkAt ? { resumeSessionAt: forkAt, forkSession: true } : {}),
         additionalDirectories: chat.additionalDirectories,
         // Conductor runs agents unattended inside an isolated worktree.
-        permissionMode: 'bypassPermissions',
+        permissionMode: chat.planMode ? 'plan' : 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         includePartialMessages: true,
         abortController: abort,
