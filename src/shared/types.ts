@@ -36,6 +36,10 @@ export interface Chat {
   unread?: boolean
   /** Extra folders the agent may read and edit. */
   additionalDirectories?: string[]
+  /** UUID of the last session entry of the last finished turn. */
+  lastUuid?: string
+  /** Set by a revert: the next turn forks the session at this entry. */
+  forkAt?: string | null
   createdAt: number
 }
 
@@ -64,7 +68,17 @@ export interface SlashCommandInfo {
 }
 
 export type ChatItem =
-  | { id: string; kind: 'user'; text: string; ts: number }
+  | {
+      id: string
+      kind: 'user'
+      text: string
+      ts: number
+      /** Worktree snapshot taken just before this turn ran. */
+      checkpoint?: { head: string; tree: string }
+      /** Session entry to fork from to drop this turn and everything after it. */
+      resumeAt?: string
+    }
+  | { id: string; kind: 'note'; text: string; ts: number }
   | { id: string; kind: 'assistant'; text: string; streaming?: boolean; ts: number }
   | {
       id: string
@@ -100,10 +114,51 @@ export interface DiffStats {
   files: number
 }
 
+export interface Settings {
+  defaultModel: ModelId
+  defaultEffort: Effort
+  /** Branch prefix; empty uses the GitHub user or git user.name. */
+  branchPrefix: string
+  /** Optional. Without it the agent uses your Claude Code login. */
+  anthropicApiKey: string
+  notifications: boolean
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  defaultModel: 'opus',
+  defaultEffort: 'high',
+  branchPrefix: '',
+  anthropicApiKey: '',
+  notifications: true
+}
+
 export interface AppState {
   repos: Repo[]
   workspaces: Workspace[]
   chats: Chat[]
+  settings: Settings
+}
+
+export interface CheckRun {
+  name: string
+  state: string
+  bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
+  link: string
+  workflow: string
+  description: string
+}
+
+export interface Artifact {
+  path: string
+  tool: string
+  ts: number
+}
+
+export interface FilePreview {
+  path: string
+  content: string | null
+  /** Why content is null: binary, too large or missing. */
+  reason?: string
 }
 
 export interface ChatEvent {
@@ -135,6 +190,14 @@ export interface Api {
   isScriptRunning(workspaceId: string, kind: ScriptKind): Promise<boolean>
   getPr(workspaceId: string): Promise<PrInfo | null>
   mergePr(workspaceId: string): Promise<void>
+  getChecks(workspaceId: string): Promise<CheckRun[]>
+  rerunCheck(workspaceId: string, link: string): Promise<void>
+  getArtifacts(workspaceId: string): Promise<Artifact[]>
+  readFile(workspaceId: string, path: string): Promise<FilePreview>
+  revertTo(chatId: string, itemId: string): Promise<string>
+  saveSettings(patch: Partial<Settings>): Promise<Settings>
+  cloneRepo(url: string): Promise<Repo>
+  onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
   sendMessage(chatId: string, text: string): Promise<void>
   stopChat(chatId: string): Promise<void>
   onChatEvent(cb: (e: ChatEvent) => void): () => void

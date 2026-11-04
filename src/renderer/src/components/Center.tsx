@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { Workspace } from '@shared/types'
-import { useStore, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread } from '../store'
+import { useStore, openDoc, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread } from '../store'
 import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
+import { FileView } from './FileView'
 
 export function Center({ ws }: { ws: Workspace }) {
   const s = useStore()
@@ -12,7 +13,8 @@ export function Center({ ws }: { ws: Workspace }) {
   const chats = s.chats.filter((c) => c.workspaceId === ws.id)
   const activeId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
   const active = chats.find((c) => c.id === activeId)
-  const diffFile = s.openDiff[ws.id] ?? null
+  const doc = s.openDoc[ws.id] ?? null
+  const diffFile = doc?.path ?? null
   const [menu, setMenu] = useState(false)
 
   useEffect(() => {
@@ -97,7 +99,8 @@ export function Center({ ws }: { ws: Workspace }) {
         {diffFile && (
           <div className="flex h-10 max-w-[260px] items-center gap-2 border-b-2 border-fg px-3">
             <span className="truncate font-mono text-[12px]">{diffFile.split('/').pop()}</span>
-            <button className="text-faint hover:text-fg" onClick={() => s.set({ openDiff: { ...s.openDiff, [ws.id]: null } })}>
+            {doc?.kind === 'file' && <span className="text-[11px] text-faint">file</span>}
+            <button className="text-faint hover:text-fg" onClick={() => openDoc(ws.id, null)}>
               <IconX width={12} height={12} />
             </button>
           </div>
@@ -107,8 +110,10 @@ export function Center({ ws }: { ws: Workspace }) {
         </button>
       </div>
 
-      {diffFile ? (
-        <DiffView ws={ws} file={diffFile} />
+      {doc?.kind === 'diff' ? (
+        <DiffView ws={ws} file={doc.path} />
+      ) : doc?.kind === 'file' ? (
+        <FileView ws={ws} file={doc.path} />
       ) : active ? (
         <>
           <ChatView chat={active} />

@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar'
 import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
+import { Modals } from './components/Modals'
 
 export function App() {
   const s = useStore()
@@ -32,6 +33,10 @@ export function App() {
       switch (action) {
         case 'add-repo':
           return void addRepository()
+        case 'search':
+          return st.set({ modal: st.modal === 'palette' ? null : 'palette' })
+        case 'settings':
+          return st.set({ modal: 'settings' })
         case 'new-workspace':
           if (curWs) void newWorkspace(curWs.repoId)
           return
@@ -52,8 +57,13 @@ export function App() {
       }
     })
     const offState = window.api.onStateChanged(() => void refreshState())
+    const offNav = window.api.onNavigate((wsId, chatId) => {
+      useStore.getState().setActiveChat(wsId, chatId)
+      useStore.getState().selectWorkspace(wsId)
+    })
     return () => {
       offState()
+      offNav()
       offChat()
       offMenu()
     }
@@ -72,6 +82,7 @@ export function App() {
           <Home />
         )}
       </div>
+      <Modals />
       {s.error && (
         <div className="fixed right-4 bottom-4 z-50 max-w-md rounded-lg border border-del/40 bg-raised px-4 py-3 text-[12px] shadow-xl">
           <div className="mb-1 font-medium text-del">Something went wrong</div>

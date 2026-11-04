@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Chat, ChatItem } from '@shared/types'
-import { useStore } from '../store'
+import { useStore, reportError } from '../store'
+import { setDraft } from './Composer'
 import { IconDown, IconRight, IconTool } from '../icons'
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -32,7 +33,7 @@ export function ChatView({ chat }: { chat: Chat }) {
           </div>
         )}
         {items.map((it) => (
-          <Item key={it.id} item={it} />
+          <Item key={it.id} item={it} chat={chat} />
         ))}
         {chat.status === 'running' && (
           <div className="mt-3 flex items-center gap-2 text-faint">
@@ -44,14 +45,35 @@ export function ChatView({ chat }: { chat: Chat }) {
   )
 }
 
-function Item({ item }: { item: ChatItem }) {
+async function revert(chat: Chat, itemId: string) {
+  try {
+    const text = await window.api.revertTo(chat.id, itemId)
+    useStore.getState().setItems(chat.id, await window.api.getChatItems(chat.id))
+    setDraft(chat.id, text)
+  } catch (e) {
+    reportError(e)
+  }
+}
+
+function Item({ item, chat }: { item: ChatItem; chat: Chat }) {
   switch (item.kind) {
     case 'user':
       return (
-        <div className="my-4 flex justify-end">
+        <div className="group my-4 flex items-start justify-end gap-2">
+          {item.checkpoint && chat.status !== 'running' && (
+            <button
+              className="invisible mt-2 shrink-0 rounded px-1.5 py-0.5 text-[11px] text-faint group-hover:visible hover:bg-hover hover:text-fg"
+              title="Restore files and conversation to before this message"
+              onClick={() => void revert(chat, item.id)}
+            >
+              Revert to here
+            </button>
+          )}
           <div className="max-w-[85%] rounded-xl bg-raised px-4 py-2.5 whitespace-pre-wrap">{item.text}</div>
         </div>
       )
+    case 'note':
+      return <div className="my-3 text-center text-[11px] text-faint">{item.text}</div>
     case 'assistant':
       return (
         <div className="prose-chat my-3 leading-relaxed">

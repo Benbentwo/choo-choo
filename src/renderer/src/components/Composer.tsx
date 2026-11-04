@@ -13,6 +13,12 @@ export const EFFORTS: Effort[] = ['low', 'medium', 'high']
 
 // Drafts survive switching tabs.
 const drafts: Record<string, string> = {}
+const draftListeners = new Set<(chatId: string) => void>()
+
+export function setDraft(chatId: string, text: string) {
+  drafts[chatId] = text
+  for (const l of draftListeners) l(chatId)
+}
 
 export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const [text, setTextState] = useState(drafts[chat.id] ?? '')
@@ -33,6 +39,14 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
     setTextState(drafts[chat.id] ?? '')
     setTrigger(null)
     ta.current?.focus()
+  }, [chat.id])
+
+  useEffect(() => {
+    const l = (id: string) => id === chat.id && setTextState(drafts[id] ?? '')
+    draftListeners.add(l)
+    return () => {
+      draftListeners.delete(l)
+    }
   }, [chat.id])
 
   useEffect(() => {

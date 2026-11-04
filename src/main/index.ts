@@ -1,9 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { mkdirSync } from 'node:fs'
-import type { Chat, Repo, Workspace } from '@shared/types'
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { isAbsolute, relative, resolve } from 'node:path'
+import type { Artifact, Chat, FilePreview, Repo, Settings, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 import * as agent from './agent'
@@ -17,6 +18,7 @@ import { suggestName } from './naming'
 let win: BrowserWindow | null = null
 
 const WORKSPACES_ROOT = join(homedir(), 'choo-choo', 'workspaces')
+const REPOS_ROOT = join(homedir(), 'choo-choo', 'repos')
 
 function send(channel: string, ...args: unknown[]) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
@@ -97,8 +99,8 @@ function newChat(workspaceId: string): Chat {
     id: randomUUID(),
     workspaceId,
     title: 'New chat',
-    model: 'opus',
-    effort: 'high',
+    model: store.get().settings.defaultModel,
+    effort: store.get().settings.defaultEffort,
     status: 'idle',
     createdAt: Date.now()
   }
@@ -113,7 +115,7 @@ async function createWorkspace(repoId: string) {
   if (!repo) throw new Error('Unknown repo')
   const taken = new Set(s.workspaces.filter((w) => w.repoId === repoId).map((w) => w.name))
   const name = pickCityName(taken)
-  const prefix = await git.branchPrefix(repo.path)
+  const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
   const branch = `${prefix}/${name}`
   const baseRef = await git.baseRefFor(repo.path, repo.defaultBranch)
   const dir = join(WORKSPACES_ROOT, repo.name)
@@ -149,6 +151,55 @@ async function nameWorkspace(ws: Workspace, prompt: string) {
   }
   store.save()
   send('state:changed')
+}
+
+function notifyDone(chat: Chat) {
+  if (!store.get().settings.notifications || win?.isFocused() || !Notification.isSupported()) return
+  const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
+  const n = new Notification({
+    title: ws?.title ?? 'Choo Choo',
+    body: chat.status === 'error' ? 'The agent hit an error' : 'The agent finished and is waiting for you'
+  })
+  n.on('click', () => {
+    win?.show()
+    win?.focus()
+    send('navigate', chat.workspaceId, chat.id)
+  })
+  n.show()
+}
+
+/** Resolves a path inside the workspace, refusing anything that escapes it. */
+function insideWorkspace(ws: Workspace, rel: string): string {
+  const abs = resolve(ws.path, rel)
+  const r = relative(ws.path, abs)
+  if (r.startsWith('..') || isAbsolute(r)) throw new Error('Path is outside the workspace')
+  return abs
+}
+
+function readPreview(ws: Workspace, rel: string): FilePreview {
+  const abs = insideWorkspace(ws, rel)
+  if (!existsSync(abs)) return { path: rel, content: null, reason: 'File not found' }
+  const st = statSync(abs)
+  if (st.size > 1024 * 1024) return { path: rel, content: null, reason: 'File is larger than 1 MB' }
+  const buf = readFileSync(abs)
+  if (buf.subarray(0, 8000).includes(0)) return { path: rel, content: null, reason: 'Binary file' }
+  return { path: rel, content: buf.toString('utf8') }
+}
+
+const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
+
+function artifacts(ws: Workspace): Artifact[] {
+  const seen = new Map<string, Artifact>()
+  for (const c of store.get().chats.filter((c) => c.workspaceId === ws.id)) {
+    for (const it of store.chatItems(c.id)) {
+      if (it.kind !== 'tool' || !WRITE_TOOLS.has(it.name) || it.isError) continue
+      const fp = (it.input as { file_path?: string; notebook_path?: string })?.file_path ?? (it.input as { notebook_path?: string })?.notebook_path
+      if (!fp) continue
+      const rel = isAbsolute(fp) ? relative(ws.path, fp) : fp
+      seen.set(rel, { path: rel, tool: it.name, ts: it.ts })
+    }
+  }
+  return [...seen.values()].sort((a, b) => b.ts - a.ts)
 }
 
 function registerIpc() {
@@ -233,6 +284,31 @@ function registerIpc() {
     const ws = findWs(id)
     return gh.prForBranch(ws.path, ws.branch)
   })
+  h('checks:get', (id: string) => {
+    const ws = findWs(id)
+    return gh.checks(ws.path, ws.branch)
+  })
+  h('checks:rerun', (id: string, link: string) => gh.rerunFailed(findWs(id).path, link))
+  h('ws:artifacts', (id: string) => artifacts(findWs(id)))
+  h('ws:readFile', (id: string, rel: string) => readPreview(findWs(id), rel))
+  h('chat:revert', (id: string, itemId: string) => {
+    const chat = findChat(id)
+    return agent.revert(chat, findWs(chat.workspaceId), itemId)
+  })
+  h('settings:save', (patch: Partial<Settings>) => {
+    const s = store.get()
+    s.settings = { ...s.settings, ...patch }
+    store.save()
+    return s.settings
+  })
+  h('repo:clone', async (url: string) => {
+    if (!/^(https:\/\/|git@|ssh:\/\/)/.test(url.trim())) throw new Error('Enter an https or ssh git URL')
+    mkdirSync(REPOS_ROOT, { recursive: true })
+    let dest = join(REPOS_ROOT, git.repoNameFromUrl(url))
+    for (let n = 2; existsSync(dest); n++) dest = join(REPOS_ROOT, `${git.repoNameFromUrl(url)}-${n}`)
+    await git.clone(url.trim(), dest)
+    return addRepo(dest)
+  })
   h('pr:merge', async (id: string) => {
     const ws = findWs(id)
     const pr = await gh.prForBranch(ws.path, ws.branch)
@@ -244,7 +320,10 @@ function registerIpc() {
     const ws = findWs(chat.workspaceId)
     if (!ws.named) void nameWorkspace(ws, text)
     // Fire and forget; progress arrives through chat:event.
-    void agent.send(chat, ws, text, workspaceEnv(ws), (chatId, payload) => send('chat:event', { chatId, ...payload }))
+    const env = workspaceEnv(ws)
+    const key = store.get().settings.anthropicApiKey.trim()
+    if (key) env.ANTHROPIC_API_KEY = key
+    void agent.send(chat, ws, text, env, (chatId, payload) => send('chat:event', { chatId, ...payload }), notifyDone)
   })
   h('chat:stop', (id: string) => agent.stop(id))
   h('git:changes', (wsId: string) => {
@@ -280,7 +359,22 @@ function registerIpc() {
 function buildMenu() {
   const m = (action: string) => () => send('menu', action)
   const template: Electron.MenuItemConstructorOptions[] = [
-    { role: 'appMenu' },
+    {
+      role: 'appMenu',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: m('settings') },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
     {
       label: 'File',
       submenu: [
@@ -291,6 +385,7 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Run', accelerator: 'CmdOrCtrl+R', click: m('run') },
         { label: 'Next Unread', accelerator: 'CmdOrCtrl+Shift+U', click: m('next-unread') },
+        { label: 'Search…', accelerator: 'CmdOrCtrl+K', click: m('search') },
         { type: 'separator' },
         { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' }
       ]
@@ -366,6 +461,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
+  agent.stopAll()
   store.flush()
   pty.killAll()
 })

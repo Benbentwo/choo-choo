@@ -144,3 +144,46 @@ export async function renameBranch(cwd: string, from: string, to: string): Promi
   if (await tryGit(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${to}`])) return false
   return (await tryGit(cwd, ['branch', '-m', from, to])) !== null
 }
+
+/**
+ * Snapshots the whole working tree (tracked, modified and untracked files) as a dangling commit,
+ * without touching the index or HEAD. Returns the commit and the HEAD it sits on.
+ */
+export async function snapshot(cwd: string): Promise<{ head: string; tree: string } | null> {
+  const head = (await tryGit(cwd, ['rev-parse', 'HEAD']))?.trim()
+  if (!head) return null
+  const { mkdtempSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const dir = mkdtempSync(join(tmpdir(), 'choo-idx-'))
+  const env = { ...process.env, GIT_INDEX_FILE: join(dir, 'index') }
+  try {
+    await exec('git', ['read-tree', head], { cwd, env })
+    await exec('git', ['add', '-A'], { cwd, env, maxBuffer: 64 * 1024 * 1024 })
+    const tree = (await exec('git', ['write-tree'], { cwd, env })).stdout.trim()
+    const commit = (await exec('git', ['commit-tree', tree, '-p', head, '-m', 'choo-choo checkpoint'], { cwd, env })).stdout.trim()
+    // Keep it reachable so gc does not collect it.
+    await git(cwd, ['update-ref', `refs/choo-choo/checkpoints/${commit}`, commit])
+    return { head, tree: commit }
+  } catch {
+    return null
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+/** Puts the worktree back exactly as it was at a snapshot. */
+export async function restore(cwd: string, snap: { head: string; tree: string }) {
+  await git(cwd, ['reset', '-q', '--hard', snap.head])
+  await git(cwd, ['clean', '-qfd'])
+  await git(cwd, ['checkout', snap.tree, '--', '.'])
+  await git(cwd, ['reset', '-q'])
+}
+
+export async function clone(url: string, dest: string) {
+  await exec('git', ['clone', url, dest], { maxBuffer: 64 * 1024 * 1024 })
+}
+
+export function repoNameFromUrl(url: string): string {
+  const m = url.trim().replace(/\/+$/, '').replace(/\.git$/, '').match(/([^/:]+)$/)
+  return m ? m[1] : 'repo'
+}

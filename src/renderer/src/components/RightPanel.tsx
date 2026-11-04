@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { FileChange, PrInfo, Workspace } from '@shared/types'
-import { useStore, reportError, type RightTab } from '../store'
+import { useStore, reportError, openDoc, type RightTab } from '../store'
 import { IconDown, IconEye, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
+import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
 import { fmt } from './Stats'
 
 const TABS: { id: RightTab; label: string }[] = [
@@ -15,6 +16,8 @@ const TABS: { id: RightTab; label: string }[] = [
 export function RightPanel({ ws }: { ws: Workspace }) {
   const s = useStore()
   const [changes, setChanges] = useState<FileChange[]>([])
+  const [filter, setFilter] = useState('')
+  const [searching, setSearching] = useState(false)
   const stats = s.stats[ws.id]
 
   useEffect(() => {
@@ -43,16 +46,26 @@ export function RightPanel({ ws }: { ws: Workspace }) {
             <IconEye /> Review
           </button>
           <div className="flex-1" />
-          <button className="rounded p-1 text-faint hover:text-fg">
+          <button className="rounded p-1 text-faint hover:text-fg" onClick={() => { setSearching(!searching); setFilter('') }} title="Filter files">
             <IconSearch />
           </button>
         </div>
+        {searching && (
+          <input
+            autoFocus
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && (setSearching(false), setFilter(''))}
+            placeholder="Filter files"
+            className="mx-3 mb-2 rounded-md border border-line bg-bg px-2 py-1 outline-none focus:border-faint"
+          />
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {s.rightTab === 'changes' ? (
-            <ChangesList ws={ws} changes={changes} />
-          ) : (
-            <div className="p-6 text-center text-faint">Coming soon</div>
-          )}
+          {s.rightTab === 'changes' && <ChangesList ws={ws} changes={filter ? changes.filter((c) => c.path.toLowerCase().includes(filter.toLowerCase())) : changes} />}
+          {s.rightTab === 'files' && <FilesTab ws={ws} filter={filter} />}
+          {s.rightTab === 'artifacts' && <ArtifactsTab ws={ws} />}
+          {s.rightTab === 'checks' && <ChecksTab ws={ws} />}
+          {s.rightTab === 'review' && <ReviewTab ws={ws} />}
         </div>
       </div>
 
@@ -86,11 +99,11 @@ function ChangesList({ ws, changes }: { ws: Workspace; changes: FileChange[] }) 
       </div>
       {changes.map((c) => {
         const slash = c.path.lastIndexOf('/')
-        const open = s.openDiff[ws.id] === c.path
+        const open = s.openDoc[ws.id]?.kind === 'diff' && s.openDoc[ws.id]?.path === c.path
         return (
           <button
             key={c.path}
-            onClick={() => s.set({ openDiff: { ...s.openDiff, [ws.id]: c.path } })}
+            onClick={() => openDoc(ws.id, { kind: 'diff', path: c.path })}
             className={`flex w-full items-center gap-2 px-4 py-1.5 text-left ${open ? 'bg-raised' : 'hover:bg-hover'}`}
             title={c.path}
           >

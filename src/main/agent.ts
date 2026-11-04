@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Chat, ChatItem, Workspace } from '@shared/types'
 import * as store from './store'
+import * as git from './git'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat }) => void
 
@@ -42,10 +43,11 @@ export async function stop(chatId: string) {
   }
 }
 
-export async function send(chat: Chat, ws: Workspace, text: string, env: Record<string, string>, emit: Emit) {
+export async function send(chat: Chat, ws: Workspace, text: string, env: Record<string, string>, emit: Emit, onDone?: (chat: Chat) => void) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
   const now = Date.now()
-  const userItem: ChatItem = { id: randomUUID(), kind: 'user', text, ts: now }
+  const checkpoint = (await git.snapshot(ws.path)) ?? undefined
+  const userItem: ChatItem = { id: randomUUID(), kind: 'user', text, ts: now, checkpoint, resumeAt: chat.lastUuid }
   store.upsertItem(chat.id, userItem)
   emit(chat.id, { item: userItem })
 
@@ -61,6 +63,11 @@ export async function send(chat: Chat, ws: Workspace, text: string, env: Record<
 
   // Streaming text for the current assistant message, keyed by content-block index.
   let streamItem: Extract<ChatItem, { kind: 'assistant' }> | null = null
+  let lastUuid: string | undefined
+  // After a revert, fork the session at the kept point (or start fresh if nothing was kept).
+  const forkAt = chat.forkAt
+  const resume = forkAt === null ? undefined : chat.sdkSessionId
+  chat.forkAt = undefined
   const tools = new Map<string, Extract<ChatItem, { kind: 'tool' }>>()
   const put = (item: ChatItem) => {
     store.upsertItem(chat.id, item)
@@ -75,7 +82,8 @@ export async function send(chat: Chat, ws: Workspace, text: string, env: Record<
         cwd: ws.path,
         model: chat.model,
         effort: chat.effort,
-        resume: chat.sdkSessionId,
+        resume,
+        ...(forkAt ? { resumeSessionAt: forkAt, forkSession: true } : {}),
         additionalDirectories: chat.additionalDirectories,
         // Conductor runs agents unattended inside an isolated worktree.
         permissionMode: 'bypassPermissions',
@@ -89,6 +97,7 @@ export async function send(chat: Chat, ws: Workspace, text: string, env: Record<
     r.query = q
 
     for await (const msg of q as AsyncIterable<any>) {
+      if ((msg.type === 'assistant' || msg.type === 'user') && msg.uuid) lastUuid = msg.uuid
       switch (msg.type) {
         case 'system':
           if (msg.subtype === 'init') {
@@ -173,8 +182,31 @@ export async function send(chat: Chat, ws: Workspace, text: string, env: Record<
   } finally {
     if (streamItem) put({ ...streamItem, streaming: false })
     running.delete(chat.id)
+    if (lastUuid) chat.lastUuid = lastUuid
     chat.unread = true
     store.save()
     emit(chat.id, { chat })
+    onDone?.(chat)
   }
+}
+
+/** Rewinds a chat to just before `itemId`: restores the files and forks the conversation there. */
+export async function revert(chat: Chat, ws: Workspace, itemId: string): Promise<string> {
+  await stop(chat.id)
+  const list = store.chatItems(chat.id)
+  const i = list.findIndex((x) => x.id === itemId)
+  const item = list[i]
+  if (!item || item.kind !== 'user') throw new Error('Can only revert to a message you sent')
+  if (item.checkpoint) await git.restore(ws.path, item.checkpoint)
+  list.splice(i)
+  const note: ChatItem = { id: randomUUID(), kind: 'note', text: 'Reverted files and conversation to before this message', ts: Date.now() }
+  store.upsertItem(chat.id, note)
+  chat.forkAt = item.resumeAt ?? null
+  chat.lastUuid = item.resumeAt
+  store.save()
+  return item.text
+}
+
+export function stopAll() {
+  for (const r of running.values()) r.abort.abort()
 }

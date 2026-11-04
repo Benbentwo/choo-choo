@@ -1,5 +1,10 @@
 import { create } from 'zustand'
-import type { AppState, Chat, ChatItem, DiffStats, Repo, Workspace } from '@shared/types'
+import { DEFAULT_SETTINGS, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
+
+export interface Doc {
+  kind: 'diff' | 'file'
+  path: string
+}
 
 export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'review'
 
@@ -11,8 +16,10 @@ interface UI {
   stats: Record<string, DiffStats>
   selectedWs: string | null
   activeChat: Record<string, string>
-  /** File whose diff is open in the center, per workspace. */
-  openDiff: Record<string, string | null>
+  /** Diff or file open in the center instead of the chat, per workspace. */
+  openDoc: Record<string, Doc | null>
+  settings: Settings
+  modal: 'settings' | 'palette' | 'create' | null
   history: string[]
   historyIndex: number
   sidebarOpen: boolean
@@ -42,7 +49,9 @@ export const useStore = create<UI>((set, get) => ({
   stats: {},
   selectedWs: null,
   activeChat: {},
-  openDiff: {},
+  openDoc: {},
+  settings: { ...DEFAULT_SETTINGS },
+  modal: null,
   history: [],
   historyIndex: -1,
   sidebarOpen: true,
@@ -51,7 +60,7 @@ export const useStore = create<UI>((set, get) => ({
   rightTab: 'changes',
   error: null,
 
-  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats }),
+  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings }),
   selectWorkspace: (id, fromHistory) => {
     if (fromHistory || !id) return set({ selectedWs: id })
     const { history, historyIndex } = get()
@@ -67,7 +76,7 @@ export const useStore = create<UI>((set, get) => ({
     if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, selectedWs: history[historyIndex + 1] })
   },
   setActiveChat: (wsId, chatId) =>
-    set((s) => ({ activeChat: { ...s.activeChat, [wsId]: chatId }, openDiff: { ...s.openDiff, [wsId]: null } })),
+    set((s) => ({ activeChat: { ...s.activeChat, [wsId]: chatId }, openDoc: { ...s.openDoc, [wsId]: null } })),
   upsertChat: (c) =>
     set((s) => {
       const i = s.chats.findIndex((x) => x.id === c.id)
@@ -159,4 +168,9 @@ export function goToNextUnread() {
   const s = useStore.getState()
   s.setActiveChat(n.wsId, n.chatId)
   s.selectWorkspace(n.wsId)
+}
+
+export function openDoc(wsId: string, doc: Doc | null) {
+  const s = useStore.getState()
+  s.set({ openDoc: { ...s.openDoc, [wsId]: doc } })
 }
