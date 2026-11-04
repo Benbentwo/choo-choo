@@ -12,7 +12,7 @@ Requires macOS, Node 22+, git, and a Claude login (`claude` CLI signed in, or `A
 npm install      # also rebuilds node-pty for Electron
 npm run dev      # launch with hot reload
 npm test         # unit tests
-npm run dist:mac # build an arm64 .dmg and .zip into dist/
+npm run dist:mac # build arm64 and Intel .dmg and .zip files into dist/
 ```
 
 Workspaces are git worktrees under `~/choo-choo/workspaces/<repo>/<city>`, each on its own branch. App data lives in `~/Library/Application Support/Choo Choo/data`.

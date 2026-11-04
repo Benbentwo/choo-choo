@@ -17,6 +17,7 @@ jobs:
       - run: npm ci
       - run: npm test
       # Signs and notarizes when the Apple secrets are set; otherwise builds an unsigned app.
+      - run: node scripts/install-mac-binaries.cjs
       - run: npx electron-vite build && npx electron-builder --mac --publish always
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}

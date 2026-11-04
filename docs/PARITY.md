@@ -68,7 +68,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 
 ### Platform
 - ✅ macOS menus and shortcuts, desktop notifications
-- ✅ dmg/zip build, release workflow (signs and notarizes when secrets are set)
+- ✅ dmg/zip builds for Apple silicon and Intel, release workflow (signs and notarizes when secrets are set)
 - ✅ Auto-update from GitHub releases (needs a signed build on macOS)
 
 ## Build sequence
@@ -76,4 +76,4 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 2. **Workflow**: Create PR, Setup/Run scripts, @mentions, /commands, folders, archive, unread, auto-naming.
 3. **Review & polish**: Checks, Review, Artifacts, All files, ⌘K, Settings, checkpoints, clone, notifications.
 4. **Ship**: images, plan mode, packaging, release workflow.
-5. **Next**: inline review comments, per-tool permission prompts, x64 build.
+5. **Parity gaps closed**: inline review comments, per-tool permission prompts, Intel build.
