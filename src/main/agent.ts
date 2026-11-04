@@ -3,6 +3,7 @@ import type { Chat, ChatItem, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
+import { runCodex } from './codex'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat }) => void
 
@@ -37,8 +38,9 @@ export function isRunning(chatId: string) {
 export async function stop(chatId: string) {
   const r = running.get(chatId)
   if (!r) return
+  if (!r.query) return r.abort.abort()
   try {
-    await r.query?.interrupt()
+    await r.query.interrupt()
   } catch {
     r.abort.abort()
   }
@@ -95,6 +97,27 @@ export async function send(
   }
 
   try {
+    if (chat.model === 'codex') {
+      const started = Date.now()
+      const res = await runCodex({
+        cwd: ws.path,
+        prompt: text,
+        effort: chat.effort,
+        readOnly: !!chat.planMode,
+        threadId: forkAt === null ? undefined : chat.codexThreadId,
+        images,
+        env,
+        signal: abort.signal,
+        onThread: (id) => {
+          chat.codexThreadId = id
+          store.save()
+        },
+        put
+      })
+      put({ id: randomUUID(), kind: 'result', ok: res.ok, durationMs: Date.now() - started, ts: Date.now() })
+      chat.status = 'idle'
+      return
+    }
     const { query } = await loadSdk()
     const q = query({
       prompt: images.length ? (userMessage(text, images) as never) : text,
