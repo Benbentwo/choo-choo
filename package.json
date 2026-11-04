@@ -11,7 +11,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:mac": "node scripts/install-mac-binaries.cjs && electron-vite build && electron-builder --mac",
     "postinstall": "electron-builder install-app-deps"
   },
   "devDependencies": {

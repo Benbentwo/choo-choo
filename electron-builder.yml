@@ -14,12 +14,13 @@ mac:
   category: public.app-category.developer-tools
   icon: resources/icon.png
   hardenedRuntime: true
-  # The Claude binary comes from the platform package installed by npm, so build each arch on a matching machine.
+  # Both Claude binaries are installed first (scripts/install-mac-binaries.cjs); afterPack keeps the matching one.
   target:
     - target: dmg
-      arch: [arm64]
+      arch: [arm64, x64]
     - target: zip
-      arch: [arm64]
+      arch: [arm64, x64]
+afterPack: build/afterPack.cjs
 dmg:
   title: Choo Choo
 publish:

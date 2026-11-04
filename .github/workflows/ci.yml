@@ -16,3 +16,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # Package (unsigned, no installer) for both CPUs to catch packaging problems before a release.
+      - run: node scripts/install-mac-binaries.cjs
+      - run: npx electron-builder --mac dir --arm64 --x64 -c.mac.identity=null --publish never
+      - run: |
+          for app in dist/mac-arm64/*.app dist/mac/*.app; do
+            ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@anthropic-ai/"
+            file "$app"/Contents/Resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node
+          done
