@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { Workspace } from '@shared/types'
 import { useStore } from '../store'
+import { useReview } from '../review'
+import { SEVERITY_STYLE, sendFix } from './RightTabs'
+import type { ReviewFinding } from '@shared/types'
 
 interface Line {
   kind: 'add' | 'del' | 'ctx' | 'hunk' | 'meta'
@@ -40,6 +43,8 @@ export function parseDiff(diff: string): Line[] {
 export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
   const [diff, setDiff] = useState<string | null>(null)
   const stats = useStore((s) => s.stats[ws.id])
+  const { findings } = useReview(ws.id)
+  const mine = (findings ?? []).filter((f) => f.file === file)
 
   useEffect(() => {
     setDiff(null)
@@ -48,13 +53,31 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
 
   if (diff === null) return <div className="flex-1 p-6 text-faint">Loading diff…</div>
   const lines = parseDiff(diff)
+  const shownLines = new Set(lines.map((l) => l.newNo).filter((n): n is number => n != null))
+  const unplaced = mine.filter((f) => !f.line || !shownLines.has(f.line))
+  const Comment = ({ f }: { f: ReviewFinding }) => (
+    <div className="my-1 mr-4 ml-[6.5rem] rounded-md border border-line bg-panel px-3 py-2 font-sans">
+      <div className="flex items-center gap-2">
+        <span className={`text-[11px] font-medium uppercase ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span>
+        <span className="flex-1" />
+        <button className="text-[12px] text-muted hover:text-fg" onClick={() => void sendFix(ws, f)}>
+          Fix
+        </button>
+      </div>
+      <div className="whitespace-normal">{f.message}</div>
+      {f.fix && <div className="mt-1 whitespace-normal text-muted">{f.fix}</div>}
+    </div>
+  )
   return (
     <div className="selectable flex-1 overflow-auto font-mono text-[12px] leading-[20px]">
       <div className="sticky top-0 z-10 border-b border-line bg-panel px-4 py-2 text-muted">{file}</div>
       {lines.length === 0 && <div className="p-6 font-sans text-faint">No textual changes (binary or empty file).</div>}
+      {unplaced.map((f, i) => (
+        <Comment key={`u${i}`} f={f} />
+      ))}
       <table className="w-full border-collapse">
         <tbody>
-          {lines.map((l, i) => (
+          {lines.flatMap((l, i) => [
             <tr
               key={i}
               className={
@@ -67,8 +90,19 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
                 {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ''}
               </td>
               <td className="pr-4 whitespace-pre">{l.text}</td>
-            </tr>
-          ))}
+            </tr>,
+            ...(l.newNo != null && l.kind !== 'del'
+              ? mine
+                  .filter((f) => f.line === l.newNo)
+                  .map((f, j) => (
+                    <tr key={`c${i}-${j}`}>
+                      <td colSpan={4}>
+                        <Comment f={f} />
+                      </td>
+                    </tr>
+                  ))
+              : [])
+          ])}
         </tbody>
       </table>
     </div>
