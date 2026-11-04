@@ -1,0 +1,16 @@
+appId: dev.benbentwo.choochoo
+productName: Choo Choo
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - node_modules/node-pty/**
+  - node_modules/@anthropic-ai/**
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]

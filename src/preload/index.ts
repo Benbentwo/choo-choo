@@ -1,0 +1,43 @@
+import { contextBridge, ipcRenderer } from 'electron'
+import type { Api, ChatEvent } from '@shared/types'
+
+const inv = (ch: string) => (...a: unknown[]) => ipcRenderer.invoke(ch, ...a)
+function on<T extends unknown[]>(ch: string, cb: (...a: T) => void) {
+  const l = (_e: unknown, ...a: unknown[]) => cb(...(a as T))
+  ipcRenderer.on(ch, l)
+  return () => {
+    ipcRenderer.removeListener(ch, l)
+  }
+}
+
+const api: Api = {
+  getState: inv('state:get') as Api['getState'],
+  pickAndAddRepo: inv('repo:pick') as Api['pickAndAddRepo'],
+  addRepo: inv('repo:add') as Api['addRepo'],
+  removeRepo: inv('repo:remove') as Api['removeRepo'],
+  setRepoHidden: inv('repo:hidden') as Api['setRepoHidden'],
+  createWorkspace: inv('ws:create') as Api['createWorkspace'],
+  archiveWorkspace: inv('ws:archive') as Api['archiveWorkspace'],
+  renameWorkspace: inv('ws:rename') as Api['renameWorkspace'],
+  createChat: inv('chat:create') as Api['createChat'],
+  closeChat: inv('chat:close') as Api['closeChat'],
+  getChatItems: inv('chat:items') as Api['getChatItems'],
+  updateChat: inv('chat:update') as Api['updateChat'],
+  sendMessage: inv('chat:send') as Api['sendMessage'],
+  stopChat: inv('chat:stop') as Api['stopChat'],
+  onChatEvent: (cb) => on<[ChatEvent]>('chat:event', cb),
+  getChanges: inv('git:changes') as Api['getChanges'],
+  getDiffStats: inv('git:stats') as Api['getDiffStats'],
+  getFileDiff: inv('git:fileDiff') as Api['getFileDiff'],
+  ptyCreate: inv('pty:create') as Api['ptyCreate'],
+  ptyWrite: (id, d) => ipcRenderer.send('pty:write', id, d),
+  ptyResize: (id, c, r) => ipcRenderer.send('pty:resize', id, c, r),
+  ptyKill: (id) => ipcRenderer.send('pty:kill', id),
+  onPtyData: (cb) => on<[string, string]>('pty:data', cb),
+  onPtyExit: (cb) => on<[string, number]>('pty:exit', cb),
+  openExternal: inv('shell:open') as Api['openExternal'],
+  revealInFinder: inv('shell:reveal') as Api['revealInFinder'],
+  onMenu: (cb) => on<[string]>('menu', cb)
+}
+
+contextBridge.exposeInMainWorld('api', api)
