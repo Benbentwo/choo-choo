@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Settings } from '@shared/types'
 import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread } from '../store'
-import { EFFORTS, MODELS } from './Composer'
+import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
@@ -63,6 +63,15 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           {EFFORTS.map((e) => (
             <option key={e} value={e}>
               {e}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <Row label="Default permissions" hint="Full access runs agents unattended, like Conductor. The others ask before tools that change things.">
+        <select className={select} value={settings.defaultPermission} onChange={(e) => void save({ defaultPermission: e.target.value as Settings['defaultPermission'] })}>
+          {PERMISSIONS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
             </option>
           ))}
         </select>

@@ -26,6 +26,8 @@ const api: Api = {
   updateChat: inv('chat:update') as Api['updateChat'],
   sendMessage: inv('chat:send') as Api['sendMessage'],
   stopChat: inv('chat:stop') as Api['stopChat'],
+  respondPermission: (id, d) => ipcRenderer.send('permission:respond', id, d),
+  pendingPermissions: inv('permission:pending') as Api['pendingPermissions'],
   addChatFolder: inv('chat:addFolder') as Api['addChatFolder'],
   removeChatFolder: inv('chat:removeFolder') as Api['removeChatFolder'],
   listFiles: inv('ws:files') as Api['listFiles'],

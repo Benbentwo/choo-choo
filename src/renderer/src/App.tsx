@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
@@ -11,12 +11,15 @@ export function App() {
   const ws = s.workspaces.find((w) => w.id === s.selectedWs && !w.archived) ?? null
 
   useEffect(() => {
+    void window.api.pendingPermissions().then((list) => list.forEach(addPermission))
     void refreshState().then(() => {
       for (const w of useStore.getState().workspaces) if (!w.archived) void refreshStats(w.id)
     })
     const offChat = window.api.onChatEvent((e) => {
       const st = useStore.getState()
       if (e.item) st.upsertItem(e.chatId, e.item)
+      if (e.permission) addPermission(e.permission)
+      if (e.permissionDone) removePermission(e.permissionDone)
       if (e.chat) {
         st.upsertChat(e.chat)
         if (e.chat.status !== 'running') void refreshStats(e.chat.workspaceId)

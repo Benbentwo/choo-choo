@@ -68,6 +68,7 @@ export function Sidebar() {
               {wss.map((w) => {
                 const running = s.chats.some((c) => c.workspaceId === w.id && c.status === 'running')
                 const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
+                const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
                 return (
                   <button
                     key={w.id}
@@ -76,7 +77,11 @@ export function Sidebar() {
                   >
                     {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-fg" /> : <IconBranch className="shrink-0" />}
                     <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''}`}>{w.title}</span>
-                    {unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />}
+                    {asking ? (
+                      <span className="shrink-0 rounded bg-sky-500/20 px-1 text-[10px] text-sky-400">needs you</span>
+                    ) : (
+                      unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />
+                    )}
                     <Stats stats={s.stats[w.id]} />
                   </button>
                 )

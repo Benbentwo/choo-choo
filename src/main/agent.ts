@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import type { Chat, ChatItem, Workspace } from '@shared/types'
+import type { Chat, ChatItem, PermissionDecision, PermissionRequest, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
 
-type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat }) => void
+type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
 
 interface Running {
   abort: AbortController
@@ -13,6 +13,31 @@ interface Running {
 }
 
 const running = new Map<string, Running>()
+
+// Tools that only read; asking about them would be noise.
+const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite', 'Task', 'Agent', 'NotebookRead', 'BashOutput', 'ExitPlanMode', 'ToolSearch', 'Skill'])
+const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
+
+const pending = new Map<string, { req: PermissionRequest; resolve: (d: PermissionDecision) => void }>()
+
+export function respondPermission(id: string, decision: PermissionDecision) {
+  const p = pending.get(id)
+  if (!p) return
+  pending.delete(id)
+  p.resolve(decision)
+}
+
+export function pendingPermissions(): PermissionRequest[] {
+  return [...pending.values()].map((p) => p.req)
+}
+
+/** Whether a tool call needs the user's OK under a chat's permission setting. */
+export function needsApproval(permission: Chat['permission'], alwaysAllow: string[] | undefined, toolName: string): boolean {
+  if (!permission || permission === 'full') return false
+  if (READ_ONLY_TOOLS.has(toolName) || alwaysAllow?.includes(toolName)) return false
+  if (permission === 'edits' && EDIT_TOOLS.has(toolName)) return false
+  return true
+}
 
 /** Slash commands the agent reported at startup, per workspace. */
 export const reportedCommands = new Map<string, string[]>()
@@ -52,9 +77,14 @@ function dataUrlToBlock(url: string) {
   return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } }
 }
 
-async function* userMessage(text: string, images: string[]) {
-  const content = [...images.map(dataUrlToBlock).filter(Boolean), { type: 'text', text }]
+/**
+ * Streaming input for one turn. It stays open until the turn ends, because permission answers
+ * travel over the same channel.
+ */
+async function* userMessage(text: string, images: string[], done: Promise<void>) {
+  const content = images.length ? [...images.map(dataUrlToBlock).filter(Boolean), { type: 'text', text }] : text
   yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null }
+  await done
 }
 
 export async function send(
@@ -64,7 +94,8 @@ export async function send(
   env: Record<string, string>,
   emit: Emit,
   onDone?: (chat: Chat) => void,
-  images: string[] = []
+  images: string[] = [],
+  onAsk?: (chat: Chat, req: PermissionRequest) => void
 ) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
   const now = Date.now()
@@ -91,6 +122,8 @@ export async function send(
   const resume = forkAt === null ? undefined : chat.sdkSessionId
   chat.forkAt = undefined
   const tools = new Map<string, Extract<ChatItem, { kind: 'tool' }>>()
+  let endTurn = () => {}
+  const turnDone = new Promise<void>((r) => (endTurn = r))
   const put = (item: ChatItem) => {
     store.upsertItem(chat.id, item)
     emit(chat.id, { item })
@@ -119,8 +152,31 @@ export async function send(
       return
     }
     const { query } = await loadSdk()
+    const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
+      if (toolName === 'ExitPlanMode' && chat.planMode) {
+        // The plan card asks the user; the agent must not start building on its own.
+        return { behavior: 'deny', message: 'The plan is shown to the user for approval. Stop here and wait for their reply.' }
+      }
+      if (!needsApproval(chat.permission, chat.alwaysAllow, toolName)) return { behavior: 'allow', updatedInput: input }
+      const req: PermissionRequest = { id: randomUUID(), chatId: chat.id, toolName, input }
+      const decision = await new Promise<PermissionDecision>((resolve) => {
+        pending.set(req.id, { req, resolve })
+        const cancel = () => respondPermission(req.id, 'deny')
+        opts.signal.addEventListener('abort', cancel, { once: true })
+        abort.signal.addEventListener('abort', cancel, { once: true })
+        emit(chat.id, { permission: req })
+        onAsk?.(chat, req)
+      })
+      emit(chat.id, { permissionDone: req.id })
+      if (decision === 'deny') return { behavior: 'deny', message: 'The user declined this tool call.' }
+      if (decision === 'always') {
+        chat.alwaysAllow = [...new Set([...(chat.alwaysAllow ?? []), toolName])]
+        store.save()
+      }
+      return { behavior: 'allow', updatedInput: input }
+    }
     const q = query({
-      prompt: images.length ? (userMessage(text, images) as never) : text,
+      prompt: userMessage(text, images, turnDone) as never,
       options: {
         pathToClaudeCodeExecutable: claudeExecutable(),
         cwd: ws.path,
@@ -130,8 +186,9 @@ export async function send(
         ...(forkAt ? { resumeSessionAt: forkAt, forkSession: true } : {}),
         additionalDirectories: chat.additionalDirectories,
         // Conductor runs agents unattended inside an isolated worktree.
-        permissionMode: chat.planMode ? 'plan' : 'bypassPermissions',
+        permissionMode: chat.planMode ? 'plan' : !chat.permission || chat.permission === 'full' ? 'bypassPermissions' : 'default',
         allowDangerouslySkipPermissions: true,
+        canUseTool,
         includePartialMessages: true,
         abortController: abort,
         settingSources: ['user', 'project', 'local'],
@@ -200,6 +257,7 @@ export async function send(
           break
         }
         case 'result':
+          endTurn()
           put({
             id: randomUUID(),
             kind: 'result',
@@ -224,6 +282,8 @@ export async function send(
       ts: Date.now()
     })
   } finally {
+    endTurn()
+    for (const [id, p] of pending) if (p.req.chatId === chat.id) respondPermission(id, 'deny')
     if (streamItem) put({ ...streamItem, streaming: false })
     running.delete(chat.id)
     if (lastUuid) chat.lastUuid = lastUuid

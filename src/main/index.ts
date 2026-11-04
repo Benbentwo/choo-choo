@@ -102,6 +102,7 @@ function newChat(workspaceId: string): Chat {
     title: 'New chat',
     model: store.get().settings.defaultModel,
     effort: store.get().settings.defaultEffort,
+    permission: store.get().settings.defaultPermission,
     status: 'idle',
     createdAt: Date.now()
   }
@@ -161,6 +162,18 @@ function notifyDone(chat: Chat) {
     title: ws?.title ?? 'Choo Choo',
     body: chat.status === 'error' ? 'The agent hit an error' : 'The agent finished and is waiting for you'
   })
+  n.on('click', () => {
+    win?.show()
+    win?.focus()
+    send('navigate', chat.workspaceId, chat.id)
+  })
+  n.show()
+}
+
+function notifyAsk(chat: Chat, req: { toolName: string }) {
+  if (!store.get().settings.notifications || win?.isFocused() || !Notification.isSupported()) return
+  const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
+  const n = new Notification({ title: ws?.title ?? 'Choo Choo', body: `The agent wants to use ${req.toolName}` })
   n.on('click', () => {
     win?.show()
     win?.focus()
@@ -273,6 +286,7 @@ function registerIpc() {
     if (patch.unread !== undefined) c.unread = patch.unread
     if (patch.planMode !== undefined) c.planMode = patch.planMode
     if (patch.review !== undefined) c.review = patch.review
+    if (patch.permission) c.permission = patch.permission
     store.save()
     return c
   })
@@ -338,9 +352,11 @@ function registerIpc() {
     const env = workspaceEnv(ws)
     const key = store.get().settings.anthropicApiKey.trim()
     if (key) env.ANTHROPIC_API_KEY = key
-    void agent.send(chat, ws, text, env, (chatId, payload) => send('chat:event', { chatId, ...payload }), notifyDone, images.slice(0, 10))
+    void agent.send(chat, ws, text, env, (chatId, payload) => send('chat:event', { chatId, ...payload }), notifyDone, images.slice(0, 10), notifyAsk)
   })
   h('chat:stop', (id: string) => agent.stop(id))
+  ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny') => agent.respondPermission(id, d))
+  h('permission:pending', () => agent.pendingPermissions())
   h('git:changes', (wsId: string) => {
     const ws = findWs(wsId)
     return git.changes(ws.path, ws.baseRef)
