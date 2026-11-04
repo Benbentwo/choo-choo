@@ -272,6 +272,7 @@ function registerIpc() {
     if (patch.title) c.title = patch.title
     if (patch.unread !== undefined) c.unread = patch.unread
     if (patch.planMode !== undefined) c.planMode = patch.planMode
+    if (patch.review !== undefined) c.review = patch.review
     store.save()
     return c
   })

@@ -35,6 +35,8 @@ export interface Chat {
   status: 'idle' | 'running' | 'error'
   /** Finished a turn the user has not looked at yet. */
   unread?: boolean
+  /** This chat is a code review whose findings show in the Review tab and inline in diffs. */
+  review?: boolean
   /** Plan mode: the agent researches and proposes a plan without editing files. */
   planMode?: boolean
   /** Extra folders the agent may read and edit. */
@@ -187,7 +189,7 @@ export interface Api {
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
-  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode'>>): Promise<Chat>
+  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review'>>): Promise<Chat>
   addChatFolder(chatId: string): Promise<Chat>
   removeChatFolder(chatId: string, dir: string): Promise<Chat>
   listFiles(workspaceId: string): Promise<string[]>
@@ -226,4 +228,12 @@ export interface Api {
   onStateChanged(cb: () => void): () => void
   onUpdateReady(cb: (version: string) => void): () => void
   installUpdate(): Promise<void>
+}
+
+export interface ReviewFinding {
+  file: string
+  line?: number
+  severity: 'high' | 'medium' | 'low'
+  message: string
+  fix?: string
 }
