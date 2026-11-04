@@ -36,7 +36,8 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Hide repositories, "Show hidden repositories"
 - ✅ Archive workspace (runs archive script, removes worktree, keeps branch)
 - ✅ First prompt names the workspace and renames its unpushed branch
-- ⬜ Restore archived workspaces, drag to reorder repos
+- ✅ Restore archived workspaces (sidebar "Archived" list per repo)
+- ⬜ Drag to reorder repos
 
 ### Chat
 - ✅ Chat tabs per workspace, ⌘T / ⌘W
@@ -74,4 +75,4 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 2. **Workflow**: Create PR, Setup/Run scripts, @mentions, /commands, folders, archive, unread, auto-naming.
 3. **Review & polish**: Checks, Review, Artifacts, All files, ⌘K, Settings, checkpoints, clone, notifications.
 4. **Ship**: images, plan mode, packaging, release workflow.
-5. **Next**: auto-update, Codex, restore archived workspaces, inline review comments.
+5. **Next**: auto-update, Codex, inline review comments.

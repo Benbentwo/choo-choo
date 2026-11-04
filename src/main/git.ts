@@ -187,3 +187,9 @@ export function repoNameFromUrl(url: string): string {
   const m = url.trim().replace(/\/+$/, '').replace(/\.git$/, '').match(/([^/:]+)$/)
   return m ? m[1] : 'repo'
 }
+
+/** Checks out an existing branch into a new worktree (used to restore an archived workspace). */
+export async function addWorktreeForBranch(repo: string, path: string, branch: string) {
+  await tryGit(repo, ['worktree', 'prune'])
+  await git(repo, ['worktree', 'add', path, branch])
+}

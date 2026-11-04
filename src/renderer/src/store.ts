@@ -174,3 +174,14 @@ export function openDoc(wsId: string, doc: Doc | null) {
   const s = useStore.getState()
   s.set({ openDoc: { ...s.openDoc, [wsId]: doc } })
 }
+
+export async function restoreWorkspace(wsId: string) {
+  try {
+    await window.api.restoreWorkspace(wsId)
+    await refreshState()
+    useStore.getState().selectWorkspace(wsId)
+    void refreshStats(wsId)
+  } catch (e) {
+    reportError(e)
+  }
+}

@@ -19,6 +19,7 @@ export interface Workspace {
   named?: boolean
   createdAt: number
   archived?: boolean
+  archivedAt?: number
 }
 
 export type ModelId = 'opus' | 'sonnet' | 'haiku'
@@ -179,6 +180,7 @@ export interface Api {
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
   createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
+  restoreWorkspace(workspaceId: string): Promise<void>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
