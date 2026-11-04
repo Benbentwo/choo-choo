@@ -7,7 +7,8 @@ import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplet
 export const MODELS: { id: ModelId; label: string }[] = [
   { id: 'opus', label: 'Opus' },
   { id: 'sonnet', label: 'Sonnet' },
-  { id: 'haiku', label: 'Haiku' }
+  { id: 'haiku', label: 'Haiku' },
+  { id: 'codex', label: 'Codex' }
 ]
 export const EFFORTS: Effort[] = ['low', 'medium', 'high']
 

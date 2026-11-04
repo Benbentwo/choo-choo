@@ -22,7 +22,7 @@ export interface Workspace {
   archivedAt?: number
 }
 
-export type ModelId = 'opus' | 'sonnet' | 'haiku'
+export type ModelId = 'opus' | 'sonnet' | 'haiku' | 'codex'
 export type Effort = 'low' | 'medium' | 'high'
 
 export interface Chat {
@@ -39,6 +39,8 @@ export interface Chat {
   planMode?: boolean
   /** Extra folders the agent may read and edit. */
   additionalDirectories?: string[]
+  /** Codex thread, when this chat runs on Codex. */
+  codexThreadId?: string
   /** UUID of the last session entry of the last finished turn. */
   lastUuid?: string
   /** Set by a revert: the next turn forks the session at this entry. */

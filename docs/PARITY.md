@@ -49,7 +49,8 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Plan mode (⇧Tab) with "Approve and build"
 - ✅ Next unread (button and ⌘⇧U)
 - ✅ Revert to here: restores files and forks the conversation
-- ⬜ Codex agent, per-tool permission prompts
+- ✅ Codex agent (via the `codex` CLI)
+- ⬜ Per-tool permission prompts
 
 ### Right panel
 - ✅ Changes: committed, uncommitted and untracked vs merge base, with diff view
@@ -75,4 +76,4 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 2. **Workflow**: Create PR, Setup/Run scripts, @mentions, /commands, folders, archive, unread, auto-naming.
 3. **Review & polish**: Checks, Review, Artifacts, All files, ⌘K, Settings, checkpoints, clone, notifications.
 4. **Ship**: images, plan mode, packaging, release workflow.
-5. **Next**: auto-update, Codex, inline review comments.
+5. **Next**: auto-update, inline review comments.
