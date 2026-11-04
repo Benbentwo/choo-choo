@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { useStore, addRepository, newWorkspace } from '../store'
+import { useStore, newWorkspace, restoreWorkspace } from '../store'
 import { IconBranch, IconGear, IconHome, IconLeft, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
 
 export function Sidebar() {
   const s = useStore()
   const [showHidden, setShowHidden] = useState(false)
+  const [showArchived, setShowArchived] = useState<Record<string, boolean>>({})
   const visible = s.repos.filter((r) => showHidden || !r.hidden)
   const hiddenCount = s.repos.filter((r) => r.hidden).length
 
@@ -40,12 +41,13 @@ export function Sidebar() {
           </button>
         </div>
         {visible.length === 0 && (
-          <button onClick={() => void addRepository()} className="mx-2 mt-2 w-[calc(100%-16px)] rounded-lg border border-dashed border-line px-3 py-4 text-left text-muted hover:border-faint hover:text-fg">
+          <button onClick={() => s.set({ modal: 'create' })} className="mx-2 mt-2 w-[calc(100%-16px)] rounded-lg border border-dashed border-line px-3 py-4 text-left text-muted hover:border-faint hover:text-fg">
             Add a repository to get started
           </button>
         )}
         {visible.map((repo) => {
           const wss = s.workspaces.filter((w) => w.repoId === repo.id && !w.archived)
+          const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           return (
             <div key={repo.id} className="mb-1">
               <div className="group flex h-9 items-center gap-2 rounded-md px-2 hover:bg-hover">
@@ -77,6 +79,26 @@ export function Sidebar() {
                   </button>
                 )
               })}
+              {archived.length > 0 && (
+                <button
+                  className="flex h-7 w-full items-center pl-5 text-left text-[11px] text-faint hover:text-muted"
+                  onClick={() => setShowArchived({ ...showArchived, [repo.id]: !showArchived[repo.id] })}
+                >
+                  {showArchived[repo.id] ? 'Hide archived' : `Archived (${archived.length})`}
+                </button>
+              )}
+              {showArchived[repo.id] &&
+                archived.map((w) => (
+                  <div key={w.id} className="group flex h-8 items-center gap-2 rounded-md pr-2 pl-5 text-faint hover:bg-hover">
+                    <IconBranch className="shrink-0" />
+                    <span className="flex-1 truncate" title={w.branch}>
+                      {w.title}
+                    </span>
+                    <button className="invisible rounded px-1.5 text-[11px] text-muted group-hover:visible hover:bg-raised hover:text-fg" onClick={() => void restoreWorkspace(w.id)}>
+                      Restore
+                    </button>
+                  </div>
+                ))}
             </div>
           )
         })}

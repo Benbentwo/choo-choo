@@ -18,6 +18,7 @@ const api: Api = {
   setRepoHidden: inv('repo:hidden') as Api['setRepoHidden'],
   createWorkspace: inv('ws:create') as Api['createWorkspace'],
   archiveWorkspace: inv('ws:archive') as Api['archiveWorkspace'],
+  restoreWorkspace: inv('ws:restore') as Api['restoreWorkspace'],
   renameWorkspace: inv('ws:rename') as Api['renameWorkspace'],
   createChat: inv('chat:create') as Api['createChat'],
   closeChat: inv('chat:close') as Api['closeChat'],

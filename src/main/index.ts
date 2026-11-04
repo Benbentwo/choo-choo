@@ -237,7 +237,19 @@ function registerIpc() {
     }
     if (repo) await git.removeWorktree(repo.path, ws.path)
     ws.archived = true
+    ws.archivedAt = Date.now()
     store.save()
+  })
+  h('ws:restore', async (id: string) => {
+    const ws = findWs(id)
+    const repo = store.get().repos.find((r) => r.id === ws.repoId)
+    if (!repo) throw new Error('The repository for this workspace was removed')
+    if (existsSync(ws.path)) throw new Error(`${ws.path} already exists`)
+    mkdirSync(join(ws.path, '..'), { recursive: true })
+    await git.addWorktreeForBranch(repo.path, ws.path, ws.branch)
+    ws.archived = false
+    store.save()
+    runScript(ws, 'setup')
   })
   h('ws:rename', (id: string, title: string) => {
     findWs(id).title = title
