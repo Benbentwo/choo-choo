@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore, newWorkspace, restoreWorkspace } from '../store'
 import { IconBranch, IconGear, IconHome, IconLeft, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
@@ -7,6 +7,8 @@ export function Sidebar() {
   const s = useStore()
   const [showHidden, setShowHidden] = useState(false)
   const [showArchived, setShowArchived] = useState<Record<string, boolean>>({})
+  const [update, setUpdate] = useState<string | null>(null)
+  useEffect(() => window.api.onUpdateReady(setUpdate), [])
   const visible = s.repos.filter((r) => showHidden || !r.hidden)
   const hiddenCount = s.repos.filter((r) => r.hidden).length
 
@@ -109,6 +111,15 @@ export function Sidebar() {
         )}
       </div>
 
+      {update && (
+        <div className="mx-2 mb-2 rounded-lg border border-line bg-raised p-3">
+          <div className="mb-1 font-medium">Update ready</div>
+          <div className="mb-2 text-[12px] text-muted">Choo Choo {update} has downloaded.</div>
+          <button className="rounded-md bg-fg px-2.5 py-1 text-[12px] font-medium text-bg" onClick={() => void window.api.installUpdate()}>
+            Restart to update
+          </button>
+        </div>
+      )}
       <div className="flex items-center gap-2 border-t border-line px-3 py-2 text-faint">
         <span className="flex-1 text-[11px]">Choo Choo</span>
         <button className="rounded p-1 hover:bg-hover hover:text-fg" title="Settings (⌘,)" onClick={() => s.set({ modal: 'settings' })}>

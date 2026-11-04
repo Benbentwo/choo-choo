@@ -14,6 +14,7 @@ import { readScripts } from './scripts'
 import { listCommands } from './commands'
 import * as gh from './github'
 import { suggestName } from './naming'
+import { checkNow, installUpdate, startUpdater } from './updater'
 
 let win: BrowserWindow | null = null
 
@@ -363,6 +364,7 @@ function registerIpc() {
   ipcMain.on('pty:write', (_e, id: string, d: string) => pty.write(id, d))
   ipcMain.on('pty:resize', (_e, id: string, c: number, r: number) => pty.resize(id, c, r))
   ipcMain.on('pty:kill', (_e, id: string) => pty.kill(id))
+  h('update:install', () => installUpdate())
   h('shell:open', (url: string) => {
     if (/^https?:\/\//.test(url)) return shell.openExternal(url)
   })
@@ -376,6 +378,7 @@ function buildMenu() {
       role: 'appMenu',
       submenu: [
         { role: 'about' },
+        { label: 'Check for Updates…', click: () => void checkNow(win) },
         { type: 'separator' },
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: m('settings') },
         { type: 'separator' },
@@ -468,6 +471,7 @@ app.whenReady().then(async () => {
   registerIpc()
   buildMenu()
   createWindow()
+  startUpdater(send)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

@@ -224,4 +224,6 @@ export interface Api {
   revealInFinder(path: string): Promise<void>
   onMenu(cb: (action: string) => void): () => void
   onStateChanged(cb: () => void): () => void
+  onUpdateReady(cb: (version: string) => void): () => void
+  installUpdate(): Promise<void>
 }
