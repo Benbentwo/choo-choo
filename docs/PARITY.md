@@ -18,68 +18,60 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 
 ## Feature checklist
 
-Legend: P1 = first PR, P2.. = later PRs.
+✅ built · 🟡 partial · ⬜ not yet
 
 ### Window and navigation
-- [P1] Three-pane layout: sidebar, chat, right panel; collapsible sidebar and right panel
-- [P1] Breadcrumb header: repo › branch, workspace menu (…)
-- [P1] Back/forward navigation between workspaces
-- [P3] Home view (recent workspaces, quick start)
-- [P3] Search / command palette (⌘K): workspaces, files, commands
-- [P3] Settings (⌘,): Anthropic key/Claude login, branch prefix, default model, theme
-- [P4] Help menu, onboarding, update notices
+- ✅ Three-pane layout: sidebar, chat, right panel; collapsible sidebar (⌘B), right panel, bottom panel (⌘J)
+- ✅ Breadcrumb header: repo › branch, workspace menu (Reveal in Finder, copy path/branch, archive)
+- ✅ Back/forward between workspaces
+- ✅ Home view with recent workspaces
+- ✅ Search palette (⌘K): workspaces and actions
+- ✅ Settings (⌘,): default model/effort, branch prefix, API key, notifications
+- ⬜ Onboarding, help menu, update notices
 
-### Workspaces (repos) sidebar
-- [P1] "My workspaces" list of repositories; add local repo
-- [P2] Clone repo from URL / GitHub
-- [P1] "+" per repo creates a session (new worktree + branch, city name)
-- [P1] Sessions listed under repo with diff stats (+N -M)
-- [P2] Unread / running / needs-attention indicators per session
-- [P2] Hide repositories, "Show hidden repositories"
-- [P2] Archive / restore workspace (removes worktree, keeps branch)
-- [P3] Rename session, agent auto-titles branch from first prompt
-- [P3] Drag to reorder repos
+### Workspaces sidebar
+- ✅ "My workspaces" repo list; add a local repo or clone from URL
+- ✅ "+" per repo creates a workspace: a git worktree at `~/choo-choo/workspaces/<repo>/<city>` on `<prefix>/<city>`
+- ✅ Diff stats (+N -M), running spinner, unread dot
+- ✅ Hide repositories, "Show hidden repositories"
+- ✅ Archive workspace (runs archive script, removes worktree, keeps branch)
+- ✅ First prompt names the workspace and renames its unpushed branch
+- ⬜ Restore archived workspaces, drag to reorder repos
 
-### Chat (center)
-- [P1] Session tabs per workspace with "+" for new chat tab
-- [P1] Composer: "Ask to make changes, @mention files, run /commands"
-- [P1] Model picker (Opus / Sonnet / Haiku) and effort (Low / Medium / High)
-- [P1] Streams agent messages: text, tool calls (collapsible), results, cost
-- [P1] Stop / interrupt running agent
-- [P2] @mention file autocomplete from worktree
-- [P2] /commands autocomplete (built-ins + `.claude/commands`)
-- [P2] Attach images / files; add folder (extra dirs for the agent)
-- [P2] Plan mode toggle and permission prompts (approve tool use)
-- [P2] "Next unread" jump
-- [P3] Checkpoints: revert workspace to an earlier turn
-- [P3] Markdown rendering with code highlighting, copy buttons
-- [P4] Codex agent option
+### Chat
+- ✅ Chat tabs per workspace, ⌘T / ⌘W
+- ✅ Model picker (Opus / Sonnet / Haiku) and effort (Low / Medium / High)
+- ✅ Streaming replies with markdown, collapsible tool calls, cost and duration
+- ✅ Stop (button or Esc)
+- ✅ @mention file autocomplete, /command autocomplete (built-ins, project and user commands, skills)
+- ✅ Attach images (paste, drop or pick); add folders for the agent
+- ✅ Plan mode (⇧Tab) with "Approve and build"
+- ✅ Next unread (button and ⌘⇧U)
+- ✅ Revert to here: restores files and forks the conversation
+- ⬜ Codex agent, per-tool permission prompts
 
 ### Right panel
-- [P1] Changes tab: files changed vs base branch, +/- per file, U/M/D status
-- [P1] Diff viewer for a selected file
-- [P2] All files tab: worktree file tree, open file preview
-- [P2] Create PR button (gh), with dropdown: draft PR, push only
-- [P2] After PR: PR status, merge button, open on GitHub
-- [P3] Checks tab: GitHub check runs for the branch, re-run, logs
-- [P3] Review tab: agent code review of the diff with inline comments
-- [P3] Artifacts tab: files/screenshots the agent produced
-- [P3] Search in diff, tree/flat toggle
+- ✅ Changes: committed, uncommitted and untracked vs merge base, with diff view
+- ✅ All files tree with file preview, filter
+- ✅ Artifacts: files the agent wrote
+- ✅ Checks: PR check runs, re-run failed jobs
+- ✅ Review: agent code review in a new tab
+- ✅ Create PR (agent commits, pushes, opens PR), draft option; PR status, open, squash merge
+- 🟡 Review comments inline in the diff
 
 ### Bottom panel
-- [P1] Terminal tab: shell in the worktree (xterm + pty), "+" for more terminals
-- [P2] Setup tab: runs repo setup script on workspace creation (`choo-choo.json` / `conductor.json` compatible)
-- [P2] Run tab + Run ⌘R: runs the repo's run script, stop/restart
-- [P2] Env vars for scripts: `CONDUCTOR_ROOT_PATH`, `CONDUCTOR_WORKSPACE_NAME`, `CONDUCTOR_PORT` (and `CHOO_*` aliases)
-- [P2] Collapse/expand bottom panel
+- ✅ Terminal tabs (xterm + pty), persist across workspace switches
+- ✅ Setup script on workspace creation, Run ⌘R start/stop, archive script
+- ✅ `choo-choo.json` / `conductor.json` scripts; `CONDUCTOR_*` and `CHOO_*` env vars
 
 ### Platform
-- [P1] macOS menu bar, keyboard shortcuts
-- [P4] dmg build, code signing, notarization, auto-update
-- [P4] Notifications when an agent finishes or needs input
+- ✅ macOS menus and shortcuts, desktop notifications
+- ✅ dmg/zip build, release workflow (signs and notarizes when secrets are set)
+- ⬜ Auto-update
 
-## PR sequence
-1. **P1 Foundation**: app scaffold, layout, repos, worktree sessions, agent chat, Changes + diff, terminal.
-2. **P2 Workflow**: Create PR, Setup/Run scripts, @mentions, /commands, attachments, permissions, archive, unread.
-3. **P3 Review & polish**: Checks, Review, Artifacts, All files, Home, ⌘K, Settings, checkpoints, markdown.
-4. **P4 Ship**: packaging, signing, notifications, auto-update.
+## Build sequence
+1. **Foundation**: app scaffold, layout, repos, worktree sessions, agent chat, Changes + diff, terminal.
+2. **Workflow**: Create PR, Setup/Run scripts, @mentions, /commands, folders, archive, unread, auto-naming.
+3. **Review & polish**: Checks, Review, Artifacts, All files, ⌘K, Settings, checkpoints, clone, notifications.
+4. **Ship**: images, plan mode, packaging, release workflow.
+5. **Next**: auto-update, Codex, restore archived workspaces, inline review comments.
