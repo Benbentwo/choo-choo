@@ -15,6 +15,8 @@ export interface Workspace {
   baseRef: string
   path: string
   title: string
+  /** Set once the first prompt has named the workspace. */
+  named?: boolean
   createdAt: number
   archived?: boolean
 }
@@ -30,7 +32,35 @@ export interface Chat {
   effort: Effort
   sdkSessionId?: string
   status: 'idle' | 'running' | 'error'
+  /** Finished a turn the user has not looked at yet. */
+  unread?: boolean
+  /** Extra folders the agent may read and edit. */
+  additionalDirectories?: string[]
   createdAt: number
+}
+
+export interface Scripts {
+  setup?: string
+  run?: string
+  archive?: string
+  /** Where the scripts came from, for display. */
+  source?: string
+}
+
+export type ScriptKind = 'setup' | 'run'
+
+export interface PrInfo {
+  number: number
+  url: string
+  state: 'OPEN' | 'CLOSED' | 'MERGED'
+  isDraft: boolean
+  title: string
+  mergeable?: string
+}
+
+export interface SlashCommandInfo {
+  name: string
+  description?: string
 }
 
 export type ChatItem =
@@ -94,7 +124,17 @@ export interface Api {
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
-  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title'>>): Promise<Chat>
+  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread'>>): Promise<Chat>
+  addChatFolder(chatId: string): Promise<Chat>
+  removeChatFolder(chatId: string, dir: string): Promise<Chat>
+  listFiles(workspaceId: string): Promise<string[]>
+  listCommands(workspaceId: string): Promise<SlashCommandInfo[]>
+  getScripts(workspaceId: string): Promise<Scripts>
+  runScript(workspaceId: string, kind: ScriptKind): Promise<boolean>
+  stopScript(workspaceId: string, kind: ScriptKind): void
+  isScriptRunning(workspaceId: string, kind: ScriptKind): Promise<boolean>
+  getPr(workspaceId: string): Promise<PrInfo | null>
+  mergePr(workspaceId: string): Promise<void>
   sendMessage(chatId: string, text: string): Promise<void>
   stopChat(chatId: string): Promise<void>
   onChatEvent(cb: (e: ChatEvent) => void): () => void
@@ -102,6 +142,8 @@ export interface Api {
   getDiffStats(workspaceId: string): Promise<DiffStats>
   getFileDiff(workspaceId: string, file: string): Promise<string>
   ptyCreate(id: string, workspaceId: string): Promise<string>
+  ptyAttach(id: string): Promise<string>
+  onScriptStarted(cb: (workspaceId: string, kind: ScriptKind) => void): () => void
   ptyWrite(id: string, data: string): void
   ptyResize(id: string, cols: number, rows: number): void
   ptyKill(id: string): void
@@ -110,4 +152,5 @@ export interface Api {
   openExternal(url: string): Promise<void>
   revealInFinder(path: string): Promise<void>
   onMenu(cb: (action: string) => void): () => void
+  onStateChanged(cb: () => void): () => void
 }

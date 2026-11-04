@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Workspace } from '@shared/types'
-import { useStore, newChatTab, closeChatTab, refreshState, reportError } from '../store'
+import { useStore, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread } from '../store'
 import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
@@ -24,6 +24,15 @@ export function Center({ ws }: { ws: Workspace }) {
       void window.api.getChatItems(activeId).then((items) => useStore.getState().setItems(activeId, items))
     }
   }, [activeId])
+
+  // Looking at a chat marks it read.
+  useEffect(() => {
+    if (active?.unread && !diffFile && active.status !== 'running') {
+      void window.api.updateChat(active.id, { unread: false }).then((c) => useStore.getState().upsertChat(c))
+    }
+  }, [active?.id, active?.unread, diffFile])
+
+  const hasNextUnread = !!nextUnread()
 
   const archive = async () => {
     setMenu(false)
@@ -74,6 +83,7 @@ export function Center({ ws }: { ws: Workspace }) {
             <div key={c.id} className={`group flex h-10 max-w-[220px] items-center gap-2 border-b-2 px-3 ${on ? 'border-fg text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
               <button className="truncate" onClick={() => s.setActiveChat(ws.id, c.id)}>
                 {c.status === 'running' && <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-add align-middle" />}
+                {c.status !== 'running' && c.unread && c.id !== activeId && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-sky-400 align-middle" />}
                 {c.title}
               </button>
               {chats.length > 1 && (
@@ -102,6 +112,13 @@ export function Center({ ws }: { ws: Workspace }) {
       ) : active ? (
         <>
           <ChatView chat={active} />
+          {hasNextUnread && (
+            <div className="mx-auto -mb-1 flex w-full max-w-3xl justify-end px-8">
+              <button className="flex items-center gap-1 rounded-md border border-line bg-panel px-2.5 py-1 text-[12px] hover:bg-hover" onClick={goToNextUnread}>
+                Next unread <IconRight />
+              </button>
+            </div>
+          )}
           <Composer chat={active} ws={ws} />
         </>
       ) : null}

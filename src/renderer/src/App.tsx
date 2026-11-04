@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
@@ -41,6 +41,8 @@ export function App() {
         case 'close-chat':
           if (cur && st.activeChat[cur]) void closeChatTab(st.activeChat[cur])
           return
+        case 'next-unread':
+          return goToNextUnread()
         case 'toggle-sidebar':
           return st.set({ sidebarOpen: !st.sidebarOpen })
         case 'toggle-right':
@@ -49,7 +51,9 @@ export function App() {
           return st.set({ bottomOpen: !st.bottomOpen, rightOpen: true })
       }
     })
+    const offState = window.api.onStateChanged(() => void refreshState())
     return () => {
+      offState()
       offChat()
       offMenu()
     }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { FileChange, Workspace } from '@shared/types'
-import { useStore, type RightTab } from '../store'
+import type { FileChange, PrInfo, Workspace } from '@shared/types'
+import { useStore, reportError, type RightTab } from '../store'
 import { IconDown, IconEye, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
 import { fmt } from './Stats'
@@ -24,14 +24,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   return (
     <aside className="flex w-[420px] shrink-0 flex-col border-l border-line bg-panel">
       <div className="drag flex h-11 shrink-0 items-center justify-end gap-2 border-b border-line px-3">
-        <div className="no-drag flex items-center rounded-md border border-line">
-          <button className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover" title="Create PR (coming next)" onClick={() => s.set({ error: 'Create PR lands in the next update.' })}>
-            <IconPR /> Create PR
-          </button>
-          <button className="border-l border-line px-1.5 py-1 hover:bg-hover">
-            <IconDown />
-          </button>
-        </div>
+        <PrButton ws={ws} hasChanges={changes.length > 0} />
       </div>
 
       <div className={`flex min-h-0 flex-col ${s.bottomOpen ? 'flex-[1_1_50%]' : 'flex-1'}`}>
@@ -114,5 +107,109 @@ function ChangesList({ ws, changes }: { ws: Workspace; changes: FileChange[] }) 
         )
       })}
     </div>
+  )
+}
+
+export function prPrompt(ws: Workspace, baseBranch: string, draft: boolean) {
+  return [
+    `Create a ${draft ? 'draft ' : ''}pull request for the work on this branch (${ws.branch}).`,
+    '1. Review `git status` and the diff, then commit any uncommitted changes with a clear message.',
+    `2. Push the branch: \`git push -u origin ${ws.branch}\`.`,
+    `3. Open the PR against \`${baseBranch}\` with \`gh pr create${draft ? ' --draft' : ''}\`, a concise title, and a description of what changed and why.`,
+    'Reply with the PR URL.'
+  ].join('\n')
+}
+
+function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
+  const s = useStore()
+  const stats = s.stats[ws.id]
+  const repo = s.repos.find((r) => r.id === ws.repoId)
+  const [pr, setPr] = useState<PrInfo | null>(null)
+  const [menu, setMenu] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const chats = s.chats.filter((c) => c.workspaceId === ws.id)
+  const chatId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
+  const agentBusy = chats.some((c) => c.status === 'running')
+
+  useEffect(() => {
+    let live = true
+    const load = () => void window.api.getPr(ws.id).then((p) => live && setPr(p))
+    load()
+    const t = setInterval(load, 60_000)
+    return () => {
+      live = false
+      clearInterval(t)
+    }
+  }, [ws.id, stats, agentBusy])
+
+  const create = async (draft: boolean) => {
+    setMenu(false)
+    if (!chatId) return
+    s.setActiveChat(ws.id, chatId)
+    try {
+      await window.api.sendMessage(chatId, prPrompt(ws, repo?.defaultBranch ?? 'main', draft))
+    } catch (e) {
+      reportError(e)
+    }
+  }
+
+  const merge = async () => {
+    setMenu(false)
+    setBusy(true)
+    try {
+      await window.api.mergePr(ws.id)
+      setPr(await window.api.getPr(ws.id))
+    } catch (e) {
+      reportError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const color = pr?.state === 'MERGED' ? 'text-violet-400' : pr?.state === 'CLOSED' ? 'text-del' : pr?.isDraft ? 'text-muted' : 'text-add'
+  return (
+    <div className="no-drag relative flex items-center rounded-md border border-line">
+      {pr ? (
+        <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => void window.api.openExternal(pr.url)} title={pr.title}>
+          <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : 'Open'} #{pr.number}
+        </button>
+      ) : (
+        <button
+          className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover disabled:opacity-40"
+          disabled={agentBusy || (!hasChanges && !stats?.files)}
+          onClick={() => void create(false)}
+          title={agentBusy ? 'Wait for the agent to finish' : 'Ask the agent to commit, push and open a PR'}
+        >
+          <IconPR /> Create PR
+        </button>
+      )}
+      <button className="border-l border-line px-1.5 py-1 hover:bg-hover" onClick={() => setMenu(!menu)}>
+        <IconDown />
+      </button>
+      {menu && (
+        <div className="absolute top-8 right-0 z-30 w-52 rounded-lg border border-line bg-raised p-1 text-fg shadow-xl" onMouseLeave={() => setMenu(false)}>
+          {pr ? (
+            <>
+              <MenuBtn label="Open on GitHub" onClick={() => { setMenu(false); void window.api.openExternal(pr.url) }} />
+              {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
+              {pr.state === 'OPEN' && <MenuBtn label="Push latest changes" onClick={() => { setMenu(false); if (chatId) void window.api.sendMessage(chatId, 'Commit any uncommitted changes and push this branch.') }} />}
+            </>
+          ) : (
+            <>
+              <MenuBtn label="Create PR" onClick={() => void create(false)} />
+              <MenuBtn label="Create draft PR" onClick={() => void create(true)} />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MenuBtn(p: { label: string; onClick: () => void }) {
+  return (
+    <button onClick={p.onClick} className="block w-full rounded px-2 py-1.5 text-left hover:bg-hover">
+      {p.label}
+    </button>
   )
 }

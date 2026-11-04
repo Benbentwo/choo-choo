@@ -11,6 +11,9 @@ interface Running {
 
 const running = new Map<string, Running>()
 
+/** Slash commands the agent reported at startup, per workspace. */
+export const reportedCommands = new Map<string, string[]>()
+
 // The SDK is ESM-only; load it lazily from the CJS main bundle.
 let sdk: Promise<typeof import('@anthropic-ai/claude-agent-sdk')> | null = null
 const loadSdk = () => (sdk ??= import('@anthropic-ai/claude-agent-sdk'))
@@ -48,6 +51,7 @@ export async function send(chat: Chat, ws: Workspace, text: string, env: Record<
 
   if (chat.title === 'New chat') chat.title = text.slice(0, 40).replace(/\s+/g, ' ').trim() || 'New chat'
   chat.status = 'running'
+  chat.unread = false
   store.save()
   emit(chat.id, { chat })
 
@@ -72,6 +76,7 @@ export async function send(chat: Chat, ws: Workspace, text: string, env: Record<
         model: chat.model,
         effort: chat.effort,
         resume: chat.sdkSessionId,
+        additionalDirectories: chat.additionalDirectories,
         // Conductor runs agents unattended inside an isolated worktree.
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
@@ -86,9 +91,12 @@ export async function send(chat: Chat, ws: Workspace, text: string, env: Record<
     for await (const msg of q as AsyncIterable<any>) {
       switch (msg.type) {
         case 'system':
-          if (msg.subtype === 'init' && msg.session_id) {
-            chat.sdkSessionId = msg.session_id
+          if (msg.subtype === 'init') {
+            if (msg.session_id) chat.sdkSessionId = msg.session_id
+            if (Array.isArray(msg.slash_commands)) reportedCommands.set(ws.id, msg.slash_commands)
             store.save()
+          } else if (msg.subtype === 'commands_changed' && Array.isArray(msg.commands)) {
+            reportedCommands.set(ws.id, msg.commands.map((c: { name: string }) => c.name))
           }
           break
         case 'stream_event': {
@@ -165,6 +173,7 @@ export async function send(chat: Chat, ws: Workspace, text: string, env: Record<
   } finally {
     if (streamItem) put({ ...streamItem, streaming: false })
     running.delete(chat.id)
+    chat.unread = true
     store.save()
     emit(chat.id, { chat })
   }

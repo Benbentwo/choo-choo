@@ -1,42 +1,108 @@
-import { useState } from 'react'
-import type { Workspace } from '@shared/types'
-import { useStore } from '../store'
-import { IconDown, IconPlay, IconPlus, IconRight, IconX } from '../icons'
+import { useEffect, useState } from 'react'
+import type { ScriptKind, Scripts, Workspace } from '@shared/types'
+import { useStore, reportError } from '../store'
+import { IconDown, IconPlay, IconPlus, IconRight, IconStop, IconX } from '../icons'
 import { TerminalView } from './TerminalView'
-
-type Tab = { kind: 'setup' } | { kind: 'run' } | { kind: 'term'; id: string; n: number }
 
 // Terminal tabs per workspace survive switching workspaces (the ptys live in the main process).
 const termTabs: Record<string, { id: string; n: number }[]> = {}
+const activeTab: Record<string, string> = {}
+
+const EXAMPLE = `{
+  "scripts": {
+    "setup": "npm install",
+    "run": "npm run dev -- --port $CONDUCTOR_PORT",
+    "archive": ""
+  }
+}`
 
 export function BottomPanel({ ws }: { ws: Workspace }) {
   const s = useStore()
   const terms = (termTabs[ws.id] ??= [{ id: `${ws.id}:term-1`, n: 1 }])
-  const [active, setActive] = useState<Record<string, string>>({})
   const [, force] = useState(0)
-  const cur = active[ws.id] ?? terms[0]?.id ?? 'setup'
+  const [scripts, setScripts] = useState<Scripts>({})
+  const [running, setRunning] = useState<Record<string, boolean>>({})
+  const cur = activeTab[ws.id] ?? (scripts.setup ? 'setup' : terms[0]?.id ?? 'setup')
+  const setCur = (id: string) => {
+    activeTab[ws.id] = id
+    force((x) => x + 1)
+  }
 
-  const tab = (id: string): Tab =>
-    id === 'setup' ? { kind: 'setup' } : id === 'run' ? { kind: 'run' } : { kind: 'term', ...(terms.find((t) => t.id === id) ?? terms[0]) }
+  const refreshRunning = async () => {
+    const [setup, run] = await Promise.all([window.api.isScriptRunning(ws.id, 'setup'), window.api.isScriptRunning(ws.id, 'run')])
+    setRunning({ [`${ws.id}:setup`]: setup, [`${ws.id}:run`]: run })
+  }
+
+  useEffect(() => {
+    void window.api.getScripts(ws.id).then(setScripts)
+    void refreshRunning()
+    const offStart = window.api.onScriptStarted((wsId, kind) => {
+      if (wsId !== ws.id) return
+      setRunning((r) => ({ ...r, [`${wsId}:${kind}`]: true }))
+      setCur(kind)
+    })
+    const offExit = window.api.onPtyExit((id) => {
+      if (id.startsWith(`${ws.id}:`)) setRunning((r) => ({ ...r, [id]: false }))
+    })
+    const offMenu = window.api.onMenu((a) => {
+      if (a === 'run' && useStore.getState().selectedWs === ws.id) void toggleRun()
+    })
+    return () => {
+      offStart()
+      offExit()
+      offMenu()
+    }
+  }, [ws.id])
+
+  const runId = `${ws.id}:run`
+  const isRunning = !!running[runId]
+
+  async function toggleRun() {
+    const kind: ScriptKind = 'run'
+    if (await window.api.isScriptRunning(ws.id, kind)) {
+      window.api.stopScript(ws.id, kind)
+      setRunning((r) => ({ ...r, [`${ws.id}:${kind}`]: false }))
+      return
+    }
+    const sc = await window.api.getScripts(ws.id)
+    setScripts(sc)
+    useStore.getState().set({ bottomOpen: true })
+    if (!sc.run) {
+      setCur('run')
+      return
+    }
+    try {
+      await window.api.runScript(ws.id, kind)
+    } catch (e) {
+      reportError(e)
+    }
+  }
 
   const addTerm = () => {
     const n = Math.max(0, ...terms.map((t) => t.n)) + 1
     const t = { id: `${ws.id}:term-${n}`, n }
     terms.push(t)
-    setActive({ ...active, [ws.id]: t.id })
+    setCur(t.id)
     s.set({ bottomOpen: true })
   }
   const closeTerm = (id: string) => {
     window.api.ptyKill(id)
     termTabs[ws.id] = terms.filter((t) => t.id !== id)
-    if (cur === id) setActive({ ...active, [ws.id]: termTabs[ws.id][0]?.id ?? 'setup' })
-    force((x) => x + 1)
+    if (cur === id) setCur(termTabs[ws.id][0]?.id ?? 'setup')
+    else force((x) => x + 1)
   }
 
-  const t = tab(cur)
-  const TabBtn = (p: { id: string; label: string; closable?: boolean }) => (
+  const TabBtn = (p: { id: string; label: string; closable?: boolean; live?: boolean }) => (
     <div className={`group flex h-9 items-center gap-1 border-b-2 px-2.5 ${cur === p.id ? 'border-fg text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
-      <button onClick={() => { setActive({ ...active, [ws.id]: p.id }); s.set({ bottomOpen: true }) }}>{p.label}</button>
+      <button
+        onClick={() => {
+          setCur(p.id)
+          s.set({ bottomOpen: true })
+        }}
+      >
+        {p.live && <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-add align-middle" />}
+        {p.label}
+      </button>
       {p.closable && (
         <button className="invisible text-faint group-hover:visible hover:text-fg" onClick={() => closeTerm(p.id)}>
           <IconX width={11} height={11} />
@@ -45,14 +111,17 @@ export function BottomPanel({ ws }: { ws: Workspace }) {
     </div>
   )
 
+  const scriptTab = cur === 'setup' || cur === 'run' ? (cur as ScriptKind) : null
+  const termTab = scriptTab ? null : (terms.find((t) => t.id === cur) ?? terms[0])
+
   return (
     <div className={`flex min-h-0 flex-col border-t border-line ${s.bottomOpen ? 'flex-[1_1_50%]' : ''}`}>
       <div className="flex h-9 shrink-0 items-center gap-0.5 px-1">
         <button className="rounded p-1 text-muted hover:text-fg" onClick={() => s.set({ bottomOpen: !s.bottomOpen })}>
           {s.bottomOpen ? <IconDown /> : <IconRight />}
         </button>
-        <TabBtn id="setup" label="Setup" />
-        <TabBtn id="run" label="Run" />
+        <TabBtn id="setup" label="Setup" live={running[`${ws.id}:setup`]} />
+        <TabBtn id="run" label="Run" live={isRunning} />
         {terms.map((tt) => (
           <TabBtn key={tt.id} id={tt.id} label={terms.length > 1 ? `Terminal ${tt.n}` : 'Terminal'} closable={terms.length > 1} />
         ))}
@@ -61,21 +130,31 @@ export function BottomPanel({ ws }: { ws: Workspace }) {
         </button>
         <div className="flex-1" />
         <div className="mr-1 flex items-center rounded-md border border-line">
-          <button className="flex items-center gap-1.5 px-2 py-0.5 hover:bg-hover" title="Run script (coming next)" onClick={() => s.set({ error: 'Run scripts land in the next update.' })}>
-            <IconPlay width={11} height={11} /> Run <span className="text-faint">⌘R</span>
+          <button className="flex items-center gap-1.5 px-2 py-0.5 hover:bg-hover" title={isRunning ? 'Stop (⌘R)' : 'Run (⌘R)'} onClick={() => void toggleRun()}>
+            {isRunning ? <IconStop width={11} height={11} /> : <IconPlay width={11} height={11} />} {isRunning ? 'Stop' : 'Run'} <span className="text-faint">⌘R</span>
           </button>
-          <button className="border-l border-line px-1 py-0.5 hover:bg-hover">
+          <button
+            className="border-l border-line px-1 py-0.5 hover:bg-hover"
+            title="Re-run setup"
+            onClick={() => void window.api.runScript(ws.id, 'setup').then((ok) => !ok && setCur('setup'))}
+          >
             <IconDown />
           </button>
         </div>
       </div>
       {s.bottomOpen && (
         <div className="min-h-0 flex-1 bg-bg">
-          {t.kind === 'term' ? (
-            <TerminalView key={t.id} id={t.id} workspaceId={ws.id} />
+          {termTab ? (
+            <TerminalView key={termTab.id} id={termTab.id} workspaceId={ws.id} />
+          ) : scriptTab && scripts[scriptTab] ? (
+            <TerminalView key={`${ws.id}:${scriptTab}`} id={`${ws.id}:${scriptTab}`} workspaceId={ws.id} attach />
           ) : (
-            <div className="p-4 text-faint">
-              {t.kind === 'setup' ? 'Setup scripts run here when a workspace is created.' : 'Your run script output appears here.'} Coming in the next update.
+            <div className="selectable p-4 text-muted">
+              <div className="mb-2">
+                No {scriptTab} script yet. Add a <code className="text-fg">choo-choo.json</code> (or <code className="text-fg">conductor.json</code>) to the repo root:
+              </div>
+              <pre className="rounded-md border border-line bg-panel p-3 font-mono text-[11px] text-fg">{EXAMPLE}</pre>
+              <div className="mt-2 text-faint">Setup runs when a workspace is created. Run starts with ⌘R.</div>
             </div>
           )}
         </div>

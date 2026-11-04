@@ -25,11 +25,23 @@ const api: Api = {
   updateChat: inv('chat:update') as Api['updateChat'],
   sendMessage: inv('chat:send') as Api['sendMessage'],
   stopChat: inv('chat:stop') as Api['stopChat'],
+  addChatFolder: inv('chat:addFolder') as Api['addChatFolder'],
+  removeChatFolder: inv('chat:removeFolder') as Api['removeChatFolder'],
+  listFiles: inv('ws:files') as Api['listFiles'],
+  listCommands: inv('ws:commands') as Api['listCommands'],
+  getScripts: inv('scripts:get') as Api['getScripts'],
+  runScript: inv('scripts:run') as Api['runScript'],
+  stopScript: (id, kind) => ipcRenderer.send('scripts:stop', id, kind),
+  isScriptRunning: inv('scripts:running') as Api['isScriptRunning'],
+  getPr: inv('pr:get') as Api['getPr'],
+  mergePr: inv('pr:merge') as Api['mergePr'],
   onChatEvent: (cb) => on<[ChatEvent]>('chat:event', cb),
   getChanges: inv('git:changes') as Api['getChanges'],
   getDiffStats: inv('git:stats') as Api['getDiffStats'],
   getFileDiff: inv('git:fileDiff') as Api['getFileDiff'],
   ptyCreate: inv('pty:create') as Api['ptyCreate'],
+  ptyAttach: inv('pty:attach') as Api['ptyAttach'],
+  onScriptStarted: (cb) => on<[string, 'setup' | 'run']>('script:started', cb),
   ptyWrite: (id, d) => ipcRenderer.send('pty:write', id, d),
   ptyResize: (id, c, r) => ipcRenderer.send('pty:resize', id, c, r),
   ptyKill: (id) => ipcRenderer.send('pty:kill', id),
@@ -37,7 +49,8 @@ const api: Api = {
   onPtyExit: (cb) => on<[string, number]>('pty:exit', cb),
   openExternal: inv('shell:open') as Api['openExternal'],
   revealInFinder: inv('shell:reveal') as Api['revealInFinder'],
-  onMenu: (cb) => on<[string]>('menu', cb)
+  onMenu: (cb) => on<[string]>('menu', cb),
+  onStateChanged: (cb) => on<[]>('state:changed', cb)
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -144,3 +144,19 @@ export async function closeChatTab(chatId: string) {
   const next = siblings.find((c) => c.id !== chatId)
   if (next && s.activeChat[chat.workspaceId] === chatId) s.setActiveChat(chat.workspaceId, next.id)
 }
+
+export function nextUnread(): { wsId: string; chatId: string } | null {
+  const s = useStore.getState()
+  const cur = s.selectedWs ? s.activeChat[s.selectedWs] : null
+  const live = new Set(s.workspaces.filter((w) => !w.archived).map((w) => w.id))
+  const c = s.chats.find((c) => c.unread && c.id !== cur && live.has(c.workspaceId))
+  return c ? { wsId: c.workspaceId, chatId: c.id } : null
+}
+
+export function goToNextUnread() {
+  const n = nextUnread()
+  if (!n) return
+  const s = useStore.getState()
+  s.setActiveChat(n.wsId, n.chatId)
+  s.selectWorkspace(n.wsId)
+}

@@ -63,6 +63,7 @@ export function Sidebar() {
               </div>
               {wss.map((w) => {
                 const running = s.chats.some((c) => c.workspaceId === w.id && c.status === 'running')
+                const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
                 return (
                   <button
                     key={w.id}
@@ -70,7 +71,8 @@ export function Sidebar() {
                     className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 pl-5 text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
                   >
                     {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-fg" /> : <IconBranch className="shrink-0" />}
-                    <span className="flex-1 truncate">{w.title}</span>
+                    <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''}`}>{w.title}</span>
+                    {unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />}
                     <Stats stats={s.stats[w.id]} />
                   </button>
                 )

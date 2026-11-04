@@ -131,3 +131,16 @@ export async function fileDiff(cwd: string, baseRef: string, file: string): Prom
   const base = await mergeBase(cwd, baseRef)
   return git(cwd, ['diff', '-M', base, '--', file])
 }
+
+/** Tracked plus untracked (not ignored) files, for @mentions. */
+export async function listFiles(cwd: string): Promise<string[]> {
+  const out = await git(cwd, ['ls-files', '--cached', '--others', '--exclude-standard'])
+  return [...new Set(out.split('\n').filter(Boolean))]
+}
+
+/** Renames a branch that has not been pushed yet. Returns false when it was left alone. */
+export async function renameBranch(cwd: string, from: string, to: string): Promise<boolean> {
+  if (await tryGit(cwd, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${from}`])) return false
+  if (await tryGit(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${to}`])) return false
+  return (await tryGit(cwd, ['branch', '-m', from, to])) !== null
+}

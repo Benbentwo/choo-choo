@@ -9,6 +9,10 @@ import * as git from './git'
 import * as agent from './agent'
 import * as pty from './pty'
 import { pickCityName } from './names'
+import { readScripts } from './scripts'
+import { listCommands } from './commands'
+import * as gh from './github'
+import { suggestName } from './naming'
 
 let win: BrowserWindow | null = null
 
@@ -48,6 +52,29 @@ function workspaceEnv(ws: Workspace): Record<string, string> {
     env[`CHOO_${k}`] = v
   }
   return env
+}
+
+function scriptsFor(ws: Workspace) {
+  const repo = store.get().repos.find((r) => r.id === ws.repoId)
+  return readScripts(ws.path, repo?.path ?? ws.path)
+}
+
+function runScript(ws: Workspace, kind: 'setup' | 'run'): boolean {
+  const cmd = scriptsFor(ws)[kind]
+  if (!cmd) return false
+  const id = `${ws.id}:${kind}`
+  pty.kill(id)
+  send('script:started', ws.id, kind)
+  pty.create(
+    id,
+    ws.path,
+    workspaceEnv(ws),
+    (i, d) => send('pty:data', i, d),
+    (i, c) => send('pty:exit', i, c),
+    cmd,
+    `\x1b[2m$ ${cmd}\x1b[0m\r\n`
+  )
+  return true
 }
 
 async function addRepo(path: string): Promise<Repo> {
@@ -105,7 +132,23 @@ async function createWorkspace(repoId: string) {
   }
   s.workspaces.push(workspace)
   const chat = newChat(workspace.id)
+  runScript(workspace, 'setup')
   return { workspace, chat }
+}
+
+/** After the first prompt, give the workspace a real title and rename its branch to match (until it is pushed). */
+async function nameWorkspace(ws: Workspace, prompt: string) {
+  ws.named = true
+  store.save()
+  const { title, slug } = await suggestName(prompt)
+  ws.title = title
+  if (slug) {
+    const prefix = ws.branch.includes('/') ? ws.branch.slice(0, ws.branch.lastIndexOf('/') + 1) : ''
+    const next = `${prefix}${slug}`
+    if (next !== ws.branch && (await git.renameBranch(ws.path, ws.branch, next))) ws.branch = next
+  }
+  store.save()
+  send('state:changed')
 }
 
 function registerIpc() {
@@ -134,6 +177,13 @@ function registerIpc() {
     const repo = store.get().repos.find((r) => r.id === ws.repoId)
     for (const c of store.get().chats.filter((c) => c.workspaceId === id)) await agent.stop(c.id)
     pty.killPrefix(`${id}:`)
+    const archiveCmd = scriptsFor(ws).archive
+    if (archiveCmd) {
+      const { execFile } = await import('node:child_process')
+      await new Promise<void>((resolve) =>
+        execFile(process.env.SHELL || '/bin/zsh', ['-lc', archiveCmd], { cwd: ws.path, env: { ...process.env, ...workspaceEnv(ws) }, timeout: 120_000 }, () => resolve())
+      )
+    }
     if (repo) await git.removeWorktree(repo.path, ws.path)
     ws.archived = true
     store.save()
@@ -156,12 +206,43 @@ function registerIpc() {
     if (patch.model) c.model = patch.model
     if (patch.effort) c.effort = patch.effort
     if (patch.title) c.title = patch.title
+    if (patch.unread !== undefined) c.unread = patch.unread
     store.save()
     return c
+  })
+  h('chat:addFolder', async (id: string) => {
+    const c = findChat(id)
+    const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'multiSelections'], message: 'Give the agent access to folders' })
+    if (!r.canceled) c.additionalDirectories = [...new Set([...(c.additionalDirectories ?? []), ...r.filePaths])]
+    store.save()
+    return c
+  })
+  h('chat:removeFolder', (id: string, dir: string) => {
+    const c = findChat(id)
+    c.additionalDirectories = (c.additionalDirectories ?? []).filter((d) => d !== dir)
+    store.save()
+    return c
+  })
+  h('ws:files', (id: string) => git.listFiles(findWs(id).path))
+  h('ws:commands', (id: string) => listCommands(findWs(id).path, agent.reportedCommands.get(id)))
+  h('scripts:get', (id: string) => scriptsFor(findWs(id)))
+  h('scripts:run', (id: string, kind: 'setup' | 'run') => runScript(findWs(id), kind))
+  ipcMain.on('scripts:stop', (_e, id: string, kind: string) => pty.kill(`${id}:${kind}`))
+  h('scripts:running', (id: string, kind: string) => pty.isAlive(`${id}:${kind}`))
+  h('pr:get', (id: string) => {
+    const ws = findWs(id)
+    return gh.prForBranch(ws.path, ws.branch)
+  })
+  h('pr:merge', async (id: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, ws.branch)
+    if (!pr) throw new Error('No pull request for this branch')
+    await gh.mergePr(ws.path, pr.number)
   })
   h('chat:send', (id: string, text: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
+    if (!ws.named) void nameWorkspace(ws, text)
     // Fire and forget; progress arrives through chat:event.
     void agent.send(chat, ws, text, workspaceEnv(ws), (chatId, payload) => send('chat:event', { chatId, ...payload }))
   })
@@ -186,6 +267,7 @@ function registerIpc() {
     const ws = findWs(wsId)
     return pty.create(id, ws.path, workspaceEnv(ws), (i, d) => send('pty:data', i, d), (i, c) => send('pty:exit', i, c))
   })
+  h('pty:attach', (id: string) => pty.attach(id))
   ipcMain.on('pty:write', (_e, id: string, d: string) => pty.write(id, d))
   ipcMain.on('pty:resize', (_e, id: string, c: number, r: number) => pty.resize(id, c, r))
   ipcMain.on('pty:kill', (_e, id: string) => pty.kill(id))
@@ -207,6 +289,9 @@ function buildMenu() {
         { label: 'New Chat Tab', accelerator: 'CmdOrCtrl+T', click: m('new-chat') },
         { label: 'Close Chat Tab', accelerator: 'CmdOrCtrl+W', click: m('close-chat') },
         { type: 'separator' },
+        { label: 'Run', accelerator: 'CmdOrCtrl+R', click: m('run') },
+        { label: 'Next Unread', accelerator: 'CmdOrCtrl+Shift+U', click: m('next-unread') },
+        { type: 'separator' },
         { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' }
       ]
     },
@@ -218,7 +303,7 @@ function buildMenu() {
         { label: 'Toggle Right Panel', accelerator: 'CmdOrCtrl+Alt+B', click: m('toggle-right') },
         { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+J', click: m('toggle-terminal') },
         { type: 'separator' },
-        { role: 'reload' },
+        { role: 'reload', accelerator: 'CmdOrCtrl+Shift+R' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },

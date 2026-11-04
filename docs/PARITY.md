@@ -31,7 +31,7 @@ Legend: P1 = first PR, P2.. = later PRs.
 
 ### Workspaces (repos) sidebar
 - [P1] "My workspaces" list of repositories; add local repo
-- [P2] Clone repo from URL / GitHub
+- [P3] Clone repo from URL / GitHub
 - [P1] "+" per repo creates a session (new worktree + branch, city name)
 - [P1] Sessions listed under repo with diff stats (+N -M)
 - [P2] Unread / running / needs-attention indicators per session
