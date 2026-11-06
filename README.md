@@ -4,6 +4,14 @@ A Mac desktop app for running parallel Claude Code agents in isolated git worktr
 
 See [docs/PARITY.md](docs/PARITY.md) for the feature plan.
 
+## Try it
+
+Every push to `main` builds test copies of the app. Open the latest [Preview build](https://github.com/Benbentwo/choo-choo/actions/workflows/preview.yml) run, download `choo-choo-apple-silicon` (or `choo-choo-intel`) from Artifacts, unzip it and open the .dmg. Drag Choo Choo to Applications, then clear the download quarantine once, because these builds aren't signed:
+
+```sh
+xattr -cr "/Applications/Choo Choo.app"
+```
+
 ## Develop
 
 Requires macOS, Node 22+, git, and a Claude login (`claude` CLI signed in, or `ANTHROPIC_API_KEY`). Install the `gh` CLI for PR features.
