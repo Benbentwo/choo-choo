@@ -75,7 +75,8 @@ jobs:
           else
             echo "::warning::No signing secrets; building an unsigned app."
             export CSC_IDENTITY_AUTO_DISCOVERY=false
-            sign=(-c.mac.identity=null)
+            # Ad-hoc sign like the preview build, so Apple silicon will run it.
+            sign=(-c.mac.identity=- -c.mac.hardenedRuntime=false)
           fi
           npx electron-vite build
           npx electron-builder --mac --publish always -c.extraMetadata.version="$VERSION" "${sign[@]}"
