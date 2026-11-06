@@ -111,6 +111,10 @@ Your coworker clicks the link, or uses Open shared session on the home screen, w
 
 Only people who can read the repository can open a share, so a share in a public repository is public. Nothing about your Claude login or settings is included, and things that look like API keys or tokens are blanked out of the chats. Stop sharing deletes the ref.
 
+## Observability
+
+Settings > Telemetry sends OpenTelemetry data from Claude agents to any OTLP collector (Honeycomb, Datadog, Grafana, or a local collector on `http://localhost:4318`). You get metrics for tokens, cost and tool decisions, an event per prompt, API request and tool result, and traces with a span per turn, model request and tool call. Every export carries `choo.repo`, `choo.workspace` and `choo.branch` resource attributes. Only structure is exported unless you turn on the content options. See the [Agent SDK observability guide](https://code.claude.com/docs/en/agent-sdk/observability).
+
 ## Develop
 
 Requires macOS, Node 22+ and git.
