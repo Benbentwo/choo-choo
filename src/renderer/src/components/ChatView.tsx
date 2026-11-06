@@ -212,6 +212,12 @@ export function toolSummary(name: string, input: unknown): string {
       return pick('description')
     case 'TodoWrite':
       return 'Update todos'
+    case 'TaskCreate':
+      return pick('subject')
+    case 'TaskUpdate':
+      return [pick('taskId'), pick('status')].filter(Boolean).join(' → ')
+    case 'TaskGet':
+      return pick('taskId')
     default:
       return ''
   }
