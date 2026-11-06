@@ -118,7 +118,20 @@ function lastUuidBefore(messages: TranscriptMessage[], uuid: string): string | u
 }
 
 let sdk: Promise<typeof import('@anthropic-ai/claude-agent-sdk')> | null = null
-const loadSdk = () => (sdk ??= import('@anthropic-ai/claude-agent-sdk'))
+export const loadSdk = () => (sdk ??= import('@anthropic-ai/claude-agent-sdk'))
+
+/** A QR code for a link, as an SVG data URL. */
+export async function qrFor(url: string): Promise<string | undefined> {
+  try {
+    const svg = await QRCode.toString(url, { type: 'svg', margin: 1 })
+    return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
+  } catch {
+    return undefined
+  }
+}
+
+/** The claude binary Choo Choo runs for Remote Control and cloud sessions. */
+export const claudeCommand = () => claudeExecutable() ?? installedExecutable() ?? 'claude'
 
 /** Copies the turns made on the phone into the chat. */
 async function importPhoneTurns(chat: Chat, ws: Workspace, emit: Emit) {
@@ -148,7 +161,7 @@ async function importPhoneTurns(chat: Chat, ws: Workspace, emit: Emit) {
 const finishing = new Set<string>()
 
 async function finish(chat: Chat, ws: Workspace, emit: Emit, failure?: string) {
-  if (!chat.remote || finishing.has(chat.id)) return
+  if (chat.remote?.kind !== 'phone' || finishing.has(chat.id)) return
   finishing.add(chat.id)
   try {
     if (failure) {
@@ -166,14 +179,15 @@ async function finish(chat: Chat, ws: Workspace, emit: Emit, failure?: string) {
 
 /** Starts Remote Control for a chat. The link and QR code arrive on the chat once Claude Code prints them. */
 export function continueOnPhone(chat: Chat, ws: Workspace, env: Record<string, string>, emit: Emit, onExit: (id: string, code: number) => void, onData: (id: string, d: string) => void) {
-  if (chat.remote) return chat
+  if (chat.remote?.kind === 'phone') return chat
+  if (chat.remote) throw new Error('This chat runs in the cloud. Bring it back first.')
   if (chat.model === 'codex') throw new Error('Continue on phone works with Claude chats, not Codex')
   if (ws.orchestrator) throw new Error("The orchestrator's tools only run inside Choo Choo, so it can't continue on your phone")
   if (agent.isRunning(chat.id)) throw new Error('Wait for the agent to finish, or stop it, first')
   if (chat.forkAt !== undefined) throw new Error('You reverted this chat. Send a message here first, then continue on your phone.')
   const args = phoneArgs(chat)
   // Remote Control needs your claude.ai sign-in; an API key would stop it from starting.
-  const exe = claudeExecutable() ?? installedExecutable() ?? 'claude'
+  const exe = claudeCommand()
   const command = [exe, ...args].map(shellQuote).join(' ')
   const id = phoneTerminalId(chat)
   chat.remote = { kind: 'phone', startedAt: Date.now() }
@@ -185,11 +199,10 @@ export function continueOnPhone(chat: Chat, ws: Workspace, env: Record<string, s
     if (!chat.remote) return
     chat.remote.url = url
     chat.remote.listOnly = listOnly || undefined
-    void QRCode.toString(url, { type: 'svg', margin: 1 })
-      .then((svg) => {
-        if (chat.remote?.url === url) chat.remote.qr = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
+    void qrFor(url)
+      .then((qr) => {
+        if (chat.remote?.url === url) chat.remote.qr = qr
       })
-      .catch(() => undefined)
       .finally(() => {
         store.save()
         emit(chat.id, { chat })
@@ -245,7 +258,7 @@ export function connectFailure(output: string): string {
 
 /** Stops Remote Control and copies what happened on the phone into the chat. */
 export async function bringBack(chat: Chat, ws: Workspace, emit: Emit) {
-  if (!chat.remote) return chat
+  if (chat.remote?.kind !== 'phone') return chat
   const id = phoneTerminalId(chat)
   if (pty.isAlive(id)) pty.kill(id)
   await finish(chat, ws, emit)
@@ -254,7 +267,7 @@ export async function bringBack(chat: Chat, ws: Workspace, emit: Emit) {
 
 /** After a restart no Remote Control process is left, so pull in what happened and clear the flag. */
 export async function recoverAfterRestart(findWs: (id: string) => Workspace | undefined, emit: Emit) {
-  for (const chat of store.get().chats.filter((c) => c.remote)) {
+  for (const chat of store.get().chats.filter((c) => c.remote?.kind === 'phone')) {
     const ws = findWs(chat.workspaceId)
     if (ws) await finish(chat, ws, emit)
     else chat.remote = undefined

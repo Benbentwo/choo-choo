@@ -172,8 +172,13 @@ export interface Chat {
 }
 
 export interface ChatRemote {
-  kind: 'phone'
+  /** phone: Remote Control on this Mac. cloud: a Claude Code cloud session on Anthropic's machines. */
+  kind: 'phone' | 'cloud'
   startedAt: number
+  /** Cloud session id (session_…), for follow-ups and teleport. */
+  sessionId?: string
+  /** Pulling the cloud session back with `claude --teleport` right now. */
+  teleporting?: boolean
   /** The claude.ai/code link for the session, once Claude Code prints it. */
   url?: string
   /** `url` is the claude.ai/code session list, because Claude Code didn't print the session's own link. */
@@ -587,6 +592,14 @@ export interface Api {
   continueOnPhone(chatId: string): Promise<Chat>
   /** Stops Remote Control and copies the turns made there into the chat. */
   bringBackFromPhone(chatId: string): Promise<Chat>
+  /** Commits and pushes the workspace, then starts a Claude Code cloud session on its branch with `task`. */
+  runInCloud(chatId: string, task: string): Promise<Chat>
+  /** Queues a follow-up message into the chat's cloud session. */
+  sendToCloud(chatId: string, text: string): Promise<void>
+  /** Pulls the cloud session and its branch back with `claude --teleport`, and resumes it here. */
+  bringBackFromCloud(chatId: string): Promise<Chat>
+  /** Stops following the cloud session in this chat. The session keeps running on claude.ai. */
+  forgetCloud(chatId: string): Promise<Chat>
   /** Sends the advisor's notes to the agent, or dismisses them. */
   actOnAdvice(chatId: string, itemId: string, action: 'send' | 'dismiss'): Promise<void>
   /** Has fresh reviewers, who never saw the chat, check the plan in a plan card. */

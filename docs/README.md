@@ -26,7 +26,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Telemetry](prd/telemetry.md) | In review |
 | [Review plan](prd/plan-review.md) | Shipped |
 | [Integrations](prd/integrations.md) | Planned |
-| [Remote sessions (phone and cloud)](prd/remote-sessions.md) | In review |
+| [Remote sessions (phone and cloud)](prd/remote-sessions.md) | Phone shipped; cloud in review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

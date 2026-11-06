@@ -8,6 +8,7 @@ import { DiffView } from './DiffView'
 import { FileView } from './FileView'
 import { SessionFeedback } from './Reflect'
 import { PhonePanel } from './PhonePanel'
+import { CloudPanel, RunInCloudDialog } from './CloudPanel'
 
 export function Center({ ws }: { ws: Workspace }) {
   const s = useStore()
@@ -19,6 +20,7 @@ export function Center({ ws }: { ws: Workspace }) {
   const diffFile = doc?.path ?? null
   const [menu, setMenu] = useState(false)
   const [reflecting, setReflecting] = useState(false)
+  const [cloudDialog, setCloudDialog] = useState(false)
 
   useEffect(() => {
     if (chats.length === 0) void newChatTab(ws.id)
@@ -72,6 +74,9 @@ export function Center({ ws }: { ws: Workspace }) {
               <MenuItem label="Copy branch name" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.branch) }} />
               <MenuItem label="Reflect on this session…" onClick={() => { setMenu(false); setReflecting(true) }} />
               <MenuItem label={ws.share ? 'Sharing with coworkers…' : 'Share with coworkers…'} onClick={() => { setMenu(false); s.set({ modal: 'share' }) }} />
+              {!ws.orchestrator && active && !active.remote && active.status !== 'running' && (
+                <MenuItem label="Run in the cloud…" onClick={() => { setMenu(false); setCloudDialog(true) }} />
+              )}
               <div className="my-1 border-t border-line" />
               <MenuItem label={ws.orchestrator ? 'Hide orchestrator' : 'Archive workspace'} danger={!ws.orchestrator} onClick={() => void archive()} />
             </div>
@@ -157,10 +162,17 @@ export function Center({ ws }: { ws: Workspace }) {
               </button>
             </div>
           )}
-          {active.remote ? <PhonePanel chat={active} ws={ws} /> : <Composer chat={active} ws={ws} />}
+          {active.remote?.kind === 'phone' ? (
+            <PhonePanel chat={active} ws={ws} />
+          ) : active.remote?.kind === 'cloud' ? (
+            <CloudPanel chat={active} ws={ws} />
+          ) : (
+            <Composer chat={active} ws={ws} />
+          )}
         </>
       ) : null}
       {reflecting && <SessionFeedback ws={ws} archive={false} onClose={() => setReflecting(false)} />}
+      {cloudDialog && active && <RunInCloudDialog chat={active} ws={ws} onClose={() => setCloudDialog(false)} />}
     </main>
   )
 }
