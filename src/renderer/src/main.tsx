@@ -4,6 +4,9 @@ import '@xterm/xterm/css/xterm.css'
 import './styles.css'
 import { App } from './App'
 import { FeedbackOverlay } from './dev/FeedbackOverlay'
+import { applyCachedAppearance } from './appearance'
+
+applyCachedAppearance()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

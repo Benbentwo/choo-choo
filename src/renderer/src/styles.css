@@ -12,7 +12,10 @@
   --color-faint: #6c6763;
   --color-add: #4ade80;
   --color-del: #f87171;
-  --color-accent: #e8e4e1;
+  --color-code: #141211;
+  --color-scroll: #3a3735;
+  /* Theme colors are overridden at runtime from src/shared/themes.ts. */
+  --color-accent: #38bdf8;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
   --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
 }
@@ -46,8 +49,11 @@ body,
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3a3735;
+  background: var(--color-scroll);
   border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-faint);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -76,7 +82,7 @@ body,
   border-radius: 4px;
 }
 .prose-chat pre {
-  background: #141211;
+  background: var(--color-code);
   border: 1px solid var(--color-line);
   padding: 10px 12px;
   border-radius: 8px;
@@ -87,8 +93,10 @@ body,
   padding: 0;
 }
 .prose-chat a {
-  color: #93c5fd;
+  color: var(--color-accent);
   text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  text-underline-offset: 2px;
 }
 .prose-chat h1,
 .prose-chat h2,
@@ -107,4 +115,110 @@ body,
 
 .xterm {
   padding: 6px 8px;
+}
+
+/* ---------- Appearance polish ---------- */
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+input,
+textarea {
+  caret-color: var(--color-accent);
+}
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'] {
+  accent-color: var(--color-accent);
+}
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+  outline-offset: 1px;
+}
+textarea:focus-visible,
+input:focus-visible,
+select:focus-visible,
+.xterm *:focus-visible {
+  outline: none;
+}
+
+/* Soft color changes on hover instead of hard flips. */
+button,
+a,
+[role='button'],
+[role='tab'] {
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+
+/* Theme switches cross-fade; the class is added for a moment by appearance.ts. */
+.theme-fade,
+.theme-fade *,
+.theme-fade *::before,
+.theme-fade *::after {
+  transition:
+    background-color 280ms ease,
+    color 280ms ease,
+    border-color 280ms ease,
+    fill 280ms ease !important;
+}
+
+@keyframes choo-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes choo-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+@keyframes choo-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes choo-glow {
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  }
+}
+.anim-backdrop {
+  animation: choo-fade-in 140ms ease-out;
+  backdrop-filter: blur(2px);
+}
+.anim-pop {
+  animation: choo-pop-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.anim-toast {
+  animation: choo-slide-up 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.anim-glow {
+  animation: choo-glow 2.4s ease-in-out infinite;
+}
+/* New chat messages ease in. */
+.prose-chat {
+  animation: choo-slide-up 200ms ease-out;
+}
+
+[data-reduce-motion] *:not(.animate-spin),
+[data-reduce-motion] *::before,
+[data-reduce-motion] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
