@@ -6,7 +6,7 @@
  * Copyright (c) 2025 Mario Zechner, (c) 2025-2026 Can Bölük, (c) 2026 Stencil Labs, Inc.
  * Everything here runs on the official Claude Agent SDK, so it uses the same sign-in as the main agent.
  */
-import type { ChatItem, ExtraAgentId, Extras } from '@shared/types'
+import type { ChatItem, ClaudeAdvisor, ExtraAgentId, Extras } from '@shared/types'
 import { REVIEW_CRITERIA, SECURITY_RULES } from '@shared/agentRules'
 
 interface SubagentDef {
@@ -220,6 +220,25 @@ export function redactSecrets(text: string): string {
   let out = text
   for (const re of SECRET_PATTERNS) out = out.replace(re, (m, prefix) => (typeof prefix === 'string' ? `${prefix}[redacted]` : '[redacted]'))
   return out
+}
+
+/** Name for the chat card of a Claude Code advisor call. */
+export const BUILTIN_ADVISOR_TOOL = 'Advisor'
+
+/** query() options that apply the Claude Code advisor choice. 'inherit' changes nothing. */
+export function claudeAdvisorOptions(choice: ClaudeAdvisor | undefined): { settings?: { advisorModel: string }; env?: Record<string, string> } {
+  if (!choice || choice === 'inherit') return {}
+  if (choice === 'off') return { env: { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1' } }
+  return { settings: { advisorModel: choice } }
+}
+
+/** Text for the result of a Claude Code advisor call (an advisor_tool_result block's content). */
+export function builtinAdvisorResult(content: unknown): { text: string; isError: boolean } {
+  const c = (content ?? {}) as { type?: string; text?: string; error_code?: string }
+  if (c.type === 'advisor_result') return { text: c.text?.trim() || 'Reviewed.', isError: false }
+  if (c.type === 'advisor_redacted_result') return { text: 'Reviewed. This advisor model keeps its guidance private; Claude applies it directly.', isError: false }
+  if (c.type === 'advisor_tool_result_error') return { text: `Advisor unavailable (${c.error_code ?? 'unknown'})`, isError: true }
+  return { text: 'Reviewed.', isError: false }
 }
 
 // The SDK is ESM-only; load it lazily from the CJS main bundle.

@@ -28,6 +28,7 @@ Settings > Agents has a toggle per agent, plus the advisor and its model.
 - **Security reviewer**: adds a Security review button to the Review tab; findings show in the same list and inline in diffs, tagged "security".
 - **Quick worker** (Haiku): `/quick <task>` hands mechanical work to it.
 - **Advisor**: after each finished turn, a second model (Sonnet by default) reviews it with read-only tools and posts notes as a card with Send to agent and Dismiss. Per-chat toggle in the composer. A red dot in the sidebar marks a workspace with an unhandled blocker. Optional auto-send of blockers, at most once per message (off by default; Ben chose opt-in).
+- **Claude Code advisor** (added 2026-11-06): Claude Code's own [advisor tool](https://code.claude.com/docs/en/advisor). A select in Settings > Agents: "Use my Claude Code setting" (default, keeps `advisorModel` from the user's settings), Off, Fable, Opus or Sonnet. Claude chats only. Claude decides when to consult it mid-turn (before choosing an approach, when stuck, before declaring done); each call shows as an "Advisor" line that expands to the guidance when the advisor model returns readable text. It sits beside the ported advisor rather than replacing it: the ported one reviews after every turn, works for Codex too, and shows its notes; the built-in one steers during the turn, needs the Anthropic API (not Bedrock/Vertex/Foundry) and a supported main model, and newer advisor models keep their guidance private.
 - Subagent calls show as one collapsible card per agent with its steps inside.
 
 ## Requirements
@@ -38,6 +39,8 @@ Settings > Agents has a toggle per agent, plus the advisor and its model.
 4. Prompts adapted from oh-my-pi keep its MIT notice (file header and THIRD_PARTY_NOTICES.md).
 
 ## Design
+
+The Claude Code advisor is `claudeAdvisorOptions` in `src/main/extras.ts`: a model choice goes in the query's `settings.advisorModel`, Off sets `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`. `server_tool_use` blocks named `advisor` and their `advisor_tool_result` become a tool item named `Advisor`, drawn by `BuiltinAdvisorItem` in `ChatView.tsx`.
 
 `src/main/extras.ts` (`SUBAGENTS`, advisor), `src/shared/agentRules.ts` (review criteria and security rules shared by subagents and the Review tab), `Extras` in `src/shared/types.ts`. Also added: Settings > Claude Code to choose the bundled or installed `claude` binary (`src/main/claudeBinary.ts`).
 

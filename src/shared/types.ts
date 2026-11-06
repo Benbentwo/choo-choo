@@ -309,14 +309,22 @@ export interface Extras {
   advisorSteer: boolean
   /** Have the reviewer check the changes when you click Create PR. Needs the reviewer agent. */
   reviewBeforePr: boolean
+  /**
+   * Claude Code's own advisor tool: Claude consults a stronger model mid-task, when it decides to.
+   * 'inherit' leaves it to the advisorModel in the user's Claude Code settings.
+   */
+  claudeAdvisor: ClaudeAdvisor
 }
+
+export type ClaudeAdvisor = 'inherit' | 'off' | 'fable' | 'opus' | 'sonnet'
 
 export const DEFAULT_EXTRAS: Extras = {
   agents: { scout: false, reviewer: false, securityReviewer: false, quickWorker: false },
   advisor: false,
   advisorModel: 'sonnet',
   advisorSteer: false,
-  reviewBeforePr: true
+  reviewBeforePr: true,
+  claudeAdvisor: 'inherit'
 }
 
 /** Fills in fields an older or partial save is missing. */
