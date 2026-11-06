@@ -67,11 +67,18 @@ export function Center({ ws }: { ws: Workspace }) {
               <MenuItem label="Reveal in Finder" onClick={() => { setMenu(false); void window.api.revealInFinder(ws.path) }} />
               <MenuItem label="Copy path" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.path) }} />
               <MenuItem label="Copy branch name" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.branch) }} />
+              <MenuItem label={ws.share ? 'Sharing with coworkers…' : 'Share with coworkers…'} onClick={() => { setMenu(false); s.set({ modal: 'share' }) }} />
               <div className="my-1 border-t border-line" />
               <MenuItem label="Archive workspace" danger onClick={() => void archive()} />
             </div>
           )}
         </div>
+        {ws.importedShare && <span className="text-[12px] text-faint">Shared by {ws.importedShare.sharedBy}</span>}
+        {ws.share && (
+          <button className="no-drag rounded px-1.5 py-0.5 text-[12px] text-add hover:bg-hover" onClick={() => s.set({ modal: 'share' })} title="Shared with coworkers">
+            Shared
+          </button>
+        )}
         <div className="flex-1" />
         <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ rightOpen: !s.rightOpen })} title="Toggle right panel">
           <IconPanelRight width={16} height={16} />

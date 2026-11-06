@@ -24,6 +24,9 @@ export function Home() {
           <button onClick={() => s.set({ modal: 'create' })} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 hover:bg-hover">
             <IconGithub /> Clone from GitHub
           </button>
+          <button onClick={() => s.set({ modal: 'open-share' })} className="rounded-lg border border-line px-3 py-2 hover:bg-hover">
+            Open shared session
+          </button>
           {s.repos[0] && (
             <button onClick={() => void newWorkspace(s.repos[0].id)} className="rounded-lg border border-line px-3 py-2 hover:bg-hover">
               New workspace in {s.repos[0].name}

@@ -122,6 +122,9 @@ export async function send(
   const resume = forkAt === null ? undefined : chat.sdkSessionId
   chat.forkAt = undefined
   const tools = new Map<string, Extract<ChatItem, { kind: 'tool' }>>()
+  // A chat opened from a coworker's share starts with their transcript as context.
+  const prompt = chat.handoff ? `${chat.handoff}\n\n${text}` : text
+  chat.handoff = undefined
   let endTurn = () => {}
   const turnDone = new Promise<void>((r) => (endTurn = r))
   const put = (item: ChatItem) => {
@@ -134,7 +137,7 @@ export async function send(
       const started = Date.now()
       const res = await runCodex({
         cwd: ws.path,
-        prompt: text,
+        prompt,
         effort: chat.effort,
         readOnly: !!chat.planMode,
         threadId: forkAt === null ? undefined : chat.codexThreadId,
@@ -176,7 +179,7 @@ export async function send(
       return { behavior: 'allow', updatedInput: input }
     }
     const q = query({
-      prompt: userMessage(text, images, turnDone) as never,
+      prompt: userMessage(prompt, images, turnDone) as never,
       options: {
         pathToClaudeCodeExecutable: claudeExecutable(),
         cwd: ws.path,

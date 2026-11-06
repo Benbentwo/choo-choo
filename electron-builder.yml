@@ -21,6 +21,10 @@ mac:
     - target: zip
       arch: [arm64, x64]
 afterPack: build/afterPack.cjs
+# choo-choo://share links open a coworker's shared session.
+protocols:
+  - name: Choo Choo share link
+    schemes: [choo-choo]
 dmg:
   title: Choo Choo
 publish:

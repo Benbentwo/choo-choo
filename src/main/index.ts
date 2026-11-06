@@ -17,6 +17,7 @@ import { suggestName } from './naming'
 import { checkNow, installUpdate, startUpdater } from './updater'
 import { registerDevFeedback } from './devFeedback'
 import { resolveTheme } from '@shared/themes'
+import { autoSync, registerShareIpc } from './shareIpc'
 
 let win: BrowserWindow | null = null
 
@@ -360,7 +361,11 @@ function registerIpc() {
     const env = workspaceEnv(ws)
     const key = store.get().settings.anthropicApiKey.trim()
     if (key) env.ANTHROPIC_API_KEY = key
-    void agent.send(chat, ws, text, env, (chatId, payload) => send('chat:event', { chatId, ...payload }), notifyDone, images.slice(0, 10), notifyAsk)
+    const onDone = (c: Chat) => {
+      notifyDone(c)
+      autoSync(ws)
+    }
+    void agent.send(chat, ws, text, env, (chatId, payload) => send('chat:event', { chatId, ...payload }), onDone, images.slice(0, 10), notifyAsk)
   })
   h('chat:stop', (id: string) => agent.stop(id))
   ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny') => agent.respondPermission(id, d))
@@ -427,6 +432,7 @@ function buildMenu() {
         { label: 'Run', accelerator: 'CmdOrCtrl+R', click: m('run') },
         { label: 'Next Unread', accelerator: 'CmdOrCtrl+Shift+U', click: m('next-unread') },
         { label: 'Search…', accelerator: 'CmdOrCtrl+K', click: m('search') },
+        { label: 'Open Shared Session…', click: m('open-share') },
         { type: 'separator' },
         { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' }
       ]
@@ -481,6 +487,10 @@ function createWindow() {
     }
   })
   win.once('ready-to-show', () => win?.show())
+  win.webContents.on('did-finish-load', () => {
+    if (pendingLink) send('share:link', pendingLink)
+    pendingLink = null
+  })
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
@@ -501,10 +511,37 @@ async function fixPath() {
   })
 }
 
+// choo-choo://share links open the shared session. macOS can deliver one before the window exists.
+let pendingLink: string | null = null
+function openLink(url: string) {
+  if (!url.startsWith('choo-choo://')) return
+  if (win && !win.isDestroyed() && !win.webContents.isLoading()) {
+    send('share:link', url)
+    win.show()
+    win.focus()
+  } else pendingLink = url
+}
+app.on('open-url', (e, url) => {
+  e.preventDefault()
+  openLink(url)
+})
+if (process.defaultApp) {
+  if (process.argv[1]) app.setAsDefaultProtocolClient('choo-choo', process.execPath, [resolve(process.argv[1])])
+} else app.setAsDefaultProtocolClient('choo-choo')
+
 app.whenReady().then(async () => {
   await fixPath()
   store.load()
   registerIpc()
+  registerShareIpc({
+    workspacesRoot: WORKSPACES_ROOT,
+    reposRoot: REPOS_ROOT,
+    findWs,
+    addRepo,
+    newChat,
+    runSetup: (ws) => void runScript(ws, 'setup'),
+    notifyChanged: () => send('state:changed')
+  })
   registerDevFeedback(() => win)
   buildMenu()
   createWindow()

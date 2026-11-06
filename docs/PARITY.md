@@ -71,6 +71,9 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ dmg/zip builds for Apple silicon and Intel, release workflow (signs and notarizes when secrets are set)
 - ✅ Auto-update from GitHub releases (needs a signed build on macOS)
 
+### Beyond Conductor
+- ✅ Shared sessions: share a workspace (branch, uncommitted files, chats) with coworkers through the repo's own remote; they continue with their own Claude login
+
 ## Build sequence
 1. **Foundation**: app scaffold, layout, repos, worktree sessions, agent chat, Changes + diff, terminal.
 2. **Workflow**: Create PR, Setup/Run scripts, @mentions, /commands, folders, archive, unread, auto-naming.
