@@ -41,6 +41,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ First prompt names the workspace and renames its unpushed branch
 - ✅ Restore archived workspaces (sidebar "Archived" list per repo)
 - ✅ After a PR merges: Continue / Archive / Archive and reflect. Reflect has an agent review the chats for friction and suggest CLAUDE.md, rules, skills and hook changes, shown as an editable diff; accepted ones go out as a PR from a new workspace (choo-choo addition)
+- ✅ Start a workspace from a Linear issue (OAuth sign-in in Settings > Integrations, Linear's branch name, issue as the brief, moves it to In Progress)
 - ⬜ Drag to reorder repos
 
 ### Chat

@@ -26,6 +26,9 @@ import * as orchestrator from './orchestrator'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import * as archive from './archive'
+import * as linear from './integrations/linear'
+import { safeBranch, linearContext } from './integrations/linearApi'
+import { registerIntegrationsIpc } from './integrations'
 
 let win: BrowserWindow | null = null
 
@@ -155,6 +158,16 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     else await git.addWorktreeForRemoteBranch(repo.path, path, branch)
     title = `#${source.number} ${pr.title}`
     named = true
+  } else if (source?.kind === 'linear') {
+    const issue = await linear.getIssue(source.id)
+    branch = safeBranch(issue)
+    // Reuse the branch if someone already started this issue; otherwise branch off the default branch.
+    if (await git.branchExists(repo.path, branch)) await git.addWorktreeForRemoteBranch(repo.path, path, branch)
+    else await git.addWorktree(repo.path, path, branch, baseRef)
+    title = `${issue.identifier} ${issue.title}`
+    named = true
+    context = linearContext(issue)
+    void linear.markStarted(issue.id)
   } else {
     const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
     branch = `${prefix}/${name}`
@@ -252,6 +265,12 @@ async function listSources(repoId: string, kind: WorkspaceSource['kind'], query:
   if (!repo) throw new Error('Unknown repo')
   if (kind === 'pr') return gh.listPrs(repo.path, query)
   if (kind === 'issue') return gh.listIssues(repo.path, query)
+  if (kind === 'linear')
+    return (await linear.searchIssues(query)).map((i) => ({
+      source: { kind: 'linear', id: i.id },
+      title: `${i.identifier} ${i.title}`,
+      detail: [i.state?.name, i.assignee?.name, i.branchName].filter(Boolean).join(' · ')
+    }))
   const q = query.toLowerCase()
   return (await git.remoteBranches(repo.path))
     .filter((b) => b.name.toLowerCase().includes(q))
@@ -485,6 +504,7 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'], message: 'Give the agent these files' })
     return r.canceled ? [] : r.filePaths
   })
+  registerIntegrationsIpc(() => send('state:changed'))
   h('ws:sources', (repoId: string, kind: WorkspaceSource['kind'], query: string) => listSources(repoId, kind, query))
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))

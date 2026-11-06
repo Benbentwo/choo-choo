@@ -36,6 +36,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Review before you ship.** Changes view with diffs, an agent code review whose findings show inline with Fix buttons, and per-tool permission prompts.
 - **PRs in one click.** Create a PR (or draft), watch checks, re-run failures and squash-merge, all through your `gh` login.
 - **Real terminals.** Setup, Run (⌘R) and terminal tabs per workspace, driven by `choo-choo.json` or `conductor.json`.
+- **Start from Linear.** Sign in to Linear in Settings > Integrations, then pick an issue in the new-workspace composer. The workspace starts on Linear's branch for the issue, the agent gets the issue as its brief, and the issue moves to In Progress.
 - **Codex too.** Optionally run OpenAI's Codex CLI as a workspace agent.
 - **Keyboard first.** ⌘K search, ⌘T/⌘W tabs, ⌘B/⌘J panels, ⌘⇧U next unread.
 - **Native Mac app.** Apple silicon and Intel builds, desktop notifications, auto-update from GitHub releases.
@@ -110,6 +111,14 @@ Share a workspace with a coworker from the workspace's ⋯ menu > Share with cow
 Your coworker clicks the link, or uses Open shared session on the home screen, which also lists every share in their repositories. Choo Choo clones the repo if they don't have it, makes a workspace on your branch with your changes in place, and shows your chats. Their next message continues the conversation with their own Claude login, and the agent gets your transcript as context. While the workspace is open, new turns you make show up within 30 seconds, for chats they haven't continued themselves.
 
 Only people who can read the repository can open a share, so a share in a public repository is public. Nothing about your Claude login or settings is included, and things that look like API keys or tokens are blanked out of the chats. Stop sharing deletes the ref.
+
+## Integrations
+
+Settings > Integrations lists the services you can sign in to. Each one signs in through your browser with OAuth; there are no tokens to paste. Tokens are encrypted with the macOS keychain (Electron `safeStorage`) in `~/Library/Application Support/Choo Choo/data/integrations.json`.
+
+Linear uses a public OAuth app with PKCE, so no client secret ships in the app. To use your own Linear OAuth app instead (for example while developing), create one in Linear under Settings > API > OAuth applications with the callback URL `http://127.0.0.1:47821/callback`, and start Choo Choo with `CHOO_LINEAR_CLIENT_ID=<client id>`.
+
+Adding a service: write `src/main/integrations/<name>.ts` exporting a `Provider` (see `index.ts`), use `startLoopback` and `pkce` from `oauth.ts` for the browser sign-in, store the result with `setAuth` from `tokens.ts`, and add it to the `providers` list.
 
 ## Develop
 

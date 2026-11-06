@@ -11,7 +11,26 @@ export interface Repo {
 }
 
 /** What a new workspace starts from, besides a fresh branch off the default branch. */
-export type WorkspaceSource = { kind: 'pr'; number: number } | { kind: 'branch'; name: string } | { kind: 'issue'; number: number }
+export type WorkspaceSource =
+  | { kind: 'pr'; number: number }
+  | { kind: 'branch'; name: string }
+  | { kind: 'issue'; number: number }
+  /** A Linear issue, by its id. The workspace gets Linear's suggested branch name for it. */
+  | { kind: 'linear'; id: string }
+
+/** Services you sign in to from Settings → Integrations. */
+export type IntegrationId = 'linear' | 'notion'
+
+export interface IntegrationStatus {
+  id: IntegrationId
+  label: string
+  description: string
+  connected: boolean
+  /** Who is signed in, e.g. "Ben Smith · Acme". */
+  account?: string
+  /** False when this build has no OAuth app for the service, so sign-in can't work yet. */
+  configured: boolean
+}
 
 export interface SourceOption {
   source: WorkspaceSource
@@ -357,6 +376,10 @@ export interface Api {
   /** `folders` are extra directories the first chat may read and edit (linked workspaces, added folders). */
   createWorkspace(repoId: string, source?: WorkspaceSource, folders?: string[]): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
   listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
+  listIntegrations(): Promise<IntegrationStatus[]>
+  /** Opens the service's sign-in page in the browser and resolves once the app has a token. */
+  connectIntegration(id: IntegrationId): Promise<IntegrationStatus>
+  disconnectIntegration(id: IntegrationId): Promise<void>
   /** Opens the repo's orchestrator, creating it the first time. */
   openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
