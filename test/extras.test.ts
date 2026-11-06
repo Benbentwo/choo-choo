@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { enabledSubagents, expandShortcuts, parseAdvice, renderTurn, steerMessage, systemAppend } from '../src/main/extras'
+import { enabledSubagents, expandShortcuts, redactSecrets, parseAdvice, renderTurn, steerMessage, systemAppend } from '../src/main/extras'
 import { DEFAULT_EXTRAS, normalizeExtras, type ChatItem } from '../src/shared/types'
 
 describe('enabledSubagents', () => {
@@ -92,5 +92,21 @@ describe('systemAppend', () => {
     expect(systemAppend({ ...DEFAULT_EXTRAS, agents: { ...DEFAULT_EXTRAS.agents, scout: true } }, true)).toContain('scout')
     expect(systemAppend({ ...DEFAULT_EXTRAS, agents: { ...DEFAULT_EXTRAS.agents, scout: true } }, false)).toBeUndefined()
     expect(systemAppend(DEFAULT_EXTRAS, true)).toBeUndefined()
+  })
+})
+
+
+describe('redactSecrets', () => {
+  it('masks keys, tokens and password assignments', () => {
+    const t = redactSecrets('ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnop\nAuthorization: Bearer abcdefghijklmnopqrstuv\ngh ghp_abcdefghijklmnopqrstuvwxyz12\npassword: "hunter2hunter2"')
+    expect(t).not.toContain('sk-ant-api03')
+    expect(t).not.toContain('abcdefghijklmnopqrstuv')
+    expect(t).not.toContain('ghp_')
+    expect(t).not.toContain('hunter2')
+    expect(t).toContain('Authorization: Bearer [redacted]')
+  })
+  it('leaves ordinary code and commit hashes alone', () => {
+    const t = 'const total = add(a, b)\ncommit 3e97ab4c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a'
+    expect(redactSecrets(t)).toBe(t)
   })
 })

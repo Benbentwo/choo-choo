@@ -203,6 +203,25 @@ export function steerMessage(advice: Advice): string {
   return `The advisor reviewed your last turn and raised:\n\n${advice.notes.join('\n')}\n\nCheck these. Fix what holds up, and briefly say why if you disagree with a point.`
 }
 
+const SECRET_PATTERNS: RegExp[] = [
+  /\bsk-ant-[A-Za-z0-9_-]{10,}/g,
+  /\bsk-[A-Za-z0-9_-]{20,}/g,
+  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
+  /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  /(\bBearer\s+)[A-Za-z0-9._~+/=-]{16,}/gi,
+  /(\b[A-Za-z0-9_]*(?:api[_-]?key|secret|token|password|passwd)[A-Za-z0-9_]*["']?\s*[:=]\s*["']?)[^\s"',]{8,}/gi
+]
+
+/** Masks obvious secrets (API keys, tokens, private keys, password assignments) before the advisor sees a transcript. */
+export function redactSecrets(text: string): string {
+  let out = text
+  for (const re of SECRET_PATTERNS) out = out.replace(re, (m, prefix) => (typeof prefix === 'string' ? `${prefix}[redacted]` : '[redacted]'))
+  return out
+}
+
 // The SDK is ESM-only; load it lazily from the CJS main bundle.
 let sdk: Promise<typeof import('@anthropic-ai/claude-agent-sdk')> | null = null
 const loadSdk = () => (sdk ??= import('@anthropic-ai/claude-agent-sdk'))
@@ -219,7 +238,7 @@ export async function runAdvisor(opts: {
   const abort = new AbortController()
   opts.signal?.addEventListener('abort', () => abort.abort(), { once: true })
   const q = query({
-    prompt: `Here is the agent's latest turn.\n\n<transcript>\n${opts.transcript}\n</transcript>\n\nReview it and reply as instructed.`,
+    prompt: `Here is the agent's latest turn.\n\n<transcript>\n${redactSecrets(opts.transcript)}\n</transcript>\n\nReview it and reply as instructed.`,
     options: {
       pathToClaudeCodeExecutable: opts.executable,
       cwd: opts.cwd,
