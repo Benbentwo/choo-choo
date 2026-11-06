@@ -593,6 +593,37 @@ export interface ChatEvent {
   tasks?: BackgroundTask[]
 }
 
+/** An MCP server as Claude Code reports it for a repo. */
+export interface McpServerView {
+  name: string
+  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
+  /** Config scope: user, project, local, claudeai, managed… */
+  scope: string
+  /** Where it came from: a config scope, plugin, claudeai, managed… */
+  source: string
+  error?: string
+  transport: string
+  /** URL, or the command line for a stdio server. */
+  target: string
+  tools: { name: string; description?: string }[]
+  /** Defined in Claude Code's own config (user, project or local), so it can be removed here. */
+  removable: boolean
+}
+
+/** A server to add with `claude mcp add`. */
+export interface McpAddSpec {
+  name: string
+  /** user: every repo. project: this repo's .mcp.json, shared through git. */
+  scope: 'user' | 'project'
+  transport: 'stdio' | 'http' | 'sse'
+  /** The command line for stdio, or the URL. */
+  target: string
+  /** KEY=value per line, for stdio. */
+  env?: string
+  /** Name: value per line, for http and sse. */
+  headers?: string
+}
+
 /** An output style a chat can use. */
 export interface OutputStyleInfo {
   name: string
@@ -645,6 +676,13 @@ export interface Api {
   listOutputStyles(wsId: string): Promise<OutputStyleInfo[]>
   /** Stops one background task of a running Claude turn. */
   stopTask(chatId: string, taskId: string): Promise<void>
+  mcpStatus(repoId: string): Promise<McpServerView[]>
+  mcpAdd(repoId: string, spec: McpAddSpec): Promise<McpServerView[]>
+  mcpRemove(repoId: string, name: string, scope: string): Promise<McpServerView[]>
+  mcpToggle(repoId: string, name: string, enabled: boolean): Promise<McpServerView[]>
+  mcpReconnect(repoId: string, name: string): Promise<McpServerView[]>
+  /** Opens Terminal on Claude Code's /mcp screen to sign in to a server. */
+  mcpSignIn(repoId: string): Promise<void>
   respondPermission(requestId: string, decision: PermissionDecision): void
   pendingPermissions(): Promise<PermissionRequest[]>
   addChatFolder(chatId: string): Promise<Chat>
