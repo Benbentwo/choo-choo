@@ -7,6 +7,15 @@ export interface Repo {
   hidden?: boolean
 }
 
+/** What a new workspace starts from, besides a fresh branch off the default branch. */
+export type WorkspaceSource = { kind: 'pr'; number: number } | { kind: 'branch'; name: string } | { kind: 'issue'; number: number }
+
+export interface SourceOption {
+  source: WorkspaceSource
+  title: string
+  detail: string
+}
+
 export interface GithubRepo {
   nameWithOwner: string
   description: string | null
@@ -192,6 +201,8 @@ export interface AppState {
   workspaces: Workspace[]
   chats: Chat[]
   settings: Settings
+  /** Folders added as projects, most recent first; shown under Recents in the Add project menu. */
+  recentPaths?: string[]
 }
 
 export interface CheckRun {
@@ -240,7 +251,8 @@ export interface Api {
   addRepo(path: string): Promise<Repo>
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
-  createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  createWorkspace(repoId: string, source?: WorkspaceSource): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
+  listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
   /** Opens the repo's orchestrator, creating it the first time. */
   openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
@@ -272,6 +284,7 @@ export interface Api {
   setZoom(factor: number): void
   cloneRepo(url: string): Promise<Repo>
   listGithubRepos(): Promise<GithubRepo[]>
+  quickStart(name: string): Promise<Repo>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
   stopChat(chatId: string): Promise<void>

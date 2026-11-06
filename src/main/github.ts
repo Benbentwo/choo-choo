@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { CheckRun, GithubRepo, PrInfo } from '@shared/types'
+import type { CheckRun, GithubRepo, PrInfo, SourceOption } from '@shared/types'
 
 const exec = promisify(execFile)
 
@@ -60,4 +60,30 @@ export async function repoVisibility(cwd: string): Promise<string | undefined> {
   } catch {
     return undefined
   }
+}
+
+type Listed = { number: number; title: string; author?: { login: string }; headRefName?: string }
+
+export async function listPrs(cwd: string, query: string): Promise<SourceOption[]> {
+  const args = ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,title,author,headRefName']
+  if (query) args.push('--search', query)
+  const { stdout } = await exec('gh', args, { cwd })
+  return (JSON.parse(stdout) as Listed[]).map((p) => ({ source: { kind: 'pr', number: p.number }, title: `#${p.number} ${p.title}`, detail: `${p.author?.login ?? ''} · ${p.headRefName}` }))
+}
+
+export async function listIssues(cwd: string, query: string): Promise<SourceOption[]> {
+  const args = ['issue', 'list', '--state', 'open', '--limit', '50', '--json', 'number,title,author']
+  if (query) args.push('--search', query)
+  const { stdout } = await exec('gh', args, { cwd })
+  return (JSON.parse(stdout) as Listed[]).map((i) => ({ source: { kind: 'issue', number: i.number }, title: `#${i.number} ${i.title}`, detail: i.author?.login ?? '' }))
+}
+
+export async function prHead(cwd: string, number: number) {
+  const { stdout } = await exec('gh', ['pr', 'view', String(number), '--json', 'headRefName,isCrossRepository,title'], { cwd })
+  return JSON.parse(stdout) as { headRefName: string; isCrossRepository: boolean; title: string }
+}
+
+export async function issueText(cwd: string, number: number) {
+  const { stdout } = await exec('gh', ['issue', 'view', String(number), '--json', 'title,body,url'], { cwd })
+  return JSON.parse(stdout) as { title: string; body: string; url: string }
 }

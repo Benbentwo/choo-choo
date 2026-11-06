@@ -179,6 +179,12 @@ export async function restore(cwd: string, snap: { head: string; tree: string })
   await git(cwd, ['reset', '-q'])
 }
 
+/** Creates a new repo with one empty commit, so worktrees can branch from it. */
+export async function initRepo(dest: string) {
+  await exec('git', ['init', '-b', 'main', dest])
+  await exec('git', ['-C', dest, 'commit', '--allow-empty', '-m', 'Initial commit'])
+}
+
 export async function clone(url: string, dest: string) {
   await exec('git', ['clone', url, dest], { maxBuffer: 64 * 1024 * 1024 })
 }
@@ -186,6 +192,36 @@ export async function clone(url: string, dest: string) {
 export function repoNameFromUrl(url: string): string {
   const m = url.trim().replace(/\/+$/, '').replace(/\.git$/, '').match(/([^/:]+)$/)
   return m ? m[1] : 'repo'
+}
+
+/** Remote branches on origin, most recently committed first. */
+export async function remoteBranches(repo: string): Promise<{ name: string; when: string }[]> {
+  await tryGit(repo, ['fetch', 'origin', '--prune', '--quiet'])
+  const out = await tryGit(repo, ['for-each-ref', 'refs/remotes/origin', '--sort=-committerdate', '--format=%(refname:short)%09%(committerdate:relative)'])
+  return (out ?? '')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => l.split('\t'))
+    .filter(([n]) => n !== 'origin/HEAD' && n !== 'origin')
+    .map(([n, when]) => ({ name: n.replace(/^origin\//, ''), when }))
+}
+
+/** Checks out branch `name` into a new worktree, creating a local tracking branch from origin when needed. */
+export async function addWorktreeForRemoteBranch(repo: string, path: string, name: string) {
+  await tryGit(repo, ['worktree', 'prune'])
+  if (await tryGit(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])) {
+    await git(repo, ['worktree', 'add', path, name])
+  } else {
+    await tryGit(repo, ['fetch', 'origin', name, '--quiet'])
+    await git(repo, ['worktree', 'add', '--track', '-b', name, path, `origin/${name}`])
+  }
+}
+
+/** Fetches a PR head (works for forks) into local branch `local` and checks it out into a new worktree. */
+export async function addWorktreeForPull(repo: string, path: string, number: number, local: string) {
+  await tryGit(repo, ['worktree', 'prune'])
+  await git(repo, ['fetch', 'origin', `+pull/${number}/head:${local}`])
+  await git(repo, ['worktree', 'add', path, local])
 }
 
 /** Checks out an existing branch into a new worktree (used to restore an archived workspace). */

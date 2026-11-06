@@ -4,6 +4,7 @@ import { IconFolder, IconGithub, IconLock } from '../icons'
 import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread } from '../store'
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
+import { QuickStartModalBody } from './AddProject'
 import { AppearanceSettings } from './Appearance'
 import { OpenShareModal, ShareModal } from './ShareModals'
 
@@ -30,6 +31,12 @@ export function Modals() {
   if (modal === 'create') return <CreateModal onClose={close} />
   if (modal === 'open-share') return <OpenShareModal onClose={close} />
   if (modal === 'share') return <ShareFor onClose={close} />
+  if (modal === 'quickstart')
+    return (
+      <Shell onClose={close} width="w-[480px]">
+        <QuickStartModalBody onClose={close} />
+      </Shell>
+    )
   return null
 }
 
@@ -260,7 +267,7 @@ function Palette({ onClose }: { onClose: () => void }) {
       const repo = s.repos.find((r) => r.id === w.repoId)
       out.push({ id: `ws:${w.id}`, label: w.title, hint: `${repo?.name ?? ''} · ${w.branch}`, run: () => s.selectWorkspace(w.id) })
     }
-    for (const r of s.repos) out.push({ id: `new:${r.id}`, label: `New workspace in ${r.name}`, hint: 'Action', run: () => void newWorkspace(r.id) })
+    for (const r of s.repos) out.push({ id: `new:${r.id}`, label: `New workspace in ${r.name}`, hint: 'Action', run: () => newWorkspace(r.id) })
     out.push({ id: 'add', label: 'Add repository', hint: 'Action', run: () => s.set({ modal: 'create' }) })
     if (cur) out.push({ id: 'share', label: 'Share workspace with coworkers', hint: 'Action', run: () => s.set({ modal: 'share' }) })
     out.push({ id: 'open-share', label: 'Open shared session', hint: 'Action', run: () => s.set({ modal: 'open-share' }) })

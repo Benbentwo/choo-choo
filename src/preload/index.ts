@@ -48,6 +48,8 @@ const api: Api = {
   setZoom: (f) => webFrame.setZoomFactor(f),
   cloneRepo: inv('repo:clone') as Api['cloneRepo'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
+  quickStart: inv('repo:quickstart') as Api['quickStart'],
+  listSources: inv('ws:sources') as Api['listSources'],
   onNavigate: (cb) => on<[string, string]>('navigate', cb),
   onChatEvent: (cb) => on<[ChatEvent]>('chat:event', cb),
   getChanges: inv('git:changes') as Api['getChanges'],
