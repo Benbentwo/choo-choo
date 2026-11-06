@@ -27,6 +27,8 @@ protocols:
     schemes: [choo-choo]
 dmg:
   title: Choo Choo
+  # Fixed, space-free names with the arch always present, so the Homebrew cask can build the URL.
+  artifactName: ChooChoo-${version}-${arch}.${ext}
 publish:
   provider: github
   owner: Benbentwo
