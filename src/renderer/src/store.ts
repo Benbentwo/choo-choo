@@ -27,7 +27,9 @@ interface UI {
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
   settings: Settings
-  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | null
+  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | null
+  /** The chat whose usage graphs are open. */
+  usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
   settingsTab: 'general' | 'agents' | 'telemetry' | 'appearance'
@@ -70,6 +72,7 @@ export const useStore = create<UI>((set, get) => ({
   openDoc: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
+  usageChat: null,
   paletteMode: 'all',
   settingsTab: 'general',
   recentPaths: [],

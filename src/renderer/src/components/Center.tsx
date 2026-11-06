@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Workspace } from '@shared/types'
 import { useStore, openDoc, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread } from '../store'
-import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX } from '../icons'
+import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
@@ -118,6 +118,12 @@ export function Center({ ws }: { ws: Workspace }) {
         <button className="mb-2.5 ml-1 rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => void newChatTab(ws.id)} title="New chat (⌘T)">
           <IconPlus />
         </button>
+        <div className="flex-1" />
+        {active && active.model !== 'codex' && (
+          <button className="mb-2.5 rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ modal: 'usage', usageChat: active.id })} title="Usage and context graphs">
+            <IconChart />
+          </button>
+        )}
       </div>
 
       {doc?.kind === 'diff' ? (

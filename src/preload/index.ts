@@ -31,6 +31,7 @@ const api: Api = {
   createChat: inv('chat:create') as Api['createChat'],
   closeChat: inv('chat:close') as Api['closeChat'],
   getChatItems: inv('chat:items') as Api['getChatItems'],
+  getChatUsage: inv('chat:usage') as Api['getChatUsage'],
   updateChat: inv('chat:update') as Api['updateChat'],
   sendMessage: inv('chat:send') as Api['sendMessage'],
   stopChat: inv('chat:stop') as Api['stopChat'],

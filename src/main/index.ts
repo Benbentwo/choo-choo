@@ -7,6 +7,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
 import type { Artifact, Chat, FilePreview, Repo, Settings, Workspace } from '@shared/types'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
+import { sessionUsage } from './usage'
 import * as store from './store'
 import * as git from './git'
 import * as agent from './agent'
@@ -523,6 +524,13 @@ function registerIpc() {
     store.save()
   })
   h('chat:items', (id: string) => store.chatItems(id))
+  h('chat:usage', (id: string) => {
+    const chat = findChat(id)
+    if (chat.model === 'codex') return { points: [], compactions: [], contextWindow: 0, empty: 'Usage graphs are for Claude chats. Codex keeps its own transcript.' }
+    // Claude Code reports a running total, so the last turn's cost covers the session.
+    const last = [...store.chatItems(id)].reverse().find((x) => x.kind === 'result' && x.costUsd != null)
+    return sessionUsage(chat.sdkSessionId, { contextWindow: chat.contextWindow, costUsd: last?.kind === 'result' ? last.costUsd : undefined })
+  })
   h('chat:update', (id: string, patch: Partial<Chat>) => {
     const c = findChat(id)
     if (patch.model) c.model = patch.model

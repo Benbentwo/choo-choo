@@ -330,6 +330,12 @@ export async function send(
             ts: Date.now()
           })
           if (msg.session_id) chat.sdkSessionId = msg.session_id
+          {
+            // Remember the main model's context window for the usage graph.
+            const usage = Object.entries((msg.modelUsage ?? {}) as Record<string, { contextWindow?: number; outputTokens?: number }>)
+            const main = usage.find(([k]) => k.includes(chat.model)) ?? usage.sort((a, b) => (b[1].outputTokens ?? 0) - (a[1].outputTokens ?? 0))[0]
+            if (main?.[1].contextWindow) chat.contextWindow = main[1].contextWindow
+          }
           break
       }
     }

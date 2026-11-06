@@ -8,6 +8,7 @@ import { QuickStartModalBody } from './AddProject'
 import { AppearanceSettings } from './Appearance'
 import { OpenShareModal, ShareModal } from './ShareModals'
 import { CommandPalette } from './CommandPalette'
+import { UsageGraphs } from './UsageGraphs'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -39,7 +40,22 @@ export function Modals() {
     )
   if (modal === 'open-share') return <OpenShareModal onClose={close} />
   if (modal === 'share') return <ShareFor onClose={close} />
+  if (modal === 'usage') return <UsageFor onClose={close} />
   return null
+}
+
+function UsageFor({ onClose }: { onClose: () => void }) {
+  const chat = useStore((s) => s.chats.find((c) => c.id === s.usageChat))
+  if (!chat) return null
+  return (
+    <Shell onClose={onClose} width="w-[780px]">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <span className="font-medium">Session usage</span>
+        <span className="truncate text-faint">{chat.title}</span>
+      </div>
+      <UsageGraphs chat={chat} />
+    </Shell>
+  )
 }
 
 function ShareFor({ onClose }: { onClose: () => void }) {
