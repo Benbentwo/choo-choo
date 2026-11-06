@@ -4,7 +4,7 @@ import * as store from './store'
 import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
-import { enabledSubagents, renderTurn, runAdvisor, steerMessage } from './extras'
+import { enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
 
@@ -16,6 +16,18 @@ interface Running {
 const running = new Map<string, Running>()
 /** Advisor reviews in flight, per chat. */
 const advising = new Map<string, AbortController>()
+
+/** Marks advisor notes as sent or dismissed. For "send", returns the message to pass to the agent. */
+export function resolveAdvice(chat: Chat, itemId: string, action: 'send' | 'dismiss'): { item: ChatItem; message?: string } {
+  const item = store.chatItems(chat.id).find((x) => x.id === itemId)
+  if (!item || item.kind !== 'advisor' || item.pending || item.silent) throw new Error('No advisor notes to act on')
+  if (item.resolved) throw new Error('These notes were already handled')
+  item.resolved = action === 'send' ? 'sent' : 'dismissed'
+  store.upsertItem(chat.id, item)
+  chat.advisorBlocker = false
+  store.save()
+  return { item, message: action === 'send' ? steerMessage({ silent: false, blocker: !!item.blocker, notes: item.text.split('\n') }) : undefined }
+}
 
 // Tools that only read; asking about them would be noise.
 const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite', 'Task', 'Agent', 'NotebookRead', 'BashOutput', 'ExitPlanMode', 'ToolSearch', 'Skill'])
@@ -48,6 +60,14 @@ export const reportedCommands = new Map<string, string[]>()
 // The SDK is ESM-only; load it lazily from the CJS main bundle.
 let sdk: Promise<typeof import('@anthropic-ai/claude-agent-sdk')> | null = null
 const loadSdk = () => (sdk ??= import('@anthropic-ai/claude-agent-sdk'))
+
+const AUTH_ERROR = /not logged in|please run \/login|invalid api key|authentication[_ ]error|oauth token (?:has )?expired|\b401\b/i
+
+/** A clearer message when Claude Code isn't signed in. Sign-in always goes through Claude Code's own /login. */
+export function authHint(text: string | undefined): string | null {
+  if (!text || !AUTH_ERROR.test(text)) return null
+  return 'Claude Code isn\'t signed in. Open Terminal, run `claude`, and type /login to sign in with your Claude account. Or add an Anthropic API key in Settings.'
+}
 
 function stringifyResult(content: unknown): string {
   if (typeof content === 'string') return content
@@ -121,6 +141,7 @@ export async function send(
   if (chat.title === 'New chat') chat.title = text.slice(0, 40).replace(/\s+/g, ' ').trim() || 'New chat'
   chat.status = 'running'
   chat.unread = false
+  chat.advisorBlocker = false
   store.save()
   emit(chat.id, { chat })
 
@@ -168,6 +189,8 @@ export async function send(
       return
     }
     const { query } = await loadSdk()
+    const extras = store.get().settings.extras
+    const append = systemAppend(extras, !!chat.planMode)
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
       if (toolName === 'ExitPlanMode' && chat.planMode) {
         // The plan card asks the user; the agent must not start building on its own.
@@ -192,7 +215,7 @@ export async function send(
       return { behavior: 'allow', updatedInput: input }
     }
     const q = query({
-      prompt: userMessage(text, images, turnDone) as never,
+      prompt: userMessage(expandShortcuts(text, extras), images, turnDone) as never,
       options: {
         pathToClaudeCodeExecutable: claudeExecutable(),
         cwd: ws.path,
@@ -208,7 +231,8 @@ export async function send(
         includePartialMessages: true,
         abortController: abort,
         settingSources: ['user', 'project', 'local'],
-        agents: enabledSubagents(store.get().settings.extras),
+        agents: enabledSubagents(extras),
+        ...(append ? { systemPrompt: { type: 'preset', preset: 'claude_code', append } } : {}),
         env: { ...process.env, ...env }
       } as never
     })
@@ -227,6 +251,8 @@ export async function send(
           }
           break
         case 'stream_event': {
+          // Subagent text isn't shown; its result arrives on the Agent tool call.
+          if (msg.parent_tool_use_id) break
           const ev = msg.event
           if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
             if (!streamItem) {
@@ -238,8 +264,10 @@ export async function send(
           break
         }
         case 'assistant': {
+          const parentId: string | undefined = msg.parent_tool_use_id ?? undefined
           for (const block of msg.message?.content ?? []) {
             if (block.type === 'text' && block.text) {
+              if (parentId) continue
               const item: ChatItem = streamItem
                 ? { ...streamItem, text: block.text, streaming: false }
                 : { id: randomUUID(), kind: 'assistant', text: block.text, ts: Date.now() }
@@ -252,6 +280,7 @@ export async function send(
                 kind: 'tool',
                 name: block.name,
                 input: block.input,
+                ...(parentId ? { parentId } : {}),
                 ts: Date.now()
               }
               tools.set(block.id, item)
@@ -276,6 +305,10 @@ export async function send(
         case 'result':
           endTurn()
           turnOk = msg.subtype === 'success' && !msg.is_error
+          if (!turnOk) {
+            const hint = authHint(typeof msg.result === 'string' ? msg.result : (msg.errors ?? []).join('\n'))
+            if (hint) put({ id: randomUUID(), kind: 'error', text: hint, ts: Date.now() })
+          }
           put({
             id: randomUUID(),
             kind: 'result',
@@ -296,7 +329,7 @@ export async function send(
     put({
       id: randomUUID(),
       kind: 'error',
-      text: aborted ? 'Stopped' : (e as Error).message || String(e),
+      text: aborted ? 'Stopped' : authHint((e as Error).message) ?? ((e as Error).message || String(e)),
       ts: Date.now()
     })
   } finally {
@@ -326,6 +359,7 @@ async function advise(
   maySteer: boolean
 ) {
   const extras = store.get().settings.extras
+  if (chat.advisor === false) return
   const list = store.chatItems(chat.id)
   const start = list.findIndex((x) => x.id === fromItemId)
   const turn = start < 0 ? [] : list.slice(start)
@@ -352,9 +386,17 @@ async function advise(
     item.blocker = advice.blocker
     item.text = advice.silent ? 'No concerns' : advice.notes.join('\n')
     put()
+    if (advice.blocker && !running.has(chat.id)) {
+      chat.advisorBlocker = true
+      emit(chat.id, { chat })
+    }
     store.save()
     // One automatic follow-up per user message, and only if the user hasn't started a new turn.
-    if (advice.blocker && maySteer && extras.advisorSteer && !running.has(chat.id)) await followUp(steerMessage(advice))
+    if (advice.blocker && maySteer && extras.advisorSteer && !running.has(chat.id)) {
+      item.resolved = 'sent'
+      put()
+      await followUp(steerMessage(advice))
+    }
   } catch (e) {
     item.pending = false
     item.silent = true

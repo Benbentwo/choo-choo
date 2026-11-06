@@ -81,7 +81,13 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <Row label="Branch prefix" hint="New workspaces branch as prefix/name. Empty uses your GitHub username.">
           <input className={`${select} w-44`} defaultValue={settings.branchPrefix} placeholder="auto" onBlur={(e) => void save({ branchPrefix: e.target.value })} />
         </Row>
-        <Row label="Anthropic API key" hint="Optional. Without one, agents use your Claude Code login.">
+        <Row label="Claude Code" hint="Which Claude Code runs your agents. Your installed copy uses its own updates and settings. Falls back to the bundled one if it isn't found.">
+          <select className={select} value={settings.claudeBinary} onChange={(e) => void save({ claudeBinary: e.target.value as Settings['claudeBinary'] })}>
+            <option value="bundled">Bundled with the app</option>
+            <option value="installed">My installed claude</option>
+          </select>
+        </Row>
+        <Row label="Anthropic API key" hint="Optional. Without one, agents use your own Claude login: run claude in Terminal and type /login to sign in.">
           <input type="password" className={`${select} w-44`} defaultValue={settings.anthropicApiKey} placeholder="sk-ant-…" onBlur={(e) => void save({ anthropicApiKey: e.target.value })} />
         </Row>
         <Row label="Notifications" hint="Notify when an agent finishes while the app is in the background.">
@@ -94,10 +100,10 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
 }
 
 const EXTRA_AGENTS: { id: ExtraAgentId; label: string; hint: string }[] = [
-  { id: 'scout', label: 'Scout', hint: 'Fast read-only explorer on Haiku. The agent sends it to search the codebase and report back.' },
-  { id: 'reviewer', label: 'Reviewer', hint: 'Code review specialist on Opus that finds bugs in the current diff before you merge.' },
-  { id: 'securityReviewer', label: 'Security reviewer', hint: 'Read-only security specialist that traces untrusted input to dangerous code.' },
-  { id: 'quickWorker', label: 'Quick worker', hint: 'Low-cost Haiku worker for strictly mechanical edits or data collection.' }
+  { id: 'scout', label: 'Scout', hint: 'Fast read-only explorer on Haiku. Used for research in plan mode, or ask for it with @scout.' },
+  { id: 'reviewer', label: 'Reviewer', hint: 'Bug-hunting reviewer on Opus. Powers the Review tab with stricter rules, or ask for it with @reviewer.' },
+  { id: 'securityReviewer', label: 'Security reviewer', hint: 'Adds a Security review button to the Review tab, or ask for it with @security-reviewer.' },
+  { id: 'quickWorker', label: 'Quick worker', hint: 'Low-cost Haiku worker for mechanical edits. Type /quick followed by the task.' }
 ]
 
 function ExtrasSection({ extras, save }: { extras: Extras; save: (patch: Partial<Extras>) => void }) {
@@ -106,11 +112,18 @@ function ExtrasSection({ extras, save }: { extras: Extras; save: (patch: Partial
     <>
       <div className="border-y border-line bg-bg/40 px-5 py-2 text-[12px] font-medium text-muted">Extra agents (from oh-my-pi) · Claude chats only</div>
       {EXTRA_AGENTS.map((a) => (
-        <Row key={a.id} label={a.label} hint={a.hint}>
-          <input type="checkbox" checked={extras.agents[a.id]} onChange={(e) => save({ agents: { ...extras.agents, [a.id]: e.target.checked } })} />
-        </Row>
+        <div key={a.id}>
+          <Row label={a.label} hint={a.hint}>
+            <input type="checkbox" checked={extras.agents[a.id]} onChange={(e) => save({ agents: { ...extras.agents, [a.id]: e.target.checked } })} />
+          </Row>
+          {a.id === 'reviewer' && extras.agents.reviewer && (
+            <Row label="Review before opening a PR" hint="Create PR has the reviewer check the changes first, and stops if it finds a serious bug.">
+              <input type="checkbox" checked={extras.reviewBeforePr} onChange={(e) => save({ reviewBeforePr: e.target.checked })} />
+            </Row>
+          )}
+        </div>
       ))}
-      <Row label="Advisor" hint="A second model reviews each finished turn and points out bugs, drift from your ask, or unverified claims. Costs an extra model call per turn.">
+      <Row label="Advisor" hint="A second model reviews each finished turn and points out bugs, drift from your ask, or unverified claims. On for every chat; switch it off per chat in the composer. Costs one extra model call per turn.">
         <input type="checkbox" checked={extras.advisor} onChange={(e) => save({ advisor: e.target.checked })} />
       </Row>
       {extras.advisor && (
@@ -122,7 +135,7 @@ function ExtrasSection({ extras, save }: { extras: Extras; save: (patch: Partial
               <option value="haiku">Haiku</option>
             </select>
           </Row>
-          <Row label="Let the advisor steer" hint="Send blocker-level advice back to the agent automatically, once per message you send.">
+          <Row label="Send blockers automatically" hint="Pass blocker notes to the agent without waiting for you to click Send to agent. At most once per message you send.">
             <input type="checkbox" checked={extras.advisorSteer} onChange={(e) => save({ advisorSteer: e.target.checked })} />
           </Row>
         </>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { enabledSubagents, parseAdvice, renderTurn, steerMessage } from '../src/main/extras'
+import { enabledSubagents, expandShortcuts, parseAdvice, renderTurn, steerMessage, systemAppend } from '../src/main/extras'
 import { DEFAULT_EXTRAS, normalizeExtras, type ChatItem } from '../src/shared/types'
 
 describe('enabledSubagents', () => {
@@ -65,5 +65,32 @@ describe('renderTurn', () => {
     const t = renderTurn(items, 100)
     expect(t.startsWith('[earlier part of the turn cut]')).toBe(true)
     expect(t).toContain('Done, tests pass')
+  })
+})
+
+
+describe('expandShortcuts', () => {
+  const on = { ...DEFAULT_EXTRAS, agents: { scout: true, reviewer: false, securityReviewer: true, quickWorker: true } }
+  it('turns /quick into a hand-off to the quick worker', () => {
+    const t = expandShortcuts('/quick rename foo to bar everywhere', on)
+    expect(t).toContain('quick-worker')
+    expect(t).toContain('rename foo to bar everywhere')
+  })
+  it('leaves /quick alone when the quick worker is off', () => {
+    expect(expandShortcuts('/quick x', DEFAULT_EXTRAS)).toBe('/quick x')
+  })
+  it('asks for enabled @agents and ignores disabled ones and emails', () => {
+    expect(expandShortcuts('@scout where is auth handled?', on)).toContain('"scout" subagent')
+    expect(expandShortcuts('ask @reviewer', on)).toBe('ask @reviewer')
+    expect(expandShortcuts('mail me@scout.dev', on)).toBe('mail me@scout.dev')
+    expect(expandShortcuts('@scout then @security-reviewer', on)).toContain('"scout", "security-reviewer" subagents')
+  })
+})
+
+describe('systemAppend', () => {
+  it('points plan mode at the scout only when it is on', () => {
+    expect(systemAppend({ ...DEFAULT_EXTRAS, agents: { ...DEFAULT_EXTRAS.agents, scout: true } }, true)).toContain('scout')
+    expect(systemAppend({ ...DEFAULT_EXTRAS, agents: { ...DEFAULT_EXTRAS.agents, scout: true } }, false)).toBeUndefined()
+    expect(systemAppend(DEFAULT_EXTRAS, true)).toBeUndefined()
   })
 })

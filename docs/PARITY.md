@@ -80,8 +80,13 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 
 ## Beyond Conductor
 
-Features Conductor doesn't have. Each one is off until you turn it on in Settings.
+Features Conductor doesn't have. Each one is off until you turn it on in Settings › Extra agents. Agent prompts are adapted from [oh-my-pi](https://github.com/can1357/oh-my-pi) (MIT, see THIRD_PARTY_NOTICES.md).
 
-- ✅ Extra subagents adapted from [oh-my-pi](https://github.com/can1357/oh-my-pi) (MIT): Scout (Haiku, read-only search), Reviewer (Opus, diff review), Security reviewer (read-only), Quick worker (Haiku, mechanical edits). Claude chats hand work to them through the SDK's `agents` option.
-- ✅ Advisor: after each finished turn, a second model (Opus, Sonnet or Haiku) reads the turn with read-only tools and either stays silent or posts notes. With steering on, blocker notes go back to the agent automatically, at most once per message you send. Works for Claude and Codex chats.
-- Everything runs on the official Agent SDK and the bundled Claude Code binary, so it uses the same sign-in as the main agent. oh-my-pi's own Claude subscription login is not used: it impersonates Claude Code, which Anthropic's terms don't allow.
+- ✅ **Scout** (Haiku, read-only search): used for research in plan mode; `@scout` in the composer asks for it.
+- ✅ **Reviewer** (Opus): the Review tab uses its stricter rules; "Review before opening a PR" has Create PR run it first and stop on P0/P1 findings; `@reviewer` asks for it.
+- ✅ **Security reviewer**: adds a Security review button to the Review tab; its findings show in the same list and inline in diffs, tagged "security".
+- ✅ **Quick worker** (Haiku): `/quick <task>` hands mechanical work to it.
+- ✅ **Advisor**: after each finished turn, a second model reviews the turn with read-only tools and posts notes as a card with Send to agent and Dismiss. Per-chat Advisor toggle in the composer. A red dot in the sidebar marks a workspace with an unhandled blocker. Optional automatic sending of blockers, at most once per message.
+- ✅ Subagent calls show as one collapsible card per agent, with the steps it took inside.
+- ✅ Settings › Claude Code: run the bundled binary or your installed `claude`. When Claude Code isn't signed in, the chat says to run `claude` and `/login`.
+- Everything runs on the official Agent SDK and an unmodified Claude Code binary, with each user's own sign-in through Claude Code's /login. Choo Choo never shows its own Claude login or handles tokens, which keeps it within Anthropic's terms. oh-my-pi's own Claude subscription login is not used: it impersonates Claude Code.

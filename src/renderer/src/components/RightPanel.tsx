@@ -123,9 +123,14 @@ function ChangesList({ ws, changes }: { ws: Workspace; changes: FileChange[] }) 
   )
 }
 
-export function prPrompt(ws: Workspace, baseBranch: string, draft: boolean) {
+export function prPrompt(ws: Workspace, baseBranch: string, draft: boolean, reviewFirst = false) {
   return [
     `Create a ${draft ? 'draft ' : ''}pull request for the work on this branch (${ws.branch}).`,
+    ...(reviewFirst
+      ? [
+          `0. First have the reviewer subagent (Agent tool, subagent_type "reviewer") review the changes against \`${baseBranch}\`. If it reports any P0 or P1 finding, stop before committing: list those findings and ask whether to fix them first or open the PR anyway.`
+        ]
+      : []),
     '1. Review `git status` and the diff, then commit any uncommitted changes with a clear message.',
     `2. Push the branch: \`git push -u origin ${ws.branch}\`.`,
     `3. Open the PR against \`${baseBranch}\` with \`gh pr create${draft ? ' --draft' : ''}\`, a concise title, and a description of what changed and why.`,
@@ -160,7 +165,10 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
     if (!chatId) return
     s.setActiveChat(ws.id, chatId)
     try {
-      await window.api.sendMessage(chatId, prPrompt(ws, repo?.defaultBranch ?? 'main', draft))
+      const chat = s.chats.find((c) => c.id === chatId)
+      const { extras } = s.settings
+      const reviewFirst = extras.agents.reviewer && extras.reviewBeforePr && chat?.model !== 'codex'
+      await window.api.sendMessage(chatId, prPrompt(ws, repo?.defaultBranch ?? 'main', draft, reviewFirst))
     } catch (e) {
       reportError(e)
     }

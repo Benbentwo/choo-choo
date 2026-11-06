@@ -157,6 +157,14 @@ async function nameWorkspace(ws: Workspace, prompt: string) {
   send('state:changed')
 }
 
+function startTurn(chat: Chat, ws: Workspace, text: string, images: string[], opts: { fromAdvisor?: boolean } = {}) {
+  // Fire and forget; progress arrives through chat:event.
+  const env = workspaceEnv(ws)
+  const key = store.get().settings.anthropicApiKey.trim()
+  if (key) env.ANTHROPIC_API_KEY = key
+  void agent.send(chat, ws, text, env, (chatId, payload) => send('chat:event', { chatId, ...payload }), notifyDone, images, notifyAsk, opts)
+}
+
 function notifyDone(chat: Chat) {
   if (!store.get().settings.notifications || win?.isFocused() || !Notification.isSupported()) return
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
@@ -288,6 +296,9 @@ function registerIpc() {
     if (patch.unread !== undefined) c.unread = patch.unread
     if (patch.planMode !== undefined) c.planMode = patch.planMode
     if (patch.review !== undefined) c.review = patch.review
+    if (patch.reviewKind) c.reviewKind = patch.reviewKind
+    if (patch.advisor !== undefined) c.advisor = patch.advisor
+    if (patch.advisorBlocker !== undefined) c.advisorBlocker = patch.advisorBlocker
     if (patch.permission) c.permission = patch.permission
     store.save()
     return c
@@ -356,11 +367,14 @@ function registerIpc() {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
     if (!ws.named) void nameWorkspace(ws, text)
-    // Fire and forget; progress arrives through chat:event.
-    const env = workspaceEnv(ws)
-    const key = store.get().settings.anthropicApiKey.trim()
-    if (key) env.ANTHROPIC_API_KEY = key
-    void agent.send(chat, ws, text, env, (chatId, payload) => send('chat:event', { chatId, ...payload }), notifyDone, images.slice(0, 10), notifyAsk)
+    startTurn(chat, ws, text, images.slice(0, 10))
+  })
+  h('advisor:act', (chatId: string, itemId: string, action: 'send' | 'dismiss') => {
+    const chat = findChat(chatId)
+    if (action === 'send' && agent.isRunning(chat.id)) throw new Error('Wait for the agent to finish first')
+    const { item, message } = agent.resolveAdvice(chat, itemId, action)
+    send('chat:event', { chatId, item, chat })
+    if (message) startTurn(chat, findWs(chat.workspaceId), message, [], { fromAdvisor: true })
   })
   h('chat:stop', (id: string) => agent.stop(id))
   ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny') => agent.respondPermission(id, d))

@@ -69,6 +69,7 @@ export function Sidebar() {
                 const running = s.chats.some((c) => c.workspaceId === w.id && c.status === 'running')
                 const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
                 const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
+                const blocker = s.chats.some((c) => c.workspaceId === w.id && c.advisorBlocker)
                 return (
                   <button
                     key={w.id}
@@ -79,6 +80,8 @@ export function Sidebar() {
                     <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''}`}>{w.title}</span>
                     {asking ? (
                       <span className="shrink-0 rounded bg-sky-500/20 px-1 text-[10px] text-sky-400">needs you</span>
+                    ) : blocker ? (
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-del" title="The advisor raised a blocker" />
                     ) : (
                       unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />
                     )}
