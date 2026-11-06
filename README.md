@@ -17,7 +17,7 @@ xattr -cr "/Applications/Choo Choo.app"
 Requires macOS, Node 22+, git, and a Claude login (`claude` CLI signed in, or `ANTHROPIC_API_KEY`). Install the `gh` CLI for PR features.
 
 ```sh
-npm install      # also rebuilds node-pty for Electron
+npm install      # also downloads Electron and rebuilds node-pty for it
 npm run dev      # launch with hot reload
 npm test         # unit tests
 npm run dist:mac # build arm64 and Intel .dmg and .zip files into dist/
