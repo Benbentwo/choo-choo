@@ -6,6 +6,7 @@ import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
 import { enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
 import * as orchestrator from './orchestrator'
+import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
 
@@ -27,7 +28,51 @@ export function resolveAdvice(chat: Chat, itemId: string, action: 'send' | 'dism
   store.upsertItem(chat.id, item)
   chat.advisorBlocker = false
   store.save()
-  return { item, message: action === 'send' ? steerMessage({ silent: false, blocker: !!item.blocker, notes: item.text.split('\n') }) : undefined }
+  if (action !== 'send') return { item }
+  const notes = item.text.split('\n')
+  return { item, message: item.source === 'planReview' ? revisePlanMessage(notes) : steerMessage({ silent: false, blocker: !!item.blocker, notes }) }
+}
+
+/** Plan reviews in flight, per chat. */
+const reviewingPlans = new Map<string, AbortController>()
+
+/**
+ * Has fresh reviewers check the plan in an ExitPlanMode card. They see only the plan text and the repo,
+ * never this chat, so they catch what the planning agent knows but didn't write down.
+ */
+export async function reviewPlan(chat: Chat, ws: Workspace, planItemId: string, env: Record<string, string>, emit: Emit) {
+  if (reviewingPlans.has(chat.id)) throw new Error('The plan is already being reviewed')
+  const plan = store.chatItems(chat.id).find((x) => x.id === planItemId)
+  const text = plan?.kind === 'tool' && plan.name === 'ExitPlanMode' ? String((plan.input as { plan?: string })?.plan ?? '').trim() : ''
+  if (!text) throw new Error('No plan to review')
+  const item: Extract<ChatItem, { kind: 'advisor' }> = { id: randomUUID(), kind: 'advisor', source: 'planReview', planItemId, text: '', pending: true, ts: Date.now() }
+  const put = () => {
+    store.upsertItem(chat.id, { ...item })
+    emit(chat.id, { item: { ...item } })
+  }
+  put()
+  const abort = new AbortController()
+  reviewingPlans.set(chat.id, abort)
+  try {
+    const res = await runPlanReview(text, {
+      cwd: ws.path,
+      model: 'opus',
+      env: { ...process.env, ...env },
+      executable: claudeExecutable(),
+      signal: abort.signal
+    })
+    item.silent = res.silent
+    item.blocker = res.blocker
+    item.text = abort.signal.aborted ? 'Plan review stopped' : res.text
+  } catch (e) {
+    item.silent = true
+    item.text = `Plan review failed: ${(e as Error).message || String(e)}`
+  } finally {
+    item.pending = false
+    put()
+    store.save()
+    if (reviewingPlans.get(chat.id) === abort) reviewingPlans.delete(chat.id)
+  }
 }
 
 // Tools that only read; asking about them would be noise.
@@ -87,6 +132,7 @@ export function isRunning(chatId: string) {
 
 export async function stop(chatId: string) {
   advising.get(chatId)?.abort()
+  reviewingPlans.get(chatId)?.abort()
   const r = running.get(chatId)
   if (!r) return
   if (!r.query) return r.abort.abort()
@@ -437,5 +483,6 @@ export async function revert(chat: Chat, ws: Workspace, itemId: string): Promise
 
 export function stopAll() {
   for (const a of advising.values()) a.abort()
+  for (const a of reviewingPlans.values()) a.abort()
   for (const r of running.values()) r.abort.abort()
 }

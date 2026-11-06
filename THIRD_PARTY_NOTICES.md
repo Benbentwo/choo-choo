@@ -42,3 +42,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Elephant-Goldfish Model
+
+The plan review in [src/main/planReview.ts](src/main/planReview.ts) adapts the idea and reviewer roles (design critic, implementation readiness, codebase details) from Google's [Elephant-Goldfish Model](https://github.com/google/elephant-goldfish-model), licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). The prompts were condensed and rewritten for reviewing a chat plan instead of a design document.
