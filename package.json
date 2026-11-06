@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "description": "Run parallel Claude Code agents in git worktrees",
   "main": "out/main/index.js",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",

@@ -16,6 +16,7 @@ import { listCommands } from './commands'
 import * as gh from './github'
 import { suggestName } from './naming'
 import { checkNow, installUpdate, startUpdater } from './updater'
+import { registerDevFeedback } from './devFeedback'
 
 let win: BrowserWindow | null = null
 
@@ -333,13 +334,18 @@ function registerIpc() {
     return s.settings
   })
   h('repo:clone', async (url: string) => {
-    if (!/^(https:\/\/|git@|ssh:\/\/)/.test(url.trim())) throw new Error('Enter an https or ssh git URL')
+    url = url.trim()
+    // owner/repo shorthand (or a github.com URL) clones through gh, so private repos use the gh login.
+    const gh_ = url.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
+    if (!gh_ && !/^(https:\/\/|git@|ssh:\/\/)/.test(url)) throw new Error('Enter owner/repo, or an https or ssh git URL')
     mkdirSync(REPOS_ROOT, { recursive: true })
     let dest = join(REPOS_ROOT, git.repoNameFromUrl(url))
     for (let n = 2; existsSync(dest); n++) dest = join(REPOS_ROOT, `${git.repoNameFromUrl(url)}-${n}`)
-    await git.clone(url.trim(), dest)
+    if (gh_) await gh.cloneRepo(gh_, dest)
+    else await git.clone(url, dest)
     return addRepo(dest)
   })
+  h('gh:repos', () => gh.listMyRepos())
   h('pr:merge', async (id: string) => {
     const ws = findWs(id)
     const pr = await gh.prForBranch(ws.path, ws.branch)
@@ -488,6 +494,7 @@ app.whenReady().then(async () => {
   await fixPath()
   store.load()
   registerIpc()
+  registerDevFeedback(() => win)
   buildMenu()
   createWindow()
   startUpdater(send)

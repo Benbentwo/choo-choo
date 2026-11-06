@@ -45,6 +45,7 @@ const api: Api = {
   revertTo: inv('chat:revert') as Api['revertTo'],
   saveSettings: inv('settings:save') as Api['saveSettings'],
   cloneRepo: inv('repo:clone') as Api['cloneRepo'],
+  listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
   onNavigate: (cb) => on<[string, string]>('navigate', cb),
   onChatEvent: (cb) => on<[ChatEvent]>('chat:event', cb),
   getChanges: inv('git:changes') as Api['getChanges'],
@@ -67,3 +68,8 @@ const api: Api = {
 }
 
 contextBridge.exposeInMainWorld('api', api)
+
+// Dev-only feedback mode (see src/main/devFeedback.ts).
+if (process.env.ELECTRON_RENDERER_URL) {
+  contextBridge.exposeInMainWorld('devFeedback', { submit: inv('devFeedback:submit') })
+}

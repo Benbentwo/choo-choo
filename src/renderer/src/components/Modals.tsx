@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ExtraAgentId, Extras, Settings } from '@shared/types'
+import type { ExtraAgentId, Extras, GithubRepo, Settings } from '@shared/types'
+import { IconFolder, IconGithub, IconLock } from '../icons'
 import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread } from '../store'
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
@@ -131,48 +132,117 @@ function ExtrasSection({ extras, save }: { extras: Extras; save: (patch: Partial
 }
 
 function CreateModal({ onClose }: { onClose: () => void }) {
-  const [url, setUrl] = useState('')
-  const [busy, setBusy] = useState(false)
-  const clone = async () => {
-    setBusy(true)
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [repos, setRepos] = useState<GithubRepo[] | null>(null)
+  const [ghError, setGhError] = useState<string | null>(null)
+  const [sel, setSel] = useState(0)
+  const myRepos = useStore((s) => s.repos)
+  const added = useMemo(() => new Set(myRepos.map((r) => r.name)), [myRepos])
+
+  useEffect(() => {
+    window.api.listGithubRepos().then(setRepos, (e) => setGhError(String(e?.message ?? e)))
+  }, [])
+
+  const looksLikeUrl = /^(https:\/\/|git@|ssh:\/\/)/.test(q.trim())
+  const shown = useMemo(() => {
+    if (!repos || looksLikeUrl) return []
+    const t = q.trim().toLowerCase()
+    return repos.filter((r) => !t || r.nameWithOwner.toLowerCase().includes(t) || r.description?.toLowerCase().includes(t)).slice(0, 50)
+  }, [repos, q, looksLikeUrl])
+  useEffect(() => setSel(0), [q])
+
+  const clone = async (target: string) => {
+    setBusy(target)
     try {
-      const repo = await window.api.cloneRepo(url)
+      const repo = await window.api.cloneRepo(target)
       await refreshState()
       onClose()
       await newWorkspace(repo.id)
     } catch (e) {
       reportError(e)
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
+  const onEnter = () => {
+    if (busy) return
+    if (looksLikeUrl || /^[\w.-]+\/[\w.-]+$/.test(q.trim())) void clone(q.trim())
+    else if (shown[sel]) void clone(shown[sel].nameWithOwner)
+  }
+
   return (
-    <Shell onClose={onClose} width="w-[480px]">
-      <div className="border-b border-line px-5 py-3 font-medium">Add a repository</div>
-      <div className="p-5">
+    <Shell onClose={onClose} width="w-[560px]">
+      <div className="flex items-center justify-between border-b border-line px-5 py-3">
+        <span className="font-medium">Add a repository</span>
         <button
-          className="mb-5 w-full rounded-lg border border-line px-4 py-3 text-left hover:bg-hover"
+          className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-[12px] hover:bg-hover"
           onClick={() => {
             onClose()
             void addRepository()
           }}
         >
-          <div>Open a local repository</div>
-          <div className="text-[12px] text-faint">Pick a folder that is already a git repo</div>
+          <IconFolder width={14} height={14} /> Open local folder
         </button>
-        <div className="mb-1.5 text-[12px] text-muted">Or clone from a URL</div>
-        <div className="flex gap-2">
+      </div>
+      <div className="p-3">
+        <div className="mb-2 flex items-center gap-2 rounded-md border border-line bg-bg px-2.5 focus-within:border-faint">
+          <IconGithub width={15} height={15} className="text-faint" />
           <input
             autoFocus
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && url && !busy && void clone()}
-            placeholder="https://github.com/owner/repo"
-            className="flex-1 rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-faint"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onEnter()
+              else if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setSel((i) => Math.min(i + 1, shown.length - 1))
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setSel((i) => Math.max(i - 1, 0))
+              }
+            }}
+            placeholder="Search your GitHub repositories, or paste a URL"
+            className="flex-1 bg-transparent py-2 outline-none"
           />
-          <button disabled={!url || busy} onClick={() => void clone()} className="rounded-md bg-fg px-3 font-medium text-bg disabled:opacity-40">
-            {busy ? 'Cloning…' : 'Clone'}
-          </button>
+        </div>
+        <div className="max-h-[50vh] overflow-y-auto">
+          {looksLikeUrl && (
+            <button disabled={!!busy} onClick={() => void clone(q.trim())} className="flex h-10 w-full items-center rounded-md bg-hover px-2 text-left">
+              {busy ? `Cloning ${q.trim()}…` : `Clone ${q.trim()}`}
+            </button>
+          )}
+          {!looksLikeUrl && repos === null && !ghError && <div className="px-2 py-3 text-[12px] text-faint">Loading your repositories…</div>}
+          {ghError && (
+            <div className="px-2 py-3 text-[12px] text-faint">
+              Couldn't list GitHub repositories. Sign in with <code>gh auth login</code>, or paste a URL above.
+            </div>
+          )}
+          {shown.map((r, i) => {
+            const name = r.nameWithOwner.split('/')[1]
+            return (
+              <button
+                key={r.nameWithOwner}
+                disabled={!!busy}
+                onMouseEnter={() => setSel(i)}
+                onClick={() => void clone(r.nameWithOwner)}
+                className={`flex w-full items-center gap-3 rounded-md px-2 py-2 text-left ${i === sel ? 'bg-hover' : ''}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="text-faint">{r.nameWithOwner.split('/')[0]}/</span>
+                    <span>{name}</span>
+                    {r.private && <IconLock width={12} height={12} className="text-faint" />}
+                  </div>
+                  {r.description && <div className="truncate text-[12px] text-faint">{r.description}</div>}
+                </div>
+                <span className="shrink-0 text-[12px] text-faint">
+                  {busy === r.nameWithOwner ? 'Cloning…' : added.has(name) ? 'Added' : i === sel ? 'Clone ↵' : ''}
+                </span>
+              </button>
+            )
+          })}
+          {repos && !looksLikeUrl && shown.length === 0 && <div className="px-2 py-3 text-[12px] text-faint">No matching repositories.</div>}
         </div>
       </div>
     </Shell>
