@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar'
 import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
+import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
 
 export function App() {
@@ -41,7 +42,7 @@ export function App() {
         case 'settings':
           return st.set({ modal: 'settings' })
         case 'new-workspace':
-          if (curWs) void newWorkspace(curWs.repoId)
+          if (curWs) newWorkspace(curWs.repoId)
           return
         case 'new-chat':
           if (cur) void newChatTab(cur)
@@ -81,6 +82,8 @@ export function App() {
             <Center ws={ws} />
             {s.rightOpen && <RightPanel ws={ws} />}
           </>
+        ) : s.draftRepo ? (
+          <NewWorkspace repoId={s.draftRepo} />
         ) : (
           <Home />
         )}

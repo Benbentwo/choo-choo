@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { DEFAULT_SETTINGS, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
+import { DEFAULT_SETTINGS, type Effort, type ModelId, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
 
 export interface Doc {
   kind: 'diff' | 'file'
@@ -23,6 +23,8 @@ interface UI {
   settings: Settings
   modal: 'settings' | 'palette' | 'create' | 'quickstart' | null
   recentPaths: string[]
+  /** Repo whose new-workspace composer is open in the center, if any. */
+  draftRepo: string | null
   history: string[]
   historyIndex: number
   sidebarOpen: boolean
@@ -57,6 +59,7 @@ export const useStore = create<UI>((set, get) => ({
   settings: { ...DEFAULT_SETTINGS },
   modal: null,
   recentPaths: [],
+  draftRepo: null,
   history: [],
   historyIndex: -1,
   sidebarOpen: true,
@@ -67,10 +70,10 @@ export const useStore = create<UI>((set, get) => ({
 
   hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [] }),
   selectWorkspace: (id, fromHistory) => {
-    if (fromHistory || !id) return set({ selectedWs: id })
+    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null })
     const { history, historyIndex } = get()
     const h = [...history.slice(0, historyIndex + 1), id].slice(-50)
-    set({ selectedWs: id, history: h, historyIndex: h.length - 1 })
+    set({ selectedWs: id, draftRepo: null, history: h, historyIndex: h.length - 1 })
   },
   back: () => {
     const { history, historyIndex } = get()
@@ -121,15 +124,19 @@ export function reportError(e: unknown) {
   useStore.getState().set({ error: msg })
 }
 
-export async function newWorkspace(repoId: string) {
-  try {
-    const { workspace, chat } = await window.api.createWorkspace(repoId)
-    await refreshState()
-    useStore.getState().setActiveChat(workspace.id, chat.id)
-    useStore.getState().selectWorkspace(workspace.id)
-  } catch (e) {
-    reportError(e)
-  }
+/** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
+export function newWorkspace(repoId: string) {
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId })
+}
+
+export async function createWorkspace(repoId: string, opts: { source?: WorkspaceSource; text: string; model: ModelId; effort: Effort }) {
+  const { workspace, chat, context } = await window.api.createWorkspace(repoId, opts.source)
+  await window.api.updateChat(chat.id, { model: opts.model, effort: opts.effort })
+  await refreshState()
+  useStore.getState().setActiveChat(workspace.id, chat.id)
+  useStore.getState().selectWorkspace(workspace.id)
+  const prompt = [context, opts.text.trim()].filter(Boolean).join('\n\n')
+  if (prompt) await window.api.sendMessage(chat.id, prompt)
 }
 
 export async function addRepository() {

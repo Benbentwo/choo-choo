@@ -6,6 +6,15 @@ export interface Repo {
   hidden?: boolean
 }
 
+/** What a new workspace starts from, besides a fresh branch off the default branch. */
+export type WorkspaceSource = { kind: 'pr'; number: number } | { kind: 'branch'; name: string } | { kind: 'issue'; number: number }
+
+export interface SourceOption {
+  source: WorkspaceSource
+  title: string
+  detail: string
+}
+
 export interface GithubRepo {
   nameWithOwner: string
   description: string | null
@@ -210,7 +219,8 @@ export interface Api {
   addRepo(path: string): Promise<Repo>
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
-  createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  createWorkspace(repoId: string, source?: WorkspaceSource): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
+  listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   renameWorkspace(workspaceId: string, title: string): Promise<void>

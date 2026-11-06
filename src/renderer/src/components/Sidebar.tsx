@@ -116,7 +116,7 @@ export function Sidebar() {
                 >
                   {repo.hidden ? 'Show' : 'Hide'}
                 </button>
-                <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="New workspace" onClick={() => void newWorkspace(repo.id)}>
+                <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="New workspace" onClick={() => newWorkspace(repo.id)}>
                   <IconPlus />
                 </button>
               </div>

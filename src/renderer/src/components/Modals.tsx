@@ -235,7 +235,7 @@ function Palette({ onClose }: { onClose: () => void }) {
       const repo = s.repos.find((r) => r.id === w.repoId)
       out.push({ id: `ws:${w.id}`, label: w.title, hint: `${repo?.name ?? ''} · ${w.branch}`, run: () => s.selectWorkspace(w.id) })
     }
-    for (const r of s.repos) out.push({ id: `new:${r.id}`, label: `New workspace in ${r.name}`, hint: 'Action', run: () => void newWorkspace(r.id) })
+    for (const r of s.repos) out.push({ id: `new:${r.id}`, label: `New workspace in ${r.name}`, hint: 'Action', run: () => newWorkspace(r.id) })
     out.push({ id: 'add', label: 'Add repository', hint: 'Action', run: () => s.set({ modal: 'create' }) })
     if (cur) out.push({ id: 'chat', label: 'New chat tab', hint: 'Action', run: () => void newChatTab(cur.id) })
     out.push({ id: 'unread', label: 'Next unread', hint: 'Action', run: goToNextUnread })
