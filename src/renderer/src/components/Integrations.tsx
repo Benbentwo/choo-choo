@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { IntegrationId, IntegrationStatus } from '@shared/types'
-import { reportError } from '../store'
+import { reportError, useStore } from '../store'
 
 /** Settings → Integrations: one row per service, each signed in through the browser (OAuth). */
 export function IntegrationsSettings() {
   const list = useIntegrations()
+  const notionTools = useStore((s) => s.settings.notionAgentTools)
   const [busy, setBusy] = useState<IntegrationId | null>(null)
   const connect = async (id: IntegrationId) => {
     setBusy(id)
@@ -34,6 +35,16 @@ export function IntegrationsSettings() {
             <div className="mt-0.5 text-[12px] text-faint">{i.connected && i.account ? `Signed in as ${i.account}.` : i.description}</div>
             {busy === i.id && <div className="mt-1 text-[12px] text-muted">Finish signing in in your browser…</div>}
             {!i.configured && !i.connected && <div className="mt-1 text-[12px] text-faint">Sign-in isn't available in this build yet.</div>}
+            {i.id === 'notion' && i.connected && (
+              <label className="mt-2 flex items-center gap-2 text-[12px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={notionTools}
+                  onChange={async (e) => useStore.getState().set({ settings: await window.api.saveSettings({ notionAgentTools: e.target.checked }) })}
+                />
+                Give agents Notion tools (search, read and edit pages)
+              </label>
+            )}
           </div>
           <div className="shrink-0">
             {i.connected ? (

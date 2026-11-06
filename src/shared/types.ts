@@ -26,10 +26,12 @@ export type WorkspaceSource =
   | { kind: 'pr'; number: number }
   | { kind: 'branch'; name: string }
   | { kind: 'issue'; number: number }
+  /** A Notion page (often a task in a database), by its id or URL. */
+  | { kind: 'notion'; id: string }
   /** A Linear issue, by its id. The workspace gets Linear's suggested branch name for it. */
   | { kind: 'linear'; id: string }
 
-/** Services you sign in to from Settings → Integrations. */
+/** Services you sign in to from Settings > Integrations. */
 export type IntegrationId = 'linear' | 'notion'
 
 export interface IntegrationStatus {
@@ -37,7 +39,7 @@ export interface IntegrationStatus {
   label: string
   description: string
   connected: boolean
-  /** Who is signed in, e.g. "Ben Smith · Acme". */
+  /** Who is signed in, when the service tells us. */
   account?: string
   /** False when this build has no OAuth app for the service, so sign-in can't work yet. */
   configured: boolean
@@ -289,6 +291,8 @@ export interface Settings extends AppearanceSettings {
   claudeBinary: 'bundled' | 'installed'
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
   extras: Extras
+  /** Give agents Notion's MCP tools when Notion is connected. */
+  notionAgentTools: boolean
   /** Instructions for every Claude agent. A repo's own prompt adds to or replaces this. */
   systemPrompt?: PromptCustom
   /** OpenTelemetry export for Claude agents. Off by default. */
@@ -409,6 +413,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notifications: true,
   claudeBinary: 'bundled',
   extras: DEFAULT_EXTRAS,
+  notionAgentTools: true,
   telemetry: DEFAULT_TELEMETRY,
   archiveRetentionDays: 30,
   ...DEFAULT_APPEARANCE

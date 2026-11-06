@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import type { IntegrationId, IntegrationStatus } from '@shared/types'
 import { getAuth } from './tokens'
+import { notion } from './notion'
 import { linear } from './linear'
 
 /**
@@ -18,7 +19,7 @@ export interface Provider {
   disconnect(): Promise<void>
 }
 
-const providers: Provider[] = [linear]
+const providers: Provider[] = [linear, notion]
 
 export function status(p: Provider): IntegrationStatus {
   const auth = getAuth(p.id)
