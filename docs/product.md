@@ -54,4 +54,4 @@ The detailed requirements live in the [PRDs](prd/). Status as of 2026-11-06:
 - Windows or Linux builds.
 - A hosted cloud version or any Choo Choo account.
 - Reusing a claude.ai login or Claude subscription outside the official Claude Code binary.
-- claude.ai Projects integration: there is no public API for Projects, project memory or chat history. The [orchestrator](prd/orchestrator.md) fills that need locally.
+- claude.ai Projects integration: there is no public API for Projects, project memory or chat history. The [orchestrator](prd/orchestrator.md) and its project groups fill that need locally.

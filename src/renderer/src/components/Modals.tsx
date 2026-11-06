@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, PromptCustom, Settings, Telemetry } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
-import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
+import { useStore, openGroupOrchestrator, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
 import { QuickStartModalBody } from './AddProject'
@@ -42,7 +42,83 @@ export function Modals() {
   if (modal === 'open-share') return <OpenShareModal onClose={close} />
   if (modal === 'share') return <ShareFor onClose={close} />
   if (modal === 'usage') return <UsageFor onClose={close} />
+  if (modal === 'group') return <GroupModal onClose={close} />
   return null
+}
+
+/** Create or edit a project group: a name and the repos its orchestrator directs. */
+function GroupModal({ onClose }: { onClose: () => void }) {
+  const repos = useStore((s) => s.repos)
+  const existing = useStore((s) => s.groups.find((g) => g.id === s.editGroup))
+  const [name, setName] = useState(existing?.name ?? '')
+  const [picked, setPicked] = useState<string[]>(existing?.repoIds ?? [])
+  const [busy, setBusy] = useState(false)
+  const toggle = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
+  const submit = async () => {
+    setBusy(true)
+    try {
+      const g = await window.api.saveGroup({ id: existing?.id, name, repoIds: picked })
+      await refreshState()
+      onClose()
+      if (!existing) await openGroupOrchestrator(g.id)
+    } catch (e) {
+      reportError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const remove = async () => {
+    if (!existing) return
+    try {
+      await window.api.deleteGroup(existing.id)
+      await refreshState()
+      onClose()
+    } catch (e) {
+      reportError(e)
+    }
+  }
+  return (
+    <Shell onClose={onClose} width="w-[460px]">
+      <div className="border-b border-line px-5 py-3 font-medium">{existing ? 'Edit project group' : 'New project group'}</div>
+      <div className="space-y-4 px-5 py-4">
+        <div className="text-[12px] text-muted">
+          A project group gives several repositories one orchestrator and one shared memory. It starts workspaces in whichever repo each piece of work belongs to.
+        </div>
+        <input
+          autoFocus
+          className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent"
+          placeholder="Name, e.g. Storefront"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && name.trim() && picked.length && void submit()}
+        />
+        <div className="max-h-64 overflow-y-auto rounded-md border border-line">
+          {repos.length === 0 && <div className="px-3 py-2 text-faint">Add a repository first.</div>}
+          {repos.map((r) => (
+            <label key={r.id} className="flex cursor-pointer items-center gap-2 border-b border-line px-3 py-2 last:border-0 hover:bg-hover">
+              <input type="checkbox" checked={picked.includes(r.id)} onChange={() => toggle(r.id)} />
+              <span className="flex-1 truncate">{r.name}</span>
+              {picked[0] === r.id && <span className="text-[11px] text-faint">runs here</span>}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 border-t border-line px-5 py-3">
+        {existing && (
+          <button className="rounded-md px-2.5 py-1 text-del hover:bg-hover" onClick={() => void remove()}>
+            Delete group
+          </button>
+        )}
+        <div className="flex-1" />
+        <button className="rounded-md px-2.5 py-1 hover:bg-hover" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="rounded-md bg-fg px-3 py-1 font-medium text-bg disabled:opacity-40" disabled={busy || !name.trim() || !picked.length} onClick={() => void submit()}>
+          {existing ? 'Save' : 'Create and open orchestrator'}
+        </button>
+      </div>
+    </Shell>
+  )
 }
 
 function UsageFor({ onClose }: { onClose: () => void }) {
@@ -156,6 +232,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             </Row>
             <Row label="Notifications" hint="Notify when an agent finishes while the app is in the background.">
               <input type="checkbox" checked={settings.notifications} onChange={(e) => void save({ notifications: e.target.checked })} />
+            </Row>
+            <Row label="Orchestrator updates" hint="When a workspace the orchestrator started finishes, wake the orchestrator so it checks the work and reports back.">
+              <input type="checkbox" checked={settings.orchestratorAutoUpdates} onChange={(e) => void save({ orchestratorAutoUpdates: e.target.checked })} />
             </Row>
             <Row label="Workspaces folder" hint="Where new workspaces are created. Empty uses ~/choo-choo/workspaces.">
               <input className={`${select} w-44`} defaultValue={settings.workspacesRoot ?? ''} placeholder="~/choo-choo/workspaces" onBlur={(e) => void save({ workspacesRoot: e.target.value })} />

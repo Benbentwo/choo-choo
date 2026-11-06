@@ -38,7 +38,7 @@ Choo Choo is an Electron app built with electron-vite. Three processes, one shar
 | `models.ts` | Reads what the opus/sonnet/haiku aliases currently resolve to |
 | `codex.ts` | Runs Codex turns through the `codex` CLI |
 | `extras.ts` | Opt-in subagents (scout, reviewer, security reviewer, quick worker) and the advisor |
-| `orchestrator.ts` | Per-repo orchestrator chat, its in-process MCP tools and memory file |
+| `orchestrator.ts` | Orchestrator chat for a repo or project group, its in-process MCP tools and memory file |
 | `reflect.ts` | Read-only reflection agent over a workspace's chats |
 | `share.ts`, `shareIpc.ts` | Shared sessions over hidden git refs |
 | `remote.ts` | Continue on phone: runs `claude --resume <id> --remote-control` in a terminal and imports the phone turns back |
@@ -64,6 +64,7 @@ Choo Choo is an Electron app built with electron-vite. Three processes, one shar
 | `~/choo-choo/archive/<repo>/<name>-<id>` | Archived worktrees until retention cleanup (default 30 days) |
 | `~/choo-choo/repos/` | Default clone location |
 | `~/choo-choo/memory/<repo>.md` | Orchestrator memory per repo |
+| `~/choo-choo/memory/groups/<group>.md` | Orchestrator memory per project group |
 | `~/.claude/…` | Claude Code's own session files; Choo Choo stores only the `sdkSessionId` to resume |
 | `refs/choo-choo/shares/<id>` in the repo's `origin` | Shared sessions |
 
