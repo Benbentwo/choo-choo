@@ -15,7 +15,7 @@ An open-source, MIT-licensed alternative to [Conductor](https://conductor.build)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS](https://img.shields.io/badge/macOS-Apple%20silicon%20%7C%20Intel-lightgrey)
 
-[Download](https://github.com/Benbentwo/choo-choo/releases/latest) · [Features](#features) · [Coming from Conductor](#coming-from-conductor) · [Contributing](CONTRIBUTING.md)
+[Download](https://github.com/Benbentwo/choo-choo/releases/latest) · [Features](#features) · [Coming from Conductor](#coming-from-conductor) · [Docs](docs/README.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -128,6 +128,8 @@ npm run dist:mac # build arm64 and Intel .dmg and .zip files into dist/
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) to send a change.
+
+Project docs live in [docs/](docs/README.md): the [product overview](docs/product.md), [architecture](docs/architecture.md), a PRD for each feature area and the decision records behind them.
 
 ### Comment mode: point at the UI and let Claude change it
 
