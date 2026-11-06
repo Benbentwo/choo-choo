@@ -1,4 +1,5 @@
 import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
+import type { ReflectProposal, ReflectResult } from './reflect'
 export interface Repo {
   id: string
   name: string
@@ -219,6 +220,11 @@ export interface Api {
   openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
+  /** Reviews the workspace's chats for friction and suggests agent-setup changes. Writes nothing. */
+  reflect(workspaceId: string): Promise<ReflectResult>
+  cancelReflect(workspaceId: string): Promise<void>
+  /** Writes accepted proposals to a new workspace and asks its agent to open a PR. */
+  applyReflection(workspaceId: string, proposals: ReflectProposal[]): Promise<{ workspace: Workspace; chat: Chat }>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>

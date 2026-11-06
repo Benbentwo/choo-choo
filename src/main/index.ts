@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, s
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { Artifact, Chat, FilePreview, Repo, Settings, Workspace } from '@shared/types'
 import * as store from './store'
@@ -18,6 +18,8 @@ import { checkNow, installUpdate, startUpdater } from './updater'
 import { registerDevFeedback } from './devFeedback'
 import { resolveTheme } from '@shared/themes'
 import * as orchestrator from './orchestrator'
+import * as reflection from './reflect'
+import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 
 let win: BrowserWindow | null = null
 
@@ -330,6 +332,13 @@ async function archiveWorkspace(id: string) {
   store.save()
 }
 
+function agentEnv(ws: Workspace): Record<string, string> {
+  const env = workspaceEnv(ws)
+  const key = store.get().settings.anthropicApiKey.trim()
+  if (key) env.ANTHROPIC_API_KEY = key
+  return env
+}
+
 function registerIpc() {
   const h = (ch: string, fn: (...a: any[]) => unknown) => ipcMain.handle(ch, (_e, ...a) => fn(...a))
 
@@ -454,6 +463,32 @@ function registerIpc() {
     await gh.mergePr(ws.path, pr.number)
   })
   h('chat:send', (id: string, text: string, images: string[] = []) => sendToChat(findChat(id), text, images))
+  h('reflect:run', (wsId: string) => {
+    const ws = findWs(wsId)
+    const repo = store.get().repos.find((r) => r.id === ws.repoId)
+    if (!repo) throw new Error('The repository for this workspace was removed')
+    const model = store.get().settings.defaultModel
+    return reflection.reflect(ws, repo, agentEnv(ws), model === 'codex' ? 'opus' : model)
+  })
+  h('reflect:cancel', (wsId: string) => reflection.cancel(wsId))
+  h('reflect:apply', async (wsId: string, proposals: ReflectProposal[]) => {
+    const source = findWs(wsId)
+    const repo = store.get().repos.find((r) => r.id === source.repoId)
+    if (!repo) throw new Error('The repository for this workspace was removed')
+    if (!proposals.length) throw new Error('No changes to apply')
+    const { workspace, chat } = await createWorkspace(repo.id)
+    for (const p of proposals) {
+      if (!isReflectTarget(p.file)) throw new Error(`Not an agent setup file: ${p.file}`)
+      const abs = insideWorkspace(workspace, p.file)
+      mkdirSync(join(abs, '..'), { recursive: true })
+      writeFileSync(abs, p.after)
+    }
+    workspace.title = 'Improve agent setup'
+    workspace.named = true
+    store.save()
+    sendToChat(chat, reflection.applyPrompt(source, proposals, repo.defaultBranch, workspace.branch))
+    return { workspace, chat }
+  })
   h('chat:stop', (id: string) => agent.stop(id))
   ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny') => agent.respondPermission(id, d))
   h('permission:pending', () => agent.pendingPermissions())
