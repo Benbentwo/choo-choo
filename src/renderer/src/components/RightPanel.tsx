@@ -5,6 +5,7 @@ import { IconDown, IconEye, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
 import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
 import { fmt } from './Stats'
+import { MergedActions } from './Reflect'
 
 const TABS: { id: RightTab; label: string }[] = [
   { id: 'artifacts', label: 'Artifacts' },
@@ -34,6 +35,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
           <IconEye /> Review
         </button>
         <PrButton ws={ws} hasChanges={changes.length > 0} />
+        <MergedActions ws={ws} />
       </div>
 
       <div className={`flex min-h-0 flex-col ${s.bottomOpen ? 'flex-[1_1_50%]' : 'flex-1'}`}>

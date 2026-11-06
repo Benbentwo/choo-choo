@@ -362,7 +362,7 @@ export interface Api {
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   /** Reviews the workspace's chats for friction and suggests agent-setup changes. Writes nothing. */
-  reflect(workspaceId: string): Promise<ReflectResult>
+  reflect(workspaceId: string, feedback?: string): Promise<ReflectResult>
   cancelReflect(workspaceId: string): Promise<void>
   /** Writes accepted proposals to a new workspace and asks its agent to open a PR. */
   applyReflection(workspaceId: string, proposals: ReflectProposal[]): Promise<{ workspace: Workspace; chat: Chat }>

@@ -617,12 +617,12 @@ function registerIpc() {
     await gh.mergePr(ws.path, pr.number)
   })
   h('chat:send', (id: string, text: string, images: string[] = []) => sendToChat(findChat(id), text, images))
-  h('reflect:run', (wsId: string) => {
+  h('reflect:run', (wsId: string, feedback = '') => {
     const ws = findWs(wsId)
     const repo = store.get().repos.find((r) => r.id === ws.repoId)
     if (!repo) throw new Error('The repository for this workspace was removed')
     const model = store.get().settings.defaultModel
-    return reflection.reflect(ws, repo, agentEnv(ws), model === 'codex' ? 'opus' : model)
+    return reflection.reflect(ws, repo, agentEnv(ws), model === 'codex' ? 'opus' : model, typeof feedback === 'string' ? feedback : '')
   })
   h('reflect:cancel', (wsId: string) => reflection.cancel(wsId))
   h('reflect:apply', async (wsId: string, proposals: ReflectProposal[]) => {
