@@ -124,6 +124,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     out.push({ id: 'settings', tab: 'settings', section: st, label: 'Open settings', icon: <IconGear />, hint: '⌘,', run: () => useStore.getState().set({ modal: 'settings' }) })
     out.push({ id: 'integrations', tab: 'settings', section: st, label: 'Integrations', keywords: 'linear notion sign in connect', icon: <IconGear />, run: () => useStore.getState().set({ modal: 'settings', settingsTab: 'integrations' }) })
     out.push({ id: 'appearance', tab: 'settings', section: st, label: 'Appearance', keywords: 'theme accent font size density', icon: <IconGear />, run: () => useStore.getState().set({ modal: 'settings', settingsTab: 'appearance' }) })
+    out.push({ id: 'telemetry', tab: 'settings', section: st, label: 'Telemetry', keywords: 'observability opentelemetry otel otlp traces metrics', icon: <IconGear />, run: () => useStore.getState().set({ modal: 'settings', settingsTab: 'telemetry' }) })
     out.push({
       id: 'notify',
       tab: 'settings',

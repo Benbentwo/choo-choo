@@ -120,6 +120,10 @@ Linear uses a public OAuth app with PKCE, so no client secret ships in the app. 
 
 Adding a service: write `src/main/integrations/<name>.ts` exporting a `Provider` (see `index.ts`), use `startLoopback` and `pkce` from `oauth.ts` for the browser sign-in, store the result with `setAuth` from `tokens.ts`, and add it to the `providers` list.
 
+## Observability
+
+Settings > Telemetry sends OpenTelemetry data from Claude agents to any OTLP collector (Honeycomb, Datadog, Grafana, or a local collector on `http://localhost:4318`). You get metrics for tokens, cost and tool decisions, an event per prompt, API request and tool result, and traces with a span per turn, model request and tool call. Every export carries `choo.repo`, `choo.workspace` and `choo.branch` resource attributes. Only structure is exported unless you turn on the content options. See the [Agent SDK observability guide](https://code.claude.com/docs/en/agent-sdk/observability).
+
 ## Develop
 
 Requires macOS, Node 22+ and git.

@@ -276,6 +276,8 @@ export interface Settings extends AppearanceSettings {
   claudeBinary: 'bundled' | 'installed'
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
   extras: Extras
+  /** OpenTelemetry export for Claude agents. Off by default. */
+  telemetry: Telemetry
 }
 
 export type ExtraAgentId = 'scout' | 'reviewer' | 'securityReviewer' | 'quickWorker'
@@ -305,6 +307,84 @@ export function normalizeExtras(e: Partial<Extras> | undefined): Extras {
   return { ...DEFAULT_EXTRAS, ...e, agents: { ...DEFAULT_EXTRAS.agents, ...e?.agents } }
 }
 
+export interface Telemetry {
+  enabled: boolean
+  /** OTLP collector base URL, e.g. http://localhost:4318. */
+  endpoint: string
+  protocol: 'http/protobuf' | 'http/json' | 'grpc'
+  /** Comma-separated key=value pairs, e.g. Authorization=Bearer token. */
+  headers: string
+  metrics: boolean
+  logs: boolean
+  /** Spans per turn, model request and tool call. Beta in Claude Code. */
+  traces: boolean
+  serviceName: string
+  /** Extra resource attributes, key=value pairs separated by commas. */
+  resourceAttributes: string
+  /** Content opt-ins. Off by default because they export what the agent reads and writes. */
+  logPrompts: boolean
+  logToolDetails: boolean
+  logToolContent: boolean
+}
+
+export const DEFAULT_TELEMETRY: Telemetry = {
+  enabled: false,
+  endpoint: 'http://localhost:4318',
+  protocol: 'http/protobuf',
+  headers: '',
+  metrics: true,
+  logs: true,
+  traces: true,
+  serviceName: 'choo-choo',
+  resourceAttributes: '',
+  logPrompts: false,
+  logToolDetails: false,
+  logToolContent: false
+}
+
+export function normalizeTelemetry(t: Partial<Telemetry> | undefined): Telemetry {
+  return { ...DEFAULT_TELEMETRY, ...t }
+}
+
+/**
+ * Env vars that make the Claude Code process export OpenTelemetry data.
+ * `tags` become resource attributes, so a backend can filter by repo or workspace.
+ * See https://code.claude.com/docs/en/agent-sdk/observability
+ */
+export function telemetryEnv(t: Telemetry, tags: Record<string, string> = {}): Record<string, string> {
+  if (!t.enabled || !t.endpoint.trim() || !(t.metrics || t.logs || t.traces)) return {}
+  // Never use the console exporter: stdout is the SDK's message channel.
+  const env: Record<string, string> = {
+    CLAUDE_CODE_ENABLE_TELEMETRY: '1',
+    OTEL_EXPORTER_OTLP_PROTOCOL: t.protocol,
+    OTEL_EXPORTER_OTLP_ENDPOINT: t.endpoint.trim(),
+    OTEL_METRICS_EXPORTER: t.metrics ? 'otlp' : 'none',
+    OTEL_LOGS_EXPORTER: t.logs ? 'otlp' : 'none',
+    OTEL_TRACES_EXPORTER: t.traces ? 'otlp' : 'none',
+    OTEL_SERVICE_NAME: t.serviceName.trim() || DEFAULT_TELEMETRY.serviceName,
+    // Agent turns are short; flush often so data isn't lost when a turn ends.
+    OTEL_METRIC_EXPORT_INTERVAL: '10000',
+    OTEL_LOGS_EXPORT_INTERVAL: '2000',
+    OTEL_TRACES_EXPORT_INTERVAL: '2000'
+  }
+  if (t.traces) env.CLAUDE_CODE_ENHANCED_TELEMETRY_BETA = '1'
+  if (t.headers.trim()) env.OTEL_EXPORTER_OTLP_HEADERS = t.headers.trim()
+  const attrs = [
+    ...Object.entries(tags)
+      .filter(([, v]) => v)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`),
+    ...t.resourceAttributes
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.includes('='))
+  ]
+  if (attrs.length) env.OTEL_RESOURCE_ATTRIBUTES = attrs.join(',')
+  if (t.logPrompts) env.OTEL_LOG_USER_PROMPTS = '1'
+  if (t.logToolDetails) env.OTEL_LOG_TOOL_DETAILS = '1'
+  if (t.logToolContent && t.traces) env.OTEL_LOG_TOOL_CONTENT = '1'
+  return env
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   defaultModel: 'opus',
   defaultEffort: 'high',
@@ -314,6 +394,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notifications: true,
   claudeBinary: 'bundled',
   extras: DEFAULT_EXTRAS,
+  telemetry: DEFAULT_TELEMETRY,
   archiveRetentionDays: 30,
   ...DEFAULT_APPEARANCE
 }
