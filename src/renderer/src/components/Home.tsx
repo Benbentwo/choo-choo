@@ -1,5 +1,6 @@
 import { useStore, addRepository } from '../store'
 import { IconFolder, IconFolderPlus, IconGlobe, IconSidebar } from '../icons'
+import { BrandMark } from './BrandMark'
 
 export function Home() {
   const s = useStore()
@@ -18,7 +19,10 @@ export function Home() {
         )}
       </div>
       <div className="mx-auto w-full max-w-2xl flex-1 px-6 pt-24">
-        <h1 className="mb-1 text-2xl font-semibold">Choo Choo</h1>
+        <h1 className="mb-2 flex items-center gap-3 text-[28px] font-[750] tracking-[-0.025em]">
+          <BrandMark size={64} />
+          Choo Choo
+        </h1>
         <p className="mb-8 text-muted">Run Claude Code agents in parallel, each in its own git worktree.</p>
         <div className="grid grid-cols-3 gap-3">
           {actions.map((a) => (
@@ -28,6 +32,9 @@ export function Home() {
             </button>
           ))}
         </div>
+        <button onClick={() => s.set({ modal: 'open-share' })} className="mt-4 text-[12px] text-muted hover:text-fg">
+          Open a shared session…
+        </button>
       </div>
     </div>
   )

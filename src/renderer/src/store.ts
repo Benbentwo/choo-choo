@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { readCachedAppearance } from './appearanceCache'
 import { DEFAULT_SETTINGS, type Effort, type ModelId, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
 
 export interface Doc {
@@ -21,10 +22,12 @@ interface UI {
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
   settings: Settings
-  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | null
+  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | null
   recentPaths: string[]
   /** Repo whose new-workspace composer is open in the center, if any. */
   draftRepo: string | null
+  /** A share link to open, from a choo-choo:// URL. */
+  shareLinkDraft: string | null
   history: string[]
   historyIndex: number
   sidebarOpen: boolean
@@ -56,10 +59,11 @@ export const useStore = create<UI>((set, get) => ({
   selectedWs: null,
   activeChat: {},
   openDoc: {},
-  settings: { ...DEFAULT_SETTINGS },
+  settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
   recentPaths: [],
   draftRepo: null,
+  shareLinkDraft: null,
   history: [],
   historyIndex: -1,
   sidebarOpen: true,
@@ -137,6 +141,18 @@ export async function createWorkspace(repoId: string, opts: { source?: Workspace
   useStore.getState().selectWorkspace(workspace.id)
   const prompt = [context, opts.text.trim()].filter(Boolean).join('\n\n')
   if (prompt) await window.api.sendMessage(chat.id, prompt)
+}
+
+/** Opens the repo's orchestrator, which starts and directs workspaces for you. */
+export async function openOrchestrator(repoId: string) {
+  try {
+    const { workspace, chat } = await window.api.openOrchestrator(repoId)
+    await refreshState()
+    useStore.getState().setActiveChat(workspace.id, chat.id)
+    useStore.getState().selectWorkspace(workspace.id)
+  } catch (e) {
+    reportError(e)
+  }
 }
 
 export async function addRepository() {

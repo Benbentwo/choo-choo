@@ -1,0 +1,23 @@
+name: Release Drafter
+on:
+  push:
+    branches: [main]
+  # pull_request_target so fork PRs can be labeled too. It never checks out PR code.
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled]
+permissions:
+  contents: read
+jobs:
+  draft:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@v6
+        with:
+          # On PRs only run the autolabeler; the draft is updated on pushes to main.
+          disable-releaser: ${{ github.event_name != 'push' }}
+          disable-autolabeler: ${{ github.event_name == 'push' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

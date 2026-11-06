@@ -5,6 +5,8 @@ import { useStore, addRepository, newWorkspace, newChatTab, refreshState, report
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
 import { QuickStartModalBody } from './AddProject'
+import { AppearanceSettings } from './Appearance'
+import { OpenShareModal, ShareModal } from './ShareModals'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -13,8 +15,8 @@ function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.Rea
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/50 pt-[12vh]" onMouseDown={onClose}>
-      <div className={`${width} max-w-[92vw] rounded-xl border border-line bg-panel shadow-2xl`} onMouseDown={(e) => e.stopPropagation()}>
+    <div className="anim-backdrop fixed inset-0 z-40 flex items-start justify-center bg-black/50 pt-[12vh]" onMouseDown={onClose}>
+      <div className={`anim-pop ${width} max-w-[92vw] rounded-xl border border-line bg-panel shadow-2xl`} onMouseDown={(e) => e.stopPropagation()}>
         {children}
       </div>
     </div>
@@ -34,7 +36,14 @@ export function Modals() {
         <QuickStartModalBody onClose={close} />
       </Shell>
     )
+  if (modal === 'open-share') return <OpenShareModal onClose={close} />
+  if (modal === 'share') return <ShareFor onClose={close} />
   return null
+}
+
+function ShareFor({ onClose }: { onClose: () => void }) {
+  const ws = useStore((s) => s.workspaces.find((w) => w.id === s.selectedWs))
+  return ws ? <ShareModal ws={ws} onClose={onClose} /> : null
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -55,53 +64,76 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
+  const [tab, setTab] = useState<'general' | 'appearance'>('general')
   return (
-    <Shell onClose={onClose}>
-      <div className="border-b border-line px-5 py-3 font-medium">Settings</div>
-      <Row label="Default model">
-        <select className={select} value={settings.defaultModel} onChange={(e) => void save({ defaultModel: e.target.value as Settings['defaultModel'] })}>
-          {MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
+    <Shell onClose={onClose} width="w-[620px]">
+      <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
+        <div className="pb-3 font-medium">Settings</div>
+        <div className="ml-auto flex gap-1">
+          {(['general', 'appearance'] as const).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              onClick={() => setTab(t)}
+              className={`-mb-px border-b-2 px-2.5 pb-2.5 capitalize ${tab === t ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}
+            >
+              {t}
+            </button>
           ))}
-        </select>
-      </Row>
-      <Row label="Default effort">
-        <select className={select} value={settings.defaultEffort} onChange={(e) => void save({ defaultEffort: e.target.value as Settings['defaultEffort'] })}>
-          {EFFORTS.map((e) => (
-            <option key={e} value={e}>
-              {e}
-            </option>
-          ))}
-        </select>
-      </Row>
-      <Row label="Default permissions" hint="Full access runs agents unattended, like Conductor. The others ask before tools that change things.">
-        <select className={select} value={settings.defaultPermission} onChange={(e) => void save({ defaultPermission: e.target.value as Settings['defaultPermission'] })}>
-          {PERMISSIONS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </Row>
-      <Row label="Branch prefix" hint="New workspaces branch as prefix/name. Empty uses your GitHub username.">
-        <input className={`${select} w-44`} defaultValue={settings.branchPrefix} placeholder="auto" onBlur={(e) => void save({ branchPrefix: e.target.value })} />
-      </Row>
-      <Row label="Anthropic API key" hint="Optional. Without one, agents use your Claude Code login.">
-        <input type="password" className={`${select} w-44`} defaultValue={settings.anthropicApiKey} placeholder="sk-ant-…" onBlur={(e) => void save({ anthropicApiKey: e.target.value })} />
-      </Row>
-      <Row label="Notifications" hint="Notify when an agent finishes while the app is in the background.">
-        <input type="checkbox" checked={settings.notifications} onChange={(e) => void save({ notifications: e.target.checked })} />
-      </Row>
-      <Row label="Workspaces folder" hint="Where new workspaces are created. Empty uses ~/choo-choo/workspaces.">
-        <input className={`${select} w-44`} defaultValue={settings.workspacesRoot ?? ''} placeholder="~/choo-choo/workspaces" onBlur={(e) => void save({ workspacesRoot: e.target.value })} />
-      </Row>
-      <Row label="Import from Conductor" hint="Bring over your projects, open workspaces, chats and settings. Conductor's own data is only read, never changed.">
-        <button className="rounded-md border border-line px-2.5 py-1 hover:bg-hover" onClick={() => useStore.getState().set({ modal: 'conductor' })}>
-          Import…
-        </button>
-      </Row>
+        </div>
+      </div>
+      <div className="max-h-[70vh] overflow-y-auto">
+        {tab === 'appearance' ? (
+          <AppearanceSettings />
+        ) : (
+          <>
+            <Row label="Default model">
+              <select className={select} value={settings.defaultModel} onChange={(e) => void save({ defaultModel: e.target.value as Settings['defaultModel'] })}>
+                {MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </Row>
+            <Row label="Default effort">
+              <select className={select} value={settings.defaultEffort} onChange={(e) => void save({ defaultEffort: e.target.value as Settings['defaultEffort'] })}>
+                {EFFORTS.map((e) => (
+                  <option key={e} value={e}>
+                    {e}
+                  </option>
+                ))}
+              </select>
+            </Row>
+            <Row label="Default permissions" hint="Full access runs agents unattended, like Conductor. The others ask before tools that change things.">
+              <select className={select} value={settings.defaultPermission} onChange={(e) => void save({ defaultPermission: e.target.value as Settings['defaultPermission'] })}>
+                {PERMISSIONS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </Row>
+            <Row label="Branch prefix" hint="New workspaces branch as prefix/name. Empty uses your GitHub username.">
+              <input className={`${select} w-44`} defaultValue={settings.branchPrefix} placeholder="auto" onBlur={(e) => void save({ branchPrefix: e.target.value })} />
+            </Row>
+            <Row label="Anthropic API key" hint="Optional. Without one, agents use your Claude Code login.">
+              <input type="password" className={`${select} w-44`} defaultValue={settings.anthropicApiKey} placeholder="sk-ant-…" onBlur={(e) => void save({ anthropicApiKey: e.target.value })} />
+            </Row>
+            <Row label="Notifications" hint="Notify when an agent finishes while the app is in the background.">
+              <input type="checkbox" checked={settings.notifications} onChange={(e) => void save({ notifications: e.target.checked })} />
+            </Row>
+            <Row label="Workspaces folder" hint="Where new workspaces are created. Empty uses ~/choo-choo/workspaces.">
+              <input className={`${select} w-44`} defaultValue={settings.workspacesRoot ?? ''} placeholder="~/choo-choo/workspaces" onBlur={(e) => void save({ workspacesRoot: e.target.value })} />
+            </Row>
+            <Row label="Import from Conductor" hint="Bring over your projects, open workspaces, chats and settings. Conductor's own data is only read, never changed.">
+              <button className="rounded-md border border-line px-2.5 py-1 hover:bg-hover" onClick={() => useStore.getState().set({ modal: 'conductor' })}>
+                Import…
+              </button>
+            </Row>
+          </>
+        )}
+      </div>
     </Shell>
   )
 }
@@ -254,6 +286,8 @@ function Palette({ onClose }: { onClose: () => void }) {
     }
     for (const r of s.repos) out.push({ id: `new:${r.id}`, label: `New workspace in ${r.name}`, hint: 'Action', run: () => newWorkspace(r.id) })
     out.push({ id: 'add', label: 'Add repository', hint: 'Action', run: () => s.set({ modal: 'create' }) })
+    if (cur) out.push({ id: 'share', label: 'Share workspace with coworkers', hint: 'Action', run: () => s.set({ modal: 'share' }) })
+    out.push({ id: 'open-share', label: 'Open shared session', hint: 'Action', run: () => s.set({ modal: 'open-share' }) })
     if (cur) out.push({ id: 'chat', label: 'New chat tab', hint: 'Action', run: () => void newChatTab(cur.id) })
     out.push({ id: 'unread', label: 'Next unread', hint: 'Action', run: goToNextUnread })
     out.push({ id: 'settings', label: 'Settings', hint: 'Action', run: () => s.set({ modal: 'settings' }) })
@@ -270,7 +304,7 @@ function Palette({ onClose }: { onClose: () => void }) {
   const pick = (e: Entry | undefined) => {
     if (!e) return
     onClose()
-    if (e.id === 'add' || e.id === 'settings') setTimeout(e.run, 0)
+    if (e.id === 'add' || e.id === 'settings' || e.id === 'share' || e.id === 'open-share') setTimeout(e.run, 0)
     else e.run()
   }
 

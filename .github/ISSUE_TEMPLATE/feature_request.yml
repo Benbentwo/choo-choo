@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest a workflow or improvement.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: What do you want to do?
+      description: Describe the workflow, not just the button. What are you trying to get done?
+    validations:
+      required: true
+  - type: textarea
+    id: conductor
+    attributes:
+      label: How does Conductor handle this, if it does?
+      description: Matching Conductor's behaviour is a goal, so describe it if you know it. Please don't paste Conductor code or assets.
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Mockups, screenshots, links.

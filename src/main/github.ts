@@ -77,3 +77,13 @@ export async function issueText(cwd: string, number: number) {
   const { stdout } = await exec('gh', ['issue', 'view', String(number), '--json', 'title,body,url'], { cwd })
   return JSON.parse(stdout) as { title: string; body: string; url: string }
 }
+
+/** public, private or internal; undefined when gh can't tell (not GitHub, or not signed in). */
+export async function repoVisibility(cwd: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await exec('gh', ['repo', 'view', '--json', 'visibility', '--jq', '.visibility'], { cwd, timeout: 10_000 })
+    return stdout.trim().toLowerCase() || undefined
+  } catch {
+    return undefined
+  }
+}
