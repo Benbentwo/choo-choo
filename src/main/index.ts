@@ -149,7 +149,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource) {
     await git.addWorktree(repo.path, path, branch, baseRef)
     if (source?.kind === 'issue') {
       const issue = await gh.issueText(repo.path, source.number)
-      context = `Work on GitHub issue #${source.number}: ${issue.title}\n${issue.url}\n\n${issue.body}`.trim()
+      context = gh.issueContext(source.number, issue)
     }
   }
   const workspace: Workspace = { id: randomUUID(), repoId, name, branch, baseRef, path, title, named, createdAt: Date.now() }
