@@ -361,6 +361,18 @@ function ExtrasSection({ extras, save }: { extras: Extras; save: (patch: Partial
           </Row>
         </>
       )}
+      <Row
+        label="Claude Code advisor"
+        hint="Claude Code's own advisor tool. In Claude chats, Claude consults a stronger model mid-task when it decides to (before picking an approach, when stuck, before saying it's done). Different from the advisor above, which reviews after each turn. Needs a Claude sign-in or Anthropic API key and a main model the advisor can advise; counts toward your usage."
+      >
+        <select className={select} value={extras.claudeAdvisor} onChange={(e) => save({ claudeAdvisor: e.target.value as Extras['claudeAdvisor'] })}>
+          <option value="inherit">Use my Claude Code setting</option>
+          <option value="off">Off</option>
+          <option value="fable">Fable</option>
+          <option value="opus">Opus</option>
+          <option value="sonnet">Sonnet</option>
+        </select>
+      </Row>
     </>
   )
 }

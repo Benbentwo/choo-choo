@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { enabledSubagents, expandShortcuts, redactSecrets, parseAdvice, renderTurn, steerMessage, systemAppend } from '../src/main/extras'
+import { builtinAdvisorResult, claudeAdvisorOptions, enabledSubagents, expandShortcuts, redactSecrets, parseAdvice, renderTurn, steerMessage, systemAppend } from '../src/main/extras'
 import { DEFAULT_EXTRAS, normalizeExtras, type ChatItem } from '../src/shared/types'
 import { buildSystemPrompt, REMINDER_NOTE } from '../src/shared/systemPrompt'
 
@@ -125,5 +125,23 @@ describe('buildSystemPrompt', () => {
   })
   it('a repo replace ignores the global prompt', () => {
     expect(buildSystemPrompt({ mode: 'append', text: 'G' }, { mode: 'replace', text: 'R' }, 'X')).toBe(`R\n\n${REMINDER_NOTE}\n\nX`)
+  })
+})
+
+describe('Claude Code advisor', () => {
+  it('changes nothing by default, so the Claude Code setting applies', () => {
+    expect(DEFAULT_EXTRAS.claudeAdvisor).toBe('inherit')
+    expect(normalizeExtras({}).claudeAdvisor).toBe('inherit')
+    expect(claudeAdvisorOptions('inherit')).toEqual({})
+    expect(claudeAdvisorOptions(undefined)).toEqual({})
+  })
+  it('sets advisorModel for a chosen model and the kill switch for off', () => {
+    expect(claudeAdvisorOptions('opus')).toEqual({ settings: { advisorModel: 'opus' } })
+    expect(claudeAdvisorOptions('off')).toEqual({ env: { CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1' } })
+  })
+  it('reads each advisor result shape', () => {
+    expect(builtinAdvisorResult({ type: 'advisor_result', text: ' Close the channel first. ' })).toEqual({ text: 'Close the channel first.', isError: false })
+    expect(builtinAdvisorResult({ type: 'advisor_redacted_result', encrypted_content: 'x' }).isError).toBe(false)
+    expect(builtinAdvisorResult({ type: 'advisor_tool_result_error', error_code: 'overloaded' })).toEqual({ text: 'Advisor unavailable (overloaded)', isError: true })
   })
 })

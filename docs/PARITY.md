@@ -94,6 +94,7 @@ Features Conductor doesn't have. Each one is off until you turn it on in Setting
 - ✅ **Security reviewer**: adds a Security review button to the Review tab; its findings show in the same list and inline in diffs, tagged "security".
 - ✅ **Quick worker** (Haiku): `/quick <task>` hands mechanical work to it.
 - ✅ **Advisor**: after each finished turn, a second model reviews the turn with read-only tools and posts notes as a card with Send to agent and Dismiss. Per-chat Advisor toggle in the composer. A red dot in the sidebar marks a workspace with an unhandled blocker. Optional automatic sending of blockers, at most once per message.
+- ✅ **Claude Code advisor**: Settings › Agents picks Claude Code's own advisor tool for Claude chats (my Claude Code setting, off, Fable, Opus or Sonnet). Claude consults it mid-task; each consultation shows as an "Advisor" line in the chat. Sits beside the post-turn advisor above.
 - ✅ Subagent calls show as one collapsible card per agent, with the steps it took inside.
 - ✅ Settings › Claude Code: run the bundled binary or your installed `claude`. When Claude Code isn't signed in, the chat says to run `claude` and `/login`.
 - ✅ Settings › Telemetry: OpenTelemetry export (metrics, log events, beta traces) from Claude agents to any OTLP collector, tagged with `choo.repo`, `choo.workspace` and `choo.branch`. Prompt and tool content are separate opt-ins.
