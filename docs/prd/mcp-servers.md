@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #50) |
 | Owner | Claude (project thread) |
 | Requested by | Ben, 2026-11-06 ("Quick wins, then managers" from the Claude Code docs survey) |
 | Last updated | 2026-11-06 |
