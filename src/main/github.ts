@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { CheckRun, GithubRepo, PrInfo, SourceOption } from '@shared/types'
+import type { CheckRun, GithubRepo, PrComment, PrInfo, SourceOption } from '@shared/types'
+import { parsePrFeedback, PR_FEEDBACK_QUERY } from '@shared/prComments'
 
 const exec = promisify(execFile)
 
@@ -17,6 +18,15 @@ export async function mergePr(cwd: string, number: number) {
   await exec('gh', ['pr', 'merge', String(number), '--squash', '--delete-branch=false'], { cwd })
 }
 
+/** Unresolved review threads, reviews and conversation comments on a PR. */
+export async function prComments(cwd: string, number: number): Promise<PrComment[]> {
+  const { stdout } = await exec(
+    'gh',
+    ['api', 'graphql', '-F', 'owner={owner}', '-F', 'name={repo}', '-F', `number=${number}`, '-f', `query=${PR_FEEDBACK_QUERY}`],
+    { cwd, maxBuffer: 16 * 1024 * 1024 }
+  )
+  return parsePrFeedback(JSON.parse(stdout))
+}
 
 export async function checks(cwd: string, branch: string): Promise<CheckRun[]> {
   try {
