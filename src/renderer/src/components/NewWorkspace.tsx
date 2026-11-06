@@ -8,7 +8,8 @@ import { EFFORTS, MODELS } from './Composer'
 const KINDS: { id: WorkspaceSource['kind']; label: string }[] = [
   { id: 'pr', label: 'PRs' },
   { id: 'branch', label: 'Branches' },
-  { id: 'issue', label: 'Issues' }
+  { id: 'issue', label: 'Issues' },
+  { id: 'notion', label: 'Notion' }
 ]
 
 /** Conductor-style composer for a new workspace: pick the repo, the model, and optionally a PR, branch or issue to start from. */
@@ -108,7 +109,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
               </span>
             )}
             <div className="flex-1" />
-            <button ref={sourceBtn} className="flex items-center gap-1 rounded px-1.5 py-1 text-muted hover:bg-hover hover:text-fg" title="Start from a PR, branch or issue" onClick={() => setMenu(menu === 'source' ? null : 'source')}>
+            <button ref={sourceBtn} className="flex items-center gap-1 rounded px-1.5 py-1 text-muted hover:bg-hover hover:text-fg" title="Start from a PR, branch, issue or Notion page" onClick={() => setMenu(menu === 'source' ? null : 'source')}>
               <IconGithub /> <IconDown className="text-faint" />
             </button>
           </div>
@@ -171,7 +172,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
           </div>
         </div>
         <div className="mt-2 px-1 text-[12px] text-faint">
-          {source ? `Starts the workspace on ${source.source.kind === 'issue' ? 'a new branch for' : ''} ${source.title}.` : `Starts a new branch from ${repo.defaultBranch}.`}
+          {source ? `Starts the workspace on ${source.source.kind === 'issue' || source.source.kind === 'notion' ? 'a new branch for' : ''} ${source.title}.` : `Starts a new branch from ${repo.defaultBranch}.`}
         </div>
       </div>
       {menu === 'repo' && <Menu anchor={repoBtn.current} align="left" items={repoItems} onClose={() => setMenu(null)} />}
@@ -199,11 +200,30 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
   const [err, setErr] = useState<string | null>(null)
   const [sel, setSel] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
+  // null until known; only matters on the Notion tab.
+  const [notionOn, setNotionOn] = useState<boolean | null>(null)
+  const [signingIn, setSigningIn] = useState(false)
+  useEffect(() => {
+    void window.api.listIntegrations().then((l) => setNotionOn(!!l.find((x) => x.id === 'notion')?.connected), () => setNotionOn(false))
+  }, [])
+  const signIn = async () => {
+    setSigningIn(true)
+    try {
+      const l = await window.api.connectIntegration('notion')
+      setNotionOn(!!l.find((x) => x.id === 'notion')?.connected)
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e))
+    } finally {
+      setSigningIn(false)
+    }
+  }
+  const needsNotion = kind === 'notion' && notionOn !== true
 
   useEffect(() => {
     let live = true
     setItems(null)
     setErr(null)
+    if (needsNotion) return
     const t = setTimeout(() => {
       window.api.listSources(repoId, kind, q.trim()).then(
         (r) => live && (setItems(r), setSel(0)),
@@ -214,7 +234,7 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
       live = false
       clearTimeout(t)
     }
-  }, [repoId, kind, q])
+  }, [repoId, kind, q, needsNotion])
 
   useEffect(() => {
     const down = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && onClose()
@@ -244,7 +264,7 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
             setKind(KINDS[(KINDS.findIndex((k) => k.id === kind) + 1) % KINDS.length].id)
           }
         }}
-        placeholder={kind === 'branch' ? 'Search branches' : 'Search by title, number, or author'}
+        placeholder={kind === 'branch' ? 'Search branches' : kind === 'notion' ? 'Search Notion pages and tasks, or paste a link' : 'Search by title, number, or author'}
         className="w-full border-b border-line bg-transparent px-3 py-2.5 outline-none placeholder:text-faint"
       />
       <div className="flex gap-1 border-b border-line px-2 py-1.5">
@@ -255,9 +275,17 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
         ))}
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
-        {err && <div className="px-2 py-3 text-[12px] text-faint">{err.includes('gh') ? 'Could not reach GitHub. Is gh signed in?' : err}</div>}
-        {!err && items === null && <div className="px-2 py-3 text-[12px] text-faint">Loading…</div>}
-        {items?.length === 0 && <div className="px-2 py-3 text-[12px] text-faint">Nothing found.</div>}
+        {err && <div className="px-2 py-3 text-[12px] text-faint">{kind !== 'notion' && err.includes('gh') ? 'Could not reach GitHub. Is gh signed in?' : err}</div>}
+        {needsNotion && notionOn === false && (
+          <div className="flex items-center gap-3 px-2 py-3 text-[12px] text-faint">
+            <span className="flex-1">Sign in to Notion to start a workspace from a page or task.</span>
+            <button className="rounded-md border border-accent/40 bg-accent/15 px-2.5 py-1 text-accent hover:bg-accent/25 disabled:opacity-60" disabled={signingIn} onClick={() => void signIn()}>
+              {signingIn ? 'Waiting for browser…' : 'Sign in to Notion'}
+            </button>
+          </div>
+        )}
+        {!err && !needsNotion && items === null && <div className="px-2 py-3 text-[12px] text-faint">Loading…</div>}
+        {items?.length === 0 && <div className="px-2 py-3 text-[12px] text-faint">{kind === 'notion' && !q.trim() ? 'Type to search Notion, or paste a page link.' : 'Nothing found.'}</div>}
         {items?.map((o, i) => (
           <button key={JSON.stringify(o.source)} onMouseEnter={() => setSel(i)} onClick={() => onPick(o)} className={`flex w-full items-center gap-3 rounded px-2 py-1.5 text-left ${i === sel ? 'bg-hover' : ''}`}>
             <div className="min-w-0 flex-1">

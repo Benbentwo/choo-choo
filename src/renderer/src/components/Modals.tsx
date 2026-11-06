@@ -6,6 +6,7 @@ import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
 import { QuickStartModalBody } from './AddProject'
 import { AppearanceSettings } from './Appearance'
+import { IntegrationsSettings } from './Integrations'
 import { OpenShareModal, ShareModal } from './ShareModals'
 import { CommandPalette } from './CommandPalette'
 
@@ -66,14 +67,14 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'agents' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<'general' | 'agents' | 'integrations' | 'appearance'>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   return (
     <Shell onClose={onClose} width="w-[620px]">
       <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
         <div className="pb-3 font-medium">Settings</div>
         <div className="ml-auto flex gap-1">
-          {(['general', 'agents', 'appearance'] as const).map((t) => (
+          {(['general', 'agents', 'integrations', 'appearance'] as const).map((t) => (
             <button
               key={t}
               role="tab"
@@ -88,6 +89,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="max-h-[70vh] overflow-y-auto">
         {tab === 'appearance' ? (
           <AppearanceSettings />
+        ) : tab === 'integrations' ? (
+          <IntegrationsSettings />
         ) : tab === 'agents' ? (
           <ExtrasSection extras={settings.extras} save={(patch) => void save({ extras: { ...settings.extras, ...patch } })} />
         ) : (

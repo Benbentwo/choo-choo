@@ -103,6 +103,12 @@ Codex is optional: install the Codex CLI (`npm i -g @openai/codex`) and run `cod
 
 Click the orchestrator icon next to a repository in the sidebar. Tell the orchestrator what you want and it splits the work into workspaces, gives each agent a task, waits for them, reads their transcripts and diffs, and sends follow-ups. It runs in the repo's main checkout and cannot edit files there. It keeps a memory file per repository at `~/choo-choo/memory/<repo>.md`, which it reads on every turn and which you can edit yourself.
 
+## Integrations
+
+Settings > Integrations has one-click sign-ins. Tokens are encrypted with your macOS keychain and stay on your Mac.
+
+- **Notion.** Click Sign in, approve access in your browser, and you're done: Choo Choo registers itself with Notion's hosted MCP server, so there is no Notion app or API key to set up. Then press + and pick the Notion tab to start a workspace from a page or task (search, or paste a page link). The page goes to the agent as the task. While Notion is connected, agents also get Notion's tools to search, read and update pages; turn that off with the checkbox under Notion.
+
 ## Shared sessions
 
 Share a workspace with a coworker from the workspace's ⋯ menu > Share with coworkers. Choo Choo pushes one commit to a hidden ref, `refs/choo-choo/shares/<id>`, in the repository's `origin` remote. It holds the branch, your uncommitted and untracked files (not gitignored ones), and every chat in the workspace. You get a `choo-choo://share` link to send. By default the share updates after every agent turn.

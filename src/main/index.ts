@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
-import type { SourceOption, WorkspaceSource } from '@shared/types'
+import type { IntegrationId, SourceOption, WorkspaceSource } from '@shared/types'
 import type { Artifact, Chat, FilePreview, Repo, Settings, Workspace } from '@shared/types'
 import { normalizeExtras } from '@shared/types'
 import * as store from './store'
@@ -26,6 +26,8 @@ import * as orchestrator from './orchestrator'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import * as archive from './archive'
+import * as integrations from './integrations'
+import * as notion from './integrations/notion'
 
 let win: BrowserWindow | null = null
 
@@ -162,6 +164,9 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     if (source?.kind === 'issue') {
       const issue = await gh.issueText(repo.path, source.number)
       context = gh.issueContext(source.number, issue)
+    } else if (source?.kind === 'notion') {
+      const page = await notion.fetchPage(source.id)
+      context = notion.pageContext(page)
     }
   }
   const workspace: Workspace = { id: randomUUID(), repoId, name, branch, baseRef, path, title, named, createdAt: Date.now() }
@@ -252,6 +257,7 @@ async function listSources(repoId: string, kind: WorkspaceSource['kind'], query:
   if (!repo) throw new Error('Unknown repo')
   if (kind === 'pr') return gh.listPrs(repo.path, query)
   if (kind === 'issue') return gh.listIssues(repo.path, query)
+  if (kind === 'notion') return notion.search(query)
   const q = query.toLowerCase()
   return (await git.remoteBranches(repo.path))
     .filter((b) => b.name.toLowerCase().includes(q))
@@ -485,6 +491,9 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'], message: 'Give the agent these files' })
     return r.canceled ? [] : r.filePaths
   })
+  h('integrations:list', () => integrations.list())
+  h('integrations:connect', (id: IntegrationId) => integrations.connect(id))
+  h('integrations:disconnect', (id: IntegrationId) => integrations.disconnect(id))
   h('ws:sources', (repoId: string, kind: WorkspaceSource['kind'], query: string) => listSources(repoId, kind, query))
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))

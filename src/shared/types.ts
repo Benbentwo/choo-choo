@@ -11,7 +11,7 @@ export interface Repo {
 }
 
 /** What a new workspace starts from, besides a fresh branch off the default branch. */
-export type WorkspaceSource = { kind: 'pr'; number: number } | { kind: 'branch'; name: string } | { kind: 'issue'; number: number }
+export type WorkspaceSource = { kind: 'pr'; number: number } | { kind: 'branch'; name: string } | { kind: 'issue'; number: number } | { kind: 'notion'; id: string }
 
 export interface SourceOption {
   source: WorkspaceSource
@@ -257,6 +257,19 @@ export interface Settings extends AppearanceSettings {
   claudeBinary: 'bundled' | 'installed'
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
   extras: Extras
+  /** Give agents Notion's MCP tools when Notion is connected. */
+  notionAgentTools: boolean
+}
+
+export type IntegrationId = 'linear' | 'notion'
+
+export interface IntegrationStatus {
+  id: IntegrationId
+  label: string
+  description: string
+  connected: boolean
+  /** Who is signed in, when the provider tells us. */
+  account?: string
 }
 
 export type ExtraAgentId = 'scout' | 'reviewer' | 'securityReviewer' | 'quickWorker'
@@ -295,6 +308,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notifications: true,
   claudeBinary: 'bundled',
   extras: DEFAULT_EXTRAS,
+  notionAgentTools: true,
   archiveRetentionDays: 30,
   ...DEFAULT_APPEARANCE
 }
@@ -357,6 +371,10 @@ export interface Api {
   /** `folders` are extra directories the first chat may read and edit (linked workspaces, added folders). */
   createWorkspace(repoId: string, source?: WorkspaceSource, folders?: string[]): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
   listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
+  listIntegrations(): Promise<IntegrationStatus[]>
+  /** Opens the provider's sign-in page in the browser and resolves once signed in. */
+  connectIntegration(id: IntegrationId): Promise<IntegrationStatus[]>
+  disconnectIntegration(id: IntegrationId): Promise<IntegrationStatus[]>
   /** Opens the repo's orchestrator, creating it the first time. */
   openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
