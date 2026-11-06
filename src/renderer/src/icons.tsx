@@ -15,6 +15,9 @@ const base = (p: SVGProps<SVGSVGElement>) => ({
 export const IconHome = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" /></svg>
 )
+export const IconOrchestrator = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="12" cy="5" r="2.2" /><circle cx="5" cy="19" r="2.2" /><circle cx="12" cy="19" r="2.2" /><circle cx="19" cy="19" r="2.2" /><path d="M12 7.2v9.6M10.6 6.8 6.2 17M13.4 6.8l4.4 10.2" /></svg>
+)
 export const IconPlus = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M12 5v14M5 12h14" /></svg>
 )

@@ -131,6 +131,18 @@ export async function newWorkspace(repoId: string) {
   }
 }
 
+/** Opens the repo's orchestrator, which starts and directs workspaces for you. */
+export async function openOrchestrator(repoId: string) {
+  try {
+    const { workspace, chat } = await window.api.openOrchestrator(repoId)
+    await refreshState()
+    useStore.getState().setActiveChat(workspace.id, chat.id)
+    useStore.getState().selectWorkspace(workspace.id)
+  } catch (e) {
+    reportError(e)
+  }
+}
+
 export async function addRepository() {
   try {
     const repo = await window.api.pickAndAddRepo()

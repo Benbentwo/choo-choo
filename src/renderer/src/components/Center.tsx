@@ -57,7 +57,7 @@ export function Center({ ws }: { ws: Workspace }) {
         )}
         <span className="text-muted">{repo?.name}</span>
         <IconRight className="text-faint" />
-        <span className="no-drag selectable truncate">{ws.branch}</span>
+        <span className="no-drag selectable truncate">{ws.orchestrator ? 'Orchestrator' : ws.branch}</span>
         <div className="no-drag relative">
           <button className="rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => setMenu(!menu)}>
             <IconDots />
@@ -68,7 +68,7 @@ export function Center({ ws }: { ws: Workspace }) {
               <MenuItem label="Copy path" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.path) }} />
               <MenuItem label="Copy branch name" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.branch) }} />
               <div className="my-1 border-t border-line" />
-              <MenuItem label="Archive workspace" danger onClick={() => void archive()} />
+              <MenuItem label={ws.orchestrator ? 'Hide orchestrator' : 'Archive workspace'} danger={!ws.orchestrator} onClick={() => void archive()} />
             </div>
           )}
         </div>

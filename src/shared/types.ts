@@ -28,6 +28,10 @@ export interface Workspace {
   createdAt: number
   archived?: boolean
   archivedAt?: number
+  /** The repo's orchestrator: runs in the main checkout and directs other workspaces. */
+  orchestrator?: boolean
+  /** Started by the orchestrator. */
+  orchestrated?: boolean
 }
 
 export type ModelId = 'opus' | 'sonnet' | 'haiku' | 'codex'
@@ -211,6 +215,8 @@ export interface Api {
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
   createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  /** Opens the repo's orchestrator, creating it the first time. */
+  openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
