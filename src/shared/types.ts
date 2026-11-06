@@ -6,6 +6,13 @@ export interface Repo {
   hidden?: boolean
 }
 
+export interface GithubRepo {
+  nameWithOwner: string
+  description: string | null
+  private: boolean
+  pushedAt: string
+}
+
 export interface Workspace {
   id: string
   repoId: string
@@ -228,6 +235,7 @@ export interface Api {
   revertTo(chatId: string, itemId: string): Promise<string>
   saveSettings(patch: Partial<Settings>): Promise<Settings>
   cloneRepo(url: string): Promise<Repo>
+  listGithubRepos(): Promise<GithubRepo[]>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
   stopChat(chatId: string): Promise<void>

@@ -49,6 +49,16 @@ npm run dist:mac # build arm64 and Intel .dmg and .zip files into dist/
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) to send a change.
 
+### Comment mode: point at the UI and let Claude change it
+
+Dev mode has a built-in way to give Claude Code feedback on the running app:
+
+1. Run `npm run dev`.
+2. Open Claude Code in this repo and say "watch for my comments". [CLAUDE.md](CLAUDE.md) tells it how: it runs `scripts/watch-feedback.sh` in the background and gets a line for each new comment.
+3. In the app, press ⌘⇧K (or click the "Comment" pill in the bottom-right), click any element, type what should change, and press Enter.
+
+Each comment is saved to `.feedback/` in your checkout with the element's selector, its React component, and two screenshots. Claude reads it, makes the change, and moves it to `.feedback/done/`. UI edits hot-reload; main-process edits restart the app. Comment mode only exists in dev builds, and `.feedback/` is gitignored, so comments stay on your machine.
+
 ## Release
 
 Push a `v*` tag and the Release workflow builds the app and attaches it to a GitHub release. Add `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` repository secrets to sign and notarize it; without them the app is unsigned (right-click > Open the first time).
