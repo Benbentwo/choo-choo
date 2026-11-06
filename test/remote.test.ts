@@ -10,6 +10,7 @@ describe('continue on phone', () => {
     ])
     expect(phoneArgs({ ...chat, permission: 'edits' })).toContain('acceptEdits')
     expect(phoneArgs({ ...chat, permission: 'ask' })).not.toContain('--permission-mode')
+    expect(phoneArgs({ ...chat, permission: 'auto' }).slice(-2)).toEqual(['--permission-mode', 'auto'])
     expect(phoneArgs({ ...chat, permission: 'full', planMode: true }).slice(-2)).toEqual(['--permission-mode', 'plan'])
     expect(() => phoneArgs({ ...chat, sdkSessionId: undefined })).toThrow(/Send a message first/)
   })

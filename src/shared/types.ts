@@ -137,9 +137,33 @@ export interface ModelDetails {
   description: string
   resolvedModel?: string
 }
-export type Effort = 'low' | 'medium' | 'high'
-/** full: never ask (Conductor's default). edits: auto-accept file edits, ask for the rest. ask: ask before every tool that changes something. */
-export type Permission = 'full' | 'edits' | 'ask'
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+/**
+ * full: never ask (Conductor's default). auto: Claude Code's auto mode, where a classifier approves safe
+ * calls and blocks risky ones. edits: auto-accept file edits, ask for the rest. ask: ask before every tool that changes something.
+ */
+export type Permission = 'full' | 'auto' | 'edits' | 'ask'
+
+/** A /goal Claude Code is working toward, as its evaluator last reported it. */
+export interface ChatGoal {
+  condition: string
+  setAt: number
+  /** Turns the evaluator has checked. */
+  iterations: number
+  /** The evaluator's latest reason for "not yet". */
+  lastReason?: string
+}
+
+/** A background shell, subagent or workflow Claude Code is running during a turn. */
+export interface BackgroundTask {
+  id: string
+  description: string
+  /** local_bash, local_agent, local_workflow, mcp_task… */
+  type?: string
+  status: 'running' | 'completed' | 'failed' | 'stopped'
+  startedAt: number
+  summary?: string
+}
 
 export interface Chat {
   id: string
@@ -178,6 +202,14 @@ export interface Chat {
   sharedChatId?: string
   /** Context window of the model, as Claude Code last reported it. */
   contextWindow?: number
+  /** Fast mode: faster output on models that support it, at a higher price. */
+  fast?: boolean
+  /** Stop a message's run once it has cost this many dollars. Missing uses the Settings default. */
+  budgetUsd?: number
+  /** Claude Code output style, such as Explanatory or Learning. Missing means the default. */
+  outputStyle?: string
+  /** Set while a /goal is active. */
+  goal?: ChatGoal
   /** Set while the session continues somewhere else, such as on your phone through Remote Control. */
   remote?: ChatRemote
   createdAt: number
@@ -330,6 +362,8 @@ export interface Settings extends AppearanceSettings {
   defaultModel: ModelId
   defaultEffort: Effort
   defaultPermission: Permission
+  /** Spend cap per message for new chats, in dollars. 0 means no cap. */
+  defaultBudgetUsd?: number
   /** Branch prefix; empty uses the GitHub user or git user.name. */
   branchPrefix: string
   /** Optional. Without it the agent uses your Claude Code login. */
@@ -555,6 +589,15 @@ export interface ChatEvent {
   permission?: PermissionRequest
   /** A pending permission request that no longer needs an answer. */
   permissionDone?: string
+  /** Background tasks of the running turn. Empty when none are running. */
+  tasks?: BackgroundTask[]
+}
+
+/** An output style a chat can use. */
+export interface OutputStyleInfo {
+  name: string
+  description: string
+  source: 'built-in' | 'user' | 'project'
 }
 
 export interface Api {
@@ -597,7 +640,11 @@ export interface Api {
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
   getChatUsage(chatId: string): Promise<SessionUsage>
-  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'reviewKind' | 'permission' | 'advisor' | 'advisorBlocker'>>): Promise<Chat>
+  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'reviewKind' | 'permission' | 'advisor' | 'advisorBlocker' | 'fast' | 'budgetUsd' | 'outputStyle'>>): Promise<Chat>
+  /** Output styles for a workspace's chats: built-in, user and project. */
+  listOutputStyles(wsId: string): Promise<OutputStyleInfo[]>
+  /** Stops one background task of a running Claude turn. */
+  stopTask(chatId: string, taskId: string): Promise<void>
   respondPermission(requestId: string, decision: PermissionDecision): void
   pendingPermissions(): Promise<PermissionRequest[]>
   addChatFolder(chatId: string): Promise<Chat>

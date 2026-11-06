@@ -28,6 +28,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Integrations](prd/integrations.md) | Planned |
 | [Add PR comments to chat](prd/pr-comments.md) | In review |
 | [Remote sessions (phone and cloud)](prd/remote-sessions.md) | Phone shipped; cloud in review |
+| [Claude Code session controls](prd/claude-code-controls.md) | In review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

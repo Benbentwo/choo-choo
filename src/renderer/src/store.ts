@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
-import { DEFAULT_SETTINGS, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace } from '@shared/types'
+import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace } from '@shared/types'
 
 export interface Doc {
   kind: 'diff' | 'file'
@@ -22,6 +22,8 @@ interface UI {
   stats: Record<string, DiffStats>
   /** Tool calls waiting for the user's OK, per chat. */
   permissions: Record<string, PermissionRequest[]>
+  /** Background tasks of each chat's running turn. */
+  tasks: Record<string, BackgroundTask[]>
   selectedWs: string | null
   activeChat: Record<string, string>
   /** Diff or file open in the center instead of the chat, per workspace. */
@@ -71,6 +73,7 @@ export const useStore = create<UI>((set, get) => ({
   items: {},
   stats: {},
   permissions: {},
+  tasks: {},
   selectedWs: null,
   activeChat: {},
   openDoc: {},

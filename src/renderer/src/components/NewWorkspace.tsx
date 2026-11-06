@@ -3,7 +3,7 @@ import type { Effort, IntegrationId, ModelId, SourceOption, WorkspaceSource } fr
 import { useStore, createWorkspace, reportError, modelLabel, type DraftContext } from '../store'
 import { IconBranch, IconDown, IconFolder, IconGithub, IconImage, IconPlus, IconRepo, IconSidebar, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
-import { EFFORTS, MODELS } from './Composer'
+import { EFFORT_LABEL, EFFORTS, MODELS } from './Composer'
 import { useIntegrations } from './Integrations'
 
 const KINDS: { id: WorkspaceSource['kind']; label: string }[] = [
@@ -84,7 +84,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
     ...MODELS.map((m) => ({ label: modelLabel(m.id, s.modelDetails), hint: s.modelDetails[m.id]?.description, checked: m.id === model, keepOpen: true, onClick: () => setModel(m.id) })),
     { kind: 'sep' },
     { kind: 'label', label: 'Effort' },
-    ...EFFORTS.map((e) => ({ label: e[0].toUpperCase() + e.slice(1), checked: e === effort, keepOpen: true, onClick: () => setEffort(e) }))
+    ...EFFORTS.map((e) => ({ label: EFFORT_LABEL[e], checked: e === effort, keepOpen: true, onClick: () => setEffort(e) }))
   ]
   const currentModel = modelLabel(model, s.modelDetails)
 
@@ -161,7 +161,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
           <div className="flex items-center gap-2 px-3 pb-2.5">
             <button ref={modelBtn} className="flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-hover" onClick={() => setMenu('model')}>
               <span>{currentModel}</span>
-              <span className="text-muted capitalize">{effort}</span>
+              <span className="text-muted">{EFFORT_LABEL[effort]}</span>
               <IconDown className="text-faint" />
             </button>
             <div className="flex-1" />
