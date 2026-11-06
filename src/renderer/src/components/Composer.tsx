@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Chat, Effort, ModelId, Permission, SlashCommandInfo, Workspace } from '@shared/types'
+import type { Chat, Effort, ExtraAgentId, ModelId, Permission, SlashCommandInfo, Workspace } from '@shared/types'
 import { useStore, reportError, modelLabel } from '../store'
 import { IconDown, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
@@ -12,6 +12,13 @@ export const MODELS: { id: ModelId; label: string }[] = [
   { id: 'codex', label: 'Codex' }
 ]
 export const EFFORTS: Effort[] = ['low', 'medium', 'high']
+/** Agents you can @mention, with the Settings key that enables each. */
+export const AGENT_MENTIONS: { name: string; id: ExtraAgentId; hint: string }[] = [
+  { name: 'scout', id: 'scout', hint: 'Fast read-only codebase search' },
+  { name: 'reviewer', id: 'reviewer', hint: 'Review the current changes for bugs' },
+  { name: 'security-reviewer', id: 'securityReviewer', hint: 'Look for security problems' },
+  { name: 'quick-worker', id: 'quickWorker', hint: 'Cheap worker for mechanical edits' }
+]
 export const PERMISSIONS: { id: Permission; label: string }[] = [
   { id: 'full', label: 'Full access' },
   { id: 'edits', label: 'Ask for commands' },
@@ -38,6 +45,9 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const [dragging, setDragging] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
   const running = chat.status === 'running'
+  const extras = useStore((s) => s.settings.extras)
+  const claude = chat.model !== 'codex'
+  const advisorOn = extras.advisor && chat.advisor !== false
 
   const setText = (t: string) => {
     drafts[chat.id] = t
@@ -71,15 +81,21 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
 
   const options = useMemo(() => {
     if (!trigger) return []
-    if (trigger.kind === '@') return rank(files ?? [], trigger.query).map((f) => ({ value: f, label: f, hint: '' }))
-    const cmds = commands ?? []
+    if (trigger.kind === '@') {
+      const agents = claude ? AGENT_MENTIONS.filter((a) => extras.agents[a.id] && a.name.startsWith(trigger.query.toLowerCase())) : []
+      return [
+        ...agents.map((a) => ({ value: a.name, label: `${a.name} (agent)`, hint: a.hint })),
+        ...rank(files ?? [], trigger.query).map((f) => ({ value: f, label: f, hint: '' }))
+      ]
+    }
+    const cmds = [...(claude && extras.agents.quickWorker ? [{ name: 'quick', description: 'Hand a mechanical task to the quick worker' }] : []), ...(commands ?? [])]
     const names = rank(
       cmds.map((c) => c.name),
       trigger.query,
       10
     )
     return names.map((n) => ({ value: n, label: `/${n}`, hint: cmds.find((c) => c.name === n)?.description ?? '' }))
-  }, [trigger, files, commands])
+  }, [trigger, files, commands, extras, claude])
 
   const updateTrigger = (value: string, caret: number) => {
     const t = findTrigger(value, caret)
@@ -125,7 +141,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
     }
   }
 
-  const update = async (patch: Partial<Pick<Chat, 'model' | 'effort' | 'planMode' | 'permission'>>) => {
+  const update = async (patch: Partial<Pick<Chat, 'model' | 'effort' | 'planMode' | 'permission' | 'advisor'>>) => {
     useStore.getState().upsertChat(await window.api.updateChat(chat.id, patch))
   }
   const addFolder = async () => useStore.getState().upsertChat(await window.api.addChatFolder(chat.id))
@@ -292,6 +308,15 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
           >
             Plan
           </button>
+          {extras.advisor && (
+            <button
+              className={`rounded px-1.5 py-1 ${advisorOn ? 'bg-violet-500/15 text-violet-300' : 'text-faint hover:bg-hover hover:text-fg'}`}
+              title={advisorOn ? 'Advisor on: a second model reviews each turn. Click to turn off for this chat.' : 'Advisor off for this chat. Click to turn on.'}
+              onClick={() => void update({ advisor: !advisorOn })}
+            >
+              Advisor
+            </button>
+          )}
           <div className="flex-1" />
           <label className="cursor-pointer rounded p-1.5 text-muted hover:bg-hover hover:text-fg" title="Attach images">
             <IconImage />

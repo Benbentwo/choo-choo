@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Chat, ChatItem } from '@shared/types'
@@ -7,7 +7,17 @@ import { setDraft } from './Composer'
 import { IconDown, IconRight, IconTool } from '../icons'
 
 export function ChatView({ chat }: { chat: Chat }) {
-  const items = useStore((s) => s.items[chat.id]) ?? []
+  const all = useStore((s) => s.items[chat.id])
+  // Calls a subagent made are shown inside the card of the Agent call that started it.
+  const { items, children } = useMemo(() => {
+    const children = new Map<string, Extract<ChatItem, { kind: 'tool' }>[]>()
+    const items: ChatItem[] = []
+    for (const it of all ?? []) {
+      if (it.kind === 'tool' && it.parentId) children.set(it.parentId, [...(children.get(it.parentId) ?? []), it])
+      else items.push(it)
+    }
+    return { items, children }
+  }, [all])
   const pendingCount = useStore((s) => s.permissions[chat.id]?.length ?? 0)
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -34,7 +44,7 @@ export function ChatView({ chat }: { chat: Chat }) {
           </div>
         )}
         {items.map((it) => (
-          <Item key={it.id} item={it} chat={chat} />
+          <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />
         ))}
         <PermissionCards chat={chat} />
         {chat.status === 'running' && !pendingCount && (
@@ -57,7 +67,7 @@ async function revert(chat: Chat, itemId: string) {
   }
 }
 
-function Item({ item, chat }: { item: ChatItem; chat: Chat }) {
+function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?: Extract<ChatItem, { kind: 'tool' }>[] }) {
   switch (item.kind) {
     case 'user':
       return (
@@ -71,7 +81,8 @@ function Item({ item, chat }: { item: ChatItem; chat: Chat }) {
               Revert to here
             </button>
           )}
-          <div className="max-w-[85%] rounded-xl bg-raised px-4 py-2.5 whitespace-pre-wrap">
+          <div className={`max-w-[85%] rounded-xl bg-raised px-4 py-2.5 whitespace-pre-wrap ${item.fromAdvisor ? 'border border-accent/40' : ''}`}>
+            {item.fromAdvisor && <div className="mb-1 text-[11px] text-faint">Sent automatically from the advisor</div>}
             {item.images && item.images.length > 0 && (
               <div className="mb-2 flex flex-wrap gap-2">
                 {item.images.map((src, i) => (
@@ -93,6 +104,7 @@ function Item({ item, chat }: { item: ChatItem; chat: Chat }) {
       )
     case 'tool':
       if (item.name === 'ExitPlanMode') return <PlanItem item={item} chat={chat} />
+      if (item.name === 'Agent' || item.name === 'Task') return <SubagentItem item={item} calls={children ?? []} />
       return <ToolItem item={item} />
     case 'result':
       return (
@@ -105,7 +117,75 @@ function Item({ item, chat }: { item: ChatItem; chat: Chat }) {
       )
     case 'error':
       return <div className="my-3 rounded-lg border border-del/30 bg-del/10 px-3 py-2 text-del">{item.text}</div>
+    case 'advisor':
+      return <AdvisorItem item={item} chat={chat} />
   }
+}
+
+function AdvisorItem({ item, chat }: { item: Extract<ChatItem, { kind: 'advisor' }>; chat: Chat }) {
+  if (item.pending) return <div className="my-3 text-[11px] text-faint">Advisor is reviewing this turn…</div>
+  if (item.silent) return <div className="my-3 text-[11px] text-faint">Advisor: {item.text}</div>
+  const act = (action: 'send' | 'dismiss') => window.api.actOnAdvice(chat.id, item.id, action).catch(reportError)
+  return (
+    <div className={`my-3 rounded-lg border px-3 py-2 ${item.blocker && !item.resolved ? 'border-del/30 bg-del/10' : 'border-line bg-raised'} ${item.resolved === 'dismissed' ? 'opacity-60' : ''}`}>
+      <div className="mb-1 flex items-center gap-2 text-[11px]">
+        <span className="font-medium text-muted">Advisor</span>
+        {item.blocker && <span className="rounded bg-del/15 px-1 text-del">blocker</span>}
+        <span className="flex-1" />
+        {item.resolved === 'sent' && <span className="text-faint">Sent to the agent</span>}
+        {item.resolved === 'dismissed' && <span className="text-faint">Dismissed</span>}
+      </div>
+      <div className="space-y-1 text-[13px] whitespace-pre-wrap">
+        {item.text.split('\n').map((line, i) => (
+          <div key={i}>{line.replace(/^\[(blocker|note)\]\s*/i, '')}</div>
+        ))}
+      </div>
+      {!item.resolved && (
+        <div className="mt-2 flex gap-2">
+          <button
+            className="rounded-md bg-fg px-2.5 py-0.5 text-[12px] font-medium text-bg hover:opacity-90 disabled:opacity-40"
+            disabled={chat.status === 'running'}
+            title={chat.status === 'running' ? 'Wait for the agent to finish' : 'Ask the agent to address these notes'}
+            onClick={() => void act('send')}
+          >
+            Send to agent
+          </button>
+          <button className="rounded-md border border-line px-2.5 py-0.5 text-[12px] hover:bg-hover" onClick={() => void act('dismiss')}>
+            Dismiss
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SubagentItem({ item, calls }: { item: Extract<ChatItem, { kind: 'tool' }>; calls: Extract<ChatItem, { kind: 'tool' }>[] }) {
+  const [open, setOpen] = useState(false)
+  const input = (item.input ?? {}) as { subagent_type?: string; description?: string }
+  const pending = item.result === undefined
+  return (
+    <div className="my-1.5 rounded-lg border border-line bg-panel">
+      <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px]" onClick={() => setOpen(!open)}>
+        {open ? <IconDown className="text-faint" /> : <IconRight className="text-faint" />}
+        <span className="rounded bg-raised px-1.5 py-0.5 text-[11px] font-medium">{input.subagent_type || 'subagent'}</span>
+        <span className="flex-1 truncate text-muted">{input.description ?? ''}</span>
+        {calls.length > 0 && <span className="text-[11px] text-faint">{calls.length} step{calls.length === 1 ? '' : 's'}</span>}
+        {pending && <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-faint border-t-fg" />}
+      </button>
+      {open && (
+        <div className="border-t border-line px-3 py-2">
+          {calls.map((c) => (
+            <ToolItem key={c.id} item={c} />
+          ))}
+          {item.result !== undefined && (
+            <div className={`prose-chat mt-2 text-[13px] ${item.isError ? 'text-del' : ''}`}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.result}</ReactMarkdown>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function toolSummary(name: string, input: unknown): string {

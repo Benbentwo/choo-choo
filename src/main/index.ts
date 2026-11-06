@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
 import type { Artifact, Chat, FilePreview, Repo, Settings, Workspace } from '@shared/types'
+import { normalizeExtras } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 import * as agent from './agent'
@@ -276,7 +277,7 @@ async function nameWorkspace(ws: Workspace, prompt: string) {
 const emitChat = (chatId: string, payload: object) => send('chat:event', { chatId, ...payload })
 
 /** Starts a turn. Fire and forget; progress arrives through chat:event. */
-function sendToChat(chat: Chat, text: string, images: string[] = []) {
+function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fromAdvisor?: boolean } = {}) {
   if (agent.isRunning(chat.id)) throw new Error('Agent is already running in this chat')
   const ws = findWs(chat.workspaceId)
   const repo = store.get().repos.find((r) => r.id === ws.repoId)
@@ -290,7 +291,7 @@ function sendToChat(chat: Chat, text: string, images: string[] = []) {
     if (chat.model === 'codex') chat.model = 'opus'
     extra = (sdk) => orchestrator.queryOptions(sdk, repo, orchestratorHost)
   }
-  void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra)
+  void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
 }
 
 const orchestratorHost: orchestrator.Host = {
@@ -529,6 +530,9 @@ function registerIpc() {
     if (patch.unread !== undefined) c.unread = patch.unread
     if (patch.planMode !== undefined) c.planMode = patch.planMode
     if (patch.review !== undefined) c.review = patch.review
+    if (patch.reviewKind) c.reviewKind = patch.reviewKind
+    if (patch.advisor !== undefined) c.advisor = patch.advisor
+    if (patch.advisorBlocker !== undefined) c.advisorBlocker = patch.advisorBlocker
     if (patch.permission) c.permission = patch.permission
     store.save()
     return c
@@ -570,6 +574,7 @@ function registerIpc() {
   h('settings:save', (patch: Partial<Settings>) => {
     const s = store.get()
     s.settings = { ...s.settings, ...patch }
+    s.settings.extras = normalizeExtras(s.settings.extras)
     store.save()
     if ('theme' in patch) applyNativeTheme(s.settings)
     if ('archiveRetentionDays' in patch) void archive.cleanupArchives()
@@ -637,6 +642,13 @@ function registerIpc() {
     store.save()
     sendToChat(chat, reflection.applyPrompt(source, proposals, repo.defaultBranch, workspace.branch))
     return { workspace, chat }
+  })
+  h('advisor:act', (chatId: string, itemId: string, action: 'send' | 'dismiss') => {
+    const chat = findChat(chatId)
+    if (action === 'send' && agent.isRunning(chat.id)) throw new Error('Wait for the agent to finish first')
+    const { item, message } = agent.resolveAdvice(chat, itemId, action)
+    emitChat(chatId, { item, chat })
+    if (message) sendToChat(chat, message, [], { fromAdvisor: true })
   })
   h('chat:stop', (id: string) => agent.stop(id))
   ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny') => agent.respondPermission(id, d))

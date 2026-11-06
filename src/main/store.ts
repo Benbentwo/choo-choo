@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_SETTINGS, type AppState, type ChatItem } from '@shared/types'
+import { DEFAULT_SETTINGS, normalizeExtras, type AppState, type ChatItem } from '@shared/types'
 
 const dir = () => join(app.getPath('userData'), 'data')
 const chatDir = () => join(dir(), 'chats')
@@ -23,6 +23,7 @@ export function load(): AppState {
   const f = join(dir(), 'state.json')
   if (existsSync(f)) state = { ...state, ...JSON.parse(readFileSync(f, 'utf8')) }
   state.settings = { ...DEFAULT_SETTINGS, ...state.settings }
+  state.settings.extras = normalizeExtras(state.settings.extras)
   // A chat cannot still be running after a restart.
   for (const c of state.chats) if (c.status === 'running') c.status = 'idle'
   return state

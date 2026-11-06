@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Artifact, CheckRun, ReviewFinding, Workspace } from '@shared/types'
 import { useStore, openDoc, newChatTab, reportError } from '../store'
 import { IconDown, IconRight } from '../icons'
-import { REVIEW_PROMPT, useReview } from '../review'
+import { REVIEW_PROMPT, SECURITY_REVIEW_PROMPT, useReview } from '../review'
 
 const Empty = ({ children }: { children: React.ReactNode }) => <div className="p-6 text-center text-faint">{children}</div>
 
@@ -171,50 +171,67 @@ export async function sendFix(ws: Workspace, f: ReviewFinding) {
 
 export function ReviewTab({ ws }: { ws: Workspace }) {
   const repo = useStore((s) => s.repos.find((r) => r.id === ws.repoId))
-  const { chat, findings, running } = useReview(ws.id)
-  const start = async () => {
+  const extras = useStore((s) => s.settings.extras)
+  const { chat, code, security, findings, running } = useReview(ws.id)
+  const base = repo?.defaultBranch ?? 'main'
+  const start = async (kind: 'code' | 'security') => {
     await newChatTab(ws.id)
     const s = useStore.getState()
     const chatId = s.activeChat[ws.id]
     try {
-      s.upsertChat(await window.api.updateChat(chatId, { title: 'Review', review: true }))
-      await window.api.sendMessage(chatId, REVIEW_PROMPT(repo?.defaultBranch ?? 'main'))
+      s.upsertChat(await window.api.updateChat(chatId, { title: kind === 'security' ? 'Security review' : 'Review', review: true, reviewKind: kind, ...(extras.agents.reviewer && kind === 'code' ? { model: 'opus' } : {}) }))
+      await window.api.sendMessage(chatId, kind === 'security' ? SECURITY_REVIEW_PROMPT(base) : REVIEW_PROMPT(base, extras.agents.reviewer))
     } catch (e) {
       reportError(e)
     }
   }
+  const btn = 'rounded-md border border-line px-2 py-0.5 text-[12px] hover:bg-hover disabled:opacity-40'
+  const securityOn = extras.agents.securityReviewer
+  const status = (r: ReturnType<typeof useReview>['code'], label: string) =>
+    r.running ? `${label}: reviewing…` : r.findings ? `${label}: ${r.findings.length} finding${r.findings.length === 1 ? '' : 's'}` : r.chat ? `${label}: no findings parsed` : null
   const header = (
     <div className="flex items-center gap-2 px-4 py-2">
-      <span className="flex-1 text-muted">
-        {running ? 'Reviewing…' : findings ? `${findings.length} finding${findings.length === 1 ? '' : 's'}` : chat ? 'No findings parsed from the last review' : ''}
-      </span>
+      <span className="min-w-0 flex-1 truncate text-muted">{[status(code, 'Code'), securityOn || security.chat ? status(security, 'Security') : null].filter(Boolean).join(' · ')}</span>
       {chat && (
-        <button className="text-[12px] text-muted hover:text-fg" onClick={() => useStore.getState().setActiveChat(ws.id, chat.id)}>
+        <button className="text-[12px] text-muted hover:text-fg" onClick={() => useStore.getState().setActiveChat(ws.id, (code.chat ?? chat).id)}>
           Open chat
         </button>
       )}
-      <button disabled={running} className="rounded-md border border-line px-2 py-0.5 text-[12px] hover:bg-hover disabled:opacity-40" onClick={() => void start()}>
-        {chat ? 'Review again' : 'Start review'}
+      <button disabled={code.running} className={btn} onClick={() => void start('code')}>
+        {code.chat ? 'Review again' : 'Start review'}
       </button>
+      {securityOn && (
+        <button disabled={security.running} className={btn} onClick={() => void start('security')}>
+          Security review
+        </button>
+      )}
     </div>
   )
   if (!chat)
     return (
       <div className="p-6 text-center">
         <div className="mb-3 text-muted">Have an agent review every change on this branch. Findings show here and inline in the diff.</div>
-        <button className="rounded-md bg-fg px-3 py-1.5 font-medium text-bg hover:opacity-90" onClick={() => void start()}>
-          Start review
-        </button>
+        <div className="flex justify-center gap-2">
+          <button className="rounded-md bg-fg px-3 py-1.5 font-medium text-bg hover:opacity-90" onClick={() => void start('code')}>
+            Start review
+          </button>
+          {securityOn && (
+            <button className="rounded-md border border-line px-3 py-1.5 hover:bg-hover" onClick={() => void start('security')}>
+              Security review
+            </button>
+          )}
+        </div>
       </div>
     )
   return (
     <div>
       {header}
-      {findings?.length === 0 && <Empty>No issues found</Empty>}
+      {findings?.length === 0 && !running && <Empty>No issues found</Empty>}
       {findings?.map((f, i) => (
         <div key={i} className="group border-t border-line px-4 py-2">
           <button className="flex w-full items-center gap-2 text-left" onClick={() => openDoc(ws.id, { kind: 'diff', path: f.file })}>
             <span className={`text-[11px] font-medium uppercase ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span>
+            {f.source === 'security' && <span className="rounded bg-del/10 px-1 text-[10px] text-del">security</span>}
             <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">
               {f.file}
               {f.line ? `:${f.line}` : ''}

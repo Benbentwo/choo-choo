@@ -114,6 +114,12 @@ export interface Chat {
   alwaysAllow?: string[]
   /** This chat is a code review whose findings show in the Review tab and inline in diffs. */
   review?: boolean
+  /** Which kind of review, when `review` is set. Missing means a code review. */
+  reviewKind?: 'code' | 'security'
+  /** Per-chat advisor switch. Missing means on whenever the advisor is enabled in Settings. */
+  advisor?: boolean
+  /** The advisor raised a blocker the user hasn't acted on yet. */
+  advisorBlocker?: boolean
   /** Plan mode: the agent researches and proposes a plan without editing files. */
   planMode?: boolean
   /** Extra folders the agent may read and edit. */
@@ -167,6 +173,8 @@ export type ChatItem =
       checkpoint?: { head: string; tree: string }
       /** Session entry to fork from to drop this turn and everything after it. */
       resumeAt?: string
+      /** Sent automatically to pass on the advisor's feedback. */
+      fromAdvisor?: boolean
     }
   | { id: string; kind: 'note'; text: string; ts: number }
   | { id: string; kind: 'assistant'; text: string; streaming?: boolean; ts: number }
@@ -177,6 +185,8 @@ export type ChatItem =
       input: unknown
       result?: string
       isError?: boolean
+      /** Set when a subagent made this call: the id of the Task/Agent call that started it. */
+      parentId?: string
       ts: number
     }
   | {
@@ -189,6 +199,20 @@ export type ChatItem =
       ts: number
     }
   | { id: string; kind: 'error'; text: string; ts: number }
+  | {
+      id: string
+      kind: 'advisor'
+      /** Empty while the advisor is still reviewing. */
+      text: string
+      pending?: boolean
+      /** The advisor found nothing worth raising. */
+      silent?: boolean
+      /** At least one note is a blocker. */
+      blocker?: boolean
+      /** What the user did with the notes. */
+      resolved?: 'sent' | 'dismissed'
+      ts: number
+    }
 
 export interface FileChange {
   path: string
@@ -229,6 +253,37 @@ export interface Settings extends AppearanceSettings {
   workspacesRoot?: string
   /** Days to keep archived worktrees before deleting them. 0 keeps them forever. */
   archiveRetentionDays: number
+  /** Which Claude Code to run: the copy bundled with the app, or the `claude` you installed. */
+  claudeBinary: 'bundled' | 'installed'
+  /** Optional agents and features, adapted from oh-my-pi. All off by default. */
+  extras: Extras
+}
+
+export type ExtraAgentId = 'scout' | 'reviewer' | 'securityReviewer' | 'quickWorker'
+
+export interface Extras {
+  /** Subagents the main Claude agent can hand work to. */
+  agents: Record<ExtraAgentId, boolean>
+  /** A second model reviews each finished turn and gives advice. */
+  advisor: boolean
+  advisorModel: 'opus' | 'sonnet' | 'haiku'
+  /** Send blocker-level advice back to the agent automatically. */
+  advisorSteer: boolean
+  /** Have the reviewer check the changes when you click Create PR. Needs the reviewer agent. */
+  reviewBeforePr: boolean
+}
+
+export const DEFAULT_EXTRAS: Extras = {
+  agents: { scout: false, reviewer: false, securityReviewer: false, quickWorker: false },
+  advisor: false,
+  advisorModel: 'sonnet',
+  advisorSteer: false,
+  reviewBeforePr: true
+}
+
+/** Fills in fields an older or partial save is missing. */
+export function normalizeExtras(e: Partial<Extras> | undefined): Extras {
+  return { ...DEFAULT_EXTRAS, ...e, agents: { ...DEFAULT_EXTRAS.agents, ...e?.agents } }
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -238,6 +293,8 @@ export const DEFAULT_SETTINGS: Settings = {
   branchPrefix: '',
   anthropicApiKey: '',
   notifications: true,
+  claudeBinary: 'bundled',
+  extras: DEFAULT_EXTRAS,
   archiveRetentionDays: 30,
   ...DEFAULT_APPEARANCE
 }
@@ -319,7 +376,7 @@ export interface Api {
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
-  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'permission'>>): Promise<Chat>
+  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'reviewKind' | 'permission' | 'advisor' | 'advisorBlocker'>>): Promise<Chat>
   respondPermission(requestId: string, decision: PermissionDecision): void
   pendingPermissions(): Promise<PermissionRequest[]>
   addChatFolder(chatId: string): Promise<Chat>
@@ -353,6 +410,8 @@ export interface Api {
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
   stopChat(chatId: string): Promise<void>
+  /** Sends the advisor's notes to the agent, or dismisses them. */
+  actOnAdvice(chatId: string, itemId: string, action: 'send' | 'dismiss'): Promise<void>
   onChatEvent(cb: (e: ChatEvent) => void): () => void
   getChanges(workspaceId: string): Promise<FileChange[]>
   getDiffStats(workspaceId: string): Promise<DiffStats>

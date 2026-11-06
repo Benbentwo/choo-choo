@@ -19,3 +19,26 @@ describe('needsApproval', () => {
     expect(needsApproval('ask', [], 'Edit')).toBe(true)
   })
 })
+
+const { authHint } = await import('../src/main/agent')
+const { installedExecutable } = await import('../src/main/claudeBinary')
+
+describe('authHint', () => {
+  it('explains how to sign in when Claude Code is logged out', () => {
+    expect(authHint('Not logged in · Please run /login')).toContain('/login')
+    expect(authHint('Invalid API key · Fix external API key')).toContain('API key')
+    expect(authHint('Something else broke')).toBeNull()
+    expect(authHint(undefined)).toBeNull()
+  })
+})
+
+describe('installedExecutable', () => {
+  it('finds claude on PATH', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'cc-'))
+    writeFileSync(join(dir, 'claude'), '')
+    expect(installedExecutable(dir, dir)).toBe(join(dir, 'claude'))
+  })
+})
