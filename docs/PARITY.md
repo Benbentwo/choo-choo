@@ -73,7 +73,8 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 ### Platform
 - ✅ macOS menus and shortcuts, desktop notifications
 - ✅ dmg/zip builds for Apple silicon and Intel, release workflow (signs and notarizes when secrets are set)
-- ✅ Auto-update from GitHub releases (needs a signed build on macOS)
+- ✅ Auto-update from GitHub releases (signed builds install in place; unsigned ones offer brew upgrade or the download page)
+- ✅ Claude Code version and update check (Settings > Updates; runs `claude update` for an installed copy)
 
 ### Beyond Conductor
 - ✅ Shared sessions: share a workspace (branch, uncommitted files, chats) with coworkers through the repo's own remote; they continue with their own Claude login

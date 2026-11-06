@@ -38,7 +38,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Real terminals.** Setup, Run (⌘R) and terminal tabs per workspace, driven by `choo-choo.json` or `conductor.json`.
 - **Codex too.** Optionally run OpenAI's Codex CLI as a workspace agent.
 - **Keyboard first.** ⌘K search, ⌘T/⌘W tabs, ⌘B/⌘J panels, ⌘⇧U next unread.
-- **Native Mac app.** Apple silicon and Intel builds, desktop notifications, auto-update from GitHub releases.
+- **Native Mac app.** Apple silicon and Intel builds, desktop notifications, update checks for the app and for Claude Code (Settings > Updates, each with its own on/off toggle).
 
 ## Coming from Conductor
 
@@ -145,7 +145,9 @@ Each comment is saved to `.feedback/` in your checkout with the element's select
 
 To ship, open **Actions > Release > Run workflow** (optionally type a version). It builds the app for Apple silicon and Intel, attaches the `.dmg`, `.zip` and update files to the draft, and publishes it. Publishing the draft by hand on the Releases page works too; the workflow then attaches the files. The app's version comes from the release tag.
 
-Add a `HOMEBREW_TAP_TOKEN` secret (a token that can push to `Benbentwo/homebrew-tap`) and each release also updates the Homebrew cask, written by `scripts/homebrew-cask.sh`. Add `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` repository secrets to sign and notarize builds; without them the app is unsigned and auto-update can't install on macOS.
+Add a `HOMEBREW_TAP_TOKEN` secret (a token that can push to `Benbentwo/homebrew-tap`) and each release also updates the Homebrew cask, written by `scripts/homebrew-cask.sh`. Add `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` repository secrets to sign and notarize builds; without them the app is unsigned and can't update itself on macOS, so it offers `brew upgrade` (when Homebrew installed it) or the release page instead.
+
+Agents run the Claude Code binary bundled with the Agent SDK (the SDK's `claudeCodeVersion`), unless Settings > General > Claude Code picks your installed `claude`. Dependabot opens a PR whenever a new SDK is out; merge it and release to ship the newer Claude Code. An installed `claude` can be updated from Settings > Updates, which runs `claude update`.
 
 ## License
 

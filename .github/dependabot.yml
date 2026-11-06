@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # The bundled Claude Code comes from the Agent SDK, so a new SDK means a new Claude Code for every user.
+  # Merging this PR and cutting a release ships it; Settings > Updates shows when the bundled copy is behind.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    allow:
+      - dependency-name: '@anthropic-ai/claude-agent-sdk'
+    commit-message:
+      prefix: deps
+    labels: [dependencies]

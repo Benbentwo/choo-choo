@@ -33,8 +33,13 @@ export function installedExecutable(path = process.env.PATH ?? '', home = homedi
   return undefined
 }
 
-/** The Claude Code binary to run, following the Settings choice. Falls back to the bundled one if yours isn't found. */
+/** Which Claude Code agents run, following the Settings choice. Falls back to the bundled one if yours isn't found. */
+export function claudeSource(): { source: 'bundled' | 'installed'; path?: string } {
+  const mine = store.get().settings.claudeBinary === 'installed' ? installedExecutable() : undefined
+  return mine ? { source: 'installed', path: mine } : { source: 'bundled', path: bundledExecutable() }
+}
+
+/** The Claude Code binary to run. Undefined lets the SDK find its own. */
 export function claudeExecutable(): string | undefined {
-  if (store.get().settings.claudeBinary === 'installed') return installedExecutable() ?? bundledExecutable()
-  return bundledExecutable()
+  return claudeSource().path
 }

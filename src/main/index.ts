@@ -16,7 +16,7 @@ import { readScripts } from './scripts'
 import { listCommands } from './commands'
 import * as gh from './github'
 import { suggestName } from './naming'
-import { checkNow, installUpdate, startUpdater } from './updater'
+import * as updates from './updater'
 import { registerDevFeedback } from './devFeedback'
 import * as conductor from './conductorImport'
 import { modelDetails } from './models'
@@ -580,6 +580,7 @@ function registerIpc() {
     store.save()
     if ('theme' in patch) applyNativeTheme(s.settings)
     if ('archiveRetentionDays' in patch) void archive.cleanupArchives()
+    updates.onSettingsChanged(Object.keys(patch))
     return s.settings
   })
   h('folder:pick', async () => {
@@ -679,7 +680,10 @@ function registerIpc() {
   ipcMain.on('pty:write', (_e, id: string, d: string) => pty.write(id, d))
   ipcMain.on('pty:resize', (_e, id: string, c: number, r: number) => pty.resize(id, c, r))
   ipcMain.on('pty:kill', (_e, id: string) => pty.kill(id))
-  h('update:install', () => installUpdate())
+  h('updates:status', () => updates.getStatus())
+  h('updates:check', (which?: 'app' | 'claude' | 'all') => updates.checkNowFor(which))
+  h('updates:install-app', () => updates.installAppUpdate())
+  h('updates:update-claude', () => updates.updateClaude())
   h('shell:open', (url: string) => {
     if (/^https?:\/\//.test(url)) return shell.openExternal(url)
   })
@@ -693,7 +697,7 @@ function buildMenu() {
       role: 'appMenu',
       submenu: [
         { role: 'about' },
-        { label: 'Check for Updates…', click: () => void checkNow(win) },
+        { label: 'Check for Updates…', click: () => void updates.checkNow(win) },
         { type: 'separator' },
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: m('settings') },
         { type: 'separator' },
@@ -839,7 +843,7 @@ app.whenReady().then(async () => {
   registerDevFeedback(() => win)
   buildMenu()
   createWindow()
-  startUpdater(send)
+  updates.startUpdater(send)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

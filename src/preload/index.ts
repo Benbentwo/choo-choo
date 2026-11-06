@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { Api, ChatEvent } from '@shared/types'
+import type { UpdateStatus } from '@shared/updates'
 
 const inv = (ch: string) => (...a: unknown[]) => ipcRenderer.invoke(ch, ...a)
 function on<T extends unknown[]>(ch: string, cb: (...a: T) => void) {
@@ -80,8 +81,11 @@ const api: Api = {
   revealInFinder: inv('shell:reveal') as Api['revealInFinder'],
   onMenu: (cb) => on<[string]>('menu', cb),
   onStateChanged: (cb) => on<[]>('state:changed', cb),
-  onUpdateReady: (cb) => on<[string]>('update:ready', cb),
-  installUpdate: inv('update:install') as Api['installUpdate'],
+  updateStatus: inv('updates:status') as Api['updateStatus'],
+  checkForUpdates: inv('updates:check') as Api['checkForUpdates'],
+  installAppUpdate: inv('updates:install-app') as Api['installAppUpdate'],
+  updateClaude: inv('updates:update-claude') as Api['updateClaude'],
+  onUpdateStatus: (cb) => on<[UpdateStatus]>('updates:changed', cb),
   shareStatus: inv('share:status') as Api['shareStatus'],
   shareWorkspace: inv('share:create') as Api['shareWorkspace'],
   setShareAutoSync: inv('share:autoSync') as Api['setShareAutoSync'],

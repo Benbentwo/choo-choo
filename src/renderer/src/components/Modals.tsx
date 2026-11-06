@@ -8,6 +8,7 @@ import { QuickStartModalBody } from './AddProject'
 import { AppearanceSettings } from './Appearance'
 import { OpenShareModal, ShareModal } from './ShareModals'
 import { CommandPalette } from './CommandPalette'
+import { UpdatesSettings } from './Updates'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -66,14 +67,14 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'agents' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<'general' | 'agents' | 'updates' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   return (
     <Shell onClose={onClose} width="w-[620px]">
       <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
         <div className="pb-3 font-medium">Settings</div>
         <div className="ml-auto flex gap-1">
-          {(['general', 'agents', 'telemetry', 'appearance'] as const).map((t) => (
+          {(['general', 'agents', 'updates', 'telemetry', 'appearance'] as const).map((t) => (
             <button
               key={t}
               role="tab"
@@ -88,6 +89,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="max-h-[70vh] overflow-y-auto">
         {tab === 'appearance' ? (
           <AppearanceSettings />
+        ) : tab === 'updates' ? (
+          <UpdatesSettings settings={settings} save={(patch) => void save(patch)} />
         ) : tab === 'telemetry' ? (
           <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (
@@ -124,7 +127,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             <Row label="Branch prefix" hint="New workspaces branch as prefix/name. Empty uses your GitHub username.">
               <input className={`${select} w-44`} defaultValue={settings.branchPrefix} placeholder="auto" onBlur={(e) => void save({ branchPrefix: e.target.value })} />
             </Row>
-            <Row label="Claude Code" hint="Which Claude Code runs your agents. Your installed copy uses its own updates and settings. Falls back to the bundled one if it isn't found.">
+            <Row label="Claude Code" hint="Which Claude Code runs your agents. Your installed copy uses its own updates and settings. Falls back to the bundled one if it isn't found. Versions are under Updates.">
               <select className={select} value={settings.claudeBinary} onChange={(e) => void save({ claudeBinary: e.target.value as Settings['claudeBinary'] })}>
                 <option value="bundled">Bundled with the app</option>
                 <option value="installed">My installed claude</option>
