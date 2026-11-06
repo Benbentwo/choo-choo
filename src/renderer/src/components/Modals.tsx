@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, Settings, Telemetry } from '@shared/types'
+import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, PromptCustom, Settings, Telemetry } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
@@ -82,14 +82,14 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'agents' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<'general' | 'agents' | 'telemetry' | 'prompts' | 'appearance'>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   return (
     <Shell onClose={onClose} width="w-[620px]">
       <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
         <div className="pb-3 font-medium">Settings</div>
         <div className="ml-auto flex gap-1">
-          {(['general', 'agents', 'telemetry', 'appearance'] as const).map((t) => (
+          {(['general', 'agents', 'prompts', 'telemetry', 'appearance'] as const).map((t) => (
             <button
               key={t}
               role="tab"
@@ -104,6 +104,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="max-h-[70vh] overflow-y-auto">
         {tab === 'appearance' ? (
           <AppearanceSettings />
+        ) : tab === 'prompts' ? (
+          <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
         ) : tab === 'telemetry' ? (
           <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (
@@ -173,6 +175,87 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         )}
       </div>
     </Shell>
+  )
+}
+
+const EMPTY_PROMPT: PromptCustom = { mode: 'append', text: '' }
+
+/** One prompt editor: append to or replace Claude Code's system prompt. */
+function PromptEditor({ value, save, scope }: { value?: PromptCustom; save: (p: PromptCustom) => void; scope: 'global' | 'repo' }) {
+  const [draft, setDraft] = useState<PromptCustom>(value ?? EMPTY_PROMPT)
+  const field = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
+  const commit = (p: PromptCustom) => {
+    setDraft(p)
+    save(p)
+  }
+  return (
+    <div className="px-5 py-3.5">
+      <div className="mb-2 flex items-center gap-3">
+        <select className={field} value={draft.mode} onChange={(e) => commit({ ...draft, mode: e.target.value as PromptCustom['mode'] })}>
+          <option value="append">Add to Claude Code's prompt</option>
+          <option value="replace">Replace Claude Code's prompt</option>
+        </select>
+        <span className="text-[12px] text-faint">
+          {draft.mode === 'append'
+            ? scope === 'global'
+              ? 'Keeps Claude Code\'s tools guidance and safety rules.'
+              : 'Added after your global instructions.'
+            : scope === 'global'
+              ? 'Sends only your text. A repo prompt is added after it.'
+              : 'Sends only this text in this repo, ignoring the global one.'}
+        </span>
+      </div>
+      {draft.mode === 'replace' && (
+        <div className="mb-2 rounded-md border border-line bg-raised px-3 py-2 text-[12px] text-muted">
+          Replacing drops Claude Code's guidance on tools, git and safety, so the agent only knows what you write here. CLAUDE.md files, skills and subagents still load.
+        </div>
+      )}
+      <textarea
+        className={`${field} h-40 w-full resize-y font-mono text-[12px] leading-relaxed`}
+        value={draft.text}
+        placeholder={draft.mode === 'append' ? 'e.g. Write tests with vitest. Keep commits small and explain why in the message.' : 'You are a coding agent working in a git worktree…'}
+        onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+        onBlur={() => save(draft)}
+      />
+    </div>
+  )
+}
+
+function PromptsSection({ global, saveGlobal }: { global?: PromptCustom; saveGlobal: (p: PromptCustom) => void }) {
+  const repos = useStore((s) => s.repos)
+  const [repoId, setRepoId] = useState(() => {
+    const s = useStore.getState()
+    return s.workspaces.find((w) => w.id === s.selectedWs)?.repoId ?? repos[0]?.id ?? ''
+  })
+  const repo = repos.find((r) => r.id === repoId)
+  const saveRepo = (p: PromptCustom) => {
+    if (!repo) return
+    const systemPrompt = p.text.trim() ? p : undefined
+    void window.api.setRepoPrompt(repo.id, systemPrompt).then(() =>
+      useStore.getState().set({ repos: useStore.getState().repos.map((r) => (r.id === repo.id ? { ...r, systemPrompt } : r)) })
+    )
+  }
+  return (
+    <>
+      <div className="border-b border-line px-5 py-2.5 text-[12px] text-faint">
+        Instructions for Claude agents. Changes apply to new chats; a chat keeps the prompt it started with. For instructions you want in git, use the repo's CLAUDE.md instead.
+      </div>
+      <div className="px-5 pt-3.5 font-medium">All repos</div>
+      <PromptEditor value={global} save={saveGlobal} scope="global" />
+      <div className="flex items-center gap-3 border-t border-line px-5 pt-3.5">
+        <div className="font-medium">This repo</div>
+        {repos.length > 0 && (
+          <select className="ml-auto rounded-md border border-line bg-bg px-2 py-1 outline-none" value={repoId} onChange={(e) => setRepoId(e.target.value)}>
+            {repos.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {repo ? <PromptEditor key={repo.id} value={repo.systemPrompt} save={saveRepo} scope="repo" /> : <div className="px-5 py-3.5 text-faint">Add a repository first.</div>}
+    </>
   )
 }
 

@@ -5,7 +5,7 @@ import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
-import type { Artifact, Chat, FilePreview, Repo, Settings, Workspace } from '@shared/types'
+import type { Artifact, Chat, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import { sessionUsage } from './usage'
 import * as store from './store'
@@ -480,6 +480,11 @@ function registerIpc() {
   h('repo:hidden', (id: string, hidden: boolean) => {
     const r = store.get().repos.find((x) => x.id === id)
     if (r) r.hidden = hidden
+    store.save()
+  })
+  h('repo:prompt', (id: string, prompt: PromptCustom | undefined) => {
+    const r = store.get().repos.find((x) => x.id === id)
+    if (r) r.systemPrompt = prompt?.text.trim() ? prompt : undefined
     store.save()
   })
   h('ws:create', (repoId: string, source?: WorkspaceSource, folders?: string[]) => createWorkspace(repoId, source, folders))

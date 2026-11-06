@@ -6,6 +6,7 @@ import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
 import { enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
 import * as orchestrator from './orchestrator'
+import { buildSystemPrompt } from '@shared/systemPrompt'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
 
@@ -197,8 +198,9 @@ export async function send(
     }
     const sdkMod = await loadSdk()
     const { query } = sdkMod
-    const extras = store.get().settings.extras
-    const append = systemAppend(extras, !!chat.planMode)
+    const { settings, repos } = store.get()
+    const extras = settings.extras
+    const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, systemAppend(extras, !!chat.planMode))
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
       if (toolName === 'ExitPlanMode' && chat.planMode) {
         // The plan card asks the user; the agent must not start building on its own.
@@ -240,7 +242,8 @@ export async function send(
         abortController: abort,
         settingSources: ['user', 'project', 'local'],
         agents: enabledSubagents(extras),
-        ...(append ? { systemPrompt: { type: 'preset', preset: 'claude_code', append } } : {}),
+        // Always Claude Code's own prompt unless the user replaced it; the SDK's default is a bare one.
+        systemPrompt,
         // Newer models (Opus 5.5 and up) leave out the task-list tools unless asked. Turn them on so
         // sessions and their subagents keep a visible checklist, as on older models.
         env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...env },
