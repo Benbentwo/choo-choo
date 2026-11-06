@@ -8,6 +8,7 @@ import { QuickStartModalBody } from './AddProject'
 import { AppearanceSettings } from './Appearance'
 import { IntegrationsSettings } from './Integrations'
 import { McpSettings } from './McpSettings'
+import { PluginSettings } from './PluginSettings'
 import { OpenShareModal, ShareModal } from './ShareModals'
 import { CommandPalette } from './CommandPalette'
 import { UsageGraphs } from './UsageGraphs'
@@ -160,14 +161,14 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'agents' | 'prompts' | 'mcp' | 'integrations' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<'general' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'integrations' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   return (
     <Shell onClose={onClose} width="w-[620px]">
       <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
         <div className="pb-3 font-medium">Settings</div>
         <div className="ml-auto flex gap-1">
-          {(['general', 'agents', 'prompts', 'mcp', 'integrations', 'telemetry', 'appearance'] as const).map((t) => (
+          {(['general', 'agents', 'prompts', 'mcp', 'plugins', 'integrations', 'telemetry', 'appearance'] as const).map((t) => (
             <button
               key={t}
               role="tab"
@@ -186,6 +187,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <IntegrationsSettings />
         ) : tab === 'mcp' ? (
           <McpSettings />
+        ) : tab === 'plugins' ? (
+          <PluginSettings />
         ) : tab === 'prompts' ? (
           <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
         ) : tab === 'telemetry' ? (

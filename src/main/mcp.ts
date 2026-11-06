@@ -3,10 +3,11 @@
  * Everything goes through the official Claude Code binary (`claude mcp …`) or an Agent SDK query,
  * so servers configured here work the same in the terminal.
  */
-import { execFile, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import type { McpAddSpec, McpServerView } from '@shared/types'
 import { claudeExecutable } from './claudeBinary'
+import { runClaude } from './claudeCli'
 
 let sdk: Promise<typeof import('@anthropic-ai/claude-agent-sdk')> | null = null
 const loadSdk = () => (sdk ??= import('@anthropic-ai/claude-agent-sdk'))
@@ -73,16 +74,6 @@ export function toView(s: any): McpServerView {
     tools: (s.tools ?? []).map((t: { name: string; description?: string }) => ({ name: t.name, description: t.description })),
     removable: ['user', 'project', 'local'].includes(source)
   }
-}
-
-function runClaude(args: string[], cwd: string, env: Record<string, string>): Promise<string> {
-  const bin = claudeExecutable() ?? 'claude'
-  return new Promise((resolve, reject) => {
-    execFile(bin, args, { cwd, env: { ...process.env, ...env }, timeout: 60_000 }, (err, stdout, stderr) => {
-      if (err) reject(new Error((stderr || stdout || err.message).trim()))
-      else resolve(stdout)
-    })
-  })
 }
 
 /**

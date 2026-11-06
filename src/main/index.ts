@@ -23,6 +23,7 @@ import * as conductor from './conductorImport'
 import { modelDetails } from './models'
 import { listOutputStyles } from './claudeOptions'
 import * as mcp from './mcp'
+import * as plugins from './plugins'
 import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
@@ -889,6 +890,28 @@ function registerIpc() {
     return mcp.reconnect(r.cwd, r.env, name)
   })
   h('mcp:signIn', (repoId: string) => mcp.openSignIn(mcpRepo(repoId).cwd))
+  // Plugins and skills, through `claude plugin …`.
+  const pr = (repoId: string) => mcpRepo(repoId)
+  h('plugins:installed', (repoId: string) => plugins.installed(pr(repoId).cwd, pr(repoId).env))
+  h('plugins:available', (repoId: string, fresh?: boolean) => plugins.available(pr(repoId).cwd, pr(repoId).env, !!fresh))
+  h('plugins:marketplaces', (repoId: string) => plugins.marketplaces(pr(repoId).cwd, pr(repoId).env))
+  h('plugins:addMarketplace', (repoId: string, source: string) => plugins.addMarketplace(pr(repoId).cwd, pr(repoId).env, String(source)))
+  h('plugins:removeMarketplace', (repoId: string, name: string) => plugins.removeMarketplace(pr(repoId).cwd, pr(repoId).env, String(name)))
+  h('plugins:install', (repoId: string, id: string, scope: string, acceptSha?: string) => plugins.install(pr(repoId).cwd, pr(repoId).env, String(id), String(scope), acceptSha))
+  h('plugins:uninstall', (repoId: string, id: string, scope: string) => plugins.uninstall(pr(repoId).cwd, pr(repoId).env, String(id), String(scope)))
+  h('plugins:setEnabled', (repoId: string, id: string, enabled: boolean, scope: string) => plugins.setEnabled(pr(repoId).cwd, pr(repoId).env, String(id), !!enabled, String(scope)))
+  h('plugins:details', (repoId: string, id: string) => plugins.details(pr(repoId).cwd, pr(repoId).env, String(id)))
+  h('plugins:localSkills', (repoId: string) => plugins.localSkills(pr(repoId).cwd))
+  h('shell:reveal', (p: string) => {
+    // Only Claude Code's own folder or a repo, so a renderer can't point Finder anywhere.
+    if (typeof p !== 'string' || !isAbsolute(p) || !existsSync(p)) return
+    const roots = [join(homedir(), '.claude'), ...store.get().repos.map((r) => r.path)]
+    const inside = (root: string) => {
+      const rel = relative(root, resolve(p))
+      return !rel.startsWith('..') && !isAbsolute(rel)
+    }
+    if (roots.some(inside)) shell.showItemInFolder(p)
+  })
   h('chat:phone', (id: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)

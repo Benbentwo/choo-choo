@@ -624,6 +624,48 @@ export interface McpAddSpec {
   headers?: string
 }
 
+/** A Claude Code plugin as `claude plugin list` reports it. */
+export interface InstalledPlugin {
+  /** name@marketplace */
+  id: string
+  name: string
+  marketplace: string
+  version: string
+  /** user, project, local, or a scope managed elsewhere (managed, synced…). */
+  scope: string
+  enabled: boolean
+  /** Installed in user, project or local settings, so it can be uninstalled here. */
+  manageable: boolean
+}
+
+/** A plugin a configured marketplace offers. */
+export interface AvailablePlugin {
+  id: string
+  name: string
+  description: string
+  marketplace: string
+  installs?: number
+}
+
+export interface Marketplace {
+  name: string
+  source: string
+}
+
+export type PluginInstallResult =
+  | { ok: true; message?: string }
+  /** The plugin installs by running this command; a person must approve it first. */
+  | { ok: false; confirm: { command: string; sha256: string } }
+
+/** A skill, command or agent file in ~/.claude or the repo's .claude folder. */
+export interface LocalSkill {
+  kind: 'skill' | 'command' | 'agent'
+  name: string
+  description: string
+  scope: 'user' | 'project'
+  path: string
+}
+
 /** An output style a chat can use. */
 export interface OutputStyleInfo {
   name: string
@@ -683,6 +725,18 @@ export interface Api {
   mcpReconnect(repoId: string, name: string): Promise<McpServerView[]>
   /** Opens Terminal on Claude Code's /mcp screen to sign in to a server. */
   mcpSignIn(repoId: string): Promise<void>
+  pluginsInstalled(repoId: string): Promise<InstalledPlugin[]>
+  pluginsAvailable(repoId: string, fresh?: boolean): Promise<AvailablePlugin[]>
+  pluginMarketplaces(repoId: string): Promise<Marketplace[]>
+  pluginAddMarketplace(repoId: string, source: string): Promise<void>
+  pluginRemoveMarketplace(repoId: string, name: string): Promise<void>
+  pluginInstall(repoId: string, id: string, scope: 'user' | 'project', acceptSha?: string): Promise<PluginInstallResult>
+  pluginUninstall(repoId: string, id: string, scope: string): Promise<void>
+  pluginSetEnabled(repoId: string, id: string, enabled: boolean, scope: string): Promise<void>
+  pluginDetails(repoId: string, id: string): Promise<string>
+  localSkills(repoId: string): Promise<LocalSkill[]>
+  /** Shows a file or folder in Finder. */
+  revealPath(path: string): Promise<void>
   respondPermission(requestId: string, decision: PermissionDecision): void
   pendingPermissions(): Promise<PermissionRequest[]>
   addChatFolder(chatId: string): Promise<Chat>
