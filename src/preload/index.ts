@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { Api, ChatEvent } from '@shared/types'
 
 const inv = (ch: string) => (...a: unknown[]) => ipcRenderer.invoke(ch, ...a)
@@ -17,6 +17,7 @@ const api: Api = {
   removeRepo: inv('repo:remove') as Api['removeRepo'],
   setRepoHidden: inv('repo:hidden') as Api['setRepoHidden'],
   createWorkspace: inv('ws:create') as Api['createWorkspace'],
+  openOrchestrator: inv('ws:orchestrator') as Api['openOrchestrator'],
   archiveWorkspace: inv('ws:archive') as Api['archiveWorkspace'],
   restoreWorkspace: inv('ws:restore') as Api['restoreWorkspace'],
   renameWorkspace: inv('ws:rename') as Api['renameWorkspace'],
@@ -44,6 +45,7 @@ const api: Api = {
   readFile: inv('ws:readFile') as Api['readFile'],
   revertTo: inv('chat:revert') as Api['revertTo'],
   saveSettings: inv('settings:save') as Api['saveSettings'],
+  setZoom: (f) => webFrame.setZoomFactor(f),
   cloneRepo: inv('repo:clone') as Api['cloneRepo'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
   onNavigate: (cb) => on<[string, string]>('navigate', cb),

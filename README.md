@@ -1,8 +1,9 @@
 <div align="center">
 
-<img src="resources/icon.png" width="128" alt="Choo Choo icon">
-
-# Choo Choo
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/choo-choo-horizontal-dark.svg">
+  <img src="docs/brand/choo-choo-horizontal-light.svg" alt="Choo Choo" width="420">
+</picture>
 
 **Run a team of Claude Code agents in parallel on your Mac.**<br>
 Each agent gets its own git worktree. You review the diffs and ship the PRs from one window.
@@ -83,6 +84,10 @@ Codex is optional: install the Codex CLI (`npm i -g @openai/codex`) and run `cod
 - Setup, run and archive scripts come from `choo-choo.json`, falling back to `conductor.json`.
 - Scripts and agents see `CONDUCTOR_ROOT_PATH`, `CONDUCTOR_WORKSPACE_NAME`, `CONDUCTOR_WORKSPACE_PATH`, `CONDUCTOR_DEFAULT_BRANCH` and `CONDUCTOR_PORT`, also available as `CHOO_*`.
 - PR features use the `gh` CLI, so install it and run `gh auth login`.
+
+### Orchestrator
+
+Click the orchestrator icon next to a repository in the sidebar. Tell the orchestrator what you want and it splits the work into workspaces, gives each agent a task, waits for them, reads their transcripts and diffs, and sends follow-ups. It runs in the repo's main checkout and cannot edit files there. It keeps a memory file per repository at `~/choo-choo/memory/<repo>.md`, which it reads on every turn and which you can edit yourself.
 
 ## Develop
 

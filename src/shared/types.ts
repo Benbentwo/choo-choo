@@ -1,3 +1,4 @@
+import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 export interface Repo {
   id: string
   name: string
@@ -27,6 +28,10 @@ export interface Workspace {
   createdAt: number
   archived?: boolean
   archivedAt?: number
+  /** The repo's orchestrator: runs in the main checkout and directs other workspaces. */
+  orchestrator?: boolean
+  /** Started by the orchestrator. */
+  orchestrated?: boolean
 }
 
 export type ModelId = 'opus' | 'sonnet' | 'haiku' | 'codex'
@@ -135,7 +140,7 @@ export interface DiffStats {
   files: number
 }
 
-export interface Settings {
+export interface Settings extends AppearanceSettings {
   defaultModel: ModelId
   defaultEffort: Effort
   defaultPermission: Permission
@@ -152,7 +157,8 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultPermission: 'full',
   branchPrefix: '',
   anthropicApiKey: '',
-  notifications: true
+  notifications: true,
+  ...DEFAULT_APPEARANCE
 }
 
 export interface AppState {
@@ -209,6 +215,8 @@ export interface Api {
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
   createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  /** Opens the repo's orchestrator, creating it the first time. */
+  openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
@@ -234,6 +242,8 @@ export interface Api {
   readFile(workspaceId: string, path: string): Promise<FilePreview>
   revertTo(chatId: string, itemId: string): Promise<string>
   saveSettings(patch: Partial<Settings>): Promise<Settings>
+  /** Interface zoom, 1 = 100%. */
+  setZoom(factor: number): void
   cloneRepo(url: string): Promise<Repo>
   listGithubRepos(): Promise<GithubRepo[]>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void

@@ -5,9 +5,11 @@ import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
 import { Modals } from './components/Modals'
+import { useAppearance } from './appearance'
 
 export function App() {
   const s = useStore()
+  useAppearance()
   const ws = s.workspaces.find((w) => w.id === s.selectedWs && !w.archived) ?? null
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export function App() {
         {ws ? (
           <>
             <Center ws={ws} />
-            {s.rightOpen && <RightPanel ws={ws} />}
+            {s.rightOpen && !ws.orchestrator && <RightPanel ws={ws} />}
           </>
         ) : (
           <Home />
@@ -87,7 +89,7 @@ export function App() {
       </div>
       <Modals />
       {s.error && (
-        <div className="fixed right-4 bottom-4 z-50 max-w-md rounded-lg border border-del/40 bg-raised px-4 py-3 text-[12px] shadow-xl">
+        <div className="anim-toast fixed right-4 bottom-4 z-50 max-w-md rounded-lg border border-del/40 bg-raised px-4 py-3 text-[12px] shadow-xl">
           <div className="mb-1 font-medium text-del">Something went wrong</div>
           <div className="selectable text-muted whitespace-pre-wrap">{s.error}</div>
           <button className="mt-2 text-muted hover:text-fg" onClick={() => s.set({ error: null })}>

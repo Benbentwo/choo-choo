@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { readCachedAppearance } from './appearanceCache'
 import { DEFAULT_SETTINGS, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
 
 export interface Doc {
@@ -53,7 +54,7 @@ export const useStore = create<UI>((set, get) => ({
   selectedWs: null,
   activeChat: {},
   openDoc: {},
-  settings: { ...DEFAULT_SETTINGS },
+  settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
   history: [],
   historyIndex: -1,
@@ -122,6 +123,18 @@ export function reportError(e: unknown) {
 export async function newWorkspace(repoId: string) {
   try {
     const { workspace, chat } = await window.api.createWorkspace(repoId)
+    await refreshState()
+    useStore.getState().setActiveChat(workspace.id, chat.id)
+    useStore.getState().selectWorkspace(workspace.id)
+  } catch (e) {
+    reportError(e)
+  }
+}
+
+/** Opens the repo's orchestrator, which starts and directs workspaces for you. */
+export async function openOrchestrator(repoId: string) {
+  try {
+    const { workspace, chat } = await window.api.openOrchestrator(repoId)
     await refreshState()
     useStore.getState().setActiveChat(workspace.id, chat.id)
     useStore.getState().selectWorkspace(workspace.id)
