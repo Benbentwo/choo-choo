@@ -134,6 +134,8 @@ export interface Chat {
   handoff?: string
   /** The sharer's chat id, so refreshing a share updates the right tab. */
   sharedChatId?: string
+  /** Context window of the model, as Claude Code last reported it. */
+  contextWindow?: number
   createdAt: number
 }
 
@@ -420,6 +422,30 @@ export interface PermissionRequest {
 
 export type PermissionDecision = 'allow' | 'always' | 'deny'
 
+/** One Claude API response in a session, read from Claude Code's transcript. */
+export interface UsagePoint {
+  ts: number
+  model: string
+  /** Uncached input tokens. */
+  input: number
+  cacheWrite: number
+  cacheRead: number
+  output: number
+  /** Made by a subagent, so it isn't in the main context window. */
+  subagent?: boolean
+}
+
+export interface SessionUsage {
+  points: UsagePoint[]
+  /** Times the conversation was compacted. */
+  compactions: number[]
+  contextWindow: number
+  /** Running cost Claude Code reported at the end of the last turn. */
+  costUsd?: number
+  /** Why there is nothing to show, when points is empty. */
+  empty?: string
+}
+
 export interface ChatEvent {
   chatId: string
   item?: ChatItem
@@ -457,6 +483,7 @@ export interface Api {
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
+  getChatUsage(chatId: string): Promise<SessionUsage>
   updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'reviewKind' | 'permission' | 'advisor' | 'advisorBlocker'>>): Promise<Chat>
   respondPermission(requestId: string, decision: PermissionDecision): void
   pendingPermissions(): Promise<PermissionRequest[]>
