@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { GithubRepo, Settings } from '@shared/types'
+import type { GithubRepo, ImportPreview, ImportResult, Settings } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread } from '../store'
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
@@ -27,6 +27,7 @@ export function Modals() {
   if (modal === 'settings') return <SettingsModal onClose={close} />
   if (modal === 'palette') return <Palette onClose={close} />
   if (modal === 'create') return <CreateModal onClose={close} />
+  if (modal === 'conductor') return <ConductorImportModal onClose={close} />
   if (modal === 'quickstart')
     return (
       <Shell onClose={close} width="w-[480px]">
@@ -92,6 +93,14 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       </Row>
       <Row label="Notifications" hint="Notify when an agent finishes while the app is in the background.">
         <input type="checkbox" checked={settings.notifications} onChange={(e) => void save({ notifications: e.target.checked })} />
+      </Row>
+      <Row label="Workspaces folder" hint="Where new workspaces are created. Empty uses ~/choo-choo/workspaces.">
+        <input className={`${select} w-44`} defaultValue={settings.workspacesRoot ?? ''} placeholder="~/choo-choo/workspaces" onBlur={(e) => void save({ workspacesRoot: e.target.value })} />
+      </Row>
+      <Row label="Import from Conductor" hint="Bring over your projects, open workspaces, chats and settings. Conductor's own data is only read, never changed.">
+        <button className="rounded-md border border-line px-2.5 py-1 hover:bg-hover" onClick={() => useStore.getState().set({ modal: 'conductor' })}>
+          Import…
+        </button>
       </Row>
     </Shell>
   )
@@ -299,6 +308,110 @@ function Palette({ onClose }: { onClose: () => void }) {
             {e.hint && <span className="truncate text-[12px] text-faint">{e.hint}</span>}
           </button>
         ))}
+      </div>
+    </Shell>
+  )
+}
+
+function ConductorImportModal({ onClose }: { onClose: () => void }) {
+  const [preview, setPreview] = useState<ImportPreview | null>(null)
+  const [useRoot, setUseRoot] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState<ImportResult | null>(null)
+
+  useEffect(() => {
+    window.api.previewConductorImport().then(setPreview, reportError)
+  }, [])
+
+  const run = async () => {
+    setBusy(true)
+    try {
+      setDone(await window.api.importFromConductor({ useWorkspacesRoot: useRoot }))
+      await refreshState()
+      useStore.getState().set({ settings: (await window.api.getState()).settings })
+    } catch (e) {
+      reportError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const tag = (s: string) =>
+    s === 'already' ? <span className="text-faint">already added</span> : s === 'missing' ? <span className="text-del">folder missing</span> : <span className="text-add">new</span>
+  const newRepos = preview?.repos.filter((r) => r.status === 'new').length ?? 0
+  const newWs = preview?.workspaces.filter((w) => w.status === 'new') ?? []
+  const nothing = preview && newRepos === 0 && newWs.length === 0
+
+  return (
+    <Shell onClose={onClose} width="w-[620px]">
+      <div className="border-b border-line px-5 py-3 font-medium">Import from Conductor</div>
+      <div className="max-h-[60vh] overflow-y-auto p-5">
+        {!preview && <div className="text-muted">Reading Conductor's data…</div>}
+        {preview && !preview.found && <div className="text-muted">Conductor's data wasn't found on this Mac.</div>}
+        {done && (
+          <div className="mb-4 rounded-md border border-line bg-raised px-3 py-2">
+            Imported {done.repos} projects, {done.workspaces} workspaces and {done.chats} chats ({done.messages} messages).
+          </div>
+        )}
+        {preview?.found && !done && (
+          <>
+            <div className="mb-1 text-[12px] font-medium text-faint">Projects</div>
+            {preview.repos.map((r) => (
+              <div key={r.path} className="flex items-center gap-3 py-1">
+                <span className="w-44 shrink-0 truncate">{r.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-faint" title={r.path}>
+                  {r.path.replace(/^\/Users\/[^/]+/, '~')}
+                  {r.hasScripts && ' · scripts'}
+                </span>
+                <span className="shrink-0 text-[12px]">{tag(r.status)}</span>
+              </div>
+            ))}
+            <div className="mt-4 mb-1 text-[12px] font-medium text-faint">Open workspaces</div>
+            {preview.workspaces.length === 0 && <div className="text-[12px] text-faint">None</div>}
+            {preview.workspaces.map((w) => (
+              <div key={w.path} className="flex items-center gap-3 py-1">
+                <span className="w-44 shrink-0 truncate">{w.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-faint">
+                  {w.repo} · {w.branch} · {w.chats} {w.chats === 1 ? 'chat' : 'chats'}
+                </span>
+                <span className="shrink-0 text-[12px]">{tag(w.status)}</span>
+              </div>
+            ))}
+            {preview.archivedSkipped > 0 && <div className="mt-1 text-[12px] text-faint">{preview.archivedSkipped} archived workspaces are skipped.</div>}
+            {preview.settings.length > 0 && (
+              <>
+                <div className="mt-4 mb-1 text-[12px] font-medium text-faint">Settings</div>
+                {preview.settings.map((s) => (
+                  <div key={s.label} className="flex gap-3 py-0.5 text-[12px]">
+                    <span className="w-44 shrink-0 text-muted">{s.label}</span>
+                    <span>{s.value}</span>
+                  </div>
+                ))}
+              </>
+            )}
+            {preview.workspacesRoot && (
+              <label className="mt-4 flex items-start gap-2 text-[12px]">
+                <input type="checkbox" className="mt-0.5" checked={useRoot} onChange={(e) => setUseRoot(e.target.checked)} />
+                <span>
+                  Create new workspaces in Conductor's folder, <span className="text-muted">{preview.workspacesRoot.replace(/^\/Users\/[^/]+/, '~')}</span>
+                </span>
+              </label>
+            )}
+            <div className="mt-3 text-[12px] text-faint">
+              Workspaces stay where they are; nothing is moved or copied. Claude chats resume with their full history.
+            </div>
+          </>
+        )}
+      </div>
+      <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+        <button className="rounded-md px-3 py-1.5 text-muted hover:text-fg" onClick={onClose}>
+          {done ? 'Close' : 'Cancel'}
+        </button>
+        {preview?.found && !done && (
+          <button disabled={busy || !!nothing} onClick={() => void run()} className="rounded-md bg-fg px-3 py-1.5 font-medium text-bg disabled:opacity-40">
+            {busy ? 'Importing…' : nothing ? 'Nothing new to import' : `Import ${newRepos} projects and ${newWs.length} workspaces`}
+          </button>
+        )}
       </div>
     </Shell>
   )

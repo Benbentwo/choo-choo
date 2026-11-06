@@ -27,6 +27,10 @@ xattr -cr "/Applications/Choo Choo.app"
 
 Tagged releases are on the [Releases](https://github.com/Benbentwo/choo-choo/releases) page and update themselves.
 
+## Coming from Conductor
+
+Open Settings > Import from Conductor. It previews what it found, then adds your projects, open workspaces (left where they are), their chats and your default model. Claude chats keep their session, so the agent resumes with full context. Conductor's database is copied and read, never changed. You can also keep creating new workspaces in Conductor's workspaces folder.
+
 ## How it works
 
 - Each workspace is a git worktree under `~/choo-choo/workspaces/<repo>/<city>`, on its own branch.

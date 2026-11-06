@@ -46,6 +46,8 @@ const api: Api = {
   saveSettings: inv('settings:save') as Api['saveSettings'],
   cloneRepo: inv('repo:clone') as Api['cloneRepo'],
   pickFolder: inv('folder:pick') as Api['pickFolder'],
+  previewConductorImport: inv('conductor:preview') as Api['previewConductorImport'],
+  importFromConductor: inv('conductor:import') as Api['importFromConductor'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
   quickStart: inv('repo:quickstart') as Api['quickStart'],
   listSources: inv('ws:sources') as Api['listSources'],

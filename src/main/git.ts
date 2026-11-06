@@ -229,3 +229,7 @@ export async function addWorktreeForBranch(repo: string, path: string, branch: s
   await tryGit(repo, ['worktree', 'prune'])
   await git(repo, ['worktree', 'add', path, branch])
 }
+
+export async function currentBranch(cwd: string): Promise<string | null> {
+  return (await tryGit(cwd, ['branch', '--show-current']))?.trim() || null
+}

@@ -21,7 +21,7 @@ interface UI {
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
   settings: Settings
-  modal: 'settings' | 'palette' | 'create' | 'quickstart' | null
+  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | null
   recentPaths: string[]
   /** Repo whose new-workspace composer is open in the center, if any. */
   draftRepo: string | null
