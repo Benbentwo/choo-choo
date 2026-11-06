@@ -1,7 +1,7 @@
 /**
  * Appearance themes and accents. Each theme is a set of color tokens that map onto the
  * `--color-*` variables in styles.css, so re-skinning the app means editing this file only.
- * "dark" is the default look and matches the colors in styles.css exactly.
+ * "choo" is the default look (the Choo Choo brand, see docs/brand) and matches styles.css exactly.
  */
 
 export type ThemeTokens = {
@@ -29,6 +29,48 @@ export interface Theme {
 }
 
 export const THEMES: Theme[] = [
+  {
+    // Brand kit: charcoal #202226, midnight #111218, cream #F4EBD8, ash #A6A7AE, slate #676B73.
+    id: 'choo',
+    label: 'Choo Choo',
+    dark: true,
+    tokens: {
+      bg: '#202226',
+      panel: '#24262b',
+      sidebar: '#1a1b20',
+      raised: '#2d2f35',
+      hover: '#33363c',
+      line: '#383b42',
+      fg: '#f4ebd8',
+      muted: '#a6a7ae',
+      faint: '#767a83',
+      add: '#4ade80',
+      del: '#f87171',
+      code: '#111218',
+      scroll: '#3f424a'
+    }
+  },
+  {
+    // Brand kit light treatment: paper #FFFCF5 and cream #F4EBD8 with charcoal text.
+    id: 'choo-light',
+    label: 'Choo Choo Light',
+    dark: false,
+    tokens: {
+      bg: '#fbf6ec',
+      panel: '#fffcf5',
+      sidebar: '#f4ebd8',
+      raised: '#ece2cc',
+      hover: '#e7dcc4',
+      line: '#e2d6bd',
+      fg: '#202226',
+      muted: '#676b73',
+      faint: '#8d9098',
+      add: '#15803d',
+      del: '#dc2626',
+      code: '#f4ebd8',
+      scroll: '#d7cab0'
+    }
+  },
   {
     id: 'dark',
     label: 'Dark',
@@ -173,6 +215,8 @@ export const THEMES: Theme[] = [
 
 /** Accent presets as [on dark, on light] so contrast holds in both. */
 export const ACCENTS: { id: string; label: string; dark: string; light: string }[] = [
+  // Brand orange on dark; copper on light, as the brand guidelines ask for accent text on light UI.
+  { id: 'choo', label: 'Choo Choo Orange', dark: '#f4773d', light: '#9c431a' },
   { id: 'sky', label: 'Sky', dark: '#38bdf8', light: '#0284c7' },
   { id: 'blue', label: 'Blue', dark: '#60a5fa', light: '#2563eb' },
   { id: 'violet', label: 'Violet', dark: '#a78bfa', light: '#7c3aed' },
@@ -183,7 +227,9 @@ export const ACCENTS: { id: string; label: string; dark: string; light: string }
   { id: 'teal', label: 'Teal', dark: '#2dd4bf', light: '#0d9488' }
 ]
 
+// Manrope and JetBrains Mono are bundled with the app (src/renderer/src/assets/fonts).
 export const UI_FONTS: { id: string; label: string; stack: string }[] = [
+  { id: 'manrope', label: 'Manrope', stack: "'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
   { id: 'system', label: 'System', stack: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif" },
   { id: 'inter', label: 'Inter', stack: "'Inter', 'Inter Variable', -apple-system, BlinkMacSystemFont, sans-serif" },
   { id: 'rounded', label: 'Rounded', stack: "ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, sans-serif" },
@@ -217,17 +263,17 @@ export interface AppearanceSettings {
 }
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
-  theme: 'dark',
-  accent: 'sky',
+  theme: 'choo',
+  accent: 'choo',
   uiScale: 1,
   density: 'comfortable',
-  uiFont: 'system',
-  monoFont: 'sf',
+  uiFont: 'manrope',
+  monoFont: 'jetbrains',
   reduceMotion: false
 }
 
 export function resolveTheme(id: string, systemDark: boolean): Theme {
-  if (id === 'system') id = systemDark ? 'dark' : 'light'
+  if (id === 'system') id = systemDark ? 'choo' : 'choo-light'
   return THEMES.find((t) => t.id === id) ?? THEMES[0]
 }
 
@@ -238,4 +284,4 @@ export function resolveAccent(accent: string, dark: boolean): string {
 }
 
 export const uiFontStack = (id: string): string => (UI_FONTS.find((f) => f.id === id) ?? UI_FONTS[0]).stack
-export const monoFontStack = (id: string): string => (MONO_FONTS.find((f) => f.id === id) ?? MONO_FONTS[0]).stack
+export const monoFontStack = (id: string): string => (MONO_FONTS.find((f) => f.id === id) ?? MONO_FONTS[1]).stack

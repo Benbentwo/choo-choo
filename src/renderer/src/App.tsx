@@ -87,7 +87,7 @@ export function App() {
         {ws ? (
           <>
             <Center ws={ws} />
-            {s.rightOpen && <RightPanel ws={ws} />}
+            {s.rightOpen && !ws.orchestrator && <RightPanel ws={ws} />}
           </>
         ) : (
           <Home />

@@ -17,6 +17,7 @@ const api: Api = {
   removeRepo: inv('repo:remove') as Api['removeRepo'],
   setRepoHidden: inv('repo:hidden') as Api['setRepoHidden'],
   createWorkspace: inv('ws:create') as Api['createWorkspace'],
+  openOrchestrator: inv('ws:orchestrator') as Api['openOrchestrator'],
   archiveWorkspace: inv('ws:archive') as Api['archiveWorkspace'],
   restoreWorkspace: inv('ws:restore') as Api['restoreWorkspace'],
   renameWorkspace: inv('ws:rename') as Api['renameWorkspace'],

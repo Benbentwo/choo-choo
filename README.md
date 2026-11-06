@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/choo-choo-horizontal-dark.svg">
+    <img src="docs/brand/choo-choo-horizontal-light.svg" alt="Choo Choo" width="420">
+  </picture>
+</p>
+
 # Choo Choo
 
 A Mac desktop app for running many Claude Code agents in parallel, each in its own git worktree, then reviewing and shipping their work from one window.
@@ -34,6 +41,10 @@ Tagged releases are on the [Releases](https://github.com/Benbentwo/choo-choo/rel
 - Setup, run and archive scripts come from `choo-choo.json`, falling back to `conductor.json`.
 - Scripts and agents see `CONDUCTOR_ROOT_PATH`, `CONDUCTOR_WORKSPACE_NAME`, `CONDUCTOR_WORKSPACE_PATH`, `CONDUCTOR_DEFAULT_BRANCH` and `CONDUCTOR_PORT`, also available as `CHOO_*`.
 - PR features use the `gh` CLI, so install it and run `gh auth login`.
+
+### Orchestrator
+
+Click the orchestrator icon next to a repository in the sidebar. Tell the orchestrator what you want and it splits the work into workspaces, gives each agent a task, waits for them, reads their transcripts and diffs, and sends follow-ups. It runs in the repo's main checkout and cannot edit files there. It keeps a memory file per repository at `~/choo-choo/memory/<repo>.md`, which it reads on every turn and which you can edit yourself.
 
 ## Shared sessions
 

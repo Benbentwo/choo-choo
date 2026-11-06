@@ -12,7 +12,7 @@ asarUnpack:
   - node_modules/@anthropic-ai/claude-agent-sdk-*/**
 mac:
   category: public.app-category.developer-tools
-  icon: resources/icon.png
+  icon: resources/icon.icns
   hardenedRuntime: true
   # Both Claude binaries are installed first (scripts/install-mac-binaries.cjs); afterPack keeps the matching one.
   target:

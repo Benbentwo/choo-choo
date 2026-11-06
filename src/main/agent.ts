@@ -4,6 +4,7 @@ import * as store from './store'
 import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
+import * as orchestrator from './orchestrator'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
 
@@ -16,6 +17,7 @@ const running = new Map<string, Running>()
 
 // Tools that only read; asking about them would be noise.
 const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite', 'Task', 'Agent', 'NotebookRead', 'BashOutput', 'ExitPlanMode', 'ToolSearch', 'Skill'])
+for (const t of orchestrator.READ_ONLY) READ_ONLY_TOOLS.add(t)
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
 
 const pending = new Map<string, { req: PermissionRequest; resolve: (d: PermissionDecision) => void }>()
@@ -95,7 +97,9 @@ export async function send(
   emit: Emit,
   onDone?: (chat: Chat) => void,
   images: string[] = [],
-  onAsk?: (chat: Chat, req: PermissionRequest) => void
+  onAsk?: (chat: Chat, req: PermissionRequest) => void,
+  /** Builds extra query() options, such as the orchestrator's tools. */
+  extraOptions?: (sdk: Awaited<ReturnType<typeof loadSdk>>) => Record<string, unknown>
 ) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
   const now = Date.now()
@@ -154,7 +158,8 @@ export async function send(
       chat.status = 'idle'
       return
     }
-    const { query } = await loadSdk()
+    const sdkMod = await loadSdk()
+    const { query } = sdkMod
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
       if (toolName === 'ExitPlanMode' && chat.planMode) {
         // The plan card asks the user; the agent must not start building on its own.
@@ -195,7 +200,8 @@ export async function send(
         includePartialMessages: true,
         abortController: abort,
         settingSources: ['user', 'project', 'local'],
-        env: { ...process.env, ...env }
+        env: { ...process.env, ...env },
+        ...extraOptions?.(sdkMod)
       } as never
     })
     r.query = q
