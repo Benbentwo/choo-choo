@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
@@ -17,6 +17,7 @@ export function App() {
 
   useEffect(() => {
     void window.api.pendingPermissions().then((list) => list.forEach(addPermission))
+    void loadModelDetails()
     void refreshState().then(() => {
       for (const w of useStore.getState().workspaces) if (!w.archived) void refreshStats(w.id)
     })

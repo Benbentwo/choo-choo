@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Effort, ModelId, SourceOption, WorkspaceSource } from '@shared/types'
-import { useStore, createWorkspace, reportError } from '../store'
-import { IconDown, IconGithub, IconRepo, IconSidebar, IconX } from '../icons'
+import { useStore, createWorkspace, reportError, modelLabel, type DraftContext } from '../store'
+import { IconBranch, IconDown, IconFolder, IconGithub, IconImage, IconPlus, IconRepo, IconSidebar, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
 import { EFFORTS, MODELS } from './Composer'
 
@@ -20,7 +20,18 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
   const [effort, setEffort] = useState<Effort>(s.settings.defaultEffort)
   const [source, setSource] = useState<SourceOption | null>(null)
   const [busy, setBusy] = useState(false)
-  const [menu, setMenu] = useState<'repo' | 'model' | 'source' | null>(null)
+  const [menu, setMenu] = useState<'repo' | 'model' | 'source' | 'add' | null>(null)
+  const [extra, setExtra] = useState<DraftContext>({ images: [], files: [], folders: [], links: [] })
+  const addBtn = useRef<HTMLButtonElement>(null)
+  const imageInput = useRef<HTMLInputElement>(null)
+  const addImages = (files: FileList | File[]) => {
+    for (const f of Array.from(files)) {
+      if (!/^image\/(png|jpeg|gif|webp)$/.test(f.type) || f.size > 5 * 1024 * 1024) continue
+      const r = new FileReader()
+      r.onload = () => setExtra((x) => ({ ...x, images: [...x.images, String(r.result)].slice(0, 10) }))
+      r.readAsDataURL(f)
+    }
+  }
   const repoBtn = useRef<HTMLButtonElement>(null)
   const modelBtn = useRef<HTMLButtonElement>(null)
   const sourceBtn = useRef<HTMLButtonElement>(null)
@@ -32,7 +43,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
     if (busy) return
     setBusy(true)
     try {
-      await createWorkspace(repoId, { source: source?.source, text, model, effort })
+      await createWorkspace(repoId, { source: source?.source, text, model, effort, extra })
     } catch (e) {
       reportError(e)
       setBusy(false)
@@ -40,14 +51,38 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
   }
 
   const repoItems: MenuItem[] = s.repos.filter((r) => !r.hidden).map((r) => ({ label: r.name, checked: r.id === repoId, onClick: () => s.set({ draftRepo: r.id }) }))
+  const linkable = s.workspaces.filter((w) => !w.archived && !w.orchestrator)
+  const addItems: MenuItem[] = [
+    { label: 'Images…', icon: <IconImage />, onClick: () => imageInput.current?.click() },
+    { label: 'Files…', icon: <IconFolder />, onClick: () => void window.api.pickFiles().then((f) => f.length && setExtra((x) => ({ ...x, files: [...new Set([...x.files, ...f])] }))) },
+    { label: 'Folder…', icon: <IconFolder />, onClick: () => void window.api.pickFolder().then((f) => f && setExtra((x) => ({ ...x, folders: [...new Set([...x.folders, f])] }))) },
+    {
+      label: 'Link workspace',
+      icon: <IconBranch />,
+      submenu: linkable.length
+        ? linkable.map((w) => ({
+            label: w.title,
+            hint: s.repos.find((r) => r.id === w.repoId)?.name,
+            checked: extra.links.includes(w.id),
+            keepOpen: true,
+            onClick: () => setExtra((x) => ({ ...x, links: x.links.includes(w.id) ? x.links.filter((l) => l !== w.id) : [...x.links, w.id] }))
+          }))
+        : [{ kind: 'label', label: 'No open workspaces' }]
+    }
+  ]
+  const chips = [
+    ...extra.links.map((id) => ({ key: `l:${id}`, icon: <IconBranch width={12} height={12} />, label: s.workspaces.find((w) => w.id === id)?.title ?? id, remove: () => setExtra((x) => ({ ...x, links: x.links.filter((l) => l !== id) })) })),
+    ...extra.folders.map((f) => ({ key: `d:${f}`, icon: <IconFolder width={12} height={12} />, label: f.split('/').pop() || f, remove: () => setExtra((x) => ({ ...x, folders: x.folders.filter((y) => y !== f) })) })),
+    ...extra.files.map((f) => ({ key: `f:${f}`, icon: null, label: f.split('/').pop() || f, remove: () => setExtra((x) => ({ ...x, files: x.files.filter((y) => y !== f) })) }))
+  ]
   const modelItems: MenuItem[] = [
     { kind: 'label', label: 'Model' },
-    ...MODELS.map((m) => ({ label: m.label, checked: m.id === model, keepOpen: true, onClick: () => setModel(m.id) })),
+    ...MODELS.map((m) => ({ label: modelLabel(m.id, s.modelDetails), hint: s.modelDetails[m.id]?.description, checked: m.id === model, keepOpen: true, onClick: () => setModel(m.id) })),
     { kind: 'sep' },
     { kind: 'label', label: 'Effort' },
     ...EFFORTS.map((e) => ({ label: e[0].toUpperCase() + e.slice(1), checked: e === effort, keepOpen: true, onClick: () => setEffort(e) }))
   ]
-  const modelLabel = MODELS.find((m) => m.id === model)?.label ?? model
+  const currentModel = modelLabel(model, s.modelDetails)
 
   return (
     <div className="flex flex-1 flex-col">
@@ -87,17 +122,49 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
                 void create()
               }
             }}
+            onPaste={(e) => {
+              const imgs = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'))
+              if (imgs.length) {
+                e.preventDefault()
+                addImages(imgs)
+              }
+            }}
             rows={4}
             placeholder={source?.source.kind === 'pr' ? 'What should the agent do with this PR? e.g. review it' : 'What do you want to work on?'}
             className="selectable block w-full resize-none bg-transparent px-4 pt-3 text-[14px] outline-none placeholder:text-faint"
           />
+          {(chips.length > 0 || extra.images.length > 0) && (
+            <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
+              {extra.images.map((src, i) => (
+                <span key={i} className="relative">
+                  <img src={src} alt="" className="h-10 w-10 rounded border border-line object-cover" />
+                  <button className="absolute -top-1.5 -right-1.5 rounded-full bg-raised p-0.5 text-faint hover:text-fg" onClick={() => setExtra((x) => ({ ...x, images: x.images.filter((_, j) => j !== i) }))}>
+                    <IconX width={10} height={10} />
+                  </button>
+                </span>
+              ))}
+              {chips.map((c) => (
+                <span key={c.key} className="flex max-w-[220px] items-center gap-1 rounded bg-raised px-2 py-0.5 text-[12px] text-muted">
+                  {c.icon}
+                  <span className="truncate">{c.label}</span>
+                  <button className="text-faint hover:text-fg" onClick={c.remove}>
+                    <IconX width={11} height={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-2 px-3 pb-2.5">
             <button ref={modelBtn} className="flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-hover" onClick={() => setMenu('model')}>
-              <span>{modelLabel}</span>
+              <span>{currentModel}</span>
               <span className="text-muted capitalize">{effort}</span>
               <IconDown className="text-faint" />
             </button>
             <div className="flex-1" />
+            <button ref={addBtn} className="rounded p-1.5 text-muted hover:bg-hover hover:text-fg" title="Add images, files, folders or link a workspace" onClick={() => setMenu('add')}>
+              <IconPlus />
+            </button>
+            <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple className="hidden" onChange={(e) => e.target.files && addImages(e.target.files)} />
             <button disabled={busy} onClick={() => void create()} className="flex items-center gap-1.5 rounded-md bg-fg px-3 py-1 font-medium text-bg disabled:opacity-50">
               {busy ? 'Creating…' : 'Create'} <span className="text-[11px] opacity-60">↵</span>
             </button>
@@ -108,6 +175,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
         </div>
       </div>
       {menu === 'repo' && <Menu anchor={repoBtn.current} align="left" items={repoItems} onClose={() => setMenu(null)} />}
+      {menu === 'add' && <Menu anchor={addBtn.current} items={addItems} onClose={() => setMenu(null)} />}
       {menu === 'model' && <Menu anchor={modelBtn.current} align="left" items={modelItems} onClose={() => setMenu(null)} />}
       {menu === 'source' && (
         <SourcePicker

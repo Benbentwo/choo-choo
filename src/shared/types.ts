@@ -87,7 +87,14 @@ export interface ShareStatus {
   visibility?: string
 }
 
-export type ModelId = 'opus' | 'sonnet' | 'haiku' | 'codex'
+export type ModelId = 'opus' | 'fable' | 'sonnet' | 'haiku' | 'codex'
+
+/** What a Claude model alias resolves to right now, e.g. opus → Opus 5.5. */
+export interface ModelDetails {
+  displayName: string
+  description: string
+  resolvedModel?: string
+}
 export type Effort = 'low' | 'medium' | 'high'
 /** full: never ask (Conductor's default). edits: auto-accept file edits, ask for the rest. ask: ask before every tool that changes something. */
 export type Permission = 'full' | 'edits' | 'ask'
@@ -347,7 +354,8 @@ export interface Api {
   addRepo(path: string): Promise<Repo>
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
-  createWorkspace(repoId: string, source?: WorkspaceSource): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
+  /** `folders` are extra directories the first chat may read and edit (linked workspaces, added folders). */
+  createWorkspace(repoId: string, source?: WorkspaceSource, folders?: string[]): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
   listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
   /** Opens the repo's orchestrator, creating it the first time. */
   openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
@@ -392,6 +400,9 @@ export interface Api {
   /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
   cloneRepo(url: string, dir?: string): Promise<Repo>
   pickFolder(): Promise<string | null>
+  pickFiles(): Promise<string[]>
+  /** Current versions behind the Claude model aliases, from the Agent SDK. Empty if it couldn't be read. */
+  modelDetails(): Promise<Partial<Record<ModelId, ModelDetails>>>
   previewConductorImport(): Promise<ImportPreview>
   importFromConductor(opts: { useWorkspacesRoot: boolean }): Promise<ImportResult>
   listGithubRepos(): Promise<GithubRepo[]>

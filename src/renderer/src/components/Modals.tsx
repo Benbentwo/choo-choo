@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, Settings } from '@shared/types'
+import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, Settings } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
-import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread } from '../store'
+import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
 import { QuickStartModalBody } from './AddProject'
@@ -61,6 +61,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const settings = useStore((s) => s.settings)
+  const modelDetails = useStore((s) => s.modelDetails)
   const save = async (patch: Partial<Settings>) => {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
@@ -91,11 +92,11 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <ExtrasSection extras={settings.extras} save={(patch) => void save({ extras: { ...settings.extras, ...patch } })} />
         ) : (
           <>
-            <Row label="Default model">
+            <Row label="Default model" hint={modelDetails[settings.defaultModel]?.description}>
               <select className={select} value={settings.defaultModel} onChange={(e) => void save({ defaultModel: e.target.value as Settings['defaultModel'] })}>
                 {MODELS.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.label}
+                    {modelLabel(m.id, modelDetails)}
                   </option>
                 ))}
               </select>
@@ -338,6 +339,8 @@ function CreateModal({ onClose }: { onClose: () => void }) {
 }
 
 function ConductorImportModal({ onClose }: { onClose: () => void }) {
+  const settings = useStore((s) => s.settings)
+  const modelDetails = useStore((s) => s.modelDetails)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [useRoot, setUseRoot] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -408,7 +411,7 @@ function ConductorImportModal({ onClose }: { onClose: () => void }) {
                 {preview.settings.map((s) => (
                   <div key={s.label} className="flex gap-3 py-0.5 text-[12px]">
                     <span className="w-44 shrink-0 text-muted">{s.label}</span>
-                    <span>{s.value}</span>
+                    <span>{s.label === 'Default model' ? modelLabel(s.value as ModelId, modelDetails) : s.value === 'true' ? 'Yes' : s.value === 'false' ? 'No' : s.value}</span>
                   </div>
                 ))}
               </>
@@ -422,7 +425,12 @@ function ConductorImportModal({ onClose }: { onClose: () => void }) {
               </label>
             )}
             <div className="mt-3 text-[12px] text-faint">
-              Workspaces stay where they are; nothing is moved or copied. Claude chats resume with their full history.
+              {(() => {
+                const conductorDir = preview.workspacesRoot?.replace(/^\/Users\/[^/]+/, '~')
+                const current = (settings.workspacesRoot?.trim() || '~/choo-choo/workspaces').replace(/^\/Users\/[^/]+/, '~')
+                const where = useRoot && conductorDir ? conductorDir : current
+                return `Imported workspaces stay where they are${conductorDir ? ` in ${conductorDir}` : ''}; nothing is moved or copied. New workspaces you create will go in ${where}. Claude chats resume with their full history.`
+              })()}
             </div>
           </>
         )}

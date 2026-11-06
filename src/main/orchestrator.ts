@@ -150,7 +150,7 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
       'Create a new workspace (worktree, branch and agent) and give its agent a task. Returns right away; the agent works in the background.',
       {
         task: z.string().describe('Complete instructions for the agent. It cannot see this conversation.'),
-        model: z.enum(['opus', 'sonnet', 'haiku', 'codex']).optional().describe('Defaults to the person\'s default model.'),
+        model: z.enum(['opus', 'fable', 'sonnet', 'haiku', 'codex']).optional().describe('Defaults to the person\'s default model.'),
         plan_first: z.boolean().optional().describe('Start in plan mode: the agent proposes a plan and waits instead of editing.')
       },
       async (a) => {

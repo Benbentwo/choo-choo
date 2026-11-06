@@ -96,6 +96,7 @@ export function readMessages(db: Db, sessionId: string): CMessage[] {
 export function mapModel(model: string | null, agent: string | null): ModelId {
   const m = (model ?? '').toLowerCase()
   if (agent === 'codex' || m.includes('codex') || m.startsWith('gpt')) return 'codex'
+  if (m.includes('fable')) return 'fable'
   if (m.includes('sonnet')) return 'sonnet'
   if (m.includes('haiku')) return 'haiku'
   return 'opus'
@@ -190,7 +191,6 @@ export function preview(
   const settings: ImportPreview['settings'] = []
   if (s.default_model) settings.push({ label: 'Default model', value: mapModel(s.default_model, null) })
   if (s.branch_prefix_type) settings.push({ label: 'Branch prefix', value: s.branch_prefix_type === 'github_username' ? 'GitHub username' : s.branch_prefix_type })
-  if (s.archive_on_merge) settings.push({ label: 'Archive on merge', value: s.archive_on_merge })
   return {
     found: true,
     repos: data.repos.map((r) => ({

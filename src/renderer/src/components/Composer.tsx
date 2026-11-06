@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Chat, Effort, ExtraAgentId, ModelId, Permission, SlashCommandInfo, Workspace } from '@shared/types'
-import { useStore, reportError } from '../store'
+import { useStore, reportError, modelLabel } from '../store'
 import { IconDown, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
 
 export const MODELS: { id: ModelId; label: string }[] = [
   { id: 'opus', label: 'Opus' },
+  { id: 'fable', label: 'Fable' },
   { id: 'sonnet', label: 'Sonnet' },
   { id: 'haiku', label: 'Haiku' },
   { id: 'codex', label: 'Codex' }
@@ -146,7 +147,8 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const addFolder = async () => useStore.getState().upsertChat(await window.api.addChatFolder(chat.id))
   const removeFolder = async (d: string) => useStore.getState().upsertChat(await window.api.removeChatFolder(chat.id, d))
 
-  const model = MODELS.find((m) => m.id === chat.model)?.label ?? chat.model
+  const details = useStore((s) => s.modelDetails)
+  const model = modelLabel(chat.model, details)
   const showPopup = trigger && options.length > 0
 
   return (
@@ -274,7 +276,8 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
                 {MODELS.map((m) => (
                   <button key={m.id} onClick={() => void update({ model: m.id })} className={`block w-full rounded px-2 py-1 text-left hover:bg-hover ${chat.model === m.id ? 'text-fg' : 'text-muted'}`}>
                     {chat.model === m.id ? '✓ ' : '  '}
-                    {m.label}
+                    {modelLabel(m.id, details)}
+                    {details[m.id]?.description && <div className="pl-3.5 text-[11px] text-faint">{details[m.id]!.description}</div>}
                   </button>
                 ))}
                 <div className="mt-1 border-t border-line px-2 pt-2 pb-1 text-[11px] text-faint">Effort</div>
