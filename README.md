@@ -35,6 +35,10 @@ Tagged releases are on the [Releases](https://github.com/Benbentwo/choo-choo/rel
 - Scripts and agents see `CONDUCTOR_ROOT_PATH`, `CONDUCTOR_WORKSPACE_NAME`, `CONDUCTOR_WORKSPACE_PATH`, `CONDUCTOR_DEFAULT_BRANCH` and `CONDUCTOR_PORT`, also available as `CHOO_*`.
 - PR features use the `gh` CLI, so install it and run `gh auth login`.
 
+### Orchestrator
+
+Click the orchestrator icon next to a repository in the sidebar. Tell the orchestrator what you want and it splits the work into workspaces, gives each agent a task, waits for them, reads their transcripts and diffs, and sends follow-ups. It runs in the repo's main checkout and cannot edit files there. It keeps a memory file per repository at `~/choo-choo/memory/<repo>.md`, which it reads on every turn and which you can edit yourself.
+
 ## Develop
 
 Requires macOS, Node 22+ and git.
