@@ -17,6 +17,7 @@ import { suggestName } from './naming'
 import { checkNow, installUpdate, startUpdater } from './updater'
 import { registerDevFeedback } from './devFeedback'
 import { resolveTheme } from '@shared/themes'
+import * as orchestrator from './orchestrator'
 
 let win: BrowserWindow | null = null
 
@@ -158,6 +159,93 @@ async function nameWorkspace(ws: Workspace, prompt: string) {
   send('state:changed')
 }
 
+const emitChat = (chatId: string, payload: object) => send('chat:event', { chatId, ...payload })
+
+/** Starts a turn. Fire and forget; progress arrives through chat:event. */
+function sendToChat(chat: Chat, text: string, images: string[] = []) {
+  if (agent.isRunning(chat.id)) throw new Error('Agent is already running in this chat')
+  const ws = findWs(chat.workspaceId)
+  const repo = store.get().repos.find((r) => r.id === ws.repoId)
+  if (!ws.named) void nameWorkspace(ws, text)
+  const env = workspaceEnv(ws)
+  const key = store.get().settings.anthropicApiKey.trim()
+  if (key) env.ANTHROPIC_API_KEY = key
+  let extra: Parameters<typeof agent.send>[8]
+  if (ws.orchestrator && repo) {
+    // The orchestrator's tools only exist on Claude.
+    if (chat.model === 'codex') chat.model = 'opus'
+    extra = (sdk) => orchestrator.queryOptions(sdk, repo, orchestratorHost)
+  }
+  void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra)
+}
+
+const orchestratorHost: orchestrator.Host = {
+  createWorkspace: async (repoId) => {
+    const r = await createWorkspace(repoId)
+    send('state:changed')
+    return r
+  },
+  sendToChat: (chat, text) => sendToChat(chat, text),
+  stopChat: (id) => agent.stop(id),
+  archiveWorkspace: async (id) => {
+    await archiveWorkspace(id)
+    send('state:changed')
+  },
+  pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId))
+}
+
+async function openOrchestrator(repoId: string) {
+  const s = store.get()
+  const repo = s.repos.find((r) => r.id === repoId)
+  if (!repo) throw new Error('Unknown repo')
+  let ws = s.workspaces.find((w) => w.repoId === repoId && w.orchestrator)
+  if (!ws) {
+    ws = {
+      id: randomUUID(),
+      repoId,
+      name: 'orchestrator',
+      branch: repo.defaultBranch,
+      baseRef: repo.defaultBranch,
+      path: repo.path,
+      title: 'Orchestrator',
+      named: true,
+      orchestrator: true,
+      createdAt: Date.now()
+    }
+    s.workspaces.push(ws)
+  }
+  ws.archived = false
+  let chat = s.chats.find((c) => c.workspaceId === ws.id)
+  if (!chat) {
+    chat = newChat(ws.id)
+    chat.title = 'Orchestrator'
+    if (chat.model === 'codex') chat.model = 'opus'
+  }
+  store.save()
+  return { workspace: ws, chat }
+}
+
+/** After a workspace the orchestrator started finishes, leave a note in the orchestrator's chat. */
+function noteForOrchestrator(chat: Chat) {
+  const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
+  if (!ws?.orchestrated) return
+  const orch = store.get().workspaces.find((w) => w.repoId === ws.repoId && w.orchestrator)
+  const orchChat = orch && store.get().chats.find((c) => c.workspaceId === orch.id)
+  // While it is running it is probably waiting on this workspace and will see the result itself.
+  if (!orchChat || orchChat.status === 'running') return
+  const state = chat.status === 'error' ? 'hit an error' : 'finished'
+  const item = { id: randomUUID(), kind: 'note' as const, text: `${ws.title} ${state}. Ask me to check on it.`, ts: Date.now() }
+  store.upsertItem(orchChat.id, item)
+  orchChat.unread = true
+  store.save()
+  emitChat(orchChat.id, { item, chat: orchChat })
+}
+
+function onChatDone(chat: Chat) {
+  notifyDone(chat)
+  noteForOrchestrator(chat)
+}
+
 function notifyDone(chat: Chat) {
   if (!store.get().settings.notifications || win?.isFocused() || !Notification.isSupported()) return
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
@@ -219,6 +307,30 @@ function artifacts(ws: Workspace): Artifact[] {
   return [...seen.values()].sort((a, b) => b.ts - a.ts)
 }
 
+async function archiveWorkspace(id: string) {
+  const ws = findWs(id)
+  for (const c of store.get().chats.filter((c) => c.workspaceId === id)) await agent.stop(c.id)
+  if (ws.orchestrator) {
+    // Lives in the main checkout: never remove that.
+    ws.archived = true
+    ws.archivedAt = Date.now()
+    return store.save()
+  }
+  const repo = store.get().repos.find((r) => r.id === ws.repoId)
+  pty.killPrefix(`${id}:`)
+  const archiveCmd = scriptsFor(ws).archive
+  if (archiveCmd) {
+    const { execFile } = await import('node:child_process')
+    await new Promise<void>((resolve) =>
+      execFile(process.env.SHELL || '/bin/zsh', ['-lc', archiveCmd], { cwd: ws.path, env: { ...process.env, ...workspaceEnv(ws) }, timeout: 120_000 }, () => resolve())
+    )
+  }
+  if (repo) await git.removeWorktree(repo.path, ws.path)
+  ws.archived = true
+  ws.archivedAt = Date.now()
+  store.save()
+}
+
 function registerIpc() {
   const h = (ch: string, fn: (...a: any[]) => unknown) => ipcMain.handle(ch, (_e, ...a) => fn(...a))
 
@@ -240,25 +352,14 @@ function registerIpc() {
     store.save()
   })
   h('ws:create', (repoId: string) => createWorkspace(repoId))
-  h('ws:archive', async (id: string) => {
-    const ws = findWs(id)
-    const repo = store.get().repos.find((r) => r.id === ws.repoId)
-    for (const c of store.get().chats.filter((c) => c.workspaceId === id)) await agent.stop(c.id)
-    pty.killPrefix(`${id}:`)
-    const archiveCmd = scriptsFor(ws).archive
-    if (archiveCmd) {
-      const { execFile } = await import('node:child_process')
-      await new Promise<void>((resolve) =>
-        execFile(process.env.SHELL || '/bin/zsh', ['-lc', archiveCmd], { cwd: ws.path, env: { ...process.env, ...workspaceEnv(ws) }, timeout: 120_000 }, () => resolve())
-      )
-    }
-    if (repo) await git.removeWorktree(repo.path, ws.path)
-    ws.archived = true
-    ws.archivedAt = Date.now()
-    store.save()
-  })
+  h('ws:archive', (id: string) => archiveWorkspace(id))
+  h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))
   h('ws:restore', async (id: string) => {
     const ws = findWs(id)
+    if (ws.orchestrator) {
+      ws.archived = false
+      return store.save()
+    }
     const repo = store.get().repos.find((r) => r.id === ws.repoId)
     if (!repo) throw new Error('The repository for this workspace was removed')
     if (existsSync(ws.path)) throw new Error(`${ws.path} already exists`)
@@ -362,16 +463,7 @@ function registerIpc() {
     if (!pr) throw new Error('No pull request for this branch')
     await gh.mergePr(ws.path, pr.number)
   })
-  h('chat:send', (id: string, text: string, images: string[] = []) => {
-    const chat = findChat(id)
-    const ws = findWs(chat.workspaceId)
-    if (!ws.named) void nameWorkspace(ws, text)
-    // Fire and forget; progress arrives through chat:event.
-    const env = workspaceEnv(ws)
-    const key = store.get().settings.anthropicApiKey.trim()
-    if (key) env.ANTHROPIC_API_KEY = key
-    void agent.send(chat, ws, text, env, (chatId, payload) => send('chat:event', { chatId, ...payload }), notifyDone, images.slice(0, 10), notifyAsk)
-  })
+  h('chat:send', (id: string, text: string, images: string[] = []) => sendToChat(findChat(id), text, images))
   h('chat:stop', (id: string) => agent.stop(id))
   ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny') => agent.respondPermission(id, d))
   h('permission:pending', () => agent.pendingPermissions())

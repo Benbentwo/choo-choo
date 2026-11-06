@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { Workspace } from '@shared/types'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
-import { useStore, newWorkspace, restoreWorkspace } from '../store'
-import { IconBranch, IconDots, IconGear, IconHome, IconLeft, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
+import { useStore, newWorkspace, restoreWorkspace, openOrchestrator } from '../store'
+import { IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
 
 export function Sidebar() {
@@ -103,8 +103,9 @@ export function Sidebar() {
             <WsRow key={w.id} w={w} repoName={s.repos.find((r) => r.id === w.repoId)?.name} />
           ))}
         {view.group === 'project' && visible.map((repo) => {
-          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived))
-          const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
+          // The orchestrator, if open, sits at the top of its repo.
+          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived)).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
+          const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived && !w.orchestrator).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           return (
             <div key={repo.id} className="mb-1">
               <div className="group flex h-9 items-center gap-2 rounded-md px-2 hover:bg-hover">
@@ -115,6 +116,9 @@ export function Sidebar() {
                   onClick={() => void window.api.setRepoHidden(repo.id, !repo.hidden).then(() => useStore.getState().set({ repos: s.repos.map((r) => (r.id === repo.id ? { ...r, hidden: !r.hidden } : r)) }))}
                 >
                   {repo.hidden ? 'Show' : 'Hide'}
+                </button>
+                <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="Orchestrator: tell it what you want and it runs workspaces for you" onClick={() => void openOrchestrator(repo.id)}>
+                  <IconOrchestrator />
                 </button>
                 <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="New workspace" onClick={() => void newWorkspace(repo.id)}>
                   <IconPlus />
@@ -192,7 +196,7 @@ function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
       onClick={() => s.selectWorkspace(w.id)}
       className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
     >
-      {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : <IconBranch className="shrink-0" />}
+      {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : <IconBranch className="shrink-0" />}
       <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''}`}>{w.title}</span>
       {repoName && <span className="shrink-0 truncate text-[11px] text-faint">{repoName}</span>}
       {asking ? (
@@ -200,7 +204,7 @@ function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
       ) : (
         unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_6px_var(--color-accent)]" />
       )}
-      <Stats stats={s.stats[w.id]} />
+      {!w.orchestrator && <Stats stats={s.stats[w.id]} />}
     </button>
   )
 }
