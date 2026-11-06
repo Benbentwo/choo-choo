@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Planned |
+| Status | Notion shipped; Linear in progress |
 | Requested by | Ben, 2026-11-06 |
 | Last updated | 2026-11-06 |
 
@@ -34,7 +34,13 @@ Settings > Integrations lists available services with a Connect button. Connect 
 
 ## Design
 
-To be designed. Likely pieces: an OAuth loopback or `choo-choo://` redirect handler in main, Keychain storage via Electron `safeStorage` or the system keychain, and per-chat MCP server config in `agent.ts`. `WorkspaceSource` gains a `linear` kind.
+`src/main/integrations/`:
+
+- `oauth.ts`: PKCE helpers and `startLoopback()`, a one-shot `127.0.0.1` listener for the OAuth redirect. Its redirect URI is known before the browser opens, so dynamic client registration can use it.
+- `tokens.ts`: per-service auth encrypted with `safeStorage` in `userData/data/integrations.json`.
+- `index.ts`: the `Provider` registry and the `integrations:*` IPC. Settings > Integrations renders one row per provider.
+- `mcpOAuth.ts` and `mcpClient.ts`: sign-in to a hosted MCP server (discovery, dynamic client registration, PKCE, refresh) and a small Streamable HTTP tool caller.
+- `notion.ts`: signs in to `mcp.notion.com`, so no Notion app or secret is needed. Adds a `notion` workspace source (search or paste a link; the page is the fenced first-prompt brief) and passes the server to agents as `mcpServers.notion` unless `notionAgentTools` is off.
 
 ## Open questions
 
