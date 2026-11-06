@@ -5,6 +5,7 @@ import { useStore, addRepository, newWorkspace, newChatTab, refreshState, report
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
 import { QuickStartModalBody } from './AddProject'
+import { AppearanceSettings } from './Appearance'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -13,8 +14,8 @@ function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.Rea
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/50 pt-[12vh]" onMouseDown={onClose}>
-      <div className={`${width} max-w-[92vw] rounded-xl border border-line bg-panel shadow-2xl`} onMouseDown={(e) => e.stopPropagation()}>
+    <div className="anim-backdrop fixed inset-0 z-40 flex items-start justify-center bg-black/50 pt-[12vh]" onMouseDown={onClose}>
+      <div className={`anim-pop ${width} max-w-[92vw] rounded-xl border border-line bg-panel shadow-2xl`} onMouseDown={(e) => e.stopPropagation()}>
         {children}
       </div>
     </div>
@@ -54,45 +55,68 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
+  const [tab, setTab] = useState<'general' | 'appearance'>('general')
   return (
-    <Shell onClose={onClose}>
-      <div className="border-b border-line px-5 py-3 font-medium">Settings</div>
-      <Row label="Default model">
-        <select className={select} value={settings.defaultModel} onChange={(e) => void save({ defaultModel: e.target.value as Settings['defaultModel'] })}>
-          {MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
+    <Shell onClose={onClose} width="w-[620px]">
+      <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
+        <div className="pb-3 font-medium">Settings</div>
+        <div className="ml-auto flex gap-1">
+          {(['general', 'appearance'] as const).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              onClick={() => setTab(t)}
+              className={`-mb-px border-b-2 px-2.5 pb-2.5 capitalize ${tab === t ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}
+            >
+              {t}
+            </button>
           ))}
-        </select>
-      </Row>
-      <Row label="Default effort">
-        <select className={select} value={settings.defaultEffort} onChange={(e) => void save({ defaultEffort: e.target.value as Settings['defaultEffort'] })}>
-          {EFFORTS.map((e) => (
-            <option key={e} value={e}>
-              {e}
-            </option>
-          ))}
-        </select>
-      </Row>
-      <Row label="Default permissions" hint="Full access runs agents unattended, like Conductor. The others ask before tools that change things.">
-        <select className={select} value={settings.defaultPermission} onChange={(e) => void save({ defaultPermission: e.target.value as Settings['defaultPermission'] })}>
-          {PERMISSIONS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </Row>
-      <Row label="Branch prefix" hint="New workspaces branch as prefix/name. Empty uses your GitHub username.">
-        <input className={`${select} w-44`} defaultValue={settings.branchPrefix} placeholder="auto" onBlur={(e) => void save({ branchPrefix: e.target.value })} />
-      </Row>
-      <Row label="Anthropic API key" hint="Optional. Without one, agents use your Claude Code login.">
-        <input type="password" className={`${select} w-44`} defaultValue={settings.anthropicApiKey} placeholder="sk-ant-…" onBlur={(e) => void save({ anthropicApiKey: e.target.value })} />
-      </Row>
-      <Row label="Notifications" hint="Notify when an agent finishes while the app is in the background.">
-        <input type="checkbox" checked={settings.notifications} onChange={(e) => void save({ notifications: e.target.checked })} />
-      </Row>
+        </div>
+      </div>
+      <div className="max-h-[70vh] overflow-y-auto">
+        {tab === 'appearance' ? (
+          <AppearanceSettings />
+        ) : (
+          <>
+            <Row label="Default model">
+              <select className={select} value={settings.defaultModel} onChange={(e) => void save({ defaultModel: e.target.value as Settings['defaultModel'] })}>
+                {MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </Row>
+            <Row label="Default effort">
+              <select className={select} value={settings.defaultEffort} onChange={(e) => void save({ defaultEffort: e.target.value as Settings['defaultEffort'] })}>
+                {EFFORTS.map((e) => (
+                  <option key={e} value={e}>
+                    {e}
+                  </option>
+                ))}
+              </select>
+            </Row>
+            <Row label="Default permissions" hint="Full access runs agents unattended, like Conductor. The others ask before tools that change things.">
+              <select className={select} value={settings.defaultPermission} onChange={(e) => void save({ defaultPermission: e.target.value as Settings['defaultPermission'] })}>
+                {PERMISSIONS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </Row>
+            <Row label="Branch prefix" hint="New workspaces branch as prefix/name. Empty uses your GitHub username.">
+              <input className={`${select} w-44`} defaultValue={settings.branchPrefix} placeholder="auto" onBlur={(e) => void save({ branchPrefix: e.target.value })} />
+            </Row>
+            <Row label="Anthropic API key" hint="Optional. Without one, agents use your Claude Code login.">
+              <input type="password" className={`${select} w-44`} defaultValue={settings.anthropicApiKey} placeholder="sk-ant-…" onBlur={(e) => void save({ anthropicApiKey: e.target.value })} />
+            </Row>
+            <Row label="Notifications" hint="Notify when an agent finishes while the app is in the background.">
+              <input type="checkbox" checked={settings.notifications} onChange={(e) => void save({ notifications: e.target.checked })} />
+            </Row>
+          </>
+        )}
+      </div>
     </Shell>
   )
 }

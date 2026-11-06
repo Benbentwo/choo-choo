@@ -1,3 +1,4 @@
+import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 export interface Repo {
   id: string
   name: string
@@ -144,7 +145,7 @@ export interface DiffStats {
   files: number
 }
 
-export interface Settings {
+export interface Settings extends AppearanceSettings {
   defaultModel: ModelId
   defaultEffort: Effort
   defaultPermission: Permission
@@ -161,7 +162,8 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultPermission: 'full',
   branchPrefix: '',
   anthropicApiKey: '',
-  notifications: true
+  notifications: true,
+  ...DEFAULT_APPEARANCE
 }
 
 export interface AppState {
@@ -246,6 +248,8 @@ export interface Api {
   readFile(workspaceId: string, path: string): Promise<FilePreview>
   revertTo(chatId: string, itemId: string): Promise<string>
   saveSettings(patch: Partial<Settings>): Promise<Settings>
+  /** Interface zoom, 1 = 100%. */
+  setZoom(factor: number): void
   cloneRepo(url: string): Promise<Repo>
   listGithubRepos(): Promise<GithubRepo[]>
   quickStart(name: string): Promise<Repo>

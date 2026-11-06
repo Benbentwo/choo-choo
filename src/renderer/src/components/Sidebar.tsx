@@ -192,13 +192,13 @@ function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
       onClick={() => s.selectWorkspace(w.id)}
       className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
     >
-      {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-fg" /> : <IconBranch className="shrink-0" />}
+      {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : <IconBranch className="shrink-0" />}
       <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''}`}>{w.title}</span>
       {repoName && <span className="shrink-0 truncate text-[11px] text-faint">{repoName}</span>}
       {asking ? (
-        <span className="shrink-0 rounded bg-sky-500/20 px-1 text-[10px] text-sky-400">needs you</span>
+        <span className="anim-glow shrink-0 rounded bg-accent/20 px-1 text-[10px] text-accent">needs you</span>
       ) : (
-        unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />
+        unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_6px_var(--color-accent)]" />
       )}
       <Stats stats={s.stats[w.id]} />
     </button>
