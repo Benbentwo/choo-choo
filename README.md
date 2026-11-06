@@ -15,6 +15,10 @@ npm test         # unit tests
 npm run dist:mac # build arm64 and Intel .dmg and .zip files into dist/
 ```
 
+### Comment mode (dev only)
+
+In `npm run dev`, press ⌘⇧K (or click the pill in the bottom-right), click any element, and type what should change. Each comment is saved with screenshots to `.feedback/` in your checkout. Then, in Claude Code opened in this repo, say "watch for my comments" and Claude picks each one up and makes the change; see CLAUDE.md.
+
 Workspaces are git worktrees under `~/choo-choo/workspaces/<repo>/<city>`, each on its own branch. App data lives in `~/Library/Application Support/Choo Choo/data`.
 
 Scripts and agents see Conductor-compatible env vars: `CONDUCTOR_ROOT_PATH`, `CONDUCTOR_WORKSPACE_NAME`, `CONDUCTOR_WORKSPACE_PATH`, `CONDUCTOR_DEFAULT_BRANCH`, `CONDUCTOR_PORT` (also as `CHOO_*`).

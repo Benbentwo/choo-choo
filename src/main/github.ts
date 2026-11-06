@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { CheckRun, PrInfo } from '@shared/types'
+import type { CheckRun, GithubRepo, PrInfo } from '@shared/types'
 
 const exec = promisify(execFile)
 
@@ -35,4 +35,19 @@ export async function rerunFailed(cwd: string, link: string) {
   const id = link.match(/actions\/runs\/(\d+)/)?.[1]
   if (!id) throw new Error('This check is not a GitHub Actions run')
   await exec('gh', ['run', 'rerun', id, '--failed'], { cwd })
+}
+
+/** Every repo the signed-in gh user can reach (own, collaborator, org member), most recently pushed first. */
+export async function listMyRepos(): Promise<GithubRepo[]> {
+  const { stdout } = await exec(
+    'gh',
+    ['api', '--paginate', 'user/repos?affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100', '--jq', '.[] | {nameWithOwner: .full_name, description, private, pushedAt: .pushed_at}'],
+    { maxBuffer: 64 * 1024 * 1024 }
+  )
+  const repos = stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l) as GithubRepo)
+  return repos.sort((a, b) => (b.pushedAt ?? '').localeCompare(a.pushedAt ?? ''))
+}
+
+export async function cloneRepo(nameWithOwner: string, dest: string) {
+  await exec('gh', ['repo', 'clone', nameWithOwner, dest], { maxBuffer: 64 * 1024 * 1024 })
 }

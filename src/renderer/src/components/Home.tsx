@@ -1,5 +1,5 @@
 import { useStore, addRepository, newWorkspace } from '../store'
-import { IconBranch, IconPlus, IconSidebar } from '../icons'
+import { IconBranch, IconFolder, IconGithub, IconSidebar } from '../icons'
 import { Stats } from './Stats'
 
 export function Home() {
@@ -19,7 +19,10 @@ export function Home() {
         <p className="mb-8 text-muted">Run Claude Code agents in parallel, each in its own git worktree.</p>
         <div className="mb-8 flex gap-2">
           <button onClick={() => void addRepository()} className="flex items-center gap-2 rounded-lg bg-fg px-3 py-2 font-medium text-bg hover:opacity-90">
-            <IconPlus /> Add repository
+            <IconFolder /> Open project
+          </button>
+          <button onClick={() => s.set({ modal: 'create' })} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 hover:bg-hover">
+            <IconGithub /> Clone from GitHub
           </button>
           {s.repos[0] && (
             <button onClick={() => void newWorkspace(s.repos[0].id)} className="rounded-lg border border-line px-3 py-2 hover:bg-hover">
