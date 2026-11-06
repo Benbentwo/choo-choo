@@ -23,6 +23,7 @@ import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
+import * as archive from './archive'
 
 let win: BrowserWindow | null = null
 
@@ -438,7 +439,7 @@ async function archiveWorkspace(id: string) {
       execFile(process.env.SHELL || '/bin/zsh', ['-lc', archiveCmd], { cwd: ws.path, env: { ...process.env, ...workspaceEnv(ws) }, timeout: 120_000 }, () => resolve())
     )
   }
-  if (repo) await git.removeWorktree(repo.path, ws.path)
+  if (repo) await archive.stashWorktree(ws)
   ws.archived = true
   ws.archivedAt = Date.now()
   store.save()
@@ -489,12 +490,18 @@ function registerIpc() {
     const repo = store.get().repos.find((r) => r.id === ws.repoId)
     if (!repo) throw new Error('The repository for this workspace was removed')
     if (existsSync(ws.path)) throw new Error(`${ws.path} already exists`)
-    mkdirSync(join(ws.path, '..'), { recursive: true })
-    await git.addWorktreeForBranch(repo.path, ws.path, ws.branch)
+    if (!(await archive.unstashWorktree(ws))) {
+      mkdirSync(join(ws.path, '..'), { recursive: true })
+      await git.addWorktreeForBranch(repo.path, ws.path, ws.branch)
+    }
     ws.archived = false
     store.save()
     runScript(ws, 'setup')
   })
+  h('ws:preview', (id: string) => archive.preview(findWs(id)))
+  h('ws:activity', () => archive.activity())
+  h('ws:grep', (id: string, q: string) => git.grep(findWs(id).path, q))
+  h('archive:cleanup', () => archive.cleanupArchives())
   h('ws:rename', (id: string, title: string) => {
     findWs(id).title = title
     store.save()
@@ -559,6 +566,7 @@ function registerIpc() {
     s.settings = { ...s.settings, ...patch }
     store.save()
     if ('theme' in patch) applyNativeTheme(s.settings)
+    if ('archiveRetentionDays' in patch) void archive.cleanupArchives()
     return s.settings
   })
   h('folder:pick', async () => {
@@ -688,6 +696,8 @@ function buildMenu() {
         { label: 'Run', accelerator: 'CmdOrCtrl+R', click: m('run') },
         { label: 'Next Unread', accelerator: 'CmdOrCtrl+Shift+U', click: m('next-unread') },
         { label: 'Search…', accelerator: 'CmdOrCtrl+K', click: m('search') },
+        { label: 'Go to File…', accelerator: 'CmdOrCtrl+P', click: m('file-picker') },
+        { label: 'Search in Files…', accelerator: 'CmdOrCtrl+Shift+F', click: m('search-files') },
         { label: 'Open Shared Session…', click: m('open-share') },
         { type: 'separator' },
         { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' }
@@ -791,6 +801,7 @@ app.whenReady().then(async () => {
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
   registerIpc()
+  archive.startArchiveCleanup()
   registerShareIpc({
     workspacesRoot: WORKSPACES_ROOT,
     reposRoot: REPOS_ROOT,

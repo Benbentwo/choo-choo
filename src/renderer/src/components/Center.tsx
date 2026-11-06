@@ -123,7 +123,7 @@ export function Center({ ws }: { ws: Workspace }) {
       {doc?.kind === 'diff' ? (
         <DiffView ws={ws} file={doc.path} />
       ) : doc?.kind === 'file' ? (
-        <FileView ws={ws} file={doc.path} />
+        <FileView ws={ws} file={doc.path} line={doc.line} />
       ) : active ? (
         <>
           <ChatView chat={active} />

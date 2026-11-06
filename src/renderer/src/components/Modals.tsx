@@ -7,6 +7,7 @@ import { rank } from '../autocomplete'
 import { QuickStartModalBody } from './AddProject'
 import { AppearanceSettings } from './Appearance'
 import { OpenShareModal, ShareModal } from './ShareModals'
+import { CommandPalette } from './CommandPalette'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -27,7 +28,7 @@ export function Modals() {
   const modal = useStore((s) => s.modal)
   const close = () => useStore.getState().set({ modal: null })
   if (modal === 'settings') return <SettingsModal onClose={close} />
-  if (modal === 'palette') return <Palette onClose={close} />
+  if (modal === 'palette') return <CommandPalette onClose={close} />
   if (modal === 'create') return <CreateModal onClose={close} />
   if (modal === 'conductor') return <ConductorImportModal onClose={close} />
   if (modal === 'quickstart')
@@ -64,7 +65,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'appearance'>('general')
+  const [tab, setTab] = useState<'general' | 'appearance'>(() => useStore.getState().settingsTab)
+  useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   return (
     <Shell onClose={onClose} width="w-[620px]">
       <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
@@ -131,6 +133,15 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 Import…
               </button>
             </Row>
+            <Row label="Delete archived workspaces after" hint="Archived worktrees, with their uncommitted files, are kept in ~/choo-choo/archive until then. The branch and chat history are never deleted, so you can still restore.">
+              <select className={select} value={settings.archiveRetentionDays} onChange={(e) => void save({ archiveRetentionDays: Number(e.target.value) })}>
+                {RETENTION.map(([d, label]) => (
+                  <option key={d} value={d}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Row>
           </>
         )}
       </div>
@@ -140,6 +151,15 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
 
 const LOCATION_KEY = 'clone-location'
 const DEFAULT_LOCATION = '~/choo-choo/repos'
+
+export const RETENTION: [number, string][] = [
+  [1, '1 day'],
+  [7, '7 days'],
+  [14, '14 days'],
+  [30, '30 days'],
+  [90, '90 days'],
+  [0, 'Never']
+]
 
 function CreateModal({ onClose }: { onClose: () => void }) {
   const [url, setUrl] = useState('')
@@ -259,89 +279,6 @@ function CreateModal({ onClose }: { onClose: () => void }) {
             {busy ? `Cloning ${target}…` : 'Clone repo'} <span className="text-[11px] opacity-60">⌘↵</span>
           </button>
         </div>
-      </div>
-    </Shell>
-  )
-}
-
-interface Entry {
-  id: string
-  label: string
-  hint?: string
-  run: () => void
-}
-
-function Palette({ onClose }: { onClose: () => void }) {
-  const s = useStore()
-  const [q, setQ] = useState('')
-  const [sel, setSel] = useState(0)
-  const list = useRef<HTMLDivElement>(null)
-  const cur = s.workspaces.find((w) => w.id === s.selectedWs)
-
-  const entries = useMemo<Entry[]>(() => {
-    const out: Entry[] = []
-    for (const w of s.workspaces.filter((w) => !w.archived)) {
-      const repo = s.repos.find((r) => r.id === w.repoId)
-      out.push({ id: `ws:${w.id}`, label: w.title, hint: `${repo?.name ?? ''} · ${w.branch}`, run: () => s.selectWorkspace(w.id) })
-    }
-    for (const r of s.repos) out.push({ id: `new:${r.id}`, label: `New workspace in ${r.name}`, hint: 'Action', run: () => newWorkspace(r.id) })
-    out.push({ id: 'add', label: 'Add repository', hint: 'Action', run: () => s.set({ modal: 'create' }) })
-    if (cur) out.push({ id: 'share', label: 'Share workspace with coworkers', hint: 'Action', run: () => s.set({ modal: 'share' }) })
-    out.push({ id: 'open-share', label: 'Open shared session', hint: 'Action', run: () => s.set({ modal: 'open-share' }) })
-    if (cur) out.push({ id: 'chat', label: 'New chat tab', hint: 'Action', run: () => void newChatTab(cur.id) })
-    out.push({ id: 'unread', label: 'Next unread', hint: 'Action', run: goToNextUnread })
-    out.push({ id: 'settings', label: 'Settings', hint: 'Action', run: () => s.set({ modal: 'settings' }) })
-    out.push({ id: 'home', label: 'Home', hint: 'Action', run: () => s.selectWorkspace(null) })
-    return out
-  }, [s.workspaces, s.repos, cur?.id])
-
-  const shown = useMemo(() => {
-    if (!q) return entries
-    const byKey = new Map(entries.map((e) => [`${e.label}  ${e.hint ?? ''}`, e]))
-    return rank([...byKey.keys()], q, 50).map((k) => byKey.get(k)!)
-  }, [q, entries])
-
-  const pick = (e: Entry | undefined) => {
-    if (!e) return
-    onClose()
-    if (e.id === 'add' || e.id === 'settings' || e.id === 'share' || e.id === 'open-share') setTimeout(e.run, 0)
-    else e.run()
-  }
-
-  return (
-    <Shell onClose={onClose}>
-      <input
-        autoFocus
-        value={q}
-        onChange={(e) => {
-          setQ(e.target.value)
-          setSel(0)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            setSel(Math.min(sel + 1, shown.length - 1))
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            setSel(Math.max(sel - 1, 0))
-          } else if (e.key === 'Enter') pick(shown[sel])
-        }}
-        placeholder="Search workspaces and actions"
-        className="w-full border-b border-line bg-transparent px-4 py-3 text-[14px] outline-none placeholder:text-faint"
-      />
-      <div ref={list} className="max-h-[50vh] overflow-y-auto p-1.5">
-        {shown.length === 0 && <div className="p-4 text-center text-faint">No results</div>}
-        {shown.map((e, i) => (
-          <button
-            key={e.id}
-            onMouseEnter={() => setSel(i)}
-            onClick={() => pick(e)}
-            className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left ${i === sel ? 'bg-hover' : ''}`}
-          >
-            <span className="flex-1 truncate">{e.label}</span>
-            {e.hint && <span className="truncate text-[12px] text-faint">{e.hint}</span>}
-          </button>
-        ))}
       </div>
     </Shell>
   )

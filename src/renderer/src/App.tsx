@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
@@ -42,7 +42,11 @@ export function App() {
         case 'add-repo':
           return void addRepository()
         case 'search':
-          return st.set({ modal: st.modal === 'palette' ? null : 'palette' })
+          return openPalette('all')
+        case 'file-picker':
+          return openPalette('files')
+        case 'search-files':
+          return openPalette('grep')
         case 'settings':
           return st.set({ modal: 'settings' })
         case 'open-share':

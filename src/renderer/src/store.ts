@@ -5,7 +5,12 @@ import { DEFAULT_SETTINGS, type Effort, type ModelId, type WorkspaceSource, type
 export interface Doc {
   kind: 'diff' | 'file'
   path: string
+  /** Line to scroll to in a file. */
+  line?: number
 }
+
+/** Which list the ⌘K palette opens on. */
+export type PaletteMode = 'all' | 'files' | 'grep'
 
 export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'review'
 
@@ -23,6 +28,9 @@ interface UI {
   openDoc: Record<string, Doc | null>
   settings: Settings
   modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | null
+  paletteMode: PaletteMode
+  /** Settings tab to open on. */
+  settingsTab: 'general' | 'appearance'
   recentPaths: string[]
   /** Repo whose new-workspace composer is open in the center, if any. */
   draftRepo: string | null
@@ -61,6 +69,8 @@ export const useStore = create<UI>((set, get) => ({
   openDoc: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
+  paletteMode: 'all',
+  settingsTab: 'general',
   recentPaths: [],
   draftRepo: null,
   shareLinkDraft: null,
@@ -225,4 +235,31 @@ export function removePermission(id: string) {
   const next: Record<string, PermissionRequest[]> = {}
   for (const [k, v] of Object.entries(s.permissions)) next[k] = v.filter((r) => r.id !== id)
   s.set({ permissions: next })
+}
+
+export function openPalette(mode: PaletteMode = 'all') {
+  const s = useStore.getState()
+  if (s.modal === 'palette' && s.paletteMode === mode) return s.set({ modal: null })
+  s.set({ modal: 'palette', paletteMode: mode })
+}
+
+export async function archiveWorkspace(wsId: string) {
+  try {
+    await window.api.archiveWorkspace(wsId)
+    await refreshState()
+    if (useStore.getState().selectedWs === wsId) useStore.getState().selectWorkspace(null)
+  } catch (e) {
+    reportError(e)
+  }
+}
+
+/** "3mo", "7d", "5h", "2m", "now". */
+export function ago(ts: number, now = Date.now()): string {
+  const s = Math.max(0, (now - ts) / 1000)
+  if (s < 60) return 'now'
+  if (s < 3600) return `${Math.floor(s / 60)}m`
+  if (s < 86400) return `${Math.floor(s / 3600)}h`
+  if (s < 86400 * 30) return `${Math.floor(s / 86400)}d`
+  if (s < 86400 * 365) return `${Math.floor(s / (86400 * 30))}mo`
+  return `${Math.floor(s / (86400 * 365))}y`
 }

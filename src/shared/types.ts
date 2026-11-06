@@ -57,6 +57,8 @@ export interface Workspace {
   createdAt: number
   archived?: boolean
   archivedAt?: number
+  /** Where the archived worktree was moved, until retention cleanup deletes it. */
+  archivePath?: string
   /** The repo's orchestrator: runs in the main checkout and directs other workspaces. */
   orchestrator?: boolean
   /** Started by the orchestrator. */
@@ -189,6 +191,18 @@ export interface FileChange {
   deletions: number
 }
 
+export interface WorkspacePreview {
+  /** Plain-text start of the latest message. */
+  snippet: string
+  lastActive: number
+}
+
+export interface GrepHit {
+  path: string
+  line: number
+  text: string
+}
+
 export interface DiffStats {
   additions: number
   deletions: number
@@ -206,6 +220,8 @@ export interface Settings extends AppearanceSettings {
   notifications: boolean
   /** Where new workspaces go; empty means ~/choo-choo/workspaces. */
   workspacesRoot?: string
+  /** Days to keep archived worktrees before deleting them. 0 keeps them forever. */
+  archiveRetentionDays: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -215,6 +231,7 @@ export const DEFAULT_SETTINGS: Settings = {
   branchPrefix: '',
   anthropicApiKey: '',
   notifications: true,
+  archiveRetentionDays: 30,
   ...DEFAULT_APPEARANCE
 }
 
@@ -284,6 +301,12 @@ export interface Api {
   cancelReflect(workspaceId: string): Promise<void>
   /** Writes accepted proposals to a new workspace and asks its agent to open a PR. */
   applyReflection(workspaceId: string, proposals: ReflectProposal[]): Promise<{ workspace: Workspace; chat: Chat }>
+  workspacePreview(workspaceId: string): Promise<WorkspacePreview>
+  /** Last chat activity per workspace id. */
+  workspaceActivity(): Promise<Record<string, number>>
+  searchFiles(workspaceId: string, query: string): Promise<GrepHit[]>
+  /** Deletes archived worktrees past the retention period now. Returns how many. */
+  cleanupArchives(): Promise<number>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>

@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { DiffStats, FileChange } from '@shared/types'
+import type { DiffStats, FileChange, GrepHit } from '@shared/types'
 
 const exec = promisify(execFile)
 
@@ -232,4 +232,24 @@ export async function addWorktreeForBranch(repo: string, path: string, branch: s
 
 export async function currentBranch(cwd: string): Promise<string | null> {
   return (await tryGit(cwd, ['branch', '--show-current']))?.trim() || null
+}
+
+/** Moves a worktree folder, keeping uncommitted and untracked files. Fails for worktrees with submodules. */
+export async function moveWorktree(repo: string, from: string, to: string) {
+  await git(repo, ['worktree', 'move', from, to])
+}
+
+/** Searches tracked and untracked files for a fixed string, case-insensitively. */
+export async function grep(cwd: string, query: string, limit = 200): Promise<GrepHit[]> {
+  if (!query.trim()) return []
+  const out = await tryGit(cwd, ['grep', '-n', '-I', '-i', '-F', '--untracked', '--max-count', '20', '-e', query])
+  if (!out) return []
+  const hits: GrepHit[] = []
+  for (const l of out.split('\n')) {
+    const m = l.match(/^(.+?):(\d+):(.*)$/)
+    if (!m) continue
+    hits.push({ path: m[1], line: Number(m[2]), text: m[3].trim().slice(0, 200) })
+    if (hits.length >= limit) break
+  }
+  return hits
 }

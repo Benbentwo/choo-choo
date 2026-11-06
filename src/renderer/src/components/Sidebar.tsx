@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { Workspace } from '@shared/types'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
-import { useStore, newWorkspace, restoreWorkspace, openOrchestrator } from '../store'
-import { IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
+import { useStore, newWorkspace, restoreWorkspace, openOrchestrator, archiveWorkspace, openPalette } from '../store'
+import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
+import { IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
 import { BrandMark } from './BrandMark'
 
@@ -78,7 +79,7 @@ export function Sidebar() {
       <nav className="px-2 pb-3">
         <NavItem icon={<IconHome />} label="Home" active={!s.selectedWs} onClick={() => s.selectWorkspace(null)} />
         <NavItem icon={<IconPlus />} label="Create" onClick={() => s.set({ modal: 'create' })} />
-        <NavItem icon={<IconSearch />} label="Search" onClick={() => s.set({ modal: 'palette' })} hint="⌘K" />
+        <NavItem icon={<IconSearch />} label="Search" onClick={() => openPalette()} hint="⌘K" />
       </nav>
 
       <div className="border-t border-line" />
@@ -190,13 +191,21 @@ function NavItem(p: { icon: React.ReactNode; label: string; active?: boolean; hi
 
 function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
   const s = useStore()
+  const hover = useHoverCard()
   const running = s.chats.some((c) => c.workspaceId === w.id && c.status === 'running')
   const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
   const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
   return (
-    <button
-      onClick={() => s.selectWorkspace(w.id)}
-      className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+    <div
+      role="button"
+      tabIndex={0}
+      {...hover.rowProps}
+      onClick={() => {
+        hover.close()
+        s.selectWorkspace(w.id)
+      }}
+      onKeyDown={(e) => e.key === 'Enter' && s.selectWorkspace(w.id)}
+      className={`group flex h-9 w-full cursor-default items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
     >
       {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : <IconBranch className="shrink-0" />}
       <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''}`}>{w.title}</span>
@@ -206,8 +215,26 @@ function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
       ) : (
         unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_6px_var(--color-accent)]" />
       )}
-      {!w.orchestrator && <Stats stats={s.stats[w.id]} />}
-    </button>
+      {!w.orchestrator && (
+        <>
+          <span className="group-hover:hidden">
+            <Stats stats={s.stats[w.id]} />
+          </span>
+          <button
+            className="hidden shrink-0 rounded p-0.5 text-faint group-hover:block hover:bg-raised hover:text-fg"
+            title="Archive workspace"
+            onClick={(e) => {
+              e.stopPropagation()
+              hover.close()
+              void archiveWorkspace(w.id)
+            }}
+          >
+            <IconArchive width={15} height={15} />
+          </button>
+        </>
+      )}
+      {hover.rect && !w.orchestrator && <WorkspacePreviewCard ws={w} rect={hover.rect} cardProps={hover.cardProps} onClose={hover.close} />}
+    </div>
   )
 }
 
