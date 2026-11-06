@@ -4,6 +4,7 @@ import * as store from './store'
 import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
+import { enabledSubagents, renderTurn, runAdvisor, steerMessage } from './extras'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
 
@@ -13,6 +14,8 @@ interface Running {
 }
 
 const running = new Map<string, Running>()
+/** Advisor reviews in flight, per chat. */
+const advising = new Map<string, AbortController>()
 
 // Tools that only read; asking about them would be noise.
 const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite', 'Task', 'Agent', 'NotebookRead', 'BashOutput', 'ExitPlanMode', 'ToolSearch', 'Skill'])
@@ -61,6 +64,7 @@ export function isRunning(chatId: string) {
 }
 
 export async function stop(chatId: string) {
+  advising.get(chatId)?.abort()
   const r = running.get(chatId)
   if (!r) return
   if (!r.query) return r.abort.abort()
@@ -95,12 +99,22 @@ export async function send(
   emit: Emit,
   onDone?: (chat: Chat) => void,
   images: string[] = [],
-  onAsk?: (chat: Chat, req: PermissionRequest) => void
+  onAsk?: (chat: Chat, req: PermissionRequest) => void,
+  opts: { fromAdvisor?: boolean } = {}
 ) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
   const now = Date.now()
   const checkpoint = (await git.snapshot(ws.path)) ?? undefined
-  const userItem: ChatItem = { id: randomUUID(), kind: 'user', text, images: images.length ? images : undefined, ts: now, checkpoint, resumeAt: chat.lastUuid }
+  const userItem: ChatItem = {
+    id: randomUUID(),
+    kind: 'user',
+    text,
+    images: images.length ? images : undefined,
+    ts: now,
+    checkpoint,
+    resumeAt: chat.lastUuid,
+    ...(opts.fromAdvisor ? { fromAdvisor: true } : {})
+  }
   store.upsertItem(chat.id, userItem)
   emit(chat.id, { item: userItem })
 
@@ -128,6 +142,7 @@ export async function send(
     store.upsertItem(chat.id, item)
     emit(chat.id, { item })
   }
+  let turnOk = false
 
   try {
     if (chat.model === 'codex') {
@@ -148,6 +163,7 @@ export async function send(
         put
       })
       put({ id: randomUUID(), kind: 'result', ok: res.ok, durationMs: Date.now() - started, ts: Date.now() })
+      turnOk = res.ok
       chat.status = 'idle'
       return
     }
@@ -192,6 +208,7 @@ export async function send(
         includePartialMessages: true,
         abortController: abort,
         settingSources: ['user', 'project', 'local'],
+        agents: enabledSubagents(store.get().settings.extras),
         env: { ...process.env, ...env }
       } as never
     })
@@ -258,6 +275,7 @@ export async function send(
         }
         case 'result':
           endTurn()
+          turnOk = msg.subtype === 'success' && !msg.is_error
           put({
             id: randomUUID(),
             kind: 'result',
@@ -292,7 +310,62 @@ export async function send(
     emit(chat.id, { chat })
     onDone?.(chat)
   }
+  if (turnOk && !abort.signal.aborted && store.get().settings.extras.advisor) {
+    await advise(chat, ws, userItem.id, env, emit, (msg) => send(chat, ws, msg, env, emit, onDone, [], onAsk, { fromAdvisor: true }), !opts.fromAdvisor)
+  }
 }
+
+/** Has the advisor review the turn that started at `fromItemId`, and passes blockers back if allowed. */
+async function advise(
+  chat: Chat,
+  ws: Workspace,
+  fromItemId: string,
+  env: Record<string, string>,
+  emit: Emit,
+  followUp: (text: string) => Promise<void>,
+  maySteer: boolean
+) {
+  const extras = store.get().settings.extras
+  const list = store.chatItems(chat.id)
+  const start = list.findIndex((x) => x.id === fromItemId)
+  const turn = start < 0 ? [] : list.slice(start)
+  if (!turn.some((x) => x.kind === 'assistant' || x.kind === 'tool')) return
+  const item: Extract<ChatItem, { kind: 'advisor' }> = { id: randomUUID(), kind: 'advisor', text: '', pending: true, ts: Date.now() }
+  const put = () => {
+    store.upsertItem(chat.id, { ...item })
+    emit(chat.id, { item: { ...item } })
+  }
+  put()
+  const abort = new AbortController()
+  advising.set(chat.id, abort)
+  try {
+    const advice = await runAdvisor({
+      transcript: renderTurn(turn),
+      cwd: ws.path,
+      model: extras.advisorModel,
+      env: { ...process.env, ...env },
+      executable: claudeExecutable(),
+      signal: abort.signal
+    })
+    item.pending = false
+    item.silent = advice.silent
+    item.blocker = advice.blocker
+    item.text = advice.silent ? 'No concerns' : advice.notes.join('\n')
+    put()
+    store.save()
+    // One automatic follow-up per user message, and only if the user hasn't started a new turn.
+    if (advice.blocker && maySteer && extras.advisorSteer && !running.has(chat.id)) await followUp(steerMessage(advice))
+  } catch (e) {
+    item.pending = false
+    item.silent = true
+    item.text = abort.signal.aborted ? 'Advisor stopped' : `Advisor failed: ${(e as Error).message || String(e)}`
+    put()
+    store.save()
+  } finally {
+    if (advising.get(chat.id) === abort) advising.delete(chat.id)
+  }
+}
+
 
 /** Rewinds a chat to just before `itemId`: restores the files and forks the conversation there. */
 export async function revert(chat: Chat, ws: Workspace, itemId: string): Promise<string> {
@@ -312,5 +385,6 @@ export async function revert(chat: Chat, ws: Workspace, itemId: string): Promise
 }
 
 export function stopAll() {
+  for (const a of advising.values()) a.abort()
   for (const r of running.values()) r.abort.abort()
 }

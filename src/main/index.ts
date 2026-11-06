@@ -5,6 +5,7 @@ import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { Artifact, Chat, FilePreview, Repo, Settings, Workspace } from '@shared/types'
+import { normalizeExtras } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 import * as agent from './agent'
@@ -327,6 +328,7 @@ function registerIpc() {
   h('settings:save', (patch: Partial<Settings>) => {
     const s = store.get()
     s.settings = { ...s.settings, ...patch }
+    s.settings.extras = normalizeExtras(s.settings.extras)
     store.save()
     return s.settings
   })

@@ -71,7 +71,8 @@ function Item({ item, chat }: { item: ChatItem; chat: Chat }) {
               Revert to here
             </button>
           )}
-          <div className="max-w-[85%] rounded-xl bg-raised px-4 py-2.5 whitespace-pre-wrap">
+          <div className={`max-w-[85%] rounded-xl bg-raised px-4 py-2.5 whitespace-pre-wrap ${item.fromAdvisor ? 'border border-accent/40' : ''}`}>
+            {item.fromAdvisor && <div className="mb-1 text-[11px] text-faint">Sent automatically from the advisor</div>}
             {item.images && item.images.length > 0 && (
               <div className="mb-2 flex flex-wrap gap-2">
                 {item.images.map((src, i) => (
@@ -105,7 +106,24 @@ function Item({ item, chat }: { item: ChatItem; chat: Chat }) {
       )
     case 'error':
       return <div className="my-3 rounded-lg border border-del/30 bg-del/10 px-3 py-2 text-del">{item.text}</div>
+    case 'advisor':
+      return <AdvisorItem item={item} />
   }
+}
+
+function AdvisorItem({ item }: { item: Extract<ChatItem, { kind: 'advisor' }> }) {
+  if (item.pending) return <div className="my-3 text-[11px] text-faint">Advisor is reviewing this turn…</div>
+  if (item.silent) return <div className="my-3 text-[11px] text-faint">Advisor: {item.text}</div>
+  return (
+    <div className={`my-3 rounded-lg border px-3 py-2 ${item.blocker ? 'border-del/30 bg-del/10' : 'border-line bg-raised'}`}>
+      <div className="mb-1 text-[11px] font-medium text-muted">Advisor</div>
+      <div className="space-y-1 text-[13px] whitespace-pre-wrap">
+        {item.text.split('\n').map((line, i) => (
+          <div key={i}>{line}</div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export function toolSummary(name: string, input: unknown): string {

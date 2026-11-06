@@ -77,3 +77,11 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 3. **Review & polish**: Checks, Review, Artifacts, All files, ⌘K, Settings, checkpoints, clone, notifications.
 4. **Ship**: images, plan mode, packaging, release workflow.
 5. **Parity gaps closed**: inline review comments, per-tool permission prompts, Intel build.
+
+## Beyond Conductor
+
+Features Conductor doesn't have. Each one is off until you turn it on in Settings.
+
+- ✅ Extra subagents adapted from [oh-my-pi](https://github.com/can1357/oh-my-pi) (MIT): Scout (Haiku, read-only search), Reviewer (Opus, diff review), Security reviewer (read-only), Quick worker (Haiku, mechanical edits). Claude chats hand work to them through the SDK's `agents` option.
+- ✅ Advisor: after each finished turn, a second model (Opus, Sonnet or Haiku) reads the turn with read-only tools and either stays silent or posts notes. With steering on, blocker notes go back to the agent automatically, at most once per message you send. Works for Claude and Codex chats.
+- Everything runs on the official Agent SDK and the bundled Claude Code binary, so it uses the same sign-in as the main agent. oh-my-pi's own Claude subscription login is not used: it impersonates Claude Code, which Anthropic's terms don't allow.

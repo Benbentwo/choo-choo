@@ -91,6 +91,8 @@ export type ChatItem =
       checkpoint?: { head: string; tree: string }
       /** Session entry to fork from to drop this turn and everything after it. */
       resumeAt?: string
+      /** Sent automatically to pass on the advisor's feedback. */
+      fromAdvisor?: boolean
     }
   | { id: string; kind: 'note'; text: string; ts: number }
   | { id: string; kind: 'assistant'; text: string; streaming?: boolean; ts: number }
@@ -113,6 +115,18 @@ export type ChatItem =
       ts: number
     }
   | { id: string; kind: 'error'; text: string; ts: number }
+  | {
+      id: string
+      kind: 'advisor'
+      /** Empty while the advisor is still reviewing. */
+      text: string
+      pending?: boolean
+      /** The advisor found nothing worth raising. */
+      silent?: boolean
+      /** At least one note is a blocker. */
+      blocker?: boolean
+      ts: number
+    }
 
 export interface FileChange {
   path: string
@@ -137,6 +151,32 @@ export interface Settings {
   /** Optional. Without it the agent uses your Claude Code login. */
   anthropicApiKey: string
   notifications: boolean
+  /** Optional agents and features, adapted from oh-my-pi. All off by default. */
+  extras: Extras
+}
+
+export type ExtraAgentId = 'scout' | 'reviewer' | 'securityReviewer' | 'quickWorker'
+
+export interface Extras {
+  /** Subagents the main Claude agent can hand work to. */
+  agents: Record<ExtraAgentId, boolean>
+  /** A second model reviews each finished turn and gives advice. */
+  advisor: boolean
+  advisorModel: 'opus' | 'sonnet' | 'haiku'
+  /** Send blocker-level advice back to the agent automatically. */
+  advisorSteer: boolean
+}
+
+export const DEFAULT_EXTRAS: Extras = {
+  agents: { scout: false, reviewer: false, securityReviewer: false, quickWorker: false },
+  advisor: false,
+  advisorModel: 'sonnet',
+  advisorSteer: true
+}
+
+/** Fills in fields an older or partial save is missing. */
+export function normalizeExtras(e: Partial<Extras> | undefined): Extras {
+  return { ...DEFAULT_EXTRAS, ...e, agents: { ...DEFAULT_EXTRAS.agents, ...e?.agents } }
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -145,7 +185,8 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultPermission: 'full',
   branchPrefix: '',
   anthropicApiKey: '',
-  notifications: true
+  notifications: true,
+  extras: DEFAULT_EXTRAS
 }
 
 export interface AppState {
