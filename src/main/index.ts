@@ -675,7 +675,16 @@ function registerIpc() {
     if (action === 'send' && agent.isRunning(chat.id)) throw new Error('Wait for the agent to finish first')
     const { item, message } = agent.resolveAdvice(chat, itemId, action)
     emitChat(chatId, { item, chat })
-    if (message) sendToChat(chat, message, [], { fromAdvisor: true })
+    // A plan review is sent because the user clicked "Revise the plan", so it reads as their message.
+    if (message) sendToChat(chat, message, [], { fromAdvisor: item.kind === 'advisor' && item.source !== 'planReview' })
+  })
+  h('plan:review', (chatId: string, planItemId: string) => {
+    const chat = findChat(chatId)
+    const ws = findWs(chat.workspaceId)
+    const env = workspaceEnv(ws)
+    const key = store.get().settings.anthropicApiKey.trim()
+    if (key) env.ANTHROPIC_API_KEY = key
+    return agent.reviewPlan(chat, ws, planItemId, env, emitChat)
   })
   h('chat:stop', (id: string) => agent.stop(id))
   h('chat:phone', (id: string) => {

@@ -132,13 +132,17 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
 }
 
 function AdvisorItem({ item, chat }: { item: Extract<ChatItem, { kind: 'advisor' }>; chat: Chat }) {
-  if (item.pending) return <div className="my-3 text-[11px] text-faint">Advisor is reviewing this turn…</div>
-  if (item.silent) return <div className="my-3 text-[11px] text-faint">Advisor: {item.text}</div>
+  const plan = item.source === 'planReview'
+  const who = plan ? 'Plan review' : 'Advisor'
+  if (item.pending)
+    return <div className="my-3 text-[11px] text-faint">{plan ? 'Fresh reviewers who haven’t seen this chat are reading the plan…' : 'Advisor is reviewing this turn…'}</div>
+  if (item.silent) return <div className="my-3 text-[11px] text-faint">{who}: {item.text}</div>
   const act = (action: 'send' | 'dismiss') => window.api.actOnAdvice(chat.id, item.id, action).catch(reportError)
   return (
     <div className={`my-3 rounded-lg border px-3 py-2 ${item.blocker && !item.resolved ? 'border-del/30 bg-del/10' : 'border-line bg-raised'} ${item.resolved === 'dismissed' ? 'opacity-60' : ''}`}>
       <div className="mb-1 flex items-center gap-2 text-[11px]">
-        <span className="font-medium text-muted">Advisor</span>
+        <span className="font-medium text-muted">{who}</span>
+        {plan && <span className="text-faint">from reviewers who only saw the plan</span>}
         {item.blocker && <span className="rounded bg-del/15 px-1 text-del">blocker</span>}
         <span className="flex-1" />
         {item.resolved === 'sent' && <span className="text-faint">Sent to the agent</span>}
@@ -154,10 +158,10 @@ function AdvisorItem({ item, chat }: { item: Extract<ChatItem, { kind: 'advisor'
           <button
             className="rounded-md bg-fg px-2.5 py-0.5 text-[12px] font-medium text-bg hover:opacity-90 disabled:opacity-40"
             disabled={chat.status === 'running'}
-            title={chat.status === 'running' ? 'Wait for the agent to finish' : 'Ask the agent to address these notes'}
+            title={chat.status === 'running' ? 'Wait for the agent to finish' : plan ? 'Ask the agent to revise the plan' : 'Ask the agent to address these notes'}
             onClick={() => void act('send')}
           >
-            Send to agent
+            {plan ? 'Revise the plan' : 'Send to agent'}
           </button>
           <button className="rounded-md border border-line px-2.5 py-0.5 text-[12px] hover:bg-hover" onClick={() => void act('dismiss')}>
             Dismiss
@@ -277,6 +281,10 @@ function BuiltinAdvisorItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }
 
 function PlanItem({ item, chat }: { item: Extract<ChatItem, { kind: 'tool' }>; chat: Chat }) {
   const plan = String((item.input as { plan?: string })?.plan ?? '')
+  const reviews = useStore((s) => s.items[chat.id])?.filter((x) => x.kind === 'advisor' && x.source === 'planReview') ?? []
+  const reviewing = reviews.some((x) => x.kind === 'advisor' && x.pending)
+  const reviewed = reviews.some((x) => x.kind === 'advisor' && x.planItemId === item.id)
+  const review = () => window.api.reviewPlan(chat.id, item.id).catch(reportError)
   const approve = async () => {
     try {
       useStore.getState().upsertChat(await window.api.updateChat(chat.id, { planMode: false }))
@@ -296,6 +304,16 @@ function PlanItem({ item, chat }: { item: Extract<ChatItem, { kind: 'tool' }>; c
           <button className="rounded-md bg-fg px-3 py-1 font-medium text-bg hover:opacity-90" onClick={() => void approve()}>
             Approve and build
           </button>
+          {!reviewed && plan.trim() && (
+            <button
+              className="rounded-md border border-line px-3 py-1 hover:bg-hover disabled:opacity-40"
+              disabled={reviewing}
+              title="Fresh reviewers who haven't seen this chat check the plan against the code"
+              onClick={() => void review()}
+            >
+              {reviewing ? 'Reviewing…' : 'Review plan'}
+            </button>
+          )}
           <span className="self-center text-[12px] text-faint">or reply below to change the plan</span>
         </div>
       )}

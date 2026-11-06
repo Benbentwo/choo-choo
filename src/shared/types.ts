@@ -247,6 +247,10 @@ export type ChatItem =
   | {
       id: string
       kind: 'advisor'
+      /** Who wrote the notes: the advisor (default), or fresh reviewers checking a plan. */
+      source?: 'planReview'
+      /** For a plan review, the plan card it reviewed. */
+      planItemId?: string
       /** Empty while the advisor is still reviewing. */
       text: string
       pending?: boolean
@@ -585,6 +589,8 @@ export interface Api {
   bringBackFromPhone(chatId: string): Promise<Chat>
   /** Sends the advisor's notes to the agent, or dismisses them. */
   actOnAdvice(chatId: string, itemId: string, action: 'send' | 'dismiss'): Promise<void>
+  /** Has fresh reviewers, who never saw the chat, check the plan in a plan card. */
+  reviewPlan(chatId: string, planItemId: string): Promise<void>
   onChatEvent(cb: (e: ChatEvent) => void): () => void
   getChanges(workspaceId: string): Promise<FileChange[]>
   getDiffStats(workspaceId: string): Promise<DiffStats>
