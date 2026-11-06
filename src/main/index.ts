@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
 import type { Artifact, Chat, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
-import { normalizeExtras } from '@shared/types'
+import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 import * as agent from './agent'
@@ -282,9 +282,7 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
   const ws = findWs(chat.workspaceId)
   const repo = store.get().repos.find((r) => r.id === ws.repoId)
   if (!ws.named) void nameWorkspace(ws, text)
-  const env = workspaceEnv(ws)
-  const key = store.get().settings.anthropicApiKey.trim()
-  if (key) env.ANTHROPIC_API_KEY = key
+  const env = agentEnv(ws)
   let extra: Parameters<typeof agent.send>[8]
   if (ws.orchestrator && repo) {
     // The orchestrator's tools only exist on Claude.
@@ -448,9 +446,12 @@ async function archiveWorkspace(id: string) {
   store.save()
 }
 
+/** Env for Claude agents: workspace vars, the API key, and OpenTelemetry export if it's on. */
 function agentEnv(ws: Workspace): Record<string, string> {
-  const env = workspaceEnv(ws)
-  const key = store.get().settings.anthropicApiKey.trim()
+  const settings = store.get().settings
+  const repo = store.get().repos.find((r) => r.id === ws.repoId)
+  const env = { ...workspaceEnv(ws), ...telemetryEnv(settings.telemetry, { 'choo.repo': repo?.name ?? '', 'choo.workspace': ws.name, 'choo.branch': ws.branch }) }
+  const key = settings.anthropicApiKey.trim()
   if (key) env.ANTHROPIC_API_KEY = key
   return env
 }
@@ -580,6 +581,7 @@ function registerIpc() {
     const s = store.get()
     s.settings = { ...s.settings, ...patch }
     s.settings.extras = normalizeExtras(s.settings.extras)
+    s.settings.telemetry = normalizeTelemetry(s.settings.telemetry)
     store.save()
     if ('theme' in patch) applyNativeTheme(s.settings)
     if ('archiveRetentionDays' in patch) void archive.cleanupArchives()
