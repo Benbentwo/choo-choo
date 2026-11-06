@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { useStore } from '../store'
+import { APPEARANCE_EVENT, pickAppearance, resolved, terminalTheme } from '../appearance'
 
 /**
  * A shell terminal, or with `attach` a read/write view onto a script's pty that the main process started.
@@ -9,14 +11,15 @@ export function TerminalView({ id, workspaceId, attach }: { id: string; workspac
   const el = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    const look = () => pickAppearance(useStore.getState().settings)
     const term = new Terminal({
-      fontFamily: "'SF Mono', 'JetBrains Mono', Menlo, monospace",
+      fontFamily: resolved(look()).mono,
       fontSize: 12,
       lineHeight: 1.25,
       cursorBlink: !attach,
       allowProposedApi: true,
       convertEol: false,
-      theme: { background: '#1a1817', foreground: '#e8e4e1', cursor: '#e8e4e1', selectionBackground: '#3a3735' }
+      theme: terminalTheme(look())
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -53,10 +56,20 @@ export function TerminalView({ id, workspaceId, attach }: { id: string; workspac
     })
     const ro = new ResizeObserver(() => doFit())
     ro.observe(el.current!)
+    const onLook = () => {
+      term.options.theme = terminalTheme(look())
+      const font = resolved(look()).mono
+      if (term.options.fontFamily !== font) {
+        term.options.fontFamily = font
+        doFit()
+      }
+    }
+    window.addEventListener(APPEARANCE_EVENT, onLook)
 
     return () => {
       disposed = true
       ro.disconnect()
+      window.removeEventListener(APPEARANCE_EVENT, onLook)
       offData()
       offExit()
       offStart()

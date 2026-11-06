@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -16,6 +16,7 @@ import * as gh from './github'
 import { suggestName } from './naming'
 import { checkNow, installUpdate, startUpdater } from './updater'
 import { registerDevFeedback } from './devFeedback'
+import { resolveTheme } from '@shared/themes'
 
 let win: BrowserWindow | null = null
 
@@ -329,6 +330,7 @@ function registerIpc() {
     const s = store.get()
     s.settings = { ...s.settings, ...patch }
     store.save()
+    if ('theme' in patch) applyNativeTheme(s.settings)
     return s.settings
   })
   h('repo:clone', async (url: string) => {
@@ -451,14 +453,25 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+/** Match native chrome (menus, window background) to the chosen theme. */
+function applyNativeTheme(settings: Settings) {
+  nativeTheme.themeSource = settings.theme === 'system' ? 'system' : resolveTheme(settings.theme, true).dark ? 'dark' : 'light'
+  win?.setBackgroundColor(windowBackground(settings))
+}
+
+function windowBackground(settings: Settings) {
+  return resolveTheme(settings.theme, nativeTheme.shouldUseDarkColors).tokens.bg
+}
+
 function createWindow() {
+  applyNativeTheme(store.get().settings)
   win = new BrowserWindow({
     width: 1500,
     height: 950,
     minWidth: 960,
     minHeight: 600,
     show: false,
-    backgroundColor: '#1a1817',
+    backgroundColor: windowBackground(store.get().settings),
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
