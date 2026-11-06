@@ -47,6 +47,7 @@ const api: Api = {
   saveSettings: inv('settings:save') as Api['saveSettings'],
   setZoom: (f) => webFrame.setZoomFactor(f),
   cloneRepo: inv('repo:clone') as Api['cloneRepo'],
+  pickFolder: inv('folder:pick') as Api['pickFolder'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
   quickStart: inv('repo:quickstart') as Api['quickStart'],
   listSources: inv('ws:sources') as Api['listSources'],

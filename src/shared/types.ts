@@ -282,7 +282,9 @@ export interface Api {
   saveSettings(patch: Partial<Settings>): Promise<Settings>
   /** Interface zoom, 1 = 100%. */
   setZoom(factor: number): void
-  cloneRepo(url: string): Promise<Repo>
+  /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
+  cloneRepo(url: string, dir?: string): Promise<Repo>
+  pickFolder(): Promise<string | null>
   listGithubRepos(): Promise<GithubRepo[]>
   quickStart(name: string): Promise<Repo>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
