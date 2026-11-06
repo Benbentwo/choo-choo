@@ -54,6 +54,16 @@ To switch, [install Choo Choo](#install), [sign in](#signing-in), then open Sett
 
 ## Install
 
+With [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask benbentwo/tap/choo-choo
+```
+
+`brew upgrade --cask choo-choo` picks up new releases. Until builds are signed, the cask clears the download quarantine for you, so the first launch isn't blocked.
+
+Or install it by hand:
+
 1. Download the `.dmg` for your Mac from the [latest release](https://github.com/Benbentwo/choo-choo/releases/latest): `arm64` for Apple silicon, `x64` for Intel.
 2. Open it and drag Choo Choo to Applications.
 3. Until builds are signed, macOS blocks the first launch. Clear the download quarantine once:
@@ -127,7 +137,7 @@ Each comment is saved to `.feedback/` in your checkout with the element's select
 
 To ship, open **Actions > Release > Run workflow** (optionally type a version). It builds the app for Apple silicon and Intel, attaches the `.dmg`, `.zip` and update files to the draft, and publishes it. Publishing the draft by hand on the Releases page works too; the workflow then attaches the files. The app's version comes from the release tag.
 
-Add `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` repository secrets to sign and notarize builds; without them the app is unsigned and auto-update can't install on macOS.
+Add a `HOMEBREW_TAP_TOKEN` secret (a token that can push to `Benbentwo/homebrew-tap`) and each release also updates the Homebrew cask, written by `scripts/homebrew-cask.sh`. Add `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` repository secrets to sign and notarize builds; without them the app is unsigned and auto-update can't install on macOS.
 
 ## License
 
