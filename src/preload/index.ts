@@ -45,6 +45,7 @@ const api: Api = {
   revertTo: inv('chat:revert') as Api['revertTo'],
   saveSettings: inv('settings:save') as Api['saveSettings'],
   cloneRepo: inv('repo:clone') as Api['cloneRepo'],
+  pickFolder: inv('folder:pick') as Api['pickFolder'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
   quickStart: inv('repo:quickstart') as Api['quickStart'],
   listSources: inv('ws:sources') as Api['listSources'],

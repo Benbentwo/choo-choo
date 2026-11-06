@@ -246,7 +246,9 @@ export interface Api {
   readFile(workspaceId: string, path: string): Promise<FilePreview>
   revertTo(chatId: string, itemId: string): Promise<string>
   saveSettings(patch: Partial<Settings>): Promise<Settings>
-  cloneRepo(url: string): Promise<Repo>
+  /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
+  cloneRepo(url: string, dir?: string): Promise<Repo>
+  pickFolder(): Promise<string | null>
   listGithubRepos(): Promise<GithubRepo[]>
   quickStart(name: string): Promise<Repo>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void

@@ -247,7 +247,12 @@ function artifacts(ws: Workspace): Artifact[] {
 function registerIpc() {
   const h = (ch: string, fn: (...a: any[]) => unknown) => ipcMain.handle(ch, (_e, ...a) => fn(...a))
 
-  h('state:get', () => store.get())
+  h('state:get', () => {
+    const s = store.get()
+    // Drop recent folders that were deleted since.
+    if (s.recentPaths?.some((p) => !existsSync(p))) s.recentPaths = s.recentPaths.filter((p) => existsSync(p))
+    return s
+  })
   h('repo:pick', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'], message: 'Choose a git repository' })
     if (r.canceled || !r.filePaths[0]) return null
@@ -359,14 +364,19 @@ function registerIpc() {
     store.save()
     return s.settings
   })
-  h('repo:clone', async (url: string) => {
+  h('folder:pick', async () => {
+    const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] })
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  })
+  h('repo:clone', async (url: string, dir?: string) => {
     url = url.trim()
+    const root = dir?.trim() ? resolve(dir.trim().replace(/^~(?=$|\/)/, homedir())) : REPOS_ROOT
     // owner/repo shorthand (or a github.com URL) clones through gh, so private repos use the gh login.
     const gh_ = url.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
     if (!gh_ && !/^(https:\/\/|git@|ssh:\/\/)/.test(url)) throw new Error('Enter owner/repo, or an https or ssh git URL')
-    mkdirSync(REPOS_ROOT, { recursive: true })
-    let dest = join(REPOS_ROOT, git.repoNameFromUrl(url))
-    for (let n = 2; existsSync(dest); n++) dest = join(REPOS_ROOT, `${git.repoNameFromUrl(url)}-${n}`)
+    mkdirSync(root, { recursive: true })
+    let dest = join(root, git.repoNameFromUrl(url))
+    for (let n = 2; existsSync(dest); n++) dest = join(root, `${git.repoNameFromUrl(url)}-${n}`)
     if (gh_) await gh.cloneRepo(gh_, dest)
     else await git.clone(url, dest)
     return addRepo(dest)
