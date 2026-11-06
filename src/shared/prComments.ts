@@ -109,7 +109,7 @@ export function prCommentsPrompt(pr: { number: number; url: string }, items: PrC
     const lines = [head.join('')]
     if (c.diffHunk) lines.push('```diff\n' + hunkTail(c.diffHunk) + '\n```')
     lines.push(`<comment>\n${esc(c.body || '(no text; changes requested)')}\n</comment>`)
-    for (const r of c.replies ?? []) lines.push(`<reply author="@${esc(r.author)}">\n${esc(r.body)}\n</reply>`)
+    for (const r of c.replies ?? []) lines.push(`Reply by @${esc(r.author)}:\n<reply>\n${esc(r.body)}\n</reply>`)
     return lines.join('\n')
   })
   return [
