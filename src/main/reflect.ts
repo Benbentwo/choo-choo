@@ -8,14 +8,22 @@ import { claudeExecutable } from './claudeBinary'
 const running = new Map<string, AbortController>()
 const REFLECT_TOOLS = new Set(['Read', 'Glob', 'Grep'])
 
-/** Whether every path a read tool names stays inside `root`. */
-export function insideDir(root: string, input: Record<string, unknown>): boolean {
+/** Whether every path a read tool names stays inside `root`. Unknown path shapes fail closed. */
+export function insideDir(root: string, tool: string, input: Record<string, unknown>): boolean {
+  const escapes = (p: string) => {
+    const r = relative(root, resolve(root, p))
+    return r.startsWith('..') || isAbsolute(r)
+  }
   for (const key of ['file_path', 'path']) {
     const v = input[key]
     if (v === undefined) continue
-    if (typeof v !== 'string') return false
-    const r = relative(root, resolve(root, v))
-    if (r.startsWith('..') || isAbsolute(r)) return false
+    if (typeof v !== 'string' || escapes(v)) return false
+  }
+  // Glob's pattern and Grep's glob filter are paths too (Grep's pattern is a regex).
+  const globKey = tool === 'Glob' ? 'pattern' : tool === 'Grep' ? 'glob' : null
+  const g = globKey ? input[globKey] : undefined
+  if (g !== undefined) {
+    if (typeof g !== 'string' || isAbsolute(g) || g.startsWith('~') || g.split(/[\\/]/).includes('..')) return false
   }
   return true
 }
@@ -62,7 +70,7 @@ export async function reflect(ws: Workspace, repo: Repo, env: Record<string, str
         permissionMode: 'default',
         // Read-only tools, and only inside this workspace's checkout.
         canUseTool: async (name: string, input: Record<string, unknown>) =>
-          REFLECT_TOOLS.has(name) && insideDir(ws.path, input)
+          REFLECT_TOOLS.has(name) && insideDir(ws.path, name, input)
             ? { behavior: 'allow', updatedInput: input }
             : { behavior: 'deny', message: 'Reflection may only read files in this repository.' },
         // No project hooks or settings: this agent only reads.
