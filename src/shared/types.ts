@@ -28,6 +28,8 @@ export type WorkspaceSource =
   | { kind: 'issue'; number: number }
   /** A Notion page (often a task in a database), by its id or URL. */
   | { kind: 'notion'; id: string }
+  /** A Linear issue, by its id. The workspace gets Linear's suggested branch name for it. */
+  | { kind: 'linear'; id: string }
 
 /** Services you sign in to from Settings > Integrations. */
 export type IntegrationId = 'linear' | 'notion'

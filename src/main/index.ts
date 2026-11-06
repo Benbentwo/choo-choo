@@ -29,6 +29,8 @@ import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import * as archive from './archive'
 import { registerIntegrationsIpc } from './integrations'
 import * as notion from './integrations/notion'
+import * as linear from './integrations/linear'
+import { safeBranch, linearContext } from './integrations/linearApi'
 
 let win: BrowserWindow | null = null
 
@@ -158,6 +160,16 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     else await git.addWorktreeForRemoteBranch(repo.path, path, branch)
     title = `#${source.number} ${pr.title}`
     named = true
+  } else if (source?.kind === 'linear') {
+    const issue = await linear.getIssue(source.id)
+    branch = safeBranch(issue)
+    // Reuse the branch if someone already started this issue; otherwise branch off the default branch.
+    if (await git.branchExists(repo.path, branch)) await git.addWorktreeForRemoteBranch(repo.path, path, branch)
+    else await git.addWorktree(repo.path, path, branch, baseRef)
+    title = `${issue.identifier} ${issue.title}`
+    named = true
+    context = linearContext(issue)
+    void linear.markStarted(issue.id)
   } else {
     const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
     branch = `${prefix}/${name}`
@@ -258,6 +270,12 @@ async function listSources(repoId: string, kind: WorkspaceSource['kind'], query:
   if (kind === 'pr') return gh.listPrs(repo.path, query)
   if (kind === 'issue') return gh.listIssues(repo.path, query)
   if (kind === 'notion') return notion.search(query)
+  if (kind === 'linear')
+    return (await linear.searchIssues(query)).map((i) => ({
+      source: { kind: 'linear', id: i.id },
+      title: `${i.identifier} ${i.title}`,
+      detail: [i.state?.name, i.assignee?.name, i.branchName].filter(Boolean).join(' · ')
+    }))
   const q = query.toLowerCase()
   return (await git.remoteBranches(repo.path))
     .filter((b) => b.name.toLowerCase().includes(q))

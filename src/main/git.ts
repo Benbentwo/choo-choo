@@ -206,6 +206,12 @@ export async function remoteBranches(repo: string): Promise<{ name: string; when
     .map(([n, when]) => ({ name: n.replace(/^origin\//, ''), when }))
 }
 
+/** True if `name` exists as a local branch or on origin. */
+export async function branchExists(repo: string, name: string): Promise<boolean> {
+  if (await tryGit(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])) return true
+  return !!(await tryGit(repo, ['ls-remote', '--heads', 'origin', name]))?.trim()
+}
+
 /** Checks out branch `name` into a new worktree, creating a local tracking branch from origin when needed. */
 export async function addWorktreeForRemoteBranch(repo: string, path: string, name: string) {
   await tryGit(repo, ['worktree', 'prune'])

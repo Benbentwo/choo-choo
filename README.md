@@ -37,6 +37,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **PRs in one click.** Create a PR (or draft), watch checks, re-run failures and squash-merge, all through your `gh` login.
 - **Real terminals.** Setup, Run (⌘R) and terminal tabs per workspace, driven by `choo-choo.json` or `conductor.json`.
 - **Start from Notion.** Sign in to Notion, then start a workspace from a Notion page or task. Agents can also search, read and update Notion while you're signed in.
+- **Start from Linear.** Sign in to Linear, then pick an issue: the workspace starts on Linear's branch for it, the agent gets the issue as its brief, and the issue moves to In Progress.
 - **Codex too.** Optionally run OpenAI's Codex CLI as a workspace agent.
 - **Keyboard first.** ⌘K search, ⌘T/⌘W tabs, ⌘B/⌘J panels, ⌘⇧U next unread.
 - **Native Mac app.** Apple silicon and Intel builds, desktop notifications, auto-update from GitHub releases.
@@ -109,6 +110,8 @@ Click the orchestrator icon next to a repository in the sidebar. Tell the orches
 Settings > Integrations lists the services you can sign in to. Each one signs in through your browser; there are no tokens to paste. Tokens are encrypted with the macOS keychain (Electron `safeStorage`) in `~/Library/Application Support/Choo Choo/data/integrations.json`.
 
 **Notion** needs no setup: Choo Choo signs in to Notion's hosted MCP server (`mcp.notion.com`) and registers itself on the fly, so there is no Notion app or client secret. After signing in, pick the Notion tab in the new-workspace composer to start from a page or task (search, or paste a page link); the page becomes the agent's brief. While Notion is connected, agents also get Notion's tools to search, read and update pages. Turn that off with the checkbox under Notion.
+
+**Linear** uses a public OAuth app with PKCE, so no client secret ships in the app. After signing in, pick the Linear tab in the new-workspace composer: it lists your open issues, or search or type an ID like `ENG-123`. The workspace starts on Linear's branch for the issue, the agent gets the issue as its brief, and the issue moves to In Progress. To use your own Linear OAuth app (for example while developing), create one in Linear under Settings > API > OAuth applications with the callback URL `http://127.0.0.1:47821/callback`, and start Choo Choo with `CHOO_LINEAR_CLIENT_ID=<client id>`.
 
 Adding a service: write `src/main/integrations/<name>.ts` exporting a `Provider` (see `index.ts`), sign in with `startLoopback` and `pkce` from `oauth.ts` (or `mcpOAuth.ts` for a hosted MCP server), store the result with `setAuth` from `tokens.ts`, and add it to the `providers` list.
 

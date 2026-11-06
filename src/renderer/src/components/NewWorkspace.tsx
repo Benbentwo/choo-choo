@@ -10,6 +10,7 @@ const KINDS: { id: WorkspaceSource['kind']; label: string }[] = [
   { id: 'pr', label: 'PRs' },
   { id: 'branch', label: 'Branches' },
   { id: 'issue', label: 'Issues' },
+  { id: 'linear', label: 'Linear' },
   { id: 'notion', label: 'Notion' }
 ]
 /** Source tabs that need a sign-in from Settings > Integrations. */
@@ -176,7 +177,9 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
         </div>
         <div className="mt-2 px-1 text-[12px] text-faint">
           {source
-            ? `Starts the workspace on ${source.source.kind === 'issue' || source.source.kind === 'notion' ? 'a new branch for' : ''} ${source.title}.`
+            ? source.source.kind === 'linear'
+              ? `Starts the workspace on Linear's branch for ${source.title}.`
+              : `Starts the workspace on ${source.source.kind === 'issue' || source.source.kind === 'notion' ? 'a new branch for' : ''} ${source.title}.`
             : `Starts a new branch from ${repo.defaultBranch}.`}
         </div>
       </div>
@@ -207,7 +210,7 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
   const [signingIn, setSigningIn] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const integrations = useIntegrations()
-  const service = kind === 'notion' ? kind : null
+  const service = kind === 'notion' || kind === 'linear' ? kind : null
   const account = service ? integrations.items?.find((i) => i.id === service) : undefined
   const needsSignIn = !!service && !account?.connected
 
@@ -268,7 +271,7 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
             setKind(KINDS[(KINDS.findIndex((k) => k.id === kind) + 1) % KINDS.length].id)
           }
         }}
-        placeholder={kind === 'branch' ? 'Search branches' : kind === 'notion' ? 'Search Notion pages and tasks, or paste a link' : 'Search by title, number, or author'}
+        placeholder={kind === 'branch' ? 'Search branches' : kind === 'notion' ? 'Search Notion pages and tasks, or paste a link' : kind === 'linear' ? 'Search Linear, or type an ID like ENG-123' : 'Search by title, number, or author'}
         className="w-full border-b border-line bg-transparent px-3 py-2.5 outline-none placeholder:text-faint"
       />
       <div className="flex gap-1 border-b border-line px-2 py-1.5">
@@ -291,7 +294,7 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
           </div>
         )}
         {!err && (needsSignIn ? !account : items === null) && <div className="px-2 py-3 text-[12px] text-faint">Loading…</div>}
-        {items?.length === 0 && <div className="px-2 py-3 text-[12px] text-faint">{kind === 'notion' && !q.trim() ? 'Type to search Notion, or paste a page link.' : 'Nothing found.'}</div>}
+        {items?.length === 0 && <div className="px-2 py-3 text-[12px] text-faint">{!q.trim() && kind === 'notion' ? 'Type to search Notion, or paste a page link.' : !q.trim() && kind === 'linear' ? 'No open issues assigned to you. Search to find others.' : 'Nothing found.'}</div>}
         {items?.map((o, i) => (
           <button key={JSON.stringify(o.source)} onMouseEnter={() => setSel(i)} onClick={() => onPick(o)} className={`flex w-full items-center gap-3 rounded px-2 py-1.5 text-left ${i === sel ? 'bg-hover' : ''}`}>
             <div className="min-w-0 flex-1">

@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import type { IntegrationId, IntegrationStatus } from '@shared/types'
 import { getAuth } from './tokens'
 import { notion } from './notion'
+import { linear } from './linear'
 
 /**
  * A service you sign in to from Settings → Integrations. Each provider runs its own OAuth flow
@@ -18,7 +19,7 @@ export interface Provider {
   disconnect(): Promise<void>
 }
 
-const providers: Provider[] = [notion]
+const providers: Provider[] = [linear, notion]
 
 export function status(p: Provider): IntegrationStatus {
   const auth = getAuth(p.id)
