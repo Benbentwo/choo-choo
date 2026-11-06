@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "dist:mac": "node scripts/install-mac-binaries.cjs && electron-vite build && electron-builder --mac",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "node node_modules/electron/install.js && electron-builder install-app-deps"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.4",
