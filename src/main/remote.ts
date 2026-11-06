@@ -33,6 +33,7 @@ export function phoneArgs(chat: Pick<Chat, 'sdkSessionId' | 'title' | 'model' | 
   if (chat.planMode) args.push('--permission-mode', 'plan')
   else if (!chat.permission || chat.permission === 'full') args.push('--dangerously-skip-permissions')
   else if (chat.permission === 'edits') args.push('--permission-mode', 'acceptEdits')
+  else if (chat.permission === 'auto') args.push('--permission-mode', 'auto')
   return args
 }
 

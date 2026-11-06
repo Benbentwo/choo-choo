@@ -39,6 +39,8 @@ const api: Api = {
   updateChat: inv('chat:update') as Api['updateChat'],
   sendMessage: inv('chat:send') as Api['sendMessage'],
   stopChat: inv('chat:stop') as Api['stopChat'],
+  stopTask: inv('chat:stopTask') as Api['stopTask'],
+  listOutputStyles: inv('chat:outputStyles') as Api['listOutputStyles'],
   continueOnPhone: inv('chat:phone') as Api['continueOnPhone'],
   bringBackFromPhone: inv('chat:phoneBack') as Api['bringBackFromPhone'],
   runInCloud: inv('chat:cloud') as Api['runInCloud'],

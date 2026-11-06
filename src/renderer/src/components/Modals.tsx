@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, PromptCustom, Settings, Telemetry } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, openGroupOrchestrator, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
-import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
+import { EFFORT_LABEL, EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
 import { QuickStartModalBody } from './AddProject'
 import { AppearanceSettings } from './Appearance'
@@ -204,12 +204,12 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
               <select className={select} value={settings.defaultEffort} onChange={(e) => void save({ defaultEffort: e.target.value as Settings['defaultEffort'] })}>
                 {EFFORTS.map((e) => (
                   <option key={e} value={e}>
-                    {e}
+                    {EFFORT_LABEL[e]}
                   </option>
                 ))}
               </select>
             </Row>
-            <Row label="Default permissions" hint="Full access runs agents unattended, like Conductor. The others ask before tools that change things.">
+            <Row label="Default permissions" hint="Full access runs agents unattended, like Conductor. Auto lets Claude Code's classifier approve safe tool calls and block risky ones. The others ask before tools that change things.">
               <select className={select} value={settings.defaultPermission} onChange={(e) => void save({ defaultPermission: e.target.value as Settings['defaultPermission'] })}>
                 {PERMISSIONS.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -217,6 +217,16 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                   </option>
                 ))}
               </select>
+            </Row>
+            <Row label="Spend cap per message" hint="Claude chats stop a message's run once it has cost this many dollars. Change it per chat in the model menu. Empty means no cap.">
+              <input
+                type="number"
+                min={0}
+                className={`${select} w-24`}
+                defaultValue={settings.defaultBudgetUsd || ''}
+                placeholder="none"
+                onBlur={(e) => void save({ defaultBudgetUsd: Number(e.target.value) || 0 })}
+              />
             </Row>
             <Row label="Branch prefix" hint="New workspaces branch as prefix/name. Empty uses your GitHub username.">
               <input className={`${select} w-44`} defaultValue={settings.branchPrefix} placeholder="auto" onBlur={(e) => void save({ branchPrefix: e.target.value })} />

@@ -1,20 +1,21 @@
 import { randomUUID } from 'node:crypto'
-import type { Chat, ChatItem, PermissionDecision, PermissionRequest, Workspace } from '@shared/types'
+import type { BackgroundTask, Chat, ChatItem, PermissionDecision, PermissionRequest, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
-import { BUILTIN_ADVISOR_TOOL, builtinAdvisorResult, claudeAdvisorOptions, enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
+import { BUILTIN_ADVISOR_TOOL, builtinAdvisorResult, enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
 import * as orchestrator from './orchestrator'
 import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
 import * as notion from './integrations/notion'
 import { buildSystemPrompt } from '@shared/systemPrompt'
+import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, runningTasks } from './claudeOptions'
 
-type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
+type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[] }) => void
 
 interface Running {
   abort: AbortController
-  query?: { interrupt(): Promise<unknown> }
+  query?: { interrupt(): Promise<unknown>; stopTask?(taskId: string): Promise<void> }
 }
 
 const running = new Map<string, Running>()
@@ -132,6 +133,13 @@ export function isRunning(chatId: string) {
   return running.has(chatId)
 }
 
+/** Stops one background task of a running Claude turn. */
+export async function stopTask(chatId: string, taskId: string) {
+  const q = running.get(chatId)?.query
+  if (!q?.stopTask) throw new Error('This chat has no running turn')
+  await q.stopTask(taskId)
+}
+
 export async function stop(chatId: string) {
   advising.get(chatId)?.abort()
   reviewingPlans.get(chatId)?.abort()
@@ -195,6 +203,11 @@ export async function send(
   chat.status = 'running'
   chat.unread = false
   chat.advisorBlocker = false
+  if (chat.model !== 'codex') {
+    const g = goalCommand(text)
+    if (g === null) chat.goal = undefined
+    else if (g) chat.goal = { condition: g, setAt: now, iterations: 0 }
+  }
   store.save()
   emit(chat.id, { chat })
 
@@ -272,7 +285,9 @@ export async function send(
       }
       return { behavior: 'allow', updatedInput: input }
     }
-    const advisorOpts = claudeAdvisorOptions(extras.claudeAdvisor)
+    const session = chatSettings(chat, extras)
+    const budget = budgetFor(chat, settings)
+    const tasks = new Map<string, BackgroundTask>()
     const extra = extraOptions?.(sdkMod) ?? {}
     const mcpServers: Record<string, unknown> = { ...(extra.mcpServers as Record<string, unknown> | undefined) }
     if (store.get().settings.notionAgentTools) {
@@ -290,7 +305,7 @@ export async function send(
         ...(forkAt ? { resumeSessionAt: forkAt, forkSession: true } : {}),
         additionalDirectories: chat.additionalDirectories,
         // Conductor runs agents unattended inside an isolated worktree.
-        permissionMode: chat.planMode ? 'plan' : !chat.permission || chat.permission === 'full' ? 'bypassPermissions' : 'default',
+        permissionMode: permissionMode(chat),
         allowDangerouslySkipPermissions: true,
         canUseTool,
         includePartialMessages: true,
@@ -301,9 +316,10 @@ export async function send(
         systemPrompt,
         // Newer models (Opus 5.5 and up) leave out the task-list tools unless asked. Turn them on so
         // sessions and their subagents keep a visible checklist, as on older models.
-        env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...advisorOpts.env, ...env },
-        // Claude Code's built-in advisor, when chosen in Settings > Agents.
-        ...(advisorOpts.settings ? { settings: advisorOpts.settings } : {}),
+        env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...session.env, ...env },
+        // Claude Code advisor, fast mode and output style for this chat.
+        ...(session.settings ? { settings: session.settings } : {}),
+        ...(budget ? { maxBudgetUsd: budget } : {}),
         ...extra,
         ...(Object.keys(mcpServers).length ? { mcpServers } : {})
       } as never
@@ -312,7 +328,13 @@ export async function send(
 
     for await (const msg of q as AsyncIterable<any>) {
       if ((msg.type === 'assistant' || msg.type === 'user') && msg.uuid) lastUuid = msg.uuid
+      if (applyTaskEvent(tasks, msg)) emit(chat.id, { tasks: runningTasks(tasks) })
       switch (msg.type) {
+        case 'active_goal':
+          chat.goal = goalFrom(msg.value)
+          store.save()
+          emit(chat.id, { chat })
+          break
         case 'system':
           if (msg.subtype === 'init') {
             if (msg.session_id) chat.sdkSessionId = msg.session_id
@@ -397,9 +419,13 @@ export async function send(
         case 'result':
           endTurn()
           turnOk = msg.subtype === 'success' && !msg.is_error
+          // Claude Code only ends a turn under an active /goal once the goal is met or cleared.
+          if (turnOk && chat.goal) chat.goal = undefined
           if (!turnOk) {
             const hint = authHint(typeof msg.result === 'string' ? msg.result : (msg.errors ?? []).join('\n'))
             if (hint) put({ id: randomUUID(), kind: 'error', text: hint, ts: Date.now() })
+            if (msg.subtype === 'error_max_budget_usd' && budget)
+              put({ id: randomUUID(), kind: 'error', text: `Stopped at this chat's spend cap of $${budget}. Raise or remove it in the model menu to keep going.`, ts: Date.now() })
           }
           put({
             id: randomUUID(),
@@ -432,6 +458,7 @@ export async function send(
     })
   } finally {
     endTurn()
+    emit(chat.id, { tasks: [] })
     for (const [id, p] of pending) if (p.req.chatId === chat.id) respondPermission(id, 'deny')
     if (streamItem) put({ ...streamItem, streaming: false })
     running.delete(chat.id)

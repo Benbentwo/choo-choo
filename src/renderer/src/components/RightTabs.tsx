@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Artifact, CheckRun, ReviewFinding, Workspace } from '@shared/types'
 import { useStore, openDoc, newChatTab, reportError } from '../store'
 import { IconDown, IconRight } from '../icons'
-import { REVIEW_PROMPT, SECURITY_REVIEW_PROMPT, useReview } from '../review'
+import { CLAUDE_CODE_REVIEW_PROMPT, REVIEW_PROMPT, SECURITY_REVIEW_PROMPT, useReview } from '../review'
 
 const Empty = ({ children }: { children: React.ReactNode }) => <div className="p-6 text-center text-faint">{children}</div>
 
@@ -174,13 +174,14 @@ export function ReviewTab({ ws }: { ws: Workspace }) {
   const extras = useStore((s) => s.settings.extras)
   const { chat, code, security, findings, running } = useReview(ws.id)
   const base = repo?.defaultBranch ?? 'main'
-  const start = async (kind: 'code' | 'security') => {
+  const start = async (kind: 'code' | 'security' | 'claude') => {
     await newChatTab(ws.id)
     const s = useStore.getState()
     const chatId = s.activeChat[ws.id]
     try {
-      s.upsertChat(await window.api.updateChat(chatId, { title: kind === 'security' ? 'Security review' : 'Review', review: true, reviewKind: kind, ...(extras.agents.reviewer && kind === 'code' ? { model: 'opus' } : {}) }))
-      await window.api.sendMessage(chatId, kind === 'security' ? SECURITY_REVIEW_PROMPT(base) : REVIEW_PROMPT(base, extras.agents.reviewer))
+      const title = kind === 'security' ? 'Security review' : kind === 'claude' ? 'Claude Code review' : 'Review'
+      s.upsertChat(await window.api.updateChat(chatId, { title, review: true, reviewKind: kind === 'security' ? 'security' : 'code', ...(extras.agents.reviewer && kind === 'code' ? { model: 'opus' } : {}) }))
+      await window.api.sendMessage(chatId, kind === 'security' ? SECURITY_REVIEW_PROMPT(base) : kind === 'claude' ? CLAUDE_CODE_REVIEW_PROMPT : REVIEW_PROMPT(base, extras.agents.reviewer))
     } catch (e) {
       reportError(e)
     }
@@ -205,6 +206,9 @@ export function ReviewTab({ ws }: { ws: Workspace }) {
           Security review
         </button>
       )}
+      <button disabled={code.running} className={btn} title="Run Claude Code's built-in /code-review" onClick={() => void start('claude')}>
+        /code-review
+      </button>
     </div>
   )
   if (!chat)
@@ -220,6 +224,9 @@ export function ReviewTab({ ws }: { ws: Workspace }) {
               Security review
             </button>
           )}
+          <button className="rounded-md border border-line px-3 py-1.5 hover:bg-hover" title="Run Claude Code's built-in /code-review" onClick={() => void start('claude')}>
+            Claude Code /code-review
+          </button>
         </div>
       </div>
     )

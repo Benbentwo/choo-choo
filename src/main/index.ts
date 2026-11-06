@@ -21,6 +21,7 @@ import { checkNow, installUpdate, startUpdater } from './updater'
 import { registerDevFeedback } from './devFeedback'
 import * as conductor from './conductorImport'
 import { modelDetails } from './models'
+import { listOutputStyles } from './claudeOptions'
 import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
@@ -718,6 +719,9 @@ function registerIpc() {
     if (patch.advisor !== undefined) c.advisor = patch.advisor
     if (patch.advisorBlocker !== undefined) c.advisorBlocker = patch.advisorBlocker
     if (patch.permission) c.permission = patch.permission
+    if (patch.fast !== undefined) c.fast = patch.fast || undefined
+    if (patch.budgetUsd !== undefined) c.budgetUsd = Math.max(0, Number(patch.budgetUsd) || 0)
+    if (patch.outputStyle !== undefined) c.outputStyle = patch.outputStyle || undefined
     store.save()
     return c
   })
@@ -854,6 +858,8 @@ function registerIpc() {
     return agent.reviewPlan(chat, ws, planItemId, env, emitChat)
   })
   h('chat:stop', (id: string) => agent.stop(id))
+  h('chat:stopTask', (id: string, taskId: string) => agent.stopTask(id, taskId))
+  h('chat:outputStyles', (wsId: string) => listOutputStyles(findWs(wsId).path))
   h('chat:phone', (id: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
