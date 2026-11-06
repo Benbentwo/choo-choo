@@ -31,7 +31,7 @@ export function resolveAdvice(chat: Chat, itemId: string, action: 'send' | 'dism
 }
 
 // Tools that only read; asking about them would be noise.
-const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite', 'Task', 'Agent', 'NotebookRead', 'BashOutput', 'ExitPlanMode', 'ToolSearch', 'Skill'])
+const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate', 'Task', 'Agent', 'NotebookRead', 'BashOutput', 'ExitPlanMode', 'ToolSearch', 'Skill'])
 for (const t of orchestrator.READ_ONLY) READ_ONLY_TOOLS.add(t)
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
 
@@ -241,7 +241,9 @@ export async function send(
         settingSources: ['user', 'project', 'local'],
         agents: enabledSubagents(extras),
         ...(append ? { systemPrompt: { type: 'preset', preset: 'claude_code', append } } : {}),
-        env: { ...process.env, ...env },
+        // Newer models (Opus 5.5 and up) leave out the task-list tools unless asked. Turn them on so
+        // sessions and their subagents keep a visible checklist, as on older models.
+        env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...env },
         ...extraOptions?.(sdkMod)
       } as never
     })
