@@ -1,0 +1,46 @@
+name: Bug report
+description: Something in Choo Choo is broken or behaves unexpectedly.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a repo
+        2. Press + to create a workspace
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: Choo Choo version
+      description: Shown in Settings, or the release you downloaded.
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and chip
+      placeholder: macOS 26.1, Apple silicon
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      options:
+        - Claude
+        - Codex
+        - Not agent related
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or logs
+      description: Drag images in here. Remove anything private (tokens, paths you don't want public).

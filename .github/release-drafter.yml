@@ -1,0 +1,53 @@
+# Keeps a draft release with notes built from merged PR labels.
+# Publish it with the Release workflow (Actions > Release > Run workflow), which builds and attaches the .dmg files.
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+categories:
+  - title: 'Breaking changes'
+    labels: [breaking]
+  - title: 'New features'
+    labels: [feature, enhancement]
+  - title: 'Fixes'
+    labels: [bug]
+  - title: 'Docs'
+    labels: [docs]
+  - title: 'Maintenance'
+    labels: [chore, ci, dependencies, tests]
+exclude-labels: [skip-changelog]
+change-template: '- $TITLE (#$NUMBER) @$AUTHOR'
+change-title-escapes: '\<*_&'
+no-changes-template: '- Small fixes and polish'
+version-resolver:
+  major:
+    labels: [breaking]
+  minor:
+    labels: [feature, enhancement]
+  patch:
+    labels: [bug, chore, docs, ci, dependencies, tests]
+  default: patch
+# Labels a PR from its branch name or title when nobody set one.
+autolabeler:
+  - label: bug
+    branch: ['/^fix[/-].+/i']
+    title: ['/^fix\b/i', '/\bbug\b/i']
+  - label: feature
+    branch: ['/^feat(ure)?[/-].+/i']
+    title: ['/^(feat|add)\b/i']
+  - label: docs
+    branch: ['/^docs?[/-].+/i']
+    title: ['/^docs?\b/i', '/\breadme\b/i']
+  - label: chore
+    branch: ['/^chore[/-].+/i']
+    title: ['/^chore\b/i', '/^refactor\b/i']
+  - label: ci
+    title: ['/^ci\b/i']
+template: |
+  ## Download
+
+  Grab the `.dmg` for your Mac below: `arm64` for Apple silicon, `x64` for Intel. Drag Choo Choo to Applications. If macOS says the app can't be opened, run `xattr -cr "/Applications/Choo Choo.app"` once.
+
+  ## What's changed
+
+  $CHANGES
+
+  **Full changelog:** https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION

@@ -1,0 +1,68 @@
+# Repo labels, synced by .github/workflows/labels.yml. Edit here, not in the GitHub UI.
+# Change type: picks the release notes section and the version bump.
+- name: feature
+  color: "F4773D"
+  description: New feature (minor version bump)
+- name: enhancement
+  color: "FFC46B"
+  description: Improvement to an existing feature (minor version bump)
+- name: bug
+  color: "D73A4A"
+  description: Something is broken (patch version bump)
+- name: chore
+  color: "C5C7CC"
+  description: Maintenance, refactors, tooling
+- name: docs
+  color: "0075CA"
+  description: Documentation only
+- name: dependencies
+  color: "0366D6"
+  description: Dependency updates
+- name: ci
+  color: "6F42C1"
+  description: GitHub Actions and build pipeline
+# Version overrides.
+- name: breaking
+  color: "B60205"
+  description: Breaking change (major version bump)
+- name: skip-changelog
+  color: "EEEEEE"
+  description: Leave out of the release notes
+# Areas, set from changed paths by .github/labeler.yml.
+- name: "area: agent"
+  color: "9C431A"
+  description: Claude and Codex agents, orchestrator
+- name: "area: ui"
+  color: "9C431A"
+  description: React renderer
+- name: "area: main"
+  color: "9C431A"
+  description: Electron main process and preload
+- name: "area: git"
+  color: "9C431A"
+  description: Worktrees, git and gh integration
+- name: "area: terminal"
+  color: "9C431A"
+  description: Terminals and scripts
+- name: "area: packaging"
+  color: "9C431A"
+  description: Mac build, signing, updates
+- name: tests
+  color: "BFDADC"
+  description: Tests
+# Issue triage.
+- name: good first issue
+  color: "7057FF"
+  description: Good for newcomers
+- name: help wanted
+  color: "008672"
+  description: Extra attention is needed
+- name: question
+  color: "D876E3"
+  description: Further information is requested
+- name: duplicate
+  color: "CFD3D7"
+  description: Already reported
+- name: wontfix
+  color: "FFFFFF"
+  description: Will not be worked on
