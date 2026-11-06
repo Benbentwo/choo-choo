@@ -195,6 +195,7 @@ function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
   const running = s.chats.some((c) => c.workspaceId === w.id && c.status === 'running')
   const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
   const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
+  const blocker = s.chats.some((c) => c.workspaceId === w.id && c.advisorBlocker)
   return (
     <div
       role="button"
@@ -212,6 +213,8 @@ function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
       {repoName && <span className="shrink-0 truncate text-[11px] text-faint">{repoName}</span>}
       {asking ? (
         <span className="anim-glow shrink-0 rounded bg-accent/20 px-1 text-[10px] text-accent">needs you</span>
+      ) : blocker ? (
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-del" title="The advisor raised a blocker" />
       ) : (
         unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_6px_var(--color-accent)]" />
       )}

@@ -84,3 +84,16 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 3. **Review & polish**: Checks, Review, Artifacts, All files, ⌘K, Settings, checkpoints, clone, notifications.
 4. **Ship**: images, plan mode, packaging, release workflow.
 5. **Parity gaps closed**: inline review comments, per-tool permission prompts, Intel build.
+
+## Beyond Conductor
+
+Features Conductor doesn't have. Each one is off until you turn it on in Settings › Extra agents. Agent prompts are adapted from [oh-my-pi](https://github.com/can1357/oh-my-pi) (MIT, see THIRD_PARTY_NOTICES.md).
+
+- ✅ **Scout** (Haiku, read-only search): used for research in plan mode; `@scout` in the composer asks for it.
+- ✅ **Reviewer** (Opus): the Review tab uses its stricter rules; "Review before opening a PR" has Create PR run it first and stop on P0/P1 findings; `@reviewer` asks for it.
+- ✅ **Security reviewer**: adds a Security review button to the Review tab; its findings show in the same list and inline in diffs, tagged "security".
+- ✅ **Quick worker** (Haiku): `/quick <task>` hands mechanical work to it.
+- ✅ **Advisor**: after each finished turn, a second model reviews the turn with read-only tools and posts notes as a card with Send to agent and Dismiss. Per-chat Advisor toggle in the composer. A red dot in the sidebar marks a workspace with an unhandled blocker. Optional automatic sending of blockers, at most once per message.
+- ✅ Subagent calls show as one collapsible card per agent, with the steps it took inside.
+- ✅ Settings › Claude Code: run the bundled binary or your installed `claude`. When Claude Code isn't signed in, the chat says to run `claude` and `/login`.
+- Everything runs on the official Agent SDK and an unmodified Claude Code binary, with each user's own sign-in through Claude Code's /login. Choo Choo never shows its own Claude login or handles tokens, which keeps it within Anthropic's terms. oh-my-pi's own Claude subscription login is not used: it impersonates Claude Code.

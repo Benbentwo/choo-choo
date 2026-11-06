@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseFindings, findingsFromItems } from '../src/renderer/src/review'
+import { parseFindings, findingsFromItems, REVIEW_PROMPT, SECURITY_REVIEW_PROMPT } from '../src/renderer/src/review'
 
 describe('review findings', () => {
   it('parses the last json block and normalizes fields', () => {
@@ -19,5 +19,14 @@ describe('review findings', () => {
     const u = { id: '2', kind: 'user' as const, text: 'again', ts: 2 }
     expect(findingsFromItems([a])).toEqual([])
     expect(findingsFromItems([a, u])).toBeNull()
+  })
+})
+
+
+describe('review prompts', () => {
+  it('adds the reviewer rules only in strict mode and keeps the JSON format', () => {
+    expect(REVIEW_PROMPT('main')).not.toContain('Cross-boundary')
+    expect(REVIEW_PROMPT('main', true)).toContain('Cross-boundary')
+    expect(SECURITY_REVIEW_PROMPT('main')).toContain('```json')
   })
 })

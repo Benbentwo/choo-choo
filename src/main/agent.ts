@@ -4,6 +4,7 @@ import * as store from './store'
 import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
+import { enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
 import * as orchestrator from './orchestrator'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
@@ -14,6 +15,20 @@ interface Running {
 }
 
 const running = new Map<string, Running>()
+/** Advisor reviews in flight, per chat. */
+const advising = new Map<string, AbortController>()
+
+/** Marks advisor notes as sent or dismissed. For "send", returns the message to pass to the agent. */
+export function resolveAdvice(chat: Chat, itemId: string, action: 'send' | 'dismiss'): { item: ChatItem; message?: string } {
+  const item = store.chatItems(chat.id).find((x) => x.id === itemId)
+  if (!item || item.kind !== 'advisor' || item.pending || item.silent) throw new Error('No advisor notes to act on')
+  if (item.resolved) throw new Error('These notes were already handled')
+  item.resolved = action === 'send' ? 'sent' : 'dismissed'
+  store.upsertItem(chat.id, item)
+  chat.advisorBlocker = false
+  store.save()
+  return { item, message: action === 'send' ? steerMessage({ silent: false, blocker: !!item.blocker, notes: item.text.split('\n') }) : undefined }
+}
 
 // Tools that only read; asking about them would be noise.
 const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite', 'Task', 'Agent', 'NotebookRead', 'BashOutput', 'ExitPlanMode', 'ToolSearch', 'Skill'])
@@ -48,6 +63,14 @@ export const reportedCommands = new Map<string, string[]>()
 let sdk: Promise<typeof import('@anthropic-ai/claude-agent-sdk')> | null = null
 const loadSdk = () => (sdk ??= import('@anthropic-ai/claude-agent-sdk'))
 
+const AUTH_ERROR = /not logged in|please run \/login|invalid api key|authentication[_ ]error|oauth token (?:has )?expired|\b401\b/i
+
+/** A clearer message when Claude Code isn't signed in. Sign-in always goes through Claude Code's own /login. */
+export function authHint(text: string | undefined): string | null {
+  if (!text || !AUTH_ERROR.test(text)) return null
+  return 'Claude Code isn\'t signed in. Open Terminal, run `claude`, and type /login to sign in with your Claude account. Or add an Anthropic API key in Settings.'
+}
+
 function stringifyResult(content: unknown): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
@@ -63,6 +86,7 @@ export function isRunning(chatId: string) {
 }
 
 export async function stop(chatId: string) {
+  advising.get(chatId)?.abort()
   const r = running.get(chatId)
   if (!r) return
   if (!r.query) return r.abort.abort()
@@ -99,18 +123,29 @@ export async function send(
   images: string[] = [],
   onAsk?: (chat: Chat, req: PermissionRequest) => void,
   /** Builds extra query() options, such as the orchestrator's tools. */
-  extraOptions?: (sdk: Awaited<ReturnType<typeof loadSdk>>) => Record<string, unknown>
+  extraOptions?: (sdk: Awaited<ReturnType<typeof loadSdk>>) => Record<string, unknown>,
+  opts: { fromAdvisor?: boolean } = {}
 ) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
   const now = Date.now()
   const checkpoint = (await git.snapshot(ws.path)) ?? undefined
-  const userItem: ChatItem = { id: randomUUID(), kind: 'user', text, images: images.length ? images : undefined, ts: now, checkpoint, resumeAt: chat.lastUuid }
+  const userItem: ChatItem = {
+    id: randomUUID(),
+    kind: 'user',
+    text,
+    images: images.length ? images : undefined,
+    ts: now,
+    checkpoint,
+    resumeAt: chat.lastUuid,
+    ...(opts.fromAdvisor ? { fromAdvisor: true } : {})
+  }
   store.upsertItem(chat.id, userItem)
   emit(chat.id, { item: userItem })
 
   if (chat.title === 'New chat') chat.title = text.slice(0, 40).replace(/\s+/g, ' ').trim() || 'New chat'
   chat.status = 'running'
   chat.unread = false
+  chat.advisorBlocker = false
   store.save()
   emit(chat.id, { chat })
 
@@ -135,6 +170,7 @@ export async function send(
     store.upsertItem(chat.id, item)
     emit(chat.id, { item })
   }
+  let turnOk = false
 
   try {
     if (chat.model === 'codex') {
@@ -155,11 +191,14 @@ export async function send(
         put
       })
       put({ id: randomUUID(), kind: 'result', ok: res.ok, durationMs: Date.now() - started, ts: Date.now() })
+      turnOk = res.ok
       chat.status = 'idle'
       return
     }
     const sdkMod = await loadSdk()
     const { query } = sdkMod
+    const extras = store.get().settings.extras
+    const append = systemAppend(extras, !!chat.planMode)
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
       if (toolName === 'ExitPlanMode' && chat.planMode) {
         // The plan card asks the user; the agent must not start building on its own.
@@ -184,7 +223,7 @@ export async function send(
       return { behavior: 'allow', updatedInput: input }
     }
     const q = query({
-      prompt: userMessage(prompt, images, turnDone) as never,
+      prompt: userMessage(expandShortcuts(prompt, extras), images, turnDone) as never,
       options: {
         pathToClaudeCodeExecutable: claudeExecutable(),
         cwd: ws.path,
@@ -200,6 +239,8 @@ export async function send(
         includePartialMessages: true,
         abortController: abort,
         settingSources: ['user', 'project', 'local'],
+        agents: enabledSubagents(extras),
+        ...(append ? { systemPrompt: { type: 'preset', preset: 'claude_code', append } } : {}),
         env: { ...process.env, ...env },
         ...extraOptions?.(sdkMod)
       } as never
@@ -219,6 +260,8 @@ export async function send(
           }
           break
         case 'stream_event': {
+          // Subagent text isn't shown; its result arrives on the Agent tool call.
+          if (msg.parent_tool_use_id) break
           const ev = msg.event
           if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
             if (!streamItem) {
@@ -230,8 +273,10 @@ export async function send(
           break
         }
         case 'assistant': {
+          const parentId: string | undefined = msg.parent_tool_use_id ?? undefined
           for (const block of msg.message?.content ?? []) {
             if (block.type === 'text' && block.text) {
+              if (parentId) continue
               const item: ChatItem = streamItem
                 ? { ...streamItem, text: block.text, streaming: false }
                 : { id: randomUUID(), kind: 'assistant', text: block.text, ts: Date.now() }
@@ -244,6 +289,7 @@ export async function send(
                 kind: 'tool',
                 name: block.name,
                 input: block.input,
+                ...(parentId ? { parentId } : {}),
                 ts: Date.now()
               }
               tools.set(block.id, item)
@@ -267,6 +313,11 @@ export async function send(
         }
         case 'result':
           endTurn()
+          turnOk = msg.subtype === 'success' && !msg.is_error
+          if (!turnOk) {
+            const hint = authHint(typeof msg.result === 'string' ? msg.result : (msg.errors ?? []).join('\n'))
+            if (hint) put({ id: randomUUID(), kind: 'error', text: hint, ts: Date.now() })
+          }
           put({
             id: randomUUID(),
             kind: 'result',
@@ -287,7 +338,7 @@ export async function send(
     put({
       id: randomUUID(),
       kind: 'error',
-      text: aborted ? 'Stopped' : (e as Error).message || String(e),
+      text: aborted ? 'Stopped' : authHint((e as Error).message) ?? ((e as Error).message || String(e)),
       ts: Date.now()
     })
   } finally {
@@ -301,7 +352,71 @@ export async function send(
     emit(chat.id, { chat })
     onDone?.(chat)
   }
+  if (turnOk && !abort.signal.aborted && store.get().settings.extras.advisor) {
+    await advise(chat, ws, userItem.id, env, emit, (msg) => send(chat, ws, msg, env, emit, onDone, [], onAsk, extraOptions, { fromAdvisor: true }), !opts.fromAdvisor)
+  }
 }
+
+/** Has the advisor review the turn that started at `fromItemId`, and passes blockers back if allowed. */
+async function advise(
+  chat: Chat,
+  ws: Workspace,
+  fromItemId: string,
+  env: Record<string, string>,
+  emit: Emit,
+  followUp: (text: string) => Promise<void>,
+  maySteer: boolean
+) {
+  const extras = store.get().settings.extras
+  if (chat.advisor === false) return
+  const list = store.chatItems(chat.id)
+  const start = list.findIndex((x) => x.id === fromItemId)
+  const turn = start < 0 ? [] : list.slice(start)
+  if (!turn.some((x) => x.kind === 'assistant' || x.kind === 'tool')) return
+  const item: Extract<ChatItem, { kind: 'advisor' }> = { id: randomUUID(), kind: 'advisor', text: '', pending: true, ts: Date.now() }
+  const put = () => {
+    store.upsertItem(chat.id, { ...item })
+    emit(chat.id, { item: { ...item } })
+  }
+  put()
+  const abort = new AbortController()
+  advising.set(chat.id, abort)
+  try {
+    const advice = await runAdvisor({
+      transcript: renderTurn(turn),
+      cwd: ws.path,
+      model: extras.advisorModel,
+      env: { ...process.env, ...env },
+      executable: claudeExecutable(),
+      signal: abort.signal
+    })
+    item.pending = false
+    item.silent = advice.silent
+    item.blocker = advice.blocker
+    item.text = advice.silent ? 'No concerns' : advice.notes.join('\n')
+    put()
+    if (advice.blocker && !running.has(chat.id)) {
+      chat.advisorBlocker = true
+      emit(chat.id, { chat })
+    }
+    store.save()
+    // One automatic follow-up per user message, and only if the user hasn't started a new turn.
+    if (advice.blocker && maySteer && extras.advisorSteer && !running.has(chat.id)) {
+      item.resolved = 'sent'
+      put()
+      await followUp(steerMessage(advice))
+    }
+  } catch (e) {
+    item.pending = false
+    item.silent = true
+    item.text = abort.signal.aborted ? 'Advisor stopped' : `Advisor failed: ${(e as Error).message || String(e)}`
+    put()
+    store.save()
+  } finally {
+    if (advising.get(chat.id) === abort) advising.delete(chat.id)
+  }
+}
+
 
 /** Rewinds a chat to just before `itemId`: restores the files and forks the conversation there. */
 export async function revert(chat: Chat, ws: Workspace, itemId: string): Promise<string> {
@@ -321,5 +436,6 @@ export async function revert(chat: Chat, ws: Workspace, itemId: string): Promise
 }
 
 export function stopAll() {
+  for (const a of advising.values()) a.abort()
   for (const r of running.values()) r.abort.abort()
 }

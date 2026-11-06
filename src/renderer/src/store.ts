@@ -30,7 +30,7 @@ interface UI {
   modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'appearance'
+  settingsTab: 'general' | 'agents' | 'appearance'
   recentPaths: string[]
   /** Repo whose new-workspace composer is open in the center, if any. */
   draftRepo: string | null
