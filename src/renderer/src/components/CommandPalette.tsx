@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GrepHit, Workspace } from '@shared/types'
-import { useStore, ago, archiveWorkspace, goToNextUnread, newChatTab, newWorkspace, openDoc, openOrchestrator, openPalette, restoreWorkspace, reportError, type PaletteMode } from '../store'
+import { useStore, ago, archiveWorkspace, goToNextUnread, newChatTab, newWorkspace, openDoc, openOrchestrator, openGroupOrchestrator, editGroup, openPalette, restoreWorkspace, reportError, type PaletteMode } from '../store'
 import { rank } from '../autocomplete'
 import { IconArchive, IconFile, IconFileDiff, IconFileSearch, IconFolder, IconGear, IconHome, IconOrchestrator, IconPlus, IconRepo, IconSearch, IconTerminal } from '../icons'
 
@@ -67,7 +67,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         id: `ws:${w.id}`,
         tab: 'workspaces',
         section: 'Recent workspaces',
-        label: w.orchestrator ? `Orchestrator · ${repoName(w)}` : w.title,
+        label: w.orchestrator ? `Orchestrator · ${w.groupId ? w.title : repoName(w)}` : w.title,
         keywords: `${repoName(w)} ${w.branch}`,
         icon: w.orchestrator ? <IconOrchestrator /> : <IconTerminal />,
         hint: ago(when(w)),
@@ -103,6 +103,10 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     for (const r of s.repos) {
       out.push({ id: `orch:${r.id}`, tab: 'projects', section: 'Projects', label: `Orchestrator for ${r.name}`, icon: <IconOrchestrator />, run: () => void openOrchestrator(r.id) })
     }
+    for (const g of s.groups) {
+      out.push({ id: `group:${g.id}`, tab: 'projects', section: 'Projects', label: `Orchestrator for ${g.name}`, keywords: 'project group', icon: <IconOrchestrator />, hint: 'Project group', run: () => void openGroupOrchestrator(g.id) })
+    }
+    out.push({ id: 'new-group', tab: 'projects', section: 'Projects', label: 'New project group', keywords: 'orchestrator repos group', icon: <IconOrchestrator />, run: () => editGroup(null) })
     out.push({ id: 'add', tab: 'projects', section: 'Projects', label: 'Add project', keywords: 'repository clone open folder', icon: <IconPlus />, hint: '⌘O', run: () => useStore.getState().set({ modal: 'create' }) })
 
     const a = 'Actions'

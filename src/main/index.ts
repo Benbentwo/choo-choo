@@ -293,12 +293,26 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
   const env = agentEnv(ws)
   let extra: Parameters<typeof agent.send>[8]
   if (ws.orchestrator && repo) {
+    const scope = scopeFor(ws, repo)
     // The orchestrator's tools only exist on Claude.
     if (chat.model === 'codex') chat.model = 'opus'
-    extra = (sdk) => orchestrator.queryOptions(sdk, repo, orchestratorHost)
+    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost)
   }
   void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
 }
+
+/** What an orchestrator directs: its repo, or every repo in its project group. */
+function scopeFor(ws: Workspace, repo: Repo): orchestrator.Scope {
+  if (!ws.groupId) return orchestrator.repoScope(repo)
+  const s = store.get()
+  const group = s.groups?.find((g) => g.id === ws.groupId)
+  if (!group) throw new Error('This project group was deleted')
+  const scope = orchestrator.groupScope(group, s.repos)
+  if (!scope.repos.length) throw new Error('Add a repository to this project group first')
+  return scope
+}
+
+const cloudOut = { onData: (i: string, d: string) => send('pty:data', i, d), onExit: (i: string, c: number) => send('pty:exit', i, c), stateChanged: () => send('state:changed') }
 
 const orchestratorHost: orchestrator.Host = {
   createWorkspace: async (repoId) => {
@@ -312,50 +326,179 @@ const orchestratorHost: orchestrator.Host = {
     await archiveWorkspace(id)
     send('state:changed')
   },
-  pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId))
+  pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId)),
+  runInCloud: async (chat, ws, task) => {
+    await cloud.runInCloud(chat, ws, task, agentEnv(ws), emitChat, cloudOut)
+    send('state:changed')
+  },
+  sendToCloud: (chat, ws, text) => cloud.sendToCloud(chat, ws, text, agentEnv(ws), emitChat),
+  prStatus: async (ws) => {
+    const pr = await gh.prForBranch(ws.path, ws.branch)
+    return { pr, checks: pr ? await gh.checks(ws.path, ws.branch).catch(() => []) : [] }
+  }
+}
+
+function orchestratorChat(ws: Workspace, title: string): Chat {
+  const s = store.get()
+  let chat = s.chats.find((c) => c.workspaceId === ws.id)
+  if (!chat) {
+    chat = newChat(ws.id)
+    chat.title = title
+    if (chat.model === 'codex') chat.model = 'opus'
+  }
+  return chat
+}
+
+function newOrchestratorWorkspace(repo: Repo, title: string, groupId?: string): Workspace {
+  const ws: Workspace = {
+    id: randomUUID(),
+    repoId: repo.id,
+    name: 'orchestrator',
+    branch: repo.defaultBranch,
+    baseRef: repo.defaultBranch,
+    path: repo.path,
+    title,
+    named: true,
+    orchestrator: true,
+    ...(groupId ? { groupId } : {}),
+    createdAt: Date.now()
+  }
+  store.get().workspaces.push(ws)
+  return ws
 }
 
 async function openOrchestrator(repoId: string) {
   const s = store.get()
   const repo = s.repos.find((r) => r.id === repoId)
   if (!repo) throw new Error('Unknown repo')
-  let ws = s.workspaces.find((w) => w.repoId === repoId && w.orchestrator)
-  if (!ws) {
-    ws = {
-      id: randomUUID(),
-      repoId,
-      name: 'orchestrator',
-      branch: repo.defaultBranch,
-      baseRef: repo.defaultBranch,
-      path: repo.path,
-      title: 'Orchestrator',
-      named: true,
-      orchestrator: true,
-      createdAt: Date.now()
-    }
-    s.workspaces.push(ws)
-  }
+  const ws = s.workspaces.find((w) => w.repoId === repoId && w.orchestrator && !w.groupId) ?? newOrchestratorWorkspace(repo, 'Orchestrator')
   ws.archived = false
-  let chat = s.chats.find((c) => c.workspaceId === ws.id)
-  if (!chat) {
-    chat = newChat(ws.id)
-    chat.title = 'Orchestrator'
-    if (chat.model === 'codex') chat.model = 'opus'
-  }
+  const chat = orchestratorChat(ws, 'Orchestrator')
   store.save()
   return { workspace: ws, chat }
 }
 
-/** After a workspace the orchestrator started finishes, leave a note in the orchestrator's chat. */
+/** A project group's orchestrator runs in its first repo's checkout and can read the others. */
+async function openGroupOrchestrator(groupId: string) {
+  const s = store.get()
+  const group = s.groups?.find((g) => g.id === groupId)
+  if (!group) throw new Error('Unknown project group')
+  const repos = orchestrator.groupScope(group, s.repos).repos
+  if (!repos.length) throw new Error('Add a repository to this project group first')
+  const ws = s.workspaces.find((w) => w.orchestrator && w.groupId === groupId) ?? newOrchestratorWorkspace(repos[0], group.name, groupId)
+  ws.repoId = repos[0].id
+  ws.path = repos[0].path
+  ws.branch = ws.baseRef = repos[0].defaultBranch
+  ws.title = group.name
+  ws.archived = false
+  const chat = orchestratorChat(ws, 'Orchestrator')
+  chat.additionalDirectories = repos.slice(1).map((r) => r.path)
+  store.save()
+  return { workspace: ws, chat }
+}
+
+function saveGroup(input: { id?: string; name: string; repoIds: string[] }) {
+  const s = store.get()
+  const name = String(input?.name ?? '').trim()
+  const known = new Set(s.repos.map((r) => r.id))
+  const repoIds = [...new Set((input?.repoIds ?? []).filter((id) => known.has(id)))]
+  if (!name) throw new Error('Give the project group a name')
+  if (!repoIds.length) throw new Error('Pick at least one repository')
+  s.groups ??= []
+  if (s.groups.some((g) => g.name.toLowerCase() === name.toLowerCase() && g.id !== input.id)) throw new Error(`There is already a project group called ${name}`)
+  let group = input.id ? s.groups.find((g) => g.id === input.id) : undefined
+  if (input.id && !group) throw new Error('Unknown project group')
+  if (!group) {
+    group = { id: randomUUID(), name, repoIds, createdAt: Date.now() }
+    s.groups.push(group)
+  } else {
+    group.name = name
+    group.repoIds = repoIds
+  }
+  const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === group.id)
+  if (orch) orch.title = name
+  store.save()
+  return group
+}
+
+async function deleteGroup(groupId: string) {
+  const s = store.get()
+  for (const ws of s.workspaces.filter((w) => w.orchestrator && w.groupId === groupId)) {
+    for (const c of s.chats.filter((c) => c.workspaceId === ws.id)) await agent.stop(c.id)
+    ws.archived = true
+    ws.archivedAt = Date.now()
+  }
+  s.groups = (s.groups ?? []).filter((g) => g.id !== groupId)
+  store.save()
+}
+
+/** The orchestrator that started a workspace: its project group's, or its repo's. */
+function orchestratorOf(ws: Workspace): Workspace | undefined {
+  const all = store.get().workspaces.filter((w) => w.orchestrator && !w.archived)
+  if (ws.orchestratorId) {
+    const o = all.find((w) => (w.groupId ? w.groupId === ws.orchestratorId : w.repoId === ws.orchestratorId))
+    if (o) return o
+  }
+  return all.find((w) => w.repoId === ws.repoId && !w.groupId)
+}
+
+/**
+ * Automatic updates: when workspaces an orchestrator started finish, wake it (once its own turn is
+ * over) so it checks them and reports back. Capped per stretch without a message from the person,
+ * so two agents can't keep each other going forever.
+ */
+const MAX_AUTO_WAKES = 8
+const autoWakes = new Map<string, number>()
+const finished = new Map<string, Map<string, { title: string; id: string; state: 'finished' | 'error'; at: number }>>()
+const wakeTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
 function noteForOrchestrator(chat: Chat) {
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
-  if (!ws?.orchestrated) return
-  const orch = store.get().workspaces.find((w) => w.repoId === ws.repoId && w.orchestrator)
+  if (!ws?.orchestrated || ws.orchestrator) return
+  const orch = orchestratorOf(ws)
   const orchChat = orch && store.get().chats.find((c) => c.workspaceId === orch.id)
-  // While it is running it is probably waiting on this workspace and will see the result itself.
-  if (!orchChat || orchChat.status === 'running') return
-  const state = chat.status === 'error' ? 'hit an error' : 'finished'
-  const item = { id: randomUUID(), kind: 'note' as const, text: `${ws.title} ${state}. Ask me to check on it.`, ts: Date.now() }
+  if (!orchChat) return
+  const list = finished.get(orchChat.id) ?? new Map()
+  list.set(ws.id, { title: ws.title, id: ws.id, state: chat.status === 'error' ? 'error' : 'finished', at: Date.now() })
+  finished.set(orchChat.id, list)
+  scheduleWake(orchChat.id)
+}
+
+/** Waits a few seconds so workspaces that finish together go out as one update. */
+function scheduleWake(orchChatId: string) {
+  clearTimeout(wakeTimers.get(orchChatId))
+  wakeTimers.set(
+    orchChatId,
+    setTimeout(() => {
+      wakeTimers.delete(orchChatId)
+      wakeOrchestrator(orchChatId)
+    }, 4000)
+  )
+}
+
+function wakeOrchestrator(orchChatId: string) {
+  const orchChat = store.get().chats.find((c) => c.id === orchChatId)
+  const list = finished.get(orchChatId)
+  if (!orchChat || !list?.size) return
+  // Busy: it may be waiting on these already. Try again when its turn ends.
+  if (agent.isRunning(orchChat.id)) return
+  finished.delete(orchChatId)
+  // Skip what the orchestrator already looked at after it finished.
+  const fresh = [...list.values()].filter((d) => orchestrator.seenAt(d.id) < d.at)
+  if (!fresh.length) return
+  const wakes = autoWakes.get(orchChatId) ?? 0
+  if (store.get().settings.orchestratorAutoUpdates && wakes < MAX_AUTO_WAKES && !orchChat.remote) {
+    autoWakes.set(orchChatId, wakes + 1)
+    try {
+      sendToChat(orchChat, orchestrator.autoUpdatePrompt(fresh))
+      return
+    } catch {
+      /* fall through to a note */
+    }
+  }
+  const names = fresh.map((d) => `${d.title} ${d.state === 'error' ? 'hit an error' : 'finished'}`).join('; ')
+  const paused = store.get().settings.orchestratorAutoUpdates && wakes >= MAX_AUTO_WAKES ? ' (automatic updates paused until you send a message)' : ''
+  const item = { id: randomUUID(), kind: 'note' as const, text: `${names}. Ask me to check on it${paused}.`, ts: Date.now() }
   store.upsertItem(orchChat.id, item)
   orchChat.unread = true
   store.save()
@@ -365,6 +508,7 @@ function noteForOrchestrator(chat: Chat) {
 function onChatDone(chat: Chat) {
   notifyDone(chat)
   noteForOrchestrator(chat)
+  if (finished.has(chat.id)) scheduleWake(chat.id)
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   if (ws) autoSync(ws)
 }
@@ -485,6 +629,7 @@ function registerIpc() {
   h('repo:remove', (id: string) => {
     const s = store.get()
     s.repos = s.repos.filter((r) => r.id !== id)
+    for (const g of s.groups ?? []) g.repoIds = g.repoIds.filter((r) => r !== id)
     store.save()
   })
   h('repo:reorder', (ids: string[]) => {
@@ -512,6 +657,9 @@ function registerIpc() {
   h('ws:sources', (repoId: string, kind: WorkspaceSource['kind'], query: string) => listSources(repoId, kind, query))
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))
+  h('group:orchestrator', (groupId: string) => openGroupOrchestrator(groupId))
+  h('group:save', (g: { id?: string; name: string; repoIds: string[] }) => saveGroup(g))
+  h('group:delete', (groupId: string) => deleteGroup(groupId))
   h('ws:restore', async (id: string) => {
     const ws = findWs(id)
     if (ws.orchestrator) {
@@ -653,7 +801,11 @@ function registerIpc() {
     if (!pr) throw new Error('No pull request for this branch')
     await gh.mergePr(ws.path, pr.number)
   })
-  h('chat:send', (id: string, text: string, images: string[] = []) => sendToChat(findChat(id), text, images))
+  h('chat:send', (id: string, text: string, images: string[] = []) => {
+    // The person wrote, so the orchestrator may wake itself again.
+    autoWakes.delete(id)
+    return sendToChat(findChat(id), text, images)
+  })
   h('reflect:run', (wsId: string, feedback = '') => {
     const ws = findWs(wsId)
     const repo = store.get().repos.find((r) => r.id === ws.repoId)
@@ -702,7 +854,6 @@ function registerIpc() {
     const ws = findWs(chat.workspaceId)
     return remote.continueOnPhone(chat, ws, agentEnv(ws), emitChat, (i, c) => send('pty:exit', i, c), (i, d) => send('pty:data', i, d))
   })
-  const cloudOut = { onData: (i: string, d: string) => send('pty:data', i, d), onExit: (i: string, c: number) => send('pty:exit', i, c), stateChanged: () => send('state:changed') }
   h('chat:cloud', (id: string, task: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)

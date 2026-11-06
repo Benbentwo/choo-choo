@@ -62,7 +62,7 @@ export function Center({ ws }: { ws: Workspace }) {
         )}
         <span className="text-muted">{repo?.name}</span>
         <IconRight className="text-faint" />
-        <span className="no-drag selectable truncate">{ws.orchestrator ? 'Orchestrator' : ws.branch}</span>
+        <span className="no-drag selectable truncate">{ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch}</span>
         <div className="no-drag relative">
           <button className="rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => setMenu(!menu)}>
             <IconDots />

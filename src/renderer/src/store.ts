@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
-import { DEFAULT_SETTINGS, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
+import { DEFAULT_SETTINGS, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace } from '@shared/types'
 
 export interface Doc {
   kind: 'diff' | 'file'
@@ -27,7 +27,11 @@ interface UI {
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
   settings: Settings
-  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | null
+  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | 'group' | null
+  /** Project groups: several repos with one shared orchestrator. */
+  groups: RepoGroup[]
+  /** The group open in the group editor; null makes a new one. */
+  editGroup: string | null
   /** The chat whose usage graphs are open. */
   usageChat: string | null
   paletteMode: PaletteMode
@@ -72,6 +76,8 @@ export const useStore = create<UI>((set, get) => ({
   openDoc: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
+  groups: [],
+  editGroup: null,
   usageChat: null,
   paletteMode: 'all',
   settingsTab: 'general',
@@ -87,7 +93,7 @@ export const useStore = create<UI>((set, get) => ({
   rightTab: 'changes',
   error: null,
 
-  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [] }),
+  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [] }),
   selectWorkspace: (id, fromHistory) => {
     if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null })
     const { history, historyIndex } = get()
@@ -189,6 +195,22 @@ export async function openOrchestrator(repoId: string) {
   } catch (e) {
     reportError(e)
   }
+}
+
+/** Opens a project group's orchestrator, which directs workspaces across all of its repos. */
+export async function openGroupOrchestrator(groupId: string) {
+  try {
+    const { workspace, chat } = await window.api.openGroupOrchestrator(groupId)
+    await refreshState()
+    useStore.getState().setActiveChat(workspace.id, chat.id)
+    useStore.getState().selectWorkspace(workspace.id)
+  } catch (e) {
+    reportError(e)
+  }
+}
+
+export function editGroup(groupId: string | null) {
+  useStore.getState().set({ modal: 'group', editGroup: groupId })
 }
 
 export async function addRepository() {

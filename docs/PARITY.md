@@ -77,6 +77,8 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 
 ### Beyond Conductor
 - ✅ Shared sessions: share a workspace (branch, uncommitted files, chats) with coworkers through the repo's own remote; they continue with their own Claude login
+- ✅ Orchestrator: one chat per repo that starts workspaces, briefs their agents, waits on them, follows up and keeps a memory file. It wakes itself with an automatic update when a workspace it started finishes, can run workspaces in a Claude Code cloud session, and watches each workspace's PR and CI checks. See [PRD](prd/orchestrator.md).
+- ✅ Project groups: several repos share one orchestrator and one memory; it starts each workspace in the repo the work belongs to.
 
 ## Build sequence
 1. **Foundation**: app scaffold, layout, repos, worktree sessions, agent chat, Changes + diff, terminal.

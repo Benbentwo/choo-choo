@@ -21,6 +21,14 @@ export interface PromptCustom {
   text: string
 }
 
+/** A project group: several repos that share one orchestrator and one memory. */
+export interface RepoGroup {
+  id: string
+  name: string
+  repoIds: string[]
+  createdAt: number
+}
+
 /** What a new workspace starts from, besides a fresh branch off the default branch. */
 export type WorkspaceSource =
   | { kind: 'pr'; number: number }
@@ -93,6 +101,10 @@ export interface Workspace {
   orchestrator?: boolean
   /** Started by the orchestrator. */
   orchestrated?: boolean
+  /** Which orchestrator started it: a repo id or a project group id. */
+  orchestratorId?: string
+  /** Set on a project group's orchestrator. It runs in the first repo's checkout. */
+  groupId?: string
   /** Set while this workspace is shared with coworkers. */
   share?: { id: string; link: string; sharedAt: number; autoSync: boolean }
   /** Set when this workspace was opened from a coworker's share. */
@@ -317,6 +329,8 @@ export interface Settings extends AppearanceSettings {
   systemPrompt?: PromptCustom
   /** OpenTelemetry export for Claude agents. Off by default. */
   telemetry: Telemetry
+  /** Wake an idle orchestrator when a workspace it started finishes, so it checks and reports back. */
+  orchestratorAutoUpdates: boolean
 }
 
 export type ExtraAgentId = 'scout' | 'reviewer' | 'securityReviewer' | 'quickWorker'
@@ -439,6 +453,7 @@ export const DEFAULT_SETTINGS: Settings = {
   branchPrefix: '',
   anthropicApiKey: '',
   notifications: true,
+  orchestratorAutoUpdates: true,
   claudeBinary: 'bundled',
   extras: DEFAULT_EXTRAS,
   notionAgentTools: true,
@@ -452,6 +467,8 @@ export interface AppState {
   workspaces: Workspace[]
   chats: Chat[]
   settings: Settings
+  /** Project groups, each with its own orchestrator. */
+  groups?: RepoGroup[]
   /** Folders added as projects, most recent first; shown under Recents in the Add project menu. */
   recentPaths?: string[]
 }
@@ -536,6 +553,12 @@ export interface Api {
   disconnectIntegration(id: IntegrationId): Promise<void>
   /** Opens the repo's orchestrator, creating it the first time. */
   openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  /** Opens a project group's orchestrator, creating it the first time. */
+  openGroupOrchestrator(groupId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  /** Creates or updates a project group. */
+  saveGroup(group: { id?: string; name: string; repoIds: string[] }): Promise<RepoGroup>
+  /** Deletes the group and hides its orchestrator. Workspaces and memory stay. */
+  deleteGroup(groupId: string): Promise<void>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   /** Reviews the workspace's chats for friction and suggests agent-setup changes. Writes nothing. */

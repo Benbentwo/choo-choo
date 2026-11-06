@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Workspace } from '@shared/types'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
-import { useStore, newWorkspace, restoreWorkspace, openOrchestrator, archiveWorkspace, openPalette } from '../store'
+import { useStore, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
 import { IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
@@ -65,7 +65,8 @@ export function Sidebar() {
       ]
     },
     { kind: 'sep' },
-    { label: 'Add project…', icon: <IconPlus />, keepOpen: true, onClick: () => setMenu('add') }
+    { label: 'Add project…', icon: <IconPlus />, keepOpen: true, onClick: () => setMenu('add') },
+    { label: 'New project group…', icon: <IconOrchestrator />, onClick: () => editGroup(null) }
   ]
   const hiddenCount = s.repos.filter((r) => r.hidden).length
 
@@ -103,6 +104,38 @@ export function Sidebar() {
           </button>
           {menu && <Menu anchor={headerRef.current} items={menu === 'view' ? viewItems : addProjectItems()} onClose={() => setMenu(null)} />}
         </div>
+        {s.groups.length > 0 && (
+          <div className="mb-3">
+            <div className="mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
+              <span className="flex-1">Project groups</span>
+              <button className="rounded p-0.5 hover:bg-hover hover:text-fg" title="New project group" onClick={() => editGroup(null)}>
+                <IconPlus />
+              </button>
+            </div>
+            {s.groups.map((g) => {
+              const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === g.id && !w.archived)
+              const names = g.repoIds.map((id) => s.repos.find((r) => r.id === id)?.name).filter(Boolean).join(', ')
+              const running = !!orch && s.chats.some((c) => c.workspaceId === orch.id && c.status === 'running')
+              const active = !!orch && s.selectedWs === orch.id
+              return (
+                <div key={g.id} className={`group flex h-9 cursor-pointer items-center gap-2 rounded-md px-2 ${active ? 'bg-raised' : 'hover:bg-hover'}`} onClick={() => void openGroupOrchestrator(g.id)} title={`Orchestrator for ${names}`}>
+                  {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : <IconOrchestrator className="shrink-0 text-faint" />}
+                  <span className="truncate font-medium">{g.name}</span>
+                  <span className="flex-1 truncate text-[11px] text-faint">{names}</span>
+                  <button
+                    className="invisible rounded px-1 text-[11px] text-faint group-hover:visible hover:text-fg"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      editGroup(g.id)
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
         {visible.length === 0 && (
           <button onClick={() => s.set({ modal: 'create' })} className="mx-2 mt-2 w-[calc(100%-16px)] rounded-lg border border-dashed border-line px-3 py-4 text-left text-muted hover:border-faint hover:text-fg">
             Add a repository to get started
@@ -114,7 +147,7 @@ export function Sidebar() {
           ))}
         {view.group === 'project' && visible.map((repo) => {
           // The orchestrator, if open, sits at the top of its repo.
-          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived)).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
+          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId)).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
           const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived && !w.orchestrator).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           return (
             <div
