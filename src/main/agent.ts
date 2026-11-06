@@ -7,6 +7,7 @@ import { runCodex } from './codex'
 import { enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
 import * as orchestrator from './orchestrator'
 import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
+import { buildSystemPrompt } from '@shared/systemPrompt'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
 
@@ -76,7 +77,7 @@ export async function reviewPlan(chat: Chat, ws: Workspace, planItemId: string, 
 }
 
 // Tools that only read; asking about them would be noise.
-const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite', 'Task', 'Agent', 'NotebookRead', 'BashOutput', 'ExitPlanMode', 'ToolSearch', 'Skill'])
+const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate', 'Task', 'Agent', 'NotebookRead', 'BashOutput', 'ExitPlanMode', 'ToolSearch', 'Skill'])
 for (const t of orchestrator.READ_ONLY) READ_ONLY_TOOLS.add(t)
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
 
@@ -243,8 +244,9 @@ export async function send(
     }
     const sdkMod = await loadSdk()
     const { query } = sdkMod
-    const extras = store.get().settings.extras
-    const append = systemAppend(extras, !!chat.planMode)
+    const { settings, repos } = store.get()
+    const extras = settings.extras
+    const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, systemAppend(extras, !!chat.planMode))
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
       if (toolName === 'ExitPlanMode' && chat.planMode) {
         // The plan card asks the user; the agent must not start building on its own.
@@ -286,8 +288,11 @@ export async function send(
         abortController: abort,
         settingSources: ['user', 'project', 'local'],
         agents: enabledSubagents(extras),
-        ...(append ? { systemPrompt: { type: 'preset', preset: 'claude_code', append } } : {}),
-        env: { ...process.env, ...env },
+        // Always Claude Code's own prompt unless the user replaced it; the SDK's default is a bare one.
+        systemPrompt,
+        // Newer models (Opus 5.5 and up) leave out the task-list tools unless asked. Turn them on so
+        // sessions and their subagents keep a visible checklist, as on older models.
+        env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...env },
         ...extraOptions?.(sdkMod)
       } as never
     })
@@ -374,6 +379,12 @@ export async function send(
             ts: Date.now()
           })
           if (msg.session_id) chat.sdkSessionId = msg.session_id
+          {
+            // Remember the main model's context window for the usage graph.
+            const usage = Object.entries((msg.modelUsage ?? {}) as Record<string, { contextWindow?: number; outputTokens?: number }>)
+            const main = usage.find(([k]) => k.includes(chat.model)) ?? usage.sort((a, b) => (b[1].outputTokens ?? 0) - (a[1].outputTokens ?? 0))[0]
+            if (main?.[1].contextWindow) chat.contextWindow = main[1].contextWindow
+          }
           break
       }
     }

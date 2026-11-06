@@ -15,7 +15,7 @@ An open-source, MIT-licensed alternative to [Conductor](https://conductor.build)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS](https://img.shields.io/badge/macOS-Apple%20silicon%20%7C%20Intel-lightgrey)
 
-[Download](https://github.com/Benbentwo/choo-choo/releases/latest) · [Features](#features) · [Coming from Conductor](#coming-from-conductor) · [Contributing](CONTRIBUTING.md)
+[Download](https://github.com/Benbentwo/choo-choo/releases/latest) · [Features](#features) · [Coming from Conductor](#coming-from-conductor) · [Docs](docs/README.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -111,6 +111,10 @@ Your coworker clicks the link, or uses Open shared session on the home screen, w
 
 Only people who can read the repository can open a share, so a share in a public repository is public. Nothing about your Claude login or settings is included, and things that look like API keys or tokens are blanked out of the chats. Stop sharing deletes the ref.
 
+## Observability
+
+Settings > Telemetry sends OpenTelemetry data from Claude agents to any OTLP collector (Honeycomb, Datadog, Grafana, or a local collector on `http://localhost:4318`). You get metrics for tokens, cost and tool decisions, an event per prompt, API request and tool result, and traces with a span per turn, model request and tool call. Every export carries `choo.repo`, `choo.workspace` and `choo.branch` resource attributes. Only structure is exported unless you turn on the content options. See the [Agent SDK observability guide](https://code.claude.com/docs/en/agent-sdk/observability).
+
 ## Develop
 
 Requires macOS, Node 22+ and git.
@@ -124,6 +128,8 @@ npm run dist:mac # build arm64 and Intel .dmg and .zip files into dist/
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) to send a change.
+
+Project docs live in [docs/](docs/README.md): the [product overview](docs/product.md), [architecture](docs/architecture.md), a PRD for each feature area and the decision records behind them.
 
 ### Comment mode: point at the UI and let Claude change it
 

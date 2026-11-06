@@ -5,8 +5,9 @@ import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
-import type { Artifact, Chat, FilePreview, Repo, Settings, Workspace } from '@shared/types'
-import { normalizeExtras } from '@shared/types'
+import type { Artifact, Chat, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
+import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
+import { sessionUsage } from './usage'
 import * as store from './store'
 import * as git from './git'
 import * as agent from './agent'
@@ -282,9 +283,7 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
   const ws = findWs(chat.workspaceId)
   const repo = store.get().repos.find((r) => r.id === ws.repoId)
   if (!ws.named) void nameWorkspace(ws, text)
-  const env = workspaceEnv(ws)
-  const key = store.get().settings.anthropicApiKey.trim()
-  if (key) env.ANTHROPIC_API_KEY = key
+  const env = agentEnv(ws)
   let extra: Parameters<typeof agent.send>[8]
   if (ws.orchestrator && repo) {
     // The orchestrator's tools only exist on Claude.
@@ -448,9 +447,12 @@ async function archiveWorkspace(id: string) {
   store.save()
 }
 
+/** Env for Claude agents: workspace vars, the API key, and OpenTelemetry export if it's on. */
 function agentEnv(ws: Workspace): Record<string, string> {
-  const env = workspaceEnv(ws)
-  const key = store.get().settings.anthropicApiKey.trim()
+  const settings = store.get().settings
+  const repo = store.get().repos.find((r) => r.id === ws.repoId)
+  const env = { ...workspaceEnv(ws), ...telemetryEnv(settings.telemetry, { 'choo.repo': repo?.name ?? '', 'choo.workspace': ws.name, 'choo.branch': ws.branch }) }
+  const key = settings.anthropicApiKey.trim()
   if (key) env.ANTHROPIC_API_KEY = key
   return env
 }
@@ -478,6 +480,11 @@ function registerIpc() {
   h('repo:hidden', (id: string, hidden: boolean) => {
     const r = store.get().repos.find((x) => x.id === id)
     if (r) r.hidden = hidden
+    store.save()
+  })
+  h('repo:prompt', (id: string, prompt: PromptCustom | undefined) => {
+    const r = store.get().repos.find((x) => x.id === id)
+    if (r) r.systemPrompt = prompt?.text.trim() ? prompt : undefined
     store.save()
   })
   h('ws:create', (repoId: string, source?: WorkspaceSource, folders?: string[]) => createWorkspace(repoId, source, folders))
@@ -522,6 +529,13 @@ function registerIpc() {
     store.save()
   })
   h('chat:items', (id: string) => store.chatItems(id))
+  h('chat:usage', (id: string) => {
+    const chat = findChat(id)
+    if (chat.model === 'codex') return { points: [], compactions: [], contextWindow: 0, empty: 'Usage graphs are for Claude chats. Codex keeps its own transcript.' }
+    // Claude Code reports a running total, so the last turn's cost covers the session.
+    const last = [...store.chatItems(id)].reverse().find((x) => x.kind === 'result' && x.costUsd != null)
+    return sessionUsage(chat.sdkSessionId, { contextWindow: chat.contextWindow, costUsd: last?.kind === 'result' ? last.costUsd : undefined })
+  })
   h('chat:update', (id: string, patch: Partial<Chat>) => {
     const c = findChat(id)
     if (patch.model) c.model = patch.model
@@ -575,6 +589,7 @@ function registerIpc() {
     const s = store.get()
     s.settings = { ...s.settings, ...patch }
     s.settings.extras = normalizeExtras(s.settings.extras)
+    s.settings.telemetry = normalizeTelemetry(s.settings.telemetry)
     store.save()
     if ('theme' in patch) applyNativeTheme(s.settings)
     if ('archiveRetentionDays' in patch) void archive.cleanupArchives()

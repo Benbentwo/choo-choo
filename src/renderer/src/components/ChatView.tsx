@@ -113,6 +113,14 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
           {item.durationMs != null && ` · ${(item.durationMs / 1000).toFixed(0)}s`}
           {item.turns != null && ` · ${item.turns} turns`}
           {item.costUsd != null && ` · $${item.costUsd.toFixed(2)}`}
+          {chat.model !== 'codex' && (
+            <>
+              {' · '}
+              <button className="underline-offset-2 hover:text-fg hover:underline" onClick={() => useStore.getState().set({ modal: 'usage', usageChat: chat.id })}>
+                Usage
+              </button>
+            </>
+          )}
         </div>
       )
     case 'error':
@@ -216,6 +224,12 @@ export function toolSummary(name: string, input: unknown): string {
       return pick('description')
     case 'TodoWrite':
       return 'Update todos'
+    case 'TaskCreate':
+      return pick('subject')
+    case 'TaskUpdate':
+      return [pick('taskId'), pick('status')].filter(Boolean).join(' → ')
+    case 'TaskGet':
+      return pick('taskId')
     default:
       return ''
   }

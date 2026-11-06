@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, Settings } from '@shared/types'
+import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, PromptCustom, Settings, Telemetry } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
@@ -8,6 +8,7 @@ import { QuickStartModalBody } from './AddProject'
 import { AppearanceSettings } from './Appearance'
 import { OpenShareModal, ShareModal } from './ShareModals'
 import { CommandPalette } from './CommandPalette'
+import { UsageGraphs } from './UsageGraphs'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -39,7 +40,22 @@ export function Modals() {
     )
   if (modal === 'open-share') return <OpenShareModal onClose={close} />
   if (modal === 'share') return <ShareFor onClose={close} />
+  if (modal === 'usage') return <UsageFor onClose={close} />
   return null
+}
+
+function UsageFor({ onClose }: { onClose: () => void }) {
+  const chat = useStore((s) => s.chats.find((c) => c.id === s.usageChat))
+  if (!chat) return null
+  return (
+    <Shell onClose={onClose} width="w-[780px]">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <span className="font-medium">Session usage</span>
+        <span className="truncate text-faint">{chat.title}</span>
+      </div>
+      <UsageGraphs chat={chat} />
+    </Shell>
+  )
 }
 
 function ShareFor({ onClose }: { onClose: () => void }) {
@@ -66,14 +82,14 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'agents' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<'general' | 'agents' | 'telemetry' | 'prompts' | 'appearance'>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   return (
     <Shell onClose={onClose} width="w-[620px]">
       <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
         <div className="pb-3 font-medium">Settings</div>
         <div className="ml-auto flex gap-1">
-          {(['general', 'agents', 'appearance'] as const).map((t) => (
+          {(['general', 'agents', 'prompts', 'telemetry', 'appearance'] as const).map((t) => (
             <button
               key={t}
               role="tab"
@@ -88,6 +104,10 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="max-h-[70vh] overflow-y-auto">
         {tab === 'appearance' ? (
           <AppearanceSettings />
+        ) : tab === 'prompts' ? (
+          <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
+        ) : tab === 'telemetry' ? (
+          <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (
           <ExtrasSection extras={settings.extras} save={(patch) => void save({ extras: { ...settings.extras, ...patch } })} />
         ) : (
@@ -155,6 +175,148 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         )}
       </div>
     </Shell>
+  )
+}
+
+const EMPTY_PROMPT: PromptCustom = { mode: 'append', text: '' }
+
+/** One prompt editor: append to or replace Claude Code's system prompt. */
+function PromptEditor({ value, save, scope }: { value?: PromptCustom; save: (p: PromptCustom) => void; scope: 'global' | 'repo' }) {
+  const [draft, setDraft] = useState<PromptCustom>(value ?? EMPTY_PROMPT)
+  const field = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
+  const commit = (p: PromptCustom) => {
+    setDraft(p)
+    save(p)
+  }
+  return (
+    <div className="px-5 py-3.5">
+      <div className="mb-2 flex items-center gap-3">
+        <select className={field} value={draft.mode} onChange={(e) => commit({ ...draft, mode: e.target.value as PromptCustom['mode'] })}>
+          <option value="append">Add to Claude Code's prompt</option>
+          <option value="replace">Replace Claude Code's prompt</option>
+        </select>
+        <span className="text-[12px] text-faint">
+          {draft.mode === 'append'
+            ? scope === 'global'
+              ? 'Keeps Claude Code\'s tools guidance and safety rules.'
+              : 'Added after your global instructions.'
+            : scope === 'global'
+              ? 'Sends only your text. A repo prompt is added after it.'
+              : 'Sends only this text in this repo, ignoring the global one.'}
+        </span>
+      </div>
+      {draft.mode === 'replace' && (
+        <div className="mb-2 rounded-md border border-line bg-raised px-3 py-2 text-[12px] text-muted">
+          Replacing drops Claude Code's guidance on tools, git and safety, so the agent only knows what you write here. CLAUDE.md files, skills and subagents still load.
+        </div>
+      )}
+      <textarea
+        className={`${field} h-40 w-full resize-y font-mono text-[12px] leading-relaxed`}
+        value={draft.text}
+        placeholder={draft.mode === 'append' ? 'e.g. Write tests with vitest. Keep commits small and explain why in the message.' : 'You are a coding agent working in a git worktree…'}
+        onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+        onBlur={() => save(draft)}
+      />
+    </div>
+  )
+}
+
+function PromptsSection({ global, saveGlobal }: { global?: PromptCustom; saveGlobal: (p: PromptCustom) => void }) {
+  const repos = useStore((s) => s.repos)
+  const [repoId, setRepoId] = useState(() => {
+    const s = useStore.getState()
+    return s.workspaces.find((w) => w.id === s.selectedWs)?.repoId ?? repos[0]?.id ?? ''
+  })
+  const repo = repos.find((r) => r.id === repoId)
+  const saveRepo = (p: PromptCustom) => {
+    if (!repo) return
+    const systemPrompt = p.text.trim() ? p : undefined
+    void window.api.setRepoPrompt(repo.id, systemPrompt).then(() =>
+      useStore.getState().set({ repos: useStore.getState().repos.map((r) => (r.id === repo.id ? { ...r, systemPrompt } : r)) })
+    )
+  }
+  return (
+    <>
+      <div className="border-b border-line px-5 py-2.5 text-[12px] text-faint">
+        Instructions for Claude agents. Changes apply to new chats; a chat keeps the prompt it started with. For instructions you want in git, use the repo's CLAUDE.md instead.
+      </div>
+      <div className="px-5 pt-3.5 font-medium">All repos</div>
+      <PromptEditor value={global} save={saveGlobal} scope="global" />
+      <div className="flex items-center gap-3 border-t border-line px-5 pt-3.5">
+        <div className="font-medium">This repo</div>
+        {repos.length > 0 && (
+          <select className="ml-auto rounded-md border border-line bg-bg px-2 py-1 outline-none" value={repoId} onChange={(e) => setRepoId(e.target.value)}>
+            {repos.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {repo ? <PromptEditor key={repo.id} value={repo.systemPrompt} save={saveRepo} scope="repo" /> : <div className="px-5 py-3.5 text-faint">Add a repository first.</div>}
+    </>
+  )
+}
+
+function TelemetrySection({ t, save }: { t: Telemetry; save: (patch: Partial<Telemetry>) => void }) {
+  const input = 'w-56 rounded-md border border-line bg-bg px-2 py-1 outline-none'
+  const check = (k: 'metrics' | 'logs' | 'traces' | 'logPrompts' | 'logToolDetails' | 'logToolContent') => (
+    <input type="checkbox" checked={t[k]} onChange={(e) => save({ [k]: e.target.checked })} />
+  )
+  return (
+    <>
+      <div className="border-b border-line px-5 py-2.5 text-[12px] text-faint">
+        Send OpenTelemetry metrics, events and traces from Claude agents to any OTLP collector, such as Honeycomb, Datadog, Grafana or a local collector. Each export is tagged with choo.repo, choo.workspace and choo.branch. Applies from the next message you send.
+      </div>
+      <Row label="Export telemetry" hint="Off by default. Export errors never stop the agent.">
+        <input type="checkbox" checked={t.enabled} onChange={(e) => save({ enabled: e.target.checked })} />
+      </Row>
+      {t.enabled && (
+        <>
+          <Row label="Endpoint" hint="OTLP base URL. HTTP usually listens on port 4318, gRPC on 4317.">
+            <input key={`e${t.endpoint}`} className={input} defaultValue={t.endpoint} placeholder="http://localhost:4318" onBlur={(e) => save({ endpoint: e.target.value.trim() })} />
+          </Row>
+          <Row label="Protocol">
+            <select className="rounded-md border border-line bg-bg px-2 py-1 outline-none" value={t.protocol} onChange={(e) => save({ protocol: e.target.value as Telemetry['protocol'] })}>
+              <option value="http/protobuf">HTTP (protobuf)</option>
+              <option value="http/json">HTTP (JSON)</option>
+              <option value="grpc">gRPC</option>
+            </select>
+          </Row>
+          <Row label="Headers" hint="Sent with every export, for auth. Comma-separated key=value pairs.">
+            <input key={`h${t.headers}`} type="password" className={input} defaultValue={t.headers} placeholder="Authorization=Bearer …" onBlur={(e) => save({ headers: e.target.value })} />
+          </Row>
+          <Row label="Service name" hint="Reported as service.name.">
+            <input key={`s${t.serviceName}`} className={input} defaultValue={t.serviceName} placeholder="choo-choo" onBlur={(e) => save({ serviceName: e.target.value })} />
+          </Row>
+          <Row label="Resource attributes" hint="Extra tags on everything exported, e.g. team=platform,env=dev.">
+            <input key={`r${t.resourceAttributes}`} className={input} defaultValue={t.resourceAttributes} placeholder="key=value,key2=value2" onBlur={(e) => save({ resourceAttributes: e.target.value })} />
+          </Row>
+          <Row label="Metrics" hint="Counters for tokens, cost, sessions, lines changed and tool decisions.">
+            {check('metrics')}
+          </Row>
+          <Row label="Log events" hint="A record for each prompt, API request, API error and tool result.">
+            {check('logs')}
+          </Row>
+          <Row label="Traces" hint="Spans for each turn, model request and tool call, with subagents nested under their parent. Beta in Claude Code.">
+            {check('traces')}
+          </Row>
+          <div className="border-b border-line px-5 py-2.5 text-[12px] text-faint">Content. By default only structure is exported, never what the agent reads or writes. Turn these on only if your backend may store your code.</div>
+          <Row label="Include prompts" hint="Your message text on prompt events and turn spans.">
+            {check('logPrompts')}
+          </Row>
+          <Row label="Include tool inputs" hint="File paths, shell commands and search patterns on tool events.">
+            {check('logToolDetails')}
+          </Row>
+          {t.traces && (
+            <Row label="Include tool output" hint="File contents, command output and web results on tool spans, up to 60 KB each.">
+              {check('logToolContent')}
+            </Row>
+          )}
+        </>
+      )}
+    </>
   )
 }
 
