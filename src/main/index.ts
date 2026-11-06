@@ -27,6 +27,7 @@ import * as orchestrator from './orchestrator'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import * as archive from './archive'
+import * as remote from './remote'
 import { registerIntegrationsIpc } from './integrations'
 import * as notion from './integrations/notion'
 
@@ -430,7 +431,10 @@ function artifacts(ws: Workspace): Artifact[] {
 
 async function archiveWorkspace(id: string) {
   const ws = findWs(id)
-  for (const c of store.get().chats.filter((c) => c.workspaceId === id)) await agent.stop(c.id)
+  for (const c of store.get().chats.filter((c) => c.workspaceId === id)) {
+    await agent.stop(c.id)
+    await remote.bringBack(c, ws, emitChat)
+  }
   if (ws.orchestrator) {
     // Lives in the main checkout: never remove that.
     ws.archived = true
@@ -529,6 +533,8 @@ function registerIpc() {
   h('chat:create', (wsId: string) => newChat(wsId))
   h('chat:close', async (id: string) => {
     await agent.stop(id)
+    const closing = store.get().chats.find((c) => c.id === id)
+    if (closing) pty.kill(remote.phoneTerminalId(closing))
     const s = store.get()
     s.chats = s.chats.filter((c) => c.id !== id)
     store.deleteChatItems(id)
@@ -672,6 +678,15 @@ function registerIpc() {
     if (message) sendToChat(chat, message, [], { fromAdvisor: true })
   })
   h('chat:stop', (id: string) => agent.stop(id))
+  h('chat:phone', (id: string) => {
+    const chat = findChat(id)
+    const ws = findWs(chat.workspaceId)
+    return remote.continueOnPhone(chat, ws, agentEnv(ws), emitChat, (i, c) => send('pty:exit', i, c), (i, d) => send('pty:data', i, d))
+  })
+  h('chat:phoneBack', (id: string) => {
+    const chat = findChat(id)
+    return remote.bringBack(chat, findWs(chat.workspaceId), emitChat)
+  })
   ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny') => agent.respondPermission(id, d))
   h('permission:pending', () => agent.pendingPermissions())
   h('git:changes', (wsId: string) => {
@@ -845,6 +860,7 @@ app.whenReady().then(async () => {
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
   registerIpc()
+  void remote.recoverAfterRestart((id) => store.get().workspaces.find((w) => w.id === id), emitChat)
   archive.startArchiveCleanup()
   registerShareIpc({
     workspacesRoot: WORKSPACES_ROOT,

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { Workspace } from '@shared/types'
 import { useStore, openDoc, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread } from '../store'
-import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart } from '../icons'
+import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart, IconPhone } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
 import { FileView } from './FileView'
 import { SessionFeedback } from './Reflect'
+import { PhonePanel } from './PhonePanel'
 
 export function Center({ ws }: { ws: Workspace }) {
   const s = useStore()
@@ -119,6 +120,22 @@ export function Center({ ws }: { ws: Workspace }) {
           <IconPlus />
         </button>
         <div className="flex-1" />
+        {active && active.model !== 'codex' && !ws.orchestrator && !active.remote && (
+          <button
+            className="mb-2.5 rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent"
+            disabled={!active.sdkSessionId || active.status === 'running'}
+            onClick={() => void continueOnPhone(active.id)}
+            title={
+              !active.sdkSessionId
+                ? 'Send a message first, then continue this chat on your phone'
+                : active.status === 'running'
+                  ? 'Wait for the agent to finish, then continue on your phone'
+                  : 'Continue on phone: steer this chat from the Claude app or claude.ai/code'
+            }
+          >
+            <IconPhone />
+          </button>
+        )}
         {active && active.model !== 'codex' && (
           <button className="mb-2.5 rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ modal: 'usage', usageChat: active.id })} title="Usage and context graphs">
             <IconChart />
@@ -140,12 +157,20 @@ export function Center({ ws }: { ws: Workspace }) {
               </button>
             </div>
           )}
-          <Composer chat={active} ws={ws} />
+          {active.remote ? <PhonePanel chat={active} ws={ws} /> : <Composer chat={active} ws={ws} />}
         </>
       ) : null}
       {reflecting && <SessionFeedback ws={ws} archive={false} onClose={() => setReflecting(false)} />}
     </main>
   )
+}
+
+async function continueOnPhone(chatId: string) {
+  try {
+    useStore.getState().upsertChat(await window.api.continueOnPhone(chatId))
+  } catch (e) {
+    reportError(e)
+  }
 }
 
 function MenuItem(p: { label: string; danger?: boolean; onClick: () => void }) {

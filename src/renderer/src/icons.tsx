@@ -108,3 +108,6 @@ export const IconTerminal = (p: SVGProps<SVGSVGElement>) => (
 export const IconChart = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6" /></svg>
 )
+export const IconPhone = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="7" y="3" width="10" height="18" rx="2" /><path d="M11 18h2" /></svg>
+)

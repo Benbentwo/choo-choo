@@ -36,6 +36,8 @@ const api: Api = {
   updateChat: inv('chat:update') as Api['updateChat'],
   sendMessage: inv('chat:send') as Api['sendMessage'],
   stopChat: inv('chat:stop') as Api['stopChat'],
+  continueOnPhone: inv('chat:phone') as Api['continueOnPhone'],
+  bringBackFromPhone: inv('chat:phoneBack') as Api['bringBackFromPhone'],
   actOnAdvice: inv('advisor:act') as Api['actOnAdvice'],
   respondPermission: (id, d) => ipcRenderer.send('permission:respond', id, d),
   pendingPermissions: inv('permission:pending') as Api['pendingPermissions'],

@@ -41,6 +41,7 @@ Choo Choo is an Electron app built with electron-vite. Three processes, one shar
 | `orchestrator.ts` | Per-repo orchestrator chat, its in-process MCP tools and memory file |
 | `reflect.ts` | Read-only reflection agent over a workspace's chats |
 | `share.ts`, `shareIpc.ts` | Shared sessions over hidden git refs |
+| `remote.ts` | Continue on phone: runs `claude --resume <id> --remote-control` in a terminal and imports the phone turns back |
 | `conductorImport.ts` | Reads a copy of Conductor's SQLite database and maps it onto Choo Choo state |
 | `archive.ts` | Moves worktrees to and from the archive folder; retention cleanup |
 | `git.ts` | Worktrees, diffs, snapshots, grep |
