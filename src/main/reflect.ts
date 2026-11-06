@@ -1,3 +1,4 @@
+import { isAbsolute, relative, resolve } from 'node:path'
 import type { Repo, Workspace } from '@shared/types'
 import { REFLECT_PROMPT, condenseTranscript, parseReflectResult, type ReflectProposal, type ReflectResult } from '@shared/reflect'
 import * as store from './store'
@@ -5,6 +6,19 @@ import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
 
 const running = new Map<string, AbortController>()
+const REFLECT_TOOLS = new Set(['Read', 'Glob', 'Grep'])
+
+/** Whether every path a read tool names stays inside `root`. */
+export function insideDir(root: string, input: Record<string, unknown>): boolean {
+  for (const key of ['file_path', 'path']) {
+    const v = input[key]
+    if (v === undefined) continue
+    if (typeof v !== 'string') return false
+    const r = relative(root, resolve(root, v))
+    if (r.startsWith('..') || isAbsolute(r)) return false
+  }
+  return true
+}
 
 export function cancel(wsId: string) {
   running.get(wsId)?.abort()
@@ -45,8 +59,12 @@ export async function reflect(ws: Workspace, repo: Repo, env: Record<string, str
         effort: 'high',
         maxTurns: 40,
         tools: ['Read', 'Glob', 'Grep'],
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
+        permissionMode: 'default',
+        // Read-only tools, and only inside this workspace's checkout.
+        canUseTool: async (name: string, input: Record<string, unknown>) =>
+          REFLECT_TOOLS.has(name) && insideDir(ws.path, input)
+            ? { behavior: 'allow', updatedInput: input }
+            : { behavior: 'deny', message: 'Reflection may only read files in this repository.' },
         // No project hooks or settings: this agent only reads.
         settingSources: [],
         persistSession: false,
