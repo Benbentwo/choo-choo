@@ -6,6 +6,7 @@ import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
 import { FileView } from './FileView'
+import { MergedBar, ReflectModal } from './Reflect'
 
 export function Center({ ws }: { ws: Workspace }) {
   const s = useStore()
@@ -16,6 +17,7 @@ export function Center({ ws }: { ws: Workspace }) {
   const doc = s.openDoc[ws.id] ?? null
   const diffFile = doc?.path ?? null
   const [menu, setMenu] = useState(false)
+  const [reflecting, setReflecting] = useState(false)
 
   useEffect(() => {
     if (chats.length === 0) void newChatTab(ws.id)
@@ -41,7 +43,7 @@ export function Center({ ws }: { ws: Workspace }) {
     try {
       await window.api.archiveWorkspace(ws.id)
       await refreshState()
-      s.selectWorkspace(null)
+      if (useStore.getState().selectedWs === ws.id) s.selectWorkspace(null)
     } catch (e) {
       reportError(e)
     }
@@ -67,6 +69,7 @@ export function Center({ ws }: { ws: Workspace }) {
               <MenuItem label="Reveal in Finder" onClick={() => { setMenu(false); void window.api.revealInFinder(ws.path) }} />
               <MenuItem label="Copy path" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.path) }} />
               <MenuItem label="Copy branch name" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.branch) }} />
+              <MenuItem label="Reflect on this session…" onClick={() => { setMenu(false); setReflecting(true) }} />
               <MenuItem label={ws.share ? 'Sharing with coworkers…' : 'Share with coworkers…'} onClick={() => { setMenu(false); s.set({ modal: 'share' }) }} />
               <div className="my-1 border-t border-line" />
               <MenuItem label={ws.orchestrator ? 'Hide orchestrator' : 'Archive workspace'} danger={!ws.orchestrator} onClick={() => void archive()} />
@@ -131,9 +134,11 @@ export function Center({ ws }: { ws: Workspace }) {
               </button>
             </div>
           )}
+          <MergedBar ws={ws} onArchive={archive} />
           <Composer chat={active} ws={ws} />
         </>
       ) : null}
+      {reflecting && <ReflectModal ws={ws} archiveAfter={false} onClose={() => setReflecting(false)} onArchive={archive} />}
     </main>
   )
 }
