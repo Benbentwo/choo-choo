@@ -51,3 +51,13 @@ export async function listMyRepos(): Promise<GithubRepo[]> {
 export async function cloneRepo(nameWithOwner: string, dest: string) {
   await exec('gh', ['repo', 'clone', nameWithOwner, dest], { maxBuffer: 64 * 1024 * 1024 })
 }
+
+/** public, private or internal; undefined when gh can't tell (not GitHub, or not signed in). */
+export async function repoVisibility(cwd: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await exec('gh', ['repo', 'view', '--json', 'visibility', '--jq', '.visibility'], { cwd, timeout: 10_000 })
+    return stdout.trim().toLowerCase() || undefined
+  } catch {
+    return undefined
+  }
+}

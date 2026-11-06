@@ -17,6 +17,7 @@ import { suggestName } from './naming'
 import { checkNow, installUpdate, startUpdater } from './updater'
 import { registerDevFeedback } from './devFeedback'
 import { resolveTheme } from '@shared/themes'
+import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
 
 let win: BrowserWindow | null = null
@@ -243,6 +244,8 @@ function noteForOrchestrator(chat: Chat) {
 function onChatDone(chat: Chat) {
   notifyDone(chat)
   noteForOrchestrator(chat)
+  const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
+  if (ws) autoSync(ws)
 }
 
 function notifyDone(chat: Chat) {
@@ -519,6 +522,7 @@ function buildMenu() {
         { label: 'Run', accelerator: 'CmdOrCtrl+R', click: m('run') },
         { label: 'Next Unread', accelerator: 'CmdOrCtrl+Shift+U', click: m('next-unread') },
         { label: 'Search…', accelerator: 'CmdOrCtrl+K', click: m('search') },
+        { label: 'Open Shared Session…', click: m('open-share') },
         { type: 'separator' },
         { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' }
       ]
@@ -573,6 +577,10 @@ function createWindow() {
     }
   })
   win.once('ready-to-show', () => win?.show())
+  win.webContents.on('did-finish-load', () => {
+    if (pendingLink) send('share:link', pendingLink)
+    pendingLink = null
+  })
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
@@ -593,12 +601,39 @@ async function fixPath() {
   })
 }
 
+// choo-choo://share links open the shared session. macOS can deliver one before the window exists.
+let pendingLink: string | null = null
+function openLink(url: string) {
+  if (!url.startsWith('choo-choo://')) return
+  if (win && !win.isDestroyed() && !win.webContents.isLoading()) {
+    send('share:link', url)
+    win.show()
+    win.focus()
+  } else pendingLink = url
+}
+app.on('open-url', (e, url) => {
+  e.preventDefault()
+  openLink(url)
+})
+if (process.defaultApp) {
+  if (process.argv[1]) app.setAsDefaultProtocolClient('choo-choo', process.execPath, [resolve(process.argv[1])])
+} else app.setAsDefaultProtocolClient('choo-choo')
+
 app.whenReady().then(async () => {
   await fixPath()
   // Packaged builds get the icon from the .icns; in dev, show the brand icon in the Dock too.
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
   registerIpc()
+  registerShareIpc({
+    workspacesRoot: WORKSPACES_ROOT,
+    reposRoot: REPOS_ROOT,
+    findWs,
+    addRepo,
+    newChat,
+    runSetup: (ws) => void runScript(ws, 'setup'),
+    notifyChanged: () => send('state:changed')
+  })
   registerDevFeedback(() => win)
   buildMenu()
   createWindow()
