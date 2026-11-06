@@ -1,0 +1,33 @@
+name: Preview build
+# Unsigned test builds of main, downloadable from the run's Artifacts section.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  pull_request:
+    paths: ['.github/workflows/preview.yml', 'electron-builder.yml']
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/install-mac-binaries.cjs
+      # Ad-hoc signature ("-") so Apple silicon will launch it. Hardened runtime is off because
+      # ad-hoc signing can't satisfy its library validation.
+      - run: npx electron-builder --mac dmg --arm64 --x64 -c.mac.identity=- -c.mac.hardenedRuntime=false --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: choo-choo-apple-silicon
+          path: dist/*-arm64.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: choo-choo-intel
+          path: |
+            dist/*.dmg
+            !dist/*-arm64.dmg
