@@ -44,3 +44,14 @@ describe('reflect', () => {
     expect(condenseTranscript([{ title: 'Empty', items: [] }])).toBe('')
   })
 })
+
+describe('redactSecrets', () => {
+  it('masks common secret shapes and keeps normal text', async () => {
+    const { redactSecrets } = await import('../src/shared/reflect')
+    const out = redactSecrets('use sk-ant-api03-abcdefghijklmnopqrstu and ghp_abcdefghijklmnopqrstuvwxyz12\nAuthorization: Bearer abcdefghijklmnopqrstuvwx\nexport DB_PASSWORD="hunter22pass"\nnpm run test')
+    expect(out).not.toMatch(/sk-ant|ghp_|abcdefghijklmnopqrstuvwx|hunter22/)
+    expect(out).toContain('DB_PASSWORD="[redacted]"')
+    expect(out).toContain('Bearer [redacted]')
+    expect(out).toContain('npm run test')
+  })
+})
