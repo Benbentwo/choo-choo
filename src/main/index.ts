@@ -28,6 +28,7 @@ import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import * as archive from './archive'
 import * as remote from './remote'
+import * as cloud from './cloud'
 import { registerIntegrationsIpc } from './integrations'
 import * as notion from './integrations/notion'
 
@@ -534,7 +535,10 @@ function registerIpc() {
   h('chat:close', async (id: string) => {
     await agent.stop(id)
     const closing = store.get().chats.find((c) => c.id === id)
-    if (closing) pty.kill(remote.phoneTerminalId(closing))
+    if (closing) {
+      pty.kill(remote.phoneTerminalId(closing))
+      pty.kill(cloud.cloudTerminalId(closing))
+    }
     const s = store.get()
     s.chats = s.chats.filter((c) => c.id !== id)
     store.deleteChatItems(id)
@@ -683,6 +687,23 @@ function registerIpc() {
     const ws = findWs(chat.workspaceId)
     return remote.continueOnPhone(chat, ws, agentEnv(ws), emitChat, (i, c) => send('pty:exit', i, c), (i, d) => send('pty:data', i, d))
   })
+  const cloudOut = { onData: (i: string, d: string) => send('pty:data', i, d), onExit: (i: string, c: number) => send('pty:exit', i, c), stateChanged: () => send('state:changed') }
+  h('chat:cloud', (id: string, task: string) => {
+    const chat = findChat(id)
+    const ws = findWs(chat.workspaceId)
+    return cloud.runInCloud(chat, ws, typeof task === 'string' ? task : '', agentEnv(ws), emitChat, cloudOut)
+  })
+  h('chat:cloudSend', (id: string, text: string) => {
+    const chat = findChat(id)
+    const ws = findWs(chat.workspaceId)
+    return cloud.sendToCloud(chat, ws, String(text ?? ''), agentEnv(ws), emitChat)
+  })
+  h('chat:cloudBack', (id: string) => {
+    const chat = findChat(id)
+    const ws = findWs(chat.workspaceId)
+    return cloud.teleportBack(chat, ws, agentEnv(ws), emitChat, cloudOut)
+  })
+  h('chat:cloudForget', (id: string) => cloud.forgetCloud(findChat(id), emitChat))
   h('chat:phoneBack', (id: string) => {
     const chat = findChat(id)
     return remote.bringBack(chat, findWs(chat.workspaceId), emitChat)
@@ -860,6 +881,7 @@ app.whenReady().then(async () => {
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
   registerIpc()
+  cloud.recoverAfterRestart()
   void remote.recoverAfterRestart((id) => store.get().workspaces.find((w) => w.id === id), emitChat)
   archive.startArchiveCleanup()
   registerShareIpc({
