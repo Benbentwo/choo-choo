@@ -18,6 +18,11 @@ describe('themes', () => {
     expect(resolveTheme('dark', false).tokens.bg).toBe('#1a1817')
   })
 
+  it('includes the Cyber Wave theme from Warp and its accent', () => {
+    expect(resolveTheme('cyberwave', false)).toMatchObject({ label: 'Cyber Wave', dark: true })
+    expect(resolveAccent('cyberwave', true)).toBe('#ff8ffd')
+  })
+
   it('follows the OS for the system theme and falls back for unknown ids', () => {
     expect(resolveTheme('system', true).id).toBe('choo')
     expect(resolveTheme('system', false).id).toBe('choo-light')
