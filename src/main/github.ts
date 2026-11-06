@@ -52,16 +52,6 @@ export async function cloneRepo(nameWithOwner: string, dest: string) {
   await exec('gh', ['repo', 'clone', nameWithOwner, dest], { maxBuffer: 64 * 1024 * 1024 })
 }
 
-/** public, private or internal; undefined when gh can't tell (not GitHub, or not signed in). */
-export async function repoVisibility(cwd: string): Promise<string | undefined> {
-  try {
-    const { stdout } = await exec('gh', ['repo', 'view', '--json', 'visibility', '--jq', '.visibility'], { cwd, timeout: 10_000 })
-    return stdout.trim().toLowerCase() || undefined
-  } catch {
-    return undefined
-  }
-}
-
 type Listed = { number: number; title: string; author?: { login: string }; headRefName?: string }
 
 export async function listPrs(cwd: string, query: string): Promise<SourceOption[]> {
@@ -86,6 +76,16 @@ export async function prHead(cwd: string, number: number) {
 export async function issueText(cwd: string, number: number) {
   const { stdout } = await exec('gh', ['issue', 'view', String(number), '--json', 'title,body,url'], { cwd })
   return JSON.parse(stdout) as { title: string; body: string; url: string }
+}
+
+/** public, private or internal; undefined when gh can't tell (not GitHub, or not signed in). */
+export async function repoVisibility(cwd: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await exec('gh', ['repo', 'view', '--json', 'visibility', '--jq', '.visibility'], { cwd, timeout: 10_000 })
+    return stdout.trim().toLowerCase() || undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**

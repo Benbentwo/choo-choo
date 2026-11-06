@@ -1,10 +1,13 @@
 import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
+import type { ReflectProposal, ReflectResult } from './reflect'
 export interface Repo {
   id: string
   name: string
   path: string
   defaultBranch: string
   hidden?: boolean
+  /** Scripts set in the app (e.g. imported from Conductor); a choo-choo.json or conductor.json in the repo wins. */
+  scripts?: Scripts
 }
 
 /** What a new workspace starts from, besides a fresh branch off the default branch. */
@@ -14,6 +17,23 @@ export interface SourceOption {
   source: WorkspaceSource
   title: string
   detail: string
+}
+
+export interface ImportPreview {
+  found: boolean
+  repos: { name: string; path: string; status: 'new' | 'already' | 'missing'; hasScripts: boolean }[]
+  workspaces: { repo: string; name: string; branch: string; path: string; chats: number; status: 'new' | 'already' }[]
+  archivedSkipped: number
+  settings: { label: string; value: string }[]
+  /** Folder Conductor creates workspaces in. */
+  workspacesRoot?: string
+}
+
+export interface ImportResult {
+  repos: number
+  workspaces: number
+  chats: number
+  messages: number
 }
 
 export interface GithubRepo {
@@ -184,6 +204,8 @@ export interface Settings extends AppearanceSettings {
   /** Optional. Without it the agent uses your Claude Code login. */
   anthropicApiKey: string
   notifications: boolean
+  /** Where new workspaces go; empty means ~/choo-choo/workspaces. */
+  workspacesRoot?: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -257,6 +279,11 @@ export interface Api {
   openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
+  /** Reviews the workspace's chats for friction and suggests agent-setup changes. Writes nothing. */
+  reflect(workspaceId: string): Promise<ReflectResult>
+  cancelReflect(workspaceId: string): Promise<void>
+  /** Writes accepted proposals to a new workspace and asks its agent to open a PR. */
+  applyReflection(workspaceId: string, proposals: ReflectProposal[]): Promise<{ workspace: Workspace; chat: Chat }>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
@@ -285,6 +312,8 @@ export interface Api {
   /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
   cloneRepo(url: string, dir?: string): Promise<Repo>
   pickFolder(): Promise<string | null>
+  previewConductorImport(): Promise<ImportPreview>
+  importFromConductor(opts: { useWorkspacesRoot: boolean }): Promise<ImportResult>
   listGithubRepos(): Promise<GithubRepo[]>
   quickStart(name: string): Promise<Repo>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void

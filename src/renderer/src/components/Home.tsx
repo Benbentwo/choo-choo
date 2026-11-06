@@ -1,5 +1,5 @@
 import { useStore, addRepository } from '../store'
-import { IconBranch, IconFolder, IconFolderPlus, IconGlobe, IconSidebar } from '../icons'
+import { IconFolder, IconFolderPlus, IconGlobe, IconSidebar } from '../icons'
 import { BrandMark } from './BrandMark'
 
 export function Home() {
@@ -7,8 +7,7 @@ export function Home() {
   const actions = [
     { label: 'Open project', icon: <IconFolder width={18} height={18} />, run: () => void addRepository() },
     { label: 'Open GitHub project', icon: <IconGlobe width={18} height={18} />, run: () => s.set({ modal: 'create' }) },
-    { label: 'Quick start', icon: <IconFolderPlus width={18} height={18} />, run: () => s.set({ modal: 'quickstart' }) },
-    { label: 'Open shared session', icon: <IconBranch width={18} height={18} />, run: () => s.set({ modal: 'open-share' }) }
+    { label: 'Quick start', icon: <IconFolderPlus width={18} height={18} />, run: () => s.set({ modal: 'quickstart' }) }
   ]
   return (
     <div className="flex flex-1 flex-col">
@@ -25,7 +24,7 @@ export function Home() {
           Choo Choo
         </h1>
         <p className="mb-8 text-muted">Run Claude Code agents in parallel, each in its own git worktree.</p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           {actions.map((a) => (
             <button key={a.label} onClick={a.run} className="flex flex-col items-start gap-3 rounded-lg border border-line px-4 py-3 text-left whitespace-nowrap hover:bg-hover">
               <span className="text-muted">{a.icon}</span>
@@ -33,6 +32,9 @@ export function Home() {
             </button>
           ))}
         </div>
+        <button onClick={() => s.set({ modal: 'open-share' })} className="mt-4 text-[12px] text-muted hover:text-fg">
+          Open a shared session…
+        </button>
       </div>
     </div>
   )

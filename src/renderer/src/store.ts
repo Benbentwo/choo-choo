@@ -22,12 +22,12 @@ interface UI {
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
   settings: Settings
-  modal: 'settings' | 'palette' | 'create' | 'share' | 'open-share' | 'quickstart' | null
-  /** A share link to open, from a choo-choo:// URL. */
-  shareLinkDraft: string | null
+  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | null
   recentPaths: string[]
   /** Repo whose new-workspace composer is open in the center, if any. */
   draftRepo: string | null
+  /** A share link to open, from a choo-choo:// URL. */
+  shareLinkDraft: string | null
   history: string[]
   historyIndex: number
   sidebarOpen: boolean
@@ -61,9 +61,9 @@ export const useStore = create<UI>((set, get) => ({
   openDoc: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
-  shareLinkDraft: null,
   recentPaths: [],
   draftRepo: null,
+  shareLinkDraft: null,
   history: [],
   historyIndex: -1,
   sidebarOpen: true,

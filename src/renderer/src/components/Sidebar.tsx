@@ -100,7 +100,7 @@ export function Sidebar() {
           </button>
         )}
         {view.group === 'none' &&
-          sortWs(s.workspaces.filter((w) => !w.archived && visible.some((r) => r.id === w.repoId))).map((w) => (
+          sortWs(s.workspaces.filter((w) => !w.archived && !w.orchestrator && visible.some((r) => r.id === w.repoId))).map((w) => (
             <WsRow key={w.id} w={w} repoName={s.repos.find((r) => r.id === w.repoId)?.name} />
           ))}
         {view.group === 'project' && visible.map((repo) => {
