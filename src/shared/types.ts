@@ -1,10 +1,39 @@
 import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
+import type { ReflectProposal, ReflectResult } from './reflect'
 export interface Repo {
   id: string
   name: string
   path: string
   defaultBranch: string
   hidden?: boolean
+  /** Scripts set in the app (e.g. imported from Conductor); a choo-choo.json or conductor.json in the repo wins. */
+  scripts?: Scripts
+}
+
+/** What a new workspace starts from, besides a fresh branch off the default branch. */
+export type WorkspaceSource = { kind: 'pr'; number: number } | { kind: 'branch'; name: string } | { kind: 'issue'; number: number }
+
+export interface SourceOption {
+  source: WorkspaceSource
+  title: string
+  detail: string
+}
+
+export interface ImportPreview {
+  found: boolean
+  repos: { name: string; path: string; status: 'new' | 'already' | 'missing'; hasScripts: boolean }[]
+  workspaces: { repo: string; name: string; branch: string; path: string; chats: number; status: 'new' | 'already' }[]
+  archivedSkipped: number
+  settings: { label: string; value: string }[]
+  /** Folder Conductor creates workspaces in. */
+  workspacesRoot?: string
+}
+
+export interface ImportResult {
+  repos: number
+  workspaces: number
+  chats: number
+  messages: number
 }
 
 export interface GithubRepo {
@@ -28,6 +57,8 @@ export interface Workspace {
   createdAt: number
   archived?: boolean
   archivedAt?: number
+  /** Where the archived worktree was moved, until retention cleanup deletes it. */
+  archivePath?: string
   /** The repo's orchestrator: runs in the main checkout and directs other workspaces. */
   orchestrator?: boolean
   /** Started by the orchestrator. */
@@ -184,6 +215,18 @@ export interface FileChange {
   deletions: number
 }
 
+export interface WorkspacePreview {
+  /** Plain-text start of the latest message. */
+  snippet: string
+  lastActive: number
+}
+
+export interface GrepHit {
+  path: string
+  line: number
+  text: string
+}
+
 export interface DiffStats {
   additions: number
   deletions: number
@@ -199,6 +242,10 @@ export interface Settings extends AppearanceSettings {
   /** Optional. Without it the agent uses your Claude Code login. */
   anthropicApiKey: string
   notifications: boolean
+  /** Where new workspaces go; empty means ~/choo-choo/workspaces. */
+  workspacesRoot?: string
+  /** Days to keep archived worktrees before deleting them. 0 keeps them forever. */
+  archiveRetentionDays: number
   /** Which Claude Code to run: the copy bundled with the app, or the `claude` you installed. */
   claudeBinary: 'bundled' | 'installed'
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
@@ -241,6 +288,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notifications: true,
   claudeBinary: 'bundled',
   extras: DEFAULT_EXTRAS,
+  archiveRetentionDays: 30,
   ...DEFAULT_APPEARANCE
 }
 
@@ -249,6 +297,8 @@ export interface AppState {
   workspaces: Workspace[]
   chats: Chat[]
   settings: Settings
+  /** Folders added as projects, most recent first; shown under Recents in the Add project menu. */
+  recentPaths?: string[]
 }
 
 export interface CheckRun {
@@ -297,11 +347,23 @@ export interface Api {
   addRepo(path: string): Promise<Repo>
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
-  createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  createWorkspace(repoId: string, source?: WorkspaceSource): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
+  listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
   /** Opens the repo's orchestrator, creating it the first time. */
   openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
+  /** Reviews the workspace's chats for friction and suggests agent-setup changes. Writes nothing. */
+  reflect(workspaceId: string): Promise<ReflectResult>
+  cancelReflect(workspaceId: string): Promise<void>
+  /** Writes accepted proposals to a new workspace and asks its agent to open a PR. */
+  applyReflection(workspaceId: string, proposals: ReflectProposal[]): Promise<{ workspace: Workspace; chat: Chat }>
+  workspacePreview(workspaceId: string): Promise<WorkspacePreview>
+  /** Last chat activity per workspace id. */
+  workspaceActivity(): Promise<Record<string, number>>
+  searchFiles(workspaceId: string, query: string): Promise<GrepHit[]>
+  /** Deletes archived worktrees past the retention period now. Returns how many. */
+  cleanupArchives(): Promise<number>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
@@ -327,8 +389,13 @@ export interface Api {
   saveSettings(patch: Partial<Settings>): Promise<Settings>
   /** Interface zoom, 1 = 100%. */
   setZoom(factor: number): void
-  cloneRepo(url: string): Promise<Repo>
+  /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
+  cloneRepo(url: string, dir?: string): Promise<Repo>
+  pickFolder(): Promise<string | null>
+  previewConductorImport(): Promise<ImportPreview>
+  importFromConductor(opts: { useWorkspacesRoot: boolean }): Promise<ImportResult>
   listGithubRepos(): Promise<GithubRepo[]>
+  quickStart(name: string): Promise<Repo>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
   stopChat(chatId: string): Promise<void>

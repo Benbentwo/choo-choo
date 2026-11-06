@@ -50,7 +50,7 @@ If you use Conductor and want an app you can read, fork and keep running no matt
 | PRs and checks | Built in | Built in, via the `gh` CLI |
 | Data | On your Mac | On your Mac, plain JSON files |
 
-To switch, [install Choo Choo](#install), [sign in](#signing-in), and add the same repos. Your existing `conductor.json` setup and run scripts are picked up as they are.
+To switch, [install Choo Choo](#install), [sign in](#signing-in), then open Settings > Import from Conductor. It shows a preview, then brings over your projects, open workspaces (left where they are), their chats and your default model. Claude chats keep their session, so the agent picks up with full context. Conductor's database is copied and read, never changed. Your existing `conductor.json` setup and run scripts are picked up as they are.
 
 ## Install
 

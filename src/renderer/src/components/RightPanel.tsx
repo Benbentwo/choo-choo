@@ -27,6 +27,12 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   return (
     <aside className="flex w-[420px] shrink-0 flex-col border-l border-line bg-panel">
       <div className="drag flex h-11 shrink-0 items-center justify-end gap-2 border-b border-line px-3">
+        <button
+          onClick={() => s.set({ rightTab: 'review' })}
+          className={`no-drag flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 hover:bg-hover ${s.rightTab === 'review' ? 'bg-raised text-fg' : 'text-muted hover:text-fg'}`}
+        >
+          <IconEye /> Review
+        </button>
         <PrButton ws={ws} hasChanges={changes.length > 0} />
       </div>
 
@@ -42,9 +48,6 @@ export function RightPanel({ ws }: { ws: Workspace }) {
               {t.id === 'changes' && changes.length > 0 && <span className="ml-1.5 text-faint">{changes.length}</span>}
             </button>
           ))}
-          <button onClick={() => s.set({ rightTab: 'review' })} className={`flex items-center gap-1 rounded-md px-2.5 py-1 ${s.rightTab === 'review' ? 'bg-raised text-fg' : 'text-muted hover:text-fg'}`}>
-            <IconEye /> Review
-          </button>
           <div className="flex-1" />
           <button className="rounded p-1 text-faint hover:text-fg" onClick={() => { setSearching(!searching); setFilter('') }} title="Filter files">
             <IconSearch />

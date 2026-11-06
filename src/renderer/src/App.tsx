@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
+import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
 import { useAppearance } from './appearance'
 import { useShareRefresh } from './components/ShareModals'
@@ -41,13 +42,17 @@ export function App() {
         case 'add-repo':
           return void addRepository()
         case 'search':
-          return st.set({ modal: st.modal === 'palette' ? null : 'palette' })
+          return openPalette('all')
+        case 'file-picker':
+          return openPalette('files')
+        case 'search-files':
+          return openPalette('grep')
         case 'settings':
           return st.set({ modal: 'settings' })
         case 'open-share':
           return st.set({ modal: 'open-share' })
         case 'new-workspace':
-          if (curWs) void newWorkspace(curWs.repoId)
+          if (curWs) newWorkspace(curWs.repoId)
           return
         case 'new-chat':
           if (cur) void newChatTab(cur)
@@ -89,6 +94,8 @@ export function App() {
             <Center ws={ws} />
             {s.rightOpen && !ws.orchestrator && <RightPanel ws={ws} />}
           </>
+        ) : s.draftRepo ? (
+          <NewWorkspace repoId={s.draftRepo} />
         ) : (
           <Home />
         )}

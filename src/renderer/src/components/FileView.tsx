@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FilePreview, Workspace } from '@shared/types'
 
-export function FileView({ ws, file }: { ws: Workspace; file: string }) {
+export function FileView({ ws, file, line }: { ws: Workspace; file: string; line?: number }) {
   const [f, setF] = useState<FilePreview | null>(null)
+  const target = useRef<HTMLTableRowElement>(null)
+  useEffect(() => target.current?.scrollIntoView({ block: 'center' }), [f, line])
   useEffect(() => {
     setF(null)
     void window.api.readFile(ws.id, file).then(setF, (e) => setF({ path: file, content: null, reason: String(e) }))
@@ -18,7 +20,7 @@ export function FileView({ ws, file }: { ws: Workspace; file: string }) {
       <table className="w-full border-collapse">
         <tbody>
           {lines.map((l, i) => (
-            <tr key={i}>
+            <tr key={i} ref={i + 1 === line ? target : undefined} className={i + 1 === line ? 'bg-accent/15' : undefined}>
               <td className="w-12 pr-3 text-right align-top text-faint select-none">{i + 1}</td>
               <td className="pr-4 whitespace-pre">{l}</td>
             </tr>

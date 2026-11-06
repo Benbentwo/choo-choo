@@ -25,7 +25,10 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Breadcrumb header: repo › branch, workspace menu (Reveal in Finder, copy path/branch, archive)
 - ✅ Back/forward between workspaces
 - ✅ Home view with recent workspaces
-- ✅ Search palette (⌘K): workspaces and actions
+- ✅ Command palette (⌘K) with All / Workspaces / Projects / Actions / Settings tabs; recent workspaces include archived ones (dimmed, accent bar, opening restores)
+- ✅ File picker (⌘P) and search in files (⌘⇧F)
+- ✅ Sidebar hover: archive button and preview card (branch, diff size, status, title, latest message, Create PR, last active)
+- ✅ Archived worktrees kept in ~/choo-choo/archive with uncommitted files; deleted after a retention period (Settings, default 30 days)
 - ✅ Settings (⌘,): default model/effort, branch prefix, API key, notifications
 - ⬜ Onboarding, help menu, update notices
 
@@ -37,6 +40,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Archive workspace (runs archive script, removes worktree, keeps branch)
 - ✅ First prompt names the workspace and renames its unpushed branch
 - ✅ Restore archived workspaces (sidebar "Archived" list per repo)
+- ✅ After a PR merges: Continue / Archive / Archive and reflect. Reflect has an agent review the chats for friction and suggest CLAUDE.md, rules, skills and hook changes, shown as an editable diff; accepted ones go out as a PR from a new workspace (choo-choo addition)
 - ⬜ Drag to reorder repos
 
 ### Chat

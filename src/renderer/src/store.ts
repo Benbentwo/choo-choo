@@ -1,11 +1,16 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
-import { DEFAULT_SETTINGS, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
+import { DEFAULT_SETTINGS, type Effort, type ModelId, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
 
 export interface Doc {
   kind: 'diff' | 'file'
   path: string
+  /** Line to scroll to in a file. */
+  line?: number
 }
+
+/** Which list the ⌘K palette opens on. */
+export type PaletteMode = 'all' | 'files' | 'grep'
 
 export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'review'
 
@@ -22,7 +27,13 @@ interface UI {
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
   settings: Settings
-  modal: 'settings' | 'palette' | 'create' | 'share' | 'open-share' | null
+  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | null
+  paletteMode: PaletteMode
+  /** Settings tab to open on. */
+  settingsTab: 'general' | 'agents' | 'appearance'
+  recentPaths: string[]
+  /** Repo whose new-workspace composer is open in the center, if any. */
+  draftRepo: string | null
   /** A share link to open, from a choo-choo:// URL. */
   shareLinkDraft: string | null
   history: string[]
@@ -58,6 +69,10 @@ export const useStore = create<UI>((set, get) => ({
   openDoc: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
+  paletteMode: 'all',
+  settingsTab: 'general',
+  recentPaths: [],
+  draftRepo: null,
   shareLinkDraft: null,
   history: [],
   historyIndex: -1,
@@ -67,12 +82,12 @@ export const useStore = create<UI>((set, get) => ({
   rightTab: 'changes',
   error: null,
 
-  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings }),
+  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [] }),
   selectWorkspace: (id, fromHistory) => {
-    if (fromHistory || !id) return set({ selectedWs: id })
+    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null })
     const { history, historyIndex } = get()
     const h = [...history.slice(0, historyIndex + 1), id].slice(-50)
-    set({ selectedWs: id, history: h, historyIndex: h.length - 1 })
+    set({ selectedWs: id, draftRepo: null, history: h, historyIndex: h.length - 1 })
   },
   back: () => {
     const { history, historyIndex } = get()
@@ -123,15 +138,19 @@ export function reportError(e: unknown) {
   useStore.getState().set({ error: msg })
 }
 
-export async function newWorkspace(repoId: string) {
-  try {
-    const { workspace, chat } = await window.api.createWorkspace(repoId)
-    await refreshState()
-    useStore.getState().setActiveChat(workspace.id, chat.id)
-    useStore.getState().selectWorkspace(workspace.id)
-  } catch (e) {
-    reportError(e)
-  }
+/** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
+export function newWorkspace(repoId: string) {
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId })
+}
+
+export async function createWorkspace(repoId: string, opts: { source?: WorkspaceSource; text: string; model: ModelId; effort: Effort }) {
+  const { workspace, chat, context } = await window.api.createWorkspace(repoId, opts.source)
+  await window.api.updateChat(chat.id, { model: opts.model, effort: opts.effort })
+  await refreshState()
+  useStore.getState().setActiveChat(workspace.id, chat.id)
+  useStore.getState().selectWorkspace(workspace.id)
+  const prompt = [context, opts.text.trim()].filter(Boolean).join('\n\n')
+  if (prompt) await window.api.sendMessage(chat.id, prompt)
 }
 
 /** Opens the repo's orchestrator, which starts and directs workspaces for you. */
@@ -216,4 +235,31 @@ export function removePermission(id: string) {
   const next: Record<string, PermissionRequest[]> = {}
   for (const [k, v] of Object.entries(s.permissions)) next[k] = v.filter((r) => r.id !== id)
   s.set({ permissions: next })
+}
+
+export function openPalette(mode: PaletteMode = 'all') {
+  const s = useStore.getState()
+  if (s.modal === 'palette' && s.paletteMode === mode) return s.set({ modal: null })
+  s.set({ modal: 'palette', paletteMode: mode })
+}
+
+export async function archiveWorkspace(wsId: string) {
+  try {
+    await window.api.archiveWorkspace(wsId)
+    await refreshState()
+    if (useStore.getState().selectedWs === wsId) useStore.getState().selectWorkspace(null)
+  } catch (e) {
+    reportError(e)
+  }
+}
+
+/** "3mo", "7d", "5h", "2m", "now". */
+export function ago(ts: number, now = Date.now()): string {
+  const s = Math.max(0, (now - ts) / 1000)
+  if (s < 60) return 'now'
+  if (s < 3600) return `${Math.floor(s / 60)}m`
+  if (s < 86400) return `${Math.floor(s / 3600)}h`
+  if (s < 86400 * 30) return `${Math.floor(s / 86400)}d`
+  if (s < 86400 * 365) return `${Math.floor(s / (86400 * 30))}mo`
+  return `${Math.floor(s / (86400 * 365))}y`
 }
