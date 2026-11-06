@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { PrInfo, Workspace } from '@shared/types'
-import { lineDiff, type ReflectProposal, type ReflectResult } from '@shared/reflect'
+import { isExecutableTarget, lineDiff, type ReflectProposal, type ReflectResult } from '@shared/reflect'
 import { useStore, refreshState, reportError } from '../store'
 import { IconPR } from '../icons'
 
@@ -96,7 +96,7 @@ export function ReflectModal({ ws, archiveAfter, onClose, onArchive }: { ws: Wor
       (r) => {
         if (!live) return
         setResult(r)
-        setDrafts(r.proposals.map((p) => ({ ...p, accepted: true, editing: false })))
+        setDrafts(r.proposals.map((p) => ({ ...p, accepted: !isExecutableTarget(p.file), editing: false })))
       },
       (e) => live && setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
     )
@@ -214,6 +214,9 @@ function ProposalCard({ d, onChange }: { d: Draft; onChange: (p: Partial<Draft>)
             {d.file}
             {d.before === null && <span className="ml-2 rounded bg-add/15 px-1 text-add">new file</span>}
           </div>
+          {isExecutableTarget(d.file) && (
+            <div className="mt-1.5 rounded bg-del/10 px-2 py-1 text-[12px] text-del">This file runs commands. Read every line before accepting; it's unchecked by default.</div>
+          )}
         </div>
         <button className="rounded px-2 py-0.5 text-[12px] text-muted hover:bg-hover hover:text-fg" onClick={() => onChange({ editing: !d.editing, accepted: true })}>
           {d.editing ? 'Show diff' : 'Edit'}

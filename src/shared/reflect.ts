@@ -34,6 +34,12 @@ export function isReflectTarget(file: string): boolean {
   return false
 }
 
+/** Files whose contents run as commands (hooks). These need a closer look before accepting. */
+export function isExecutableTarget(file: string): boolean {
+  const f = normalizePath(file)
+  return f === '.claude/settings.json' || f.startsWith('.claude/hooks/') || /^\.claude\/skills\/.+\.(?:sh|py|js|ts)$/.test(f)
+}
+
 export function normalizePath(file: string): string {
   return file.trim().replace(/\\/g, '/').replace(/^\.\//, '')
 }

@@ -55,3 +55,11 @@ describe('redactSecrets', () => {
     expect(out).toContain('npm run test')
   })
 })
+
+describe('isExecutableTarget', () => {
+  it('flags hook-bearing files only', async () => {
+    const { isExecutableTarget } = await import('../src/shared/reflect')
+    expect(['.claude/settings.json', '.claude/hooks/fmt.sh', '.claude/skills/x/run.py'].map(isExecutableTarget)).toEqual([true, true, true])
+    expect(['CLAUDE.md', '.claude/rules/a.md', '.claude/skills/x/SKILL.md'].map(isExecutableTarget)).toEqual([false, false, false])
+  })
+})
