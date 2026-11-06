@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { FileChange, PrInfo, Workspace } from '@shared/types'
+import type { FileChange, PrComment, PrInfo, Workspace } from '@shared/types'
+import { newSince, prCommentsPrompt } from '@shared/prComments'
 import { useStore, reportError, openDoc, type RightTab } from '../store'
-import { IconDown, IconEye, IconPR, IconSearch } from '../icons'
+import { IconComment, IconDown, IconEye, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
 import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
 import { fmt } from './Stats'
@@ -150,13 +151,22 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const [pr, setPr] = useState<PrInfo | null>(null)
   const [menu, setMenu] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [comments, setComments] = useState<PrComment[]>([])
+  const [addedAt, setAddedAt] = useState(() => localStorage.getItem(addedKey(ws.id)) ?? undefined)
   const chats = s.chats.filter((c) => c.workspaceId === ws.id)
   const chatId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
   const agentBusy = chats.some((c) => c.status === 'running')
 
   useEffect(() => {
     let live = true
-    const load = () => void window.api.getPr(ws.id).then((p) => live && setPr(p))
+    const load = () =>
+      void window.api.getPr(ws.id).then((p) => {
+        if (!live) return
+        setPr(p)
+        if (p?.state !== 'OPEN') return setComments([])
+        window.api.getPrComments(ws.id).then((c) => live && setComments(c), () => {})
+      })
+    setAddedAt(localStorage.getItem(addedKey(ws.id)) ?? undefined)
     load()
     const t = setInterval(load, 60_000)
     return () => {
@@ -179,6 +189,23 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
     }
   }
 
+  const fresh = newSince(comments, addedAt)
+
+  /** Conductor's "Add all comments to chat": hands every open comment to the agent with file and line context. */
+  const addComments = async () => {
+    setMenu(false)
+    if (!chatId || !pr || !comments.length) return
+    s.setActiveChat(ws.id, chatId)
+    try {
+      await window.api.sendMessage(chatId, prCommentsPrompt(pr, comments))
+      const newest = comments.reduce((m, c) => (c.createdAt > m ? c.createdAt : m), '')
+      localStorage.setItem(addedKey(ws.id), newest)
+      setAddedAt(newest)
+    } catch (e) {
+      reportError(e)
+    }
+  }
+
   const merge = async () => {
     setMenu(false)
     setBusy(true)
@@ -194,43 +221,63 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
 
   const color = pr?.state === 'MERGED' ? 'text-violet-400' : pr?.state === 'CLOSED' ? 'text-del' : pr?.isDraft ? 'text-muted' : 'text-add'
   return (
-    <div className="no-drag relative flex items-center rounded-md border border-line">
-      {pr ? (
-        <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => void window.api.openExternal(pr.url)} title={pr.title}>
-          <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : 'Open'} #{pr.number}
-        </button>
-      ) : (
+    <>
+      {pr?.state === 'OPEN' && comments.length > 0 && (
         <button
-          className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover disabled:opacity-40"
-          disabled={agentBusy || (!hasChanges && !stats?.files)}
-          onClick={() => void create(false)}
-          title={agentBusy ? 'Wait for the agent to finish' : 'Ask the agent to commit, push and open a PR'}
+          className={`no-drag flex items-center gap-1.5 rounded-md border px-2 py-1 disabled:opacity-40 ${fresh.length ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25' : 'border-line text-muted hover:bg-hover hover:text-fg'}`}
+          disabled={agentBusy}
+          onClick={() => void addComments()}
+          title={
+            agentBusy
+              ? 'Wait for the agent to finish'
+              : `Add all ${comments.length} PR comment${comments.length === 1 ? '' : 's'} to chat${fresh.length && addedAt ? ` (${fresh.length} new)` : ''}`
+          }
         >
-          <IconPR /> Create PR
+          <IconComment /> {fresh.length && addedAt ? `${fresh.length} new` : comments.length}
         </button>
       )}
-      <button className="border-l border-line px-1.5 py-1 hover:bg-hover" onClick={() => setMenu(!menu)}>
-        <IconDown />
-      </button>
-      {menu && (
-        <div className="absolute top-8 right-0 z-30 w-52 rounded-lg border border-line bg-raised p-1 text-fg shadow-xl" onMouseLeave={() => setMenu(false)}>
-          {pr ? (
-            <>
-              <MenuBtn label="Open on GitHub" onClick={() => { setMenu(false); void window.api.openExternal(pr.url) }} />
-              {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
-              {pr.state === 'OPEN' && <MenuBtn label="Push latest changes" onClick={() => { setMenu(false); if (chatId) void window.api.sendMessage(chatId, 'Commit any uncommitted changes and push this branch.') }} />}
-            </>
-          ) : (
-            <>
-              <MenuBtn label="Create PR" onClick={() => void create(false)} />
-              <MenuBtn label="Create draft PR" onClick={() => void create(true)} />
-            </>
-          )}
-        </div>
-      )}
-    </div>
+      <div className="no-drag relative flex items-center rounded-md border border-line">
+        {pr ? (
+          <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => void window.api.openExternal(pr.url)} title={pr.title}>
+            <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : 'Open'} #{pr.number}
+          </button>
+        ) : (
+          <button
+            className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover disabled:opacity-40"
+            disabled={agentBusy || (!hasChanges && !stats?.files)}
+            onClick={() => void create(false)}
+            title={agentBusy ? 'Wait for the agent to finish' : 'Ask the agent to commit, push and open a PR'}
+          >
+            <IconPR /> Create PR
+          </button>
+        )}
+        <button className="border-l border-line px-1.5 py-1 hover:bg-hover" onClick={() => setMenu(!menu)}>
+          <IconDown />
+        </button>
+        {menu && (
+          <div className="absolute top-8 right-0 z-30 w-52 rounded-lg border border-line bg-raised p-1 text-fg shadow-xl" onMouseLeave={() => setMenu(false)}>
+            {pr ? (
+              <>
+                <MenuBtn label="Open on GitHub" onClick={() => { setMenu(false); void window.api.openExternal(pr.url) }} />
+                {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
+                {pr.state === 'OPEN' && comments.length > 0 && <MenuBtn label={`Add all comments to chat (${comments.length})`} onClick={() => void addComments()} />}
+                {pr.state === 'OPEN' && <MenuBtn label="Push latest changes" onClick={() => { setMenu(false); if (chatId) void window.api.sendMessage(chatId, 'Commit any uncommitted changes and push this branch.') }} />}
+              </>
+            ) : (
+              <>
+                <MenuBtn label="Create PR" onClick={() => void create(false)} />
+                <MenuBtn label="Create draft PR" onClick={() => void create(true)} />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   )
 }
+
+/** localStorage key for when a workspace's PR comments were last added to chat. */
+const addedKey = (wsId: string) => `prCommentsAddedAt:${wsId}`
 
 function MenuBtn(p: { label: string; onClick: () => void }) {
   return (

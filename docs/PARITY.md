@@ -64,6 +64,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Review: agent code review in a new tab
 - ✅ Create PR (agent commits, pushes, opens PR), draft option; PR status, open, squash merge
 - ✅ Review findings inline in the diff, with Fix buttons
+- ✅ Add all PR comments to chat: unresolved review threads, change requests and comments, with file/line context; new-comment count in the header
 
 ### Bottom panel
 - ✅ Terminal tabs (xterm + pty), persist across workspace switches

@@ -59,6 +59,7 @@ const api: Api = {
   isScriptRunning: inv('scripts:running') as Api['isScriptRunning'],
   getPr: inv('pr:get') as Api['getPr'],
   mergePr: inv('pr:merge') as Api['mergePr'],
+  getPrComments: inv('pr:comments') as Api['getPrComments'],
   getChecks: inv('checks:get') as Api['getChecks'],
   rerunCheck: inv('checks:rerun') as Api['rerunCheck'],
   getArtifacts: inv('ws:artifacts') as Api['getArtifacts'],

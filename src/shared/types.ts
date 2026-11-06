@@ -218,6 +218,26 @@ export interface PrInfo {
   mergeable?: string
 }
 
+/** One piece of review feedback on a PR, ready to hand to the agent. */
+export interface PrComment {
+  id: string
+  /** inline: an unresolved review thread on a line; review: a review's summary; comment: a conversation comment. */
+  kind: 'inline' | 'review' | 'comment'
+  author: string
+  body: string
+  /** For threads, the time of the newest reply. */
+  createdAt: string
+  url: string
+  path?: string
+  line?: number
+  startLine?: number
+  outdated?: boolean
+  diffHunk?: string
+  /** Review state, e.g. CHANGES_REQUESTED or COMMENTED. */
+  state?: string
+  replies?: { author: string; body: string }[]
+}
+
 export interface SlashCommandInfo {
   name: string
   description?: string
@@ -590,6 +610,8 @@ export interface Api {
   isScriptRunning(workspaceId: string, kind: ScriptKind): Promise<boolean>
   getPr(workspaceId: string): Promise<PrInfo | null>
   mergePr(workspaceId: string): Promise<void>
+  /** Unresolved review threads, reviews and comments on the workspace's PR. */
+  getPrComments(workspaceId: string): Promise<PrComment[]>
   getChecks(workspaceId: string): Promise<CheckRun[]>
   rerunCheck(workspaceId: string, link: string): Promise<void>
   getArtifacts(workspaceId: string): Promise<Artifact[]>

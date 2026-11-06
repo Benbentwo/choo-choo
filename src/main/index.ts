@@ -744,6 +744,11 @@ function registerIpc() {
     const ws = findWs(id)
     return gh.prForBranch(ws.path, ws.branch)
   })
+  h('pr:comments', async (id: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, ws.branch)
+    return pr ? gh.prComments(ws.path, pr.number) : []
+  })
   h('checks:get', (id: string) => {
     const ws = findWs(id)
     return gh.checks(ws.path, ws.branch)
