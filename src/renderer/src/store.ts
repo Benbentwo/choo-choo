@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { readCachedAppearance } from './appearanceCache'
 import { DEFAULT_SETTINGS, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
 
 export interface Doc {
@@ -54,7 +55,7 @@ export const useStore = create<UI>((set, get) => ({
   selectedWs: null,
   activeChat: {},
   openDoc: {},
-  settings: { ...DEFAULT_SETTINGS },
+  settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
   recentPaths: [],
   history: [],
