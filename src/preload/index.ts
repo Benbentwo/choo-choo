@@ -46,6 +46,7 @@ const api: Api = {
   saveSettings: inv('settings:save') as Api['saveSettings'],
   cloneRepo: inv('repo:clone') as Api['cloneRepo'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
+  quickStart: inv('repo:quickstart') as Api['quickStart'],
   onNavigate: (cb) => on<[string, string]>('navigate', cb),
   onChatEvent: (cb) => on<[ChatEvent]>('chat:event', cb),
   getChanges: inv('git:changes') as Api['getChanges'],

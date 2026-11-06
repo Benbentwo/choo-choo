@@ -1,10 +1,13 @@
-import { useStore, addRepository, newWorkspace } from '../store'
-import { IconBranch, IconFolder, IconGithub, IconSidebar } from '../icons'
-import { Stats } from './Stats'
+import { useStore, addRepository } from '../store'
+import { IconFolder, IconFolderPlus, IconGlobe, IconSidebar } from '../icons'
 
 export function Home() {
   const s = useStore()
-  const recent = [...s.workspaces].filter((w) => !w.archived).sort((a, b) => b.createdAt - a.createdAt).slice(0, 8)
+  const actions = [
+    { label: 'Open project', icon: <IconFolder width={18} height={18} />, run: () => void addRepository() },
+    { label: 'Open GitHub project', icon: <IconGlobe width={18} height={18} />, run: () => s.set({ modal: 'create' }) },
+    { label: 'Quick start', icon: <IconFolderPlus width={18} height={18} />, run: () => s.set({ modal: 'quickstart' }) }
+  ]
   return (
     <div className="flex flex-1 flex-col">
       <div className="drag flex h-11 items-center px-3">
@@ -14,35 +17,17 @@ export function Home() {
           </button>
         )}
       </div>
-      <div className="mx-auto w-full max-w-xl flex-1 px-6 pt-24">
+      <div className="mx-auto w-full max-w-2xl flex-1 px-6 pt-24">
         <h1 className="mb-1 text-2xl font-semibold">Choo Choo</h1>
         <p className="mb-8 text-muted">Run Claude Code agents in parallel, each in its own git worktree.</p>
-        <div className="mb-8 flex gap-2">
-          <button onClick={() => void addRepository()} className="flex items-center gap-2 rounded-lg bg-fg px-3 py-2 font-medium text-bg hover:opacity-90">
-            <IconFolder /> Open project
-          </button>
-          <button onClick={() => s.set({ modal: 'create' })} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 hover:bg-hover">
-            <IconGithub /> Clone from GitHub
-          </button>
-          {s.repos[0] && (
-            <button onClick={() => void newWorkspace(s.repos[0].id)} className="rounded-lg border border-line px-3 py-2 hover:bg-hover">
-              New workspace in {s.repos[0].name}
+        <div className="grid grid-cols-3 gap-3">
+          {actions.map((a) => (
+            <button key={a.label} onClick={a.run} className="flex flex-col items-start gap-3 rounded-lg border border-line px-4 py-3 text-left whitespace-nowrap hover:bg-hover">
+              <span className="text-muted">{a.icon}</span>
+              {a.label}
             </button>
-          )}
+          ))}
         </div>
-        {recent.length > 0 && (
-          <>
-            <div className="mb-2 text-[11px] font-medium text-faint">Recent workspaces</div>
-            {recent.map((w) => (
-              <button key={w.id} onClick={() => s.selectWorkspace(w.id)} className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-left hover:bg-hover">
-                <IconBranch className="text-faint" />
-                <span className="flex-1 truncate">{w.title}</span>
-                <span className="text-[12px] text-faint">{s.repos.find((r) => r.id === w.repoId)?.name}</span>
-                <Stats stats={s.stats[w.id]} />
-              </button>
-            ))}
-          </>
-        )}
       </div>
     </div>
   )

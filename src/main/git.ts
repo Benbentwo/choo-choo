@@ -179,6 +179,12 @@ export async function restore(cwd: string, snap: { head: string; tree: string })
   await git(cwd, ['reset', '-q'])
 }
 
+/** Creates a new repo with one empty commit, so worktrees can branch from it. */
+export async function initRepo(dest: string) {
+  await exec('git', ['init', '-b', 'main', dest])
+  await exec('git', ['-C', dest, 'commit', '--allow-empty', '-m', 'Initial commit'])
+}
+
 export async function clone(url: string, dest: string) {
   await exec('git', ['clone', url, dest], { maxBuffer: 64 * 1024 * 1024 })
 }

@@ -21,7 +21,8 @@ interface UI {
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
   settings: Settings
-  modal: 'settings' | 'palette' | 'create' | null
+  modal: 'settings' | 'palette' | 'create' | 'quickstart' | null
+  recentPaths: string[]
   history: string[]
   historyIndex: number
   sidebarOpen: boolean
@@ -55,6 +56,7 @@ export const useStore = create<UI>((set, get) => ({
   openDoc: {},
   settings: { ...DEFAULT_SETTINGS },
   modal: null,
+  recentPaths: [],
   history: [],
   historyIndex: -1,
   sidebarOpen: true,
@@ -63,7 +65,7 @@ export const useStore = create<UI>((set, get) => ({
   rightTab: 'changes',
   error: null,
 
-  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings }),
+  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [] }),
   selectWorkspace: (id, fromHistory) => {
     if (fromHistory || !id) return set({ selectedWs: id })
     const { history, historyIndex } = get()

@@ -160,6 +160,8 @@ export interface AppState {
   workspaces: Workspace[]
   chats: Chat[]
   settings: Settings
+  /** Folders added as projects, most recent first; shown under Recents in the Add project menu. */
+  recentPaths?: string[]
 }
 
 export interface CheckRun {
@@ -236,6 +238,7 @@ export interface Api {
   saveSettings(patch: Partial<Settings>): Promise<Settings>
   cloneRepo(url: string): Promise<Repo>
   listGithubRepos(): Promise<GithubRepo[]>
+  quickStart(name: string): Promise<Repo>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
   stopChat(chatId: string): Promise<void>

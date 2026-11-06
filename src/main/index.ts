@@ -92,6 +92,7 @@ async function addRepo(path: string): Promise<Repo> {
   }
   const repo: Repo = { id: randomUUID(), name: basename(root), path: root, defaultBranch: await git.defaultBranch(root) }
   s.repos.push(repo)
+  s.recentPaths = [root, ...(s.recentPaths ?? []).filter((p) => p !== root)].slice(0, 10)
   store.save()
   return repo
 }
@@ -344,6 +345,15 @@ function registerIpc() {
     return addRepo(dest)
   })
   h('gh:repos', () => gh.listMyRepos())
+  h('repo:quickstart', async (name: string) => {
+    const slug = name.trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '')
+    if (!slug) throw new Error('Enter a project name')
+    const dest = join(REPOS_ROOT, slug)
+    if (existsSync(dest)) throw new Error(`${dest} already exists`)
+    mkdirSync(REPOS_ROOT, { recursive: true })
+    await git.initRepo(dest)
+    return addRepo(dest)
+  })
   h('pr:merge', async (id: string) => {
     const ws = findWs(id)
     const pr = await gh.prForBranch(ws.path, ws.branch)

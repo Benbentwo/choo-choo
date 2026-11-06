@@ -4,6 +4,7 @@ import { IconFolder, IconGithub, IconLock } from '../icons'
 import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread } from '../store'
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
+import { QuickStartModalBody } from './AddProject'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -26,6 +27,12 @@ export function Modals() {
   if (modal === 'settings') return <SettingsModal onClose={close} />
   if (modal === 'palette') return <Palette onClose={close} />
   if (modal === 'create') return <CreateModal onClose={close} />
+  if (modal === 'quickstart')
+    return (
+      <Shell onClose={close} width="w-[480px]">
+        <QuickStartModalBody onClose={close} />
+      </Shell>
+    )
   return null
 }
 
