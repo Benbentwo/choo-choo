@@ -28,6 +28,8 @@ import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import * as archive from './archive'
 import * as remote from './remote'
+import { registerIntegrationsIpc } from './integrations'
+import * as notion from './integrations/notion'
 
 let win: BrowserWindow | null = null
 
@@ -164,6 +166,8 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     if (source?.kind === 'issue') {
       const issue = await gh.issueText(repo.path, source.number)
       context = gh.issueContext(source.number, issue)
+    } else if (source?.kind === 'notion') {
+      context = notion.pageContext(await notion.fetchPage(source.id))
     }
   }
   const workspace: Workspace = { id: randomUUID(), repoId, name, branch, baseRef, path, title, named, createdAt: Date.now() }
@@ -254,6 +258,7 @@ async function listSources(repoId: string, kind: WorkspaceSource['kind'], query:
   if (!repo) throw new Error('Unknown repo')
   if (kind === 'pr') return gh.listPrs(repo.path, query)
   if (kind === 'issue') return gh.listIssues(repo.path, query)
+  if (kind === 'notion') return notion.search(query)
   const q = query.toLowerCase()
   return (await git.remoteBranches(repo.path))
     .filter((b) => b.name.toLowerCase().includes(q))
@@ -496,6 +501,7 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'], message: 'Give the agent these files' })
     return r.canceled ? [] : r.filePaths
   })
+  registerIntegrationsIpc(() => send('state:changed'))
   h('ws:sources', (repoId: string, kind: WorkspaceSource['kind'], query: string) => listSources(repoId, kind, query))
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))
