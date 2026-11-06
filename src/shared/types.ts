@@ -33,6 +33,28 @@ export interface Workspace {
   orchestrator?: boolean
   /** Started by the orchestrator. */
   orchestrated?: boolean
+  /** Set while this workspace is shared with coworkers. */
+  share?: { id: string; link: string; sharedAt: number; autoSync: boolean }
+  /** Set when this workspace was opened from a coworker's share. */
+  importedShare?: { id: string; link: string; sharedBy: string; sharedAt: number }
+}
+
+/** A share found in a repository's remote. */
+export interface ShareInfo {
+  id: string
+  title: string
+  branch: string
+  sharedBy: string
+  sharedAt: number
+  chats: number
+}
+
+export interface ShareStatus {
+  link: string
+  sharedAt: number
+  autoSync: boolean
+  /** public, private or internal, when gh can tell. A share in a public repo is public. */
+  visibility?: string
 }
 
 export type ModelId = 'opus' | 'sonnet' | 'haiku' | 'codex'
@@ -65,6 +87,10 @@ export interface Chat {
   lastUuid?: string
   /** Set by a revert: the next turn forks the session at this entry. */
   forkAt?: string | null
+  /** Transcript from a coworker's share, sent ahead of the first message here. */
+  handoff?: string
+  /** The sharer's chat id, so refreshing a share updates the right tab. */
+  sharedChatId?: string
   createdAt: number
 }
 
@@ -273,6 +299,15 @@ export interface Api {
   onStateChanged(cb: () => void): () => void
   onUpdateReady(cb: (version: string) => void): () => void
   installUpdate(): Promise<void>
+  shareStatus(workspaceId: string): Promise<ShareStatus | null>
+  shareWorkspace(workspaceId: string): Promise<ShareStatus>
+  setShareAutoSync(workspaceId: string, on: boolean): Promise<void>
+  unshareWorkspace(workspaceId: string): Promise<void>
+  listShares(): Promise<{ repoId: string; repoName: string; shares: ShareInfo[] }[]>
+  openShare(link: string): Promise<{ workspace: Workspace; chat: Chat }>
+  openShareById(repoId: string, id: string): Promise<{ workspace: Workspace; chat: Chat }>
+  refreshShare(workspaceId: string): Promise<boolean>
+  onOpenShareLink(cb: (link: string) => void): () => void
 }
 
 export interface ReviewFinding {

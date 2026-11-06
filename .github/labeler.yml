@@ -1,0 +1,31 @@
+# Path-based PR labels (actions/labeler v5). Label names live in .github/labels.yml.
+docs:
+  - changed-files:
+      - any-glob-to-all-files: ['**/*.md', 'docs/**', 'LICENSE']
+ci:
+  - changed-files:
+      - any-glob-to-any-file: ['.github/workflows/**', '.github/*.yml']
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ['package.json', 'package-lock.json']
+tests:
+  - changed-files:
+      - any-glob-to-any-file: ['test/**', 'vitest.config.mts']
+'area: agent':
+  - changed-files:
+      - any-glob-to-any-file: ['src/main/agent.ts', 'src/main/codex.ts', 'src/main/orchestrator.ts', 'src/main/claudeBinary.ts', 'src/main/commands.ts']
+'area: ui':
+  - changed-files:
+      - any-glob-to-any-file: ['src/renderer/**', 'src/shared/themes.ts']
+'area: main':
+  - changed-files:
+      - any-glob-to-any-file: ['src/main/index.ts', 'src/main/store.ts', 'src/preload/**', 'src/shared/types.ts']
+'area: git':
+  - changed-files:
+      - any-glob-to-any-file: ['src/main/git.ts', 'src/main/github.ts', 'src/main/names.ts', 'src/main/naming.ts']
+'area: terminal':
+  - changed-files:
+      - any-glob-to-any-file: ['src/main/pty.ts', 'src/main/scripts.ts']
+'area: packaging':
+  - changed-files:
+      - any-glob-to-any-file: ['electron-builder.yml', 'build/**', 'resources/**', 'scripts/install-mac-binaries.cjs', 'src/main/updater.ts']

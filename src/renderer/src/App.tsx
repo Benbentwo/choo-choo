@@ -6,11 +6,13 @@ import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
 import { Modals } from './components/Modals'
 import { useAppearance } from './appearance'
+import { useShareRefresh } from './components/ShareModals'
 
 export function App() {
   const s = useStore()
   useAppearance()
   const ws = s.workspaces.find((w) => w.id === s.selectedWs && !w.archived) ?? null
+  useShareRefresh(ws)
 
   useEffect(() => {
     void window.api.pendingPermissions().then((list) => list.forEach(addPermission))
@@ -42,6 +44,8 @@ export function App() {
           return st.set({ modal: st.modal === 'palette' ? null : 'palette' })
         case 'settings':
           return st.set({ modal: 'settings' })
+        case 'open-share':
+          return st.set({ modal: 'open-share' })
         case 'new-workspace':
           if (curWs) void newWorkspace(curWs.repoId)
           return
@@ -62,11 +66,13 @@ export function App() {
       }
     })
     const offState = window.api.onStateChanged(() => void refreshState())
+    const offLink = window.api.onOpenShareLink((link) => useStore.getState().set({ modal: 'open-share', shareLinkDraft: link }))
     const offNav = window.api.onNavigate((wsId, chatId) => {
       useStore.getState().setActiveChat(wsId, chatId)
       useStore.getState().selectWorkspace(wsId)
     })
     return () => {
+      offLink()
       offState()
       offNav()
       offChat()

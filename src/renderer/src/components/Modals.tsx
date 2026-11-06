@@ -5,6 +5,7 @@ import { useStore, addRepository, newWorkspace, newChatTab, refreshState, report
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
 import { AppearanceSettings } from './Appearance'
+import { OpenShareModal, ShareModal } from './ShareModals'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -27,7 +28,14 @@ export function Modals() {
   if (modal === 'settings') return <SettingsModal onClose={close} />
   if (modal === 'palette') return <Palette onClose={close} />
   if (modal === 'create') return <CreateModal onClose={close} />
+  if (modal === 'open-share') return <OpenShareModal onClose={close} />
+  if (modal === 'share') return <ShareFor onClose={close} />
   return null
+}
+
+function ShareFor({ onClose }: { onClose: () => void }) {
+  const ws = useStore((s) => s.workspaces.find((w) => w.id === s.selectedWs))
+  return ws ? <ShareModal ws={ws} onClose={onClose} /> : null
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -254,6 +262,8 @@ function Palette({ onClose }: { onClose: () => void }) {
     }
     for (const r of s.repos) out.push({ id: `new:${r.id}`, label: `New workspace in ${r.name}`, hint: 'Action', run: () => void newWorkspace(r.id) })
     out.push({ id: 'add', label: 'Add repository', hint: 'Action', run: () => s.set({ modal: 'create' }) })
+    if (cur) out.push({ id: 'share', label: 'Share workspace with coworkers', hint: 'Action', run: () => s.set({ modal: 'share' }) })
+    out.push({ id: 'open-share', label: 'Open shared session', hint: 'Action', run: () => s.set({ modal: 'open-share' }) })
     if (cur) out.push({ id: 'chat', label: 'New chat tab', hint: 'Action', run: () => void newChatTab(cur.id) })
     out.push({ id: 'unread', label: 'Next unread', hint: 'Action', run: goToNextUnread })
     out.push({ id: 'settings', label: 'Settings', hint: 'Action', run: () => s.set({ modal: 'settings' }) })
@@ -270,7 +280,7 @@ function Palette({ onClose }: { onClose: () => void }) {
   const pick = (e: Entry | undefined) => {
     if (!e) return
     onClose()
-    if (e.id === 'add' || e.id === 'settings') setTimeout(e.run, 0)
+    if (e.id === 'add' || e.id === 'settings' || e.id === 'share' || e.id === 'open-share') setTimeout(e.run, 0)
     else e.run()
   }
 

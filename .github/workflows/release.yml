@@ -1,15 +1,51 @@
 name: Release
+# Two ways to release:
+# - Actions > Release > Run workflow. Publishes Release Drafter's draft (optionally under a version you type),
+#   after building the app and attaching the .dmg and .zip files to it.
+# - Publish the draft yourself on the Releases page. This workflow then builds and attaches the files.
+# The app's version comes from the release tag, so package.json's version doesn't need bumping.
 on:
-  push:
-    tags: ['v*']
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, like 0.2.0. Leave empty to use the draft release version.'
+        required: false
+concurrency:
+  group: release
+  cancel-in-progress: false
 permissions:
   contents: write
 jobs:
   mac:
     runs-on: macos-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+      - name: Pick the release
+        id: rel
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          WANT: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT" = "release" ]; then
+            tag="$RELEASE_TAG"
+          else
+            draft=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft)][0].tag_name // ""')
+            if [ -n "$WANT" ]; then tag="v${WANT#v}"; else tag="$draft"; fi
+            if [ -z "$tag" ]; then echo "::error::No draft release and no version given."; exit 1; fi
+            if [ -n "$draft" ]; then
+              # Point the draft at this commit, under the chosen version.
+              gh release edit "$draft" --tag "$tag" --title "$tag" --target "$GITHUB_SHA" --draft=true
+            else
+              gh release create "$tag" --draft --generate-notes --title "$tag" --target "$GITHUB_SHA"
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -18,7 +54,7 @@ jobs:
       - run: npm test
       # Signs and notarizes when the Apple secrets are set; otherwise builds an unsigned app.
       - run: node scripts/install-mac-binaries.cjs
-      - run: npx electron-vite build && npx electron-builder --mac --publish always
+      - run: npx electron-vite build && npx electron-builder --mac --publish always -c.extraMetadata.version=${{ steps.rel.outputs.version }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -26,8 +62,11 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # electron-builder uploads the dmg, zip and latest-mac.yml the updater reads.
+          # electron-builder uploads the dmg, zip and latest-mac.yml (read by the updater) into the release.
           GH_TOKEN: ${{ github.token }}
+      - name: Publish the release
+        if: github.event_name == 'workflow_dispatch'
+        run: gh release edit "${{ steps.rel.outputs.tag }}" --draft=false --latest
       - uses: actions/upload-artifact@v4
         with:
           name: choo-choo-mac

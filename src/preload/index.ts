@@ -69,7 +69,16 @@ const api: Api = {
   onMenu: (cb) => on<[string]>('menu', cb),
   onStateChanged: (cb) => on<[]>('state:changed', cb),
   onUpdateReady: (cb) => on<[string]>('update:ready', cb),
-  installUpdate: inv('update:install') as Api['installUpdate']
+  installUpdate: inv('update:install') as Api['installUpdate'],
+  shareStatus: inv('share:status') as Api['shareStatus'],
+  shareWorkspace: inv('share:create') as Api['shareWorkspace'],
+  setShareAutoSync: inv('share:autoSync') as Api['setShareAutoSync'],
+  unshareWorkspace: inv('share:remove') as Api['unshareWorkspace'],
+  listShares: inv('share:list') as Api['listShares'],
+  openShare: inv('share:open') as Api['openShare'],
+  openShareById: inv('share:openById') as Api['openShareById'],
+  refreshShare: inv('share:refresh') as Api['refreshShare'],
+  onOpenShareLink: (cb) => on<[string]>('share:link', cb)
 }
 
 contextBridge.exposeInMainWorld('api', api)
