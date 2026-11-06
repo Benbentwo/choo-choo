@@ -63,3 +63,13 @@ describe('isExecutableTarget', () => {
     expect(['CLAUDE.md', '.claude/rules/a.md', '.claude/skills/x/SKILL.md'].map(isExecutableTarget)).toEqual([false, false, false])
   })
 })
+
+describe('feedbackBlock', () => {
+  it('wraps and redacts the developer feedback, and is empty when blank', async () => {
+    const { feedbackBlock } = await import('../src/shared/reflect')
+    expect(feedbackBlock('   ')).toBe('')
+    const b = feedbackBlock('It kept using npm test. token=supersecretvalue')
+    expect(b).toContain('<developer_feedback>\nIt kept using npm test.')
+    expect(b).not.toContain('supersecretvalue')
+  })
+})

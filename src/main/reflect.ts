@@ -1,6 +1,6 @@
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { Repo, Workspace } from '@shared/types'
-import { REFLECT_PROMPT, condenseTranscript, parseReflectResult, type ReflectProposal, type ReflectResult } from '@shared/reflect'
+import { REFLECT_PROMPT, condenseTranscript, feedbackBlock, parseReflectResult, type ReflectProposal, type ReflectResult } from '@shared/reflect'
 import * as store from './store'
 import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
@@ -45,21 +45,22 @@ async function readAtRef(repo: Repo, ref: string, file: string): Promise<string 
  * Has an agent read the workspace's chats and the repo's agent setup, and suggest changes
  * that would have avoided the friction. Read-only: nothing is written here.
  */
-export async function reflect(ws: Workspace, repo: Repo, env: Record<string, string>, model: string): Promise<ReflectResult> {
+export async function reflect(ws: Workspace, repo: Repo, env: Record<string, string>, model: string, feedback = ''): Promise<ReflectResult> {
   if (running.has(ws.id)) throw new Error('Already reflecting on this workspace')
   const chats = store
     .get()
     .chats.filter((c) => c.workspaceId === ws.id)
     .map((c) => ({ title: c.title, items: store.chatItems(c.id) }))
   const transcript = condenseTranscript(chats)
-  if (!transcript.trim()) return { summary: 'This workspace has no conversation to reflect on.', proposals: [] }
+  const note = feedbackBlock(feedback)
+  if (!transcript.trim() && !note) return { summary: 'This workspace has no conversation to reflect on.', proposals: [] }
 
   const abort = new AbortController()
   running.set(ws.id, abort)
   try {
     const { query } = await import('@anthropic-ai/claude-agent-sdk')
     const q = query({
-      prompt: `${REFLECT_PROMPT}\n\nThe repo is checked out in the current directory.\n\n<session>\n${transcript}\n</session>`,
+      prompt: `${REFLECT_PROMPT}\n\nThe repo is checked out in the current directory.\n\n${note}<session>\n${transcript}\n</session>`,
       options: {
         pathToClaudeCodeExecutable: claudeExecutable(),
         cwd: ws.path,

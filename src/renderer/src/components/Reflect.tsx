@@ -2,20 +2,29 @@ import { useEffect, useState } from 'react'
 import type { PrInfo, Workspace } from '@shared/types'
 import { isExecutableTarget, lineDiff, type ReflectProposal, type ReflectResult } from '@shared/reflect'
 import { useStore, refreshState, reportError } from '../store'
-import { IconPR } from '../icons'
 
 const dismissKey = (wsId: string) => `choo:merged-dismissed:${wsId}`
 
+/** Archives a workspace and leaves it if it's the one on screen. */
+export async function archiveAndLeave(wsId: string) {
+  try {
+    await window.api.archiveWorkspace(wsId)
+    await refreshState()
+    if (useStore.getState().selectedWs === wsId) useStore.getState().selectWorkspace(null)
+  } catch (e) {
+    reportError(e)
+  }
+}
+
 /**
- * Shown above the composer once the workspace's PR merges: keep going, archive, or archive after
- * a reflection pass that suggests improvements to the repo's agent setup.
+ * Top-right actions once the workspace's PR merges, like Conductor: Continue keeps working,
+ * Archive asks how the session went and can reflect on it before archiving.
  */
-export function MergedBar({ ws, onArchive }: { ws: Workspace; onArchive: () => Promise<void> }) {
+export function MergedActions({ ws }: { ws: Workspace }) {
   const stats = useStore((s) => s.stats[ws.id])
   const [pr, setPr] = useState<PrInfo | null>(null)
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(dismissKey(ws.id)))
-  const [reflecting, setReflecting] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [archiving, setArchiving] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -29,49 +38,116 @@ export function MergedBar({ ws, onArchive }: { ws: Workspace; onArchive: () => P
     }
   }, [ws.id, stats])
 
-  if (!pr || pr.state !== 'MERGED' || dismissed === String(pr.number)) return null
-
-  const keepGoing = () => {
-    localStorage.setItem(dismissKey(ws.id), String(pr.number))
-    setDismissed(String(pr.number))
-  }
-  const archive = async () => {
-    setBusy(true)
-    try {
-      await onArchive()
-    } finally {
-      setBusy(false)
-    }
-  }
+  if (!pr || pr.state !== 'MERGED' || ws.orchestrator) return null
+  const showContinue = dismissed !== String(pr.number)
 
   return (
     <>
-      <div className="anim-pop mx-auto mb-2 flex w-full max-w-3xl items-center gap-2 px-8">
-        <div className="flex flex-1 items-center gap-3 rounded-lg border border-line bg-panel px-3 py-2">
-          <span className="text-violet-400">
-            <IconPR />
-          </span>
-          <span className="min-w-0 flex-1 truncate">
-            PR #{pr.number} merged. <span className="text-muted">What next?</span>
-          </span>
-          <button className="rounded-md px-2.5 py-1 text-muted hover:bg-hover hover:text-fg" onClick={keepGoing}>
-            Continue
+      {showContinue && (
+        <button
+          className="no-drag rounded-md border border-dashed border-line px-2.5 py-1 text-muted hover:bg-hover hover:text-fg"
+          onClick={() => {
+            localStorage.setItem(dismissKey(ws.id), String(pr.number))
+            setDismissed(String(pr.number))
+          }}
+          title="Keep working in this workspace"
+        >
+          Continue
+        </button>
+      )}
+      <button
+        className="no-drag rounded-md bg-violet-500 px-2.5 py-1 font-medium text-white hover:bg-violet-400"
+        onClick={() => setArchiving(true)}
+        title="Archive this workspace"
+      >
+        Archive
+      </button>
+      {archiving && <SessionFeedback ws={ws} archive onClose={() => setArchiving(false)} />}
+    </>
+  )
+}
+
+const MOODS = [
+  { id: 'smooth', label: 'Smooth' },
+  { id: 'some', label: 'Some friction' },
+  { id: 'painful', label: 'Painful' }
+] as const
+
+/**
+ * Asks how the session went before archiving. The answer steers the reflect agent toward what
+ * actually hurt; skipping it just archives.
+ */
+export function SessionFeedback({ ws, archive, onClose }: { ws: Workspace; archive: boolean; onClose: () => void }) {
+  const [mood, setMood] = useState<(typeof MOODS)[number]['id'] | null>(null)
+  const [text, setText] = useState('')
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (feedback !== null) return
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onClose()
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [feedback, busy, onClose])
+
+  if (feedback !== null) return <ReflectModal ws={ws} feedback={feedback} archiveAfter={archive} onClose={onClose} onArchive={() => archiveAndLeave(ws.id)} />
+
+  const reflect = () => {
+    const m = MOODS.find((x) => x.id === mood)
+    setFeedback([m ? `Overall: ${m.label}.` : '', text.trim()].filter(Boolean).join('\n'))
+  }
+  const justArchive = async () => {
+    setBusy(true)
+    await archiveAndLeave(ws.id)
+    onClose()
+  }
+
+  return (
+    <div className="anim-backdrop fixed inset-0 z-40 flex items-start justify-center bg-black/50 pt-[12vh]" onMouseDown={() => !busy && onClose()}>
+      <div className="anim-pop w-[560px] max-w-[92vw] rounded-xl border border-line bg-panel shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="border-b border-line px-5 py-3">
+          <div className="font-medium">How did this session go?</div>
+          <div className="mt-0.5 text-[12px] text-faint">
+            Tell us what was painful. A reflection agent uses it, with the conversation, to suggest changes to CLAUDE.md, rules, skills and hooks so the next session goes smoother. You review every change.
+          </div>
+        </div>
+        <div className="space-y-3 px-5 py-4">
+          <div className="flex gap-2">
+            {MOODS.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setMood(mood === m.id ? null : m.id)}
+                className={`rounded-full border px-3 py-1 ${mood === m.id ? 'border-accent bg-accent/15 text-accent' : 'border-line text-muted hover:bg-hover hover:text-fg'}`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <textarea
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && reflect()}
+            placeholder="What did you have to correct, repeat or explain? What did the agent get wrong about this repo?"
+            className="selectable block h-32 w-full resize-y rounded-md border border-line bg-bg px-3 py-2 outline-none focus:border-faint"
+          />
+        </div>
+        <div className="flex items-center gap-2 border-t border-line px-5 py-3">
+          <button className="rounded-md px-3 py-1.5 text-muted hover:bg-hover hover:text-fg" disabled={busy} onClick={onClose}>
+            Cancel
           </button>
-          <button className="rounded-md border border-line px-2.5 py-1 hover:bg-hover disabled:opacity-40" disabled={busy} onClick={() => void archive()}>
-            {busy ? 'Archiving…' : 'Archive'}
-          </button>
-          <button
-            className="rounded-md border border-accent/40 bg-accent/15 px-2.5 py-1 text-accent hover:bg-accent/25 disabled:opacity-40"
-            disabled={busy}
-            onClick={() => setReflecting(true)}
-            title="Review this session for friction and suggest changes to CLAUDE.md, rules, skills and hooks, then archive"
-          >
-            Archive and reflect
+          <div className="flex-1" />
+          {archive && (
+            <button className="rounded-md border border-line px-3 py-1.5 hover:bg-hover disabled:opacity-40" disabled={busy} onClick={() => void justArchive()}>
+              {busy ? 'Archiving…' : 'Skip and archive'}
+            </button>
+          )}
+          <button className="rounded-md border border-accent/40 bg-accent/15 px-3 py-1.5 text-accent hover:bg-accent/25 disabled:opacity-40" disabled={busy} onClick={reflect} title="⌘↵">
+            {archive ? 'Reflect and archive' : 'Reflect'}
           </button>
         </div>
       </div>
-      {reflecting && <ReflectModal ws={ws} archiveAfter onClose={() => setReflecting(false)} onArchive={onArchive} />}
-    </>
+    </div>
   )
 }
 
@@ -81,7 +157,7 @@ interface Draft extends ReflectProposal {
 }
 
 /** Runs the reflect agent and lets the user accept, edit or reject each suggested change. */
-export function ReflectModal({ ws, archiveAfter, onClose, onArchive }: { ws: Workspace; archiveAfter: boolean; onClose: () => void; onArchive: () => Promise<void> }) {
+export function ReflectModal({ ws, feedback = '', archiveAfter, onClose, onArchive }: { ws: Workspace; feedback?: string; archiveAfter: boolean; onClose: () => void; onArchive: () => Promise<void> }) {
   const [result, setResult] = useState<ReflectResult | null>(null)
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -92,7 +168,7 @@ export function ReflectModal({ ws, archiveAfter, onClose, onArchive }: { ws: Wor
     let live = true
     setResult(null)
     setError(null)
-    window.api.reflect(ws.id).then(
+    window.api.reflect(ws.id, feedback).then(
       (r) => {
         if (!live) return
         setResult(r)

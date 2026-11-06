@@ -6,7 +6,7 @@ import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
 import { FileView } from './FileView'
-import { MergedBar, ReflectModal } from './Reflect'
+import { SessionFeedback } from './Reflect'
 
 export function Center({ ws }: { ws: Workspace }) {
   const s = useStore()
@@ -134,11 +134,10 @@ export function Center({ ws }: { ws: Workspace }) {
               </button>
             </div>
           )}
-          <MergedBar ws={ws} onArchive={archive} />
           <Composer chat={active} ws={ws} />
         </>
       ) : null}
-      {reflecting && <ReflectModal ws={ws} archiveAfter={false} onClose={() => setReflecting(false)} onArchive={archive} />}
+      {reflecting && <SessionFeedback ws={ws} archive={false} onClose={() => setReflecting(false)} />}
     </main>
   )
 }
