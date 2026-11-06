@@ -6,6 +6,34 @@ export interface Repo {
   path: string
   defaultBranch: string
   hidden?: boolean
+  /** Scripts set in the app (e.g. imported from Conductor); a choo-choo.json or conductor.json in the repo wins. */
+  scripts?: Scripts
+}
+
+/** What a new workspace starts from, besides a fresh branch off the default branch. */
+export type WorkspaceSource = { kind: 'pr'; number: number } | { kind: 'branch'; name: string } | { kind: 'issue'; number: number }
+
+export interface SourceOption {
+  source: WorkspaceSource
+  title: string
+  detail: string
+}
+
+export interface ImportPreview {
+  found: boolean
+  repos: { name: string; path: string; status: 'new' | 'already' | 'missing'; hasScripts: boolean }[]
+  workspaces: { repo: string; name: string; branch: string; path: string; chats: number; status: 'new' | 'already' }[]
+  archivedSkipped: number
+  settings: { label: string; value: string }[]
+  /** Folder Conductor creates workspaces in. */
+  workspacesRoot?: string
+}
+
+export interface ImportResult {
+  repos: number
+  workspaces: number
+  chats: number
+  messages: number
 }
 
 export interface GithubRepo {
@@ -176,6 +204,8 @@ export interface Settings extends AppearanceSettings {
   /** Optional. Without it the agent uses your Claude Code login. */
   anthropicApiKey: string
   notifications: boolean
+  /** Where new workspaces go; empty means ~/choo-choo/workspaces. */
+  workspacesRoot?: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -193,6 +223,8 @@ export interface AppState {
   workspaces: Workspace[]
   chats: Chat[]
   settings: Settings
+  /** Folders added as projects, most recent first; shown under Recents in the Add project menu. */
+  recentPaths?: string[]
 }
 
 export interface CheckRun {
@@ -241,7 +273,8 @@ export interface Api {
   addRepo(path: string): Promise<Repo>
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
-  createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  createWorkspace(repoId: string, source?: WorkspaceSource): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
+  listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
   /** Opens the repo's orchestrator, creating it the first time. */
   openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
@@ -276,8 +309,13 @@ export interface Api {
   saveSettings(patch: Partial<Settings>): Promise<Settings>
   /** Interface zoom, 1 = 100%. */
   setZoom(factor: number): void
-  cloneRepo(url: string): Promise<Repo>
+  /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
+  cloneRepo(url: string, dir?: string): Promise<Repo>
+  pickFolder(): Promise<string | null>
+  previewConductorImport(): Promise<ImportPreview>
+  importFromConductor(opts: { useWorkspacesRoot: boolean }): Promise<ImportResult>
   listGithubRepos(): Promise<GithubRepo[]>
+  quickStart(name: string): Promise<Repo>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
   stopChat(chatId: string): Promise<void>

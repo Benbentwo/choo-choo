@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { Workspace } from '@shared/types'
+import { Menu, type MenuItem } from './Menu'
+import { addProjectItems } from './AddProject'
 import { useStore, newWorkspace, restoreWorkspace, openOrchestrator } from '../store'
-import { IconBranch, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
+import { IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
 import { BrandMark } from './BrandMark'
 
@@ -10,7 +13,51 @@ export function Sidebar() {
   const [showArchived, setShowArchived] = useState<Record<string, boolean>>({})
   const [update, setUpdate] = useState<string | null>(null)
   useEffect(() => window.api.onUpdateReady(setUpdate), [])
-  const visible = s.repos.filter((r) => showHidden || !r.hidden)
+  const [view, setView] = useState<View>(loadView)
+  const [menu, setMenu] = useState<'view' | 'add' | null>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+  const updateView = (p: Partial<View>) => {
+    const v = { ...view, ...p }
+    setView(v)
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(v))
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  const visible = s.repos.filter((r) => (showHidden || !r.hidden) && !view.filteredOut.includes(r.id))
+  const sortWs = (list: Workspace[]) =>
+    [...list].sort((a, b) => (view.sort === 'name' ? a.title.localeCompare(b.title) : view.sort === 'oldest' ? a.createdAt - b.createdAt : b.createdAt - a.createdAt))
+  const viewItems: MenuItem[] = [
+    {
+      label: 'Group by',
+      submenu: [
+        { label: 'Project', checked: view.group === 'project', onClick: () => updateView({ group: 'project' }) },
+        { label: 'None', checked: view.group === 'none', onClick: () => updateView({ group: 'none' }) }
+      ]
+    },
+    {
+      label: 'Filter by project',
+      submenu: s.repos.length
+        ? s.repos.map((r) => ({
+            label: r.name,
+            checked: !view.filteredOut.includes(r.id),
+            keepOpen: true,
+            onClick: () => updateView({ filteredOut: view.filteredOut.includes(r.id) ? view.filteredOut.filter((x) => x !== r.id) : [...view.filteredOut, r.id] })
+          }))
+        : [{ kind: 'label', label: 'No projects yet' }]
+    },
+    {
+      label: 'Sort by',
+      submenu: [
+        { label: 'Newest first', checked: view.sort === 'newest', onClick: () => updateView({ sort: 'newest' }) },
+        { label: 'Oldest first', checked: view.sort === 'oldest', onClick: () => updateView({ sort: 'oldest' }) },
+        { label: 'Name', checked: view.sort === 'name', onClick: () => updateView({ sort: 'name' }) }
+      ]
+    },
+    { kind: 'sep' },
+    { label: 'Add project…', icon: <IconPlus />, keepOpen: true, onClick: () => setMenu('add') }
+  ]
   const hiddenCount = s.repos.filter((r) => r.hidden).length
 
   return (
@@ -37,20 +84,28 @@ export function Sidebar() {
       <div className="border-t border-line" />
 
       <div className="flex-1 overflow-y-auto px-2 py-3">
-        <div className="mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
+        <div ref={headerRef} className="mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
           <span className="flex-1">My workspaces</span>
-          <button className="rounded p-0.5 hover:bg-hover hover:text-fg" title="Add repository (⌘O)" onClick={() => s.set({ modal: 'create' })}>
+          <button className="rounded p-0.5 hover:bg-hover hover:text-fg" title="View options" onClick={() => setMenu(menu ? null : 'view')}>
+            <IconDots />
+          </button>
+          <button className="rounded p-0.5 hover:bg-hover hover:text-fg" title="Add project" onClick={() => setMenu(menu === 'add' ? null : 'add')}>
             <IconPlus />
           </button>
+          {menu && <Menu anchor={headerRef.current} items={menu === 'view' ? viewItems : addProjectItems()} onClose={() => setMenu(null)} />}
         </div>
         {visible.length === 0 && (
           <button onClick={() => s.set({ modal: 'create' })} className="mx-2 mt-2 w-[calc(100%-16px)] rounded-lg border border-dashed border-line px-3 py-4 text-left text-muted hover:border-faint hover:text-fg">
             Add a repository to get started
           </button>
         )}
-        {visible.map((repo) => {
+        {view.group === 'none' &&
+          sortWs(s.workspaces.filter((w) => !w.archived && !w.orchestrator && visible.some((r) => r.id === w.repoId))).map((w) => (
+            <WsRow key={w.id} w={w} repoName={s.repos.find((r) => r.id === w.repoId)?.name} />
+          ))}
+        {view.group === 'project' && visible.map((repo) => {
           // The orchestrator, if open, sits at the top of its repo.
-          const wss = s.workspaces.filter((w) => w.repoId === repo.id && !w.archived).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
+          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived)).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
           const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived && !w.orchestrator).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           return (
             <div key={repo.id} className="mb-1">
@@ -66,31 +121,13 @@ export function Sidebar() {
                 <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="Orchestrator: tell it what you want and it runs workspaces for you" onClick={() => void openOrchestrator(repo.id)}>
                   <IconOrchestrator />
                 </button>
-                <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="New workspace" onClick={() => void newWorkspace(repo.id)}>
+                <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="New workspace" onClick={() => newWorkspace(repo.id)}>
                   <IconPlus />
                 </button>
               </div>
-              {wss.map((w) => {
-                const running = s.chats.some((c) => c.workspaceId === w.id && c.status === 'running')
-                const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
-                const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
-                return (
-                  <button
-                    key={w.id}
-                    onClick={() => s.selectWorkspace(w.id)}
-                    className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 pl-5 text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
-                  >
-                    {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : <IconBranch className="shrink-0" />}
-                    <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''}`}>{w.title}</span>
-                    {asking ? (
-                      <span className="anim-glow shrink-0 rounded bg-accent/20 px-1 text-[10px] text-accent">needs you</span>
-                    ) : (
-                      unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_6px_var(--color-accent)]" />
-                    )}
-                    {!w.orchestrator && <Stats stats={s.stats[w.id]} />}
-                  </button>
-                )
-              })}
+              {wss.map((w) => (
+                <WsRow key={w.id} w={w} />
+              ))}
               {archived.length > 0 && (
                 <button
                   className="flex h-7 w-full items-center pl-5 text-left text-[11px] text-faint hover:text-muted"
@@ -149,4 +186,38 @@ function NavItem(p: { icon: React.ReactNode; label: string; active?: boolean; hi
       {p.hint && <span className="text-[11px] text-faint">{p.hint}</span>}
     </button>
   )
+}
+
+function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
+  const s = useStore()
+  const running = s.chats.some((c) => c.workspaceId === w.id && c.status === 'running')
+  const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
+  const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
+  return (
+    <button
+      onClick={() => s.selectWorkspace(w.id)}
+      className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+    >
+      {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : <IconBranch className="shrink-0" />}
+      <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''}`}>{w.title}</span>
+      {repoName && <span className="shrink-0 truncate text-[11px] text-faint">{repoName}</span>}
+      {asking ? (
+        <span className="anim-glow shrink-0 rounded bg-accent/20 px-1 text-[10px] text-accent">needs you</span>
+      ) : (
+        unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_6px_var(--color-accent)]" />
+      )}
+      {!w.orchestrator && <Stats stats={s.stats[w.id]} />}
+    </button>
+  )
+}
+
+type View = { group: 'project' | 'none'; sort: 'newest' | 'oldest' | 'name'; filteredOut: string[] }
+const VIEW_KEY = 'sidebar-view'
+function loadView(): View {
+  const d: View = { group: 'project', sort: 'newest', filteredOut: [] }
+  try {
+    return { ...d, ...JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}') }
+  } catch {
+    return d
+  }
 }

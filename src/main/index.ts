@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
+import type { SourceOption, WorkspaceSource } from '@shared/types'
 import type { Artifact, Chat, FilePreview, Repo, Settings, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
@@ -16,6 +17,7 @@ import * as gh from './github'
 import { suggestName } from './naming'
 import { checkNow, installUpdate, startUpdater } from './updater'
 import { registerDevFeedback } from './devFeedback'
+import * as conductor from './conductorImport'
 import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
@@ -65,7 +67,13 @@ function workspaceEnv(ws: Workspace): Record<string, string> {
 
 function scriptsFor(ws: Workspace) {
   const repo = store.get().repos.find((r) => r.id === ws.repoId)
-  return readScripts(ws.path, repo?.path ?? ws.path)
+  const fromFiles = readScripts(ws.path, repo?.path ?? ws.path)
+  return fromFiles.source || !repo?.scripts ? fromFiles : { ...repo.scripts, source: 'app settings' }
+}
+
+const workspacesRoot = () => {
+  const r = store.get().settings.workspacesRoot?.trim()
+  return r ? resolve(r.replace(/^~(?=$|\/)/, homedir())) : WORKSPACES_ROOT
 }
 
 function runScript(ws: Workspace, kind: 'setup' | 'run'): boolean {
@@ -97,6 +105,7 @@ async function addRepo(path: string): Promise<Repo> {
   }
   const repo: Repo = { id: randomUUID(), name: basename(root), path: root, defaultBranch: await git.defaultBranch(root) }
   s.repos.push(repo)
+  s.recentPaths = [root, ...(s.recentPaths ?? []).filter((p) => p !== root)].slice(0, 10)
   store.save()
   return repo
 }
@@ -117,33 +126,133 @@ function newChat(workspaceId: string): Chat {
   return chat
 }
 
-async function createWorkspace(repoId: string) {
+async function createWorkspace(repoId: string, source?: WorkspaceSource) {
   const s = store.get()
   const repo = s.repos.find((r) => r.id === repoId)
   if (!repo) throw new Error('Unknown repo')
   const taken = new Set(s.workspaces.filter((w) => w.repoId === repoId).map((w) => w.name))
   const name = pickCityName(taken)
-  const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
-  const branch = `${prefix}/${name}`
   const baseRef = await git.baseRefFor(repo.path, repo.defaultBranch)
-  const dir = join(WORKSPACES_ROOT, repo.name)
+  const dir = join(workspacesRoot(), repo.name)
   mkdirSync(dir, { recursive: true })
   const path = join(dir, name)
-  await git.addWorktree(repo.path, path, branch, baseRef)
-  const workspace: Workspace = {
-    id: randomUUID(),
-    repoId,
-    name,
-    branch,
-    baseRef,
-    path,
-    title: name,
-    createdAt: Date.now()
+  let branch: string
+  let title = name
+  let named = false
+  let context: string | undefined
+  if (source?.kind === 'branch') {
+    branch = source.name
+    await git.addWorktreeForRemoteBranch(repo.path, path, branch)
+    title = branch
+    named = true
+  } else if (source?.kind === 'pr') {
+    const pr = await gh.prHead(repo.path, source.number)
+    branch = pr.isCrossRepository ? `pr-${source.number}` : pr.headRefName
+    if (pr.isCrossRepository) await git.addWorktreeForPull(repo.path, path, source.number, branch)
+    else await git.addWorktreeForRemoteBranch(repo.path, path, branch)
+    title = `#${source.number} ${pr.title}`
+    named = true
+  } else {
+    const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
+    branch = `${prefix}/${name}`
+    await git.addWorktree(repo.path, path, branch, baseRef)
+    if (source?.kind === 'issue') {
+      const issue = await gh.issueText(repo.path, source.number)
+      context = `Work on GitHub issue #${source.number}: ${issue.title}\n${issue.url}\n\n${issue.body}`.trim()
+    }
   }
+  const workspace: Workspace = { id: randomUUID(), repoId, name, branch, baseRef, path, title, named, createdAt: Date.now() }
   s.workspaces.push(workspace)
   const chat = newChat(workspace.id)
   runScript(workspace, 'setup')
-  return { workspace, chat }
+  return { workspace, chat, context }
+}
+
+async function previewConductor() {
+  if (!existsSync(conductor.CONDUCTOR_DB)) return { found: false, repos: [], workspaces: [], archivedSkipped: 0, settings: [] }
+  const s = store.get()
+  const data = await conductor.withConductorDb(conductor.CONDUCTOR_DB, conductor.readConductor)
+  return conductor.preview(data, { repoPaths: s.repos.map((r) => r.path), workspacePaths: s.workspaces.map((w) => w.path) })
+}
+
+async function importConductor(opts: { useWorkspacesRoot: boolean }) {
+  const s = store.get()
+  const result = { repos: 0, workspaces: 0, chats: 0, messages: 0 }
+  await conductor.withConductorDb(conductor.CONDUCTOR_DB, async (db) => {
+    const data = conductor.readConductor(db)
+    const repoIds = new Map<string, string>()
+    for (const r of data.repos) {
+      if (!existsSync(r.root_path)) continue
+      const had = s.repos.some((x) => x.path === r.root_path)
+      let repo: Repo
+      try {
+        repo = await addRepo(r.root_path)
+      } catch {
+        continue // not a git repo any more
+      }
+      if (!had) {
+        result.repos++
+        repo.hidden = !!r.hidden
+      }
+      repo.scripts ??= conductor.repoScripts(r)
+      repoIds.set(r.id, repo.id)
+    }
+    for (const { ws, repo, sessions } of conductor.activeWorkspaces(data)) {
+      const repoId = repoIds.get(repo.id)
+      if (!repoId || s.workspaces.some((w) => w.path === ws.workspace_path)) continue
+      const ours = s.repos.find((r) => r.id === repoId)!
+      const target = ws.intended_target_branch || ours.defaultBranch
+      const workspace: Workspace = {
+        id: randomUUID(),
+        repoId,
+        name: ws.directory_name,
+        branch: ws.branch || (await git.currentBranch(ws.workspace_path!)) || ws.directory_name,
+        baseRef: await git.baseRefFor(ours.path, target),
+        path: ws.workspace_path!,
+        title: ws.workspace_name || ws.pr_title || ws.directory_name,
+        named: true,
+        createdAt: Date.parse(ws.created_at.replace(' ', 'T') + 'Z') || Date.now()
+      }
+      s.workspaces.push(workspace)
+      result.workspaces++
+      for (const cs of sessions) {
+        const items = conductor.convertMessages(conductor.readMessages(db, cs.id))
+        const chat = newChat(workspace.id)
+        chat.title = cs.title && cs.title !== 'Untitled' ? cs.title : chat.title
+        chat.model = conductor.mapModel(cs.model, cs.agent_type)
+        chat.effort = conductor.mapEffort(cs.claude_effort_level, chat.effort)
+        chat.planMode = cs.permission_mode === 'plan' || undefined
+        // Same worktree path, so Claude Code can resume the Conductor session with its full context.
+        if (cs.agent_type !== 'codex' && cs.claude_session_id) chat.sdkSessionId = cs.claude_session_id
+        chat.createdAt = Date.parse(cs.created_at.replace(' ', 'T') + 'Z') || chat.createdAt
+        store.replaceItems(chat.id, items)
+        result.chats++
+        result.messages += items.length
+      }
+      if (!sessions.length) newChat(workspace.id)
+    }
+    const set = data.settings
+    if (set.default_model) s.settings.defaultModel = conductor.mapModel(set.default_model, null)
+    if (opts.useWorkspacesRoot) {
+      const root = conductor.workspacesRootOf(data)
+      if (root) s.settings.workspacesRoot = root
+    }
+  })
+  store.save()
+  send('state:changed')
+  return result
+}
+
+async function listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]> {
+  const repo = store.get().repos.find((r) => r.id === repoId)
+  if (!repo) throw new Error('Unknown repo')
+  if (kind === 'pr') return gh.listPrs(repo.path, query)
+  if (kind === 'issue') return gh.listIssues(repo.path, query)
+  const q = query.toLowerCase()
+  return (await git.remoteBranches(repo.path))
+    .filter((b) => b.name.toLowerCase().includes(q))
+    .slice(0, 100)
+    .map((b) => ({ source: { kind: 'branch', name: b.name }, title: b.name, detail: b.when }))
 }
 
 /** After the first prompt, give the workspace a real title and rename its branch to match (until it is pushed). */
@@ -345,7 +454,12 @@ function agentEnv(ws: Workspace): Record<string, string> {
 function registerIpc() {
   const h = (ch: string, fn: (...a: any[]) => unknown) => ipcMain.handle(ch, (_e, ...a) => fn(...a))
 
-  h('state:get', () => store.get())
+  h('state:get', () => {
+    const s = store.get()
+    // Drop recent folders that were deleted since.
+    if (s.recentPaths?.some((p) => !existsSync(p))) s.recentPaths = s.recentPaths.filter((p) => existsSync(p))
+    return s
+  })
   h('repo:pick', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'], message: 'Choose a git repository' })
     if (r.canceled || !r.filePaths[0]) return null
@@ -362,7 +476,8 @@ function registerIpc() {
     if (r) r.hidden = hidden
     store.save()
   })
-  h('ws:create', (repoId: string) => createWorkspace(repoId))
+  h('ws:create', (repoId: string, source?: WorkspaceSource) => createWorkspace(repoId, source))
+  h('ws:sources', (repoId: string, kind: WorkspaceSource['kind'], query: string) => listSources(repoId, kind, query))
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))
   h('ws:restore', async (id: string) => {
@@ -446,19 +561,35 @@ function registerIpc() {
     if ('theme' in patch) applyNativeTheme(s.settings)
     return s.settings
   })
-  h('repo:clone', async (url: string) => {
+  h('folder:pick', async () => {
+    const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] })
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  })
+  h('repo:clone', async (url: string, dir?: string) => {
     url = url.trim()
+    const root = dir?.trim() ? resolve(dir.trim().replace(/^~(?=$|\/)/, homedir())) : REPOS_ROOT
     // owner/repo shorthand (or a github.com URL) clones through gh, so private repos use the gh login.
     const gh_ = url.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
     if (!gh_ && !/^(https:\/\/|git@|ssh:\/\/)/.test(url)) throw new Error('Enter owner/repo, or an https or ssh git URL')
-    mkdirSync(REPOS_ROOT, { recursive: true })
-    let dest = join(REPOS_ROOT, git.repoNameFromUrl(url))
-    for (let n = 2; existsSync(dest); n++) dest = join(REPOS_ROOT, `${git.repoNameFromUrl(url)}-${n}`)
+    mkdirSync(root, { recursive: true })
+    let dest = join(root, git.repoNameFromUrl(url))
+    for (let n = 2; existsSync(dest); n++) dest = join(root, `${git.repoNameFromUrl(url)}-${n}`)
     if (gh_) await gh.cloneRepo(gh_, dest)
     else await git.clone(url, dest)
     return addRepo(dest)
   })
   h('gh:repos', () => gh.listMyRepos())
+  h('conductor:preview', () => previewConductor())
+  h('conductor:import', (opts: { useWorkspacesRoot: boolean }) => importConductor(opts))
+  h('repo:quickstart', async (name: string) => {
+    const slug = name.trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '')
+    if (!slug) throw new Error('Enter a project name')
+    const dest = join(REPOS_ROOT, slug)
+    if (existsSync(dest)) throw new Error(`${dest} already exists`)
+    mkdirSync(REPOS_ROOT, { recursive: true })
+    await git.initRepo(dest)
+    return addRepo(dest)
+  })
   h('pr:merge', async (id: string) => {
     const ws = findWs(id)
     const pr = await gh.prForBranch(ws.path, ws.branch)

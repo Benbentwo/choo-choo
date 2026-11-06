@@ -84,3 +84,9 @@ export const IconGithub = (p: SVGProps<SVGSVGElement>) => (
 export const IconLock = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
 )
+export const IconGlobe = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
+)
+export const IconFolderPlus = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 10v6M9 13h6" /></svg>
+)
