@@ -1,6 +1,7 @@
 import { useStore, addRepository, newWorkspace } from '../store'
 import { IconBranch, IconFolder, IconGithub, IconSidebar } from '../icons'
 import { Stats } from './Stats'
+import { BrandMark } from './BrandMark'
 
 export function Home() {
   const s = useStore()
@@ -15,9 +16,12 @@ export function Home() {
         )}
       </div>
       <div className="mx-auto w-full max-w-xl flex-1 px-6 pt-24">
-        <h1 className="mb-1 text-2xl font-semibold">Choo Choo</h1>
+        <h1 className="mb-2 flex items-center gap-3 text-[28px] font-[750] tracking-[-0.025em]">
+          <BrandMark size={64} />
+          Choo Choo
+        </h1>
         <p className="mb-8 text-muted">Run Claude Code agents in parallel, each in its own git worktree.</p>
-        <div className="mb-8 flex gap-2">
+        <div className="mb-8 flex flex-wrap gap-2 [&>button]:whitespace-nowrap">
           <button onClick={() => void addRepository()} className="flex items-center gap-2 rounded-lg bg-fg px-3 py-2 font-medium text-bg hover:opacity-90">
             <IconFolder /> Open project
           </button>

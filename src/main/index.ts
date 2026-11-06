@@ -595,6 +595,8 @@ async function fixPath() {
 
 app.whenReady().then(async () => {
   await fixPath()
+  // Packaged builds get the icon from the .icns; in dev, show the brand icon in the Dock too.
+  if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
   registerIpc()
   registerDevFeedback(() => win)
