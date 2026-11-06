@@ -578,6 +578,8 @@ export interface Api {
   /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
   cloneRepo(url: string, dir?: string): Promise<Repo>
   pickFolder(): Promise<string | null>
+  /** Sets the sidebar order of projects. */
+  reorderRepos(ids: string[]): Promise<void>
   pickFiles(): Promise<string[]>
   /** Current versions behind the Claude model aliases, from the Agent SDK. Empty if it couldn't be read. */
   modelDetails(): Promise<Partial<Record<ModelId, ModelDetails>>>

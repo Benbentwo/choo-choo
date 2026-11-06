@@ -16,6 +16,14 @@ export function Sidebar() {
   useEffect(() => window.api.onUpdateReady(setUpdate), [])
   const [view, setView] = useState<View>(loadView)
   const [menu, setMenu] = useState<'view' | 'add' | null>(null)
+  const [drag, setDrag] = useState<{ id: string; over: string | null; after: boolean } | null>(null)
+  const moveRepo = (id: string, target: string, after: boolean) => {
+    if (id === target) return
+    const ids = s.repos.map((r) => r.id).filter((x) => x !== id)
+    ids.splice(ids.indexOf(target) + (after ? 1 : 0), 0, id)
+    useStore.getState().set({ repos: ids.map((x) => s.repos.find((r) => r.id === x)!) })
+    void window.api.reorderRepos(ids)
+  }
   const headerRef = useRef<HTMLDivElement>(null)
   const updateView = (p: Partial<View>) => {
     const v = { ...view, ...p }
@@ -109,8 +117,32 @@ export function Sidebar() {
           const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived)).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
           const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived && !w.orchestrator).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           return (
-            <div key={repo.id} className="mb-1">
-              <div className="group flex h-9 items-center gap-2 rounded-md px-2 hover:bg-hover">
+            <div
+              key={repo.id}
+              className={`mb-1 ${drag?.over === repo.id && drag.id !== repo.id ? (drag.after ? 'shadow-[0_2px_0_var(--color-accent)]' : 'shadow-[0_-2px_0_var(--color-accent)]') : ''} ${drag?.id === repo.id ? 'opacity-50' : ''}`}
+              onDragOver={(e) => {
+                if (!drag) return
+                e.preventDefault()
+                const r = e.currentTarget.getBoundingClientRect()
+                const after = e.clientY > r.top + Math.min(r.height, 36) / 2
+                if (drag.over !== repo.id || drag.after !== after) setDrag({ ...drag, over: repo.id, after })
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (drag) moveRepo(drag.id, repo.id, drag.after)
+                setDrag(null)
+              }}
+            >
+              <div
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  setDrag({ id: repo.id, over: null, after: false })
+                }}
+                onDragEnd={() => setDrag(null)}
+                title="Drag to reorder"
+                className="group flex h-9 cursor-grab items-center gap-2 rounded-md px-2 hover:bg-hover active:cursor-grabbing"
+              >
                 <IconRepo className="shrink-0 text-faint" />
                 <span className={`flex-1 truncate font-medium ${repo.hidden ? 'text-faint' : ''}`}>{repo.name}</span>
                 <button
