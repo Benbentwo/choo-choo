@@ -22,6 +22,7 @@ import { registerDevFeedback } from './devFeedback'
 import * as conductor from './conductorImport'
 import { modelDetails } from './models'
 import { listOutputStyles } from './claudeOptions'
+import * as mcp from './mcp'
 import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
@@ -860,6 +861,34 @@ function registerIpc() {
   h('chat:stop', (id: string) => agent.stop(id))
   h('chat:stopTask', (id: string, taskId: string) => agent.stopTask(id, taskId))
   h('chat:outputStyles', (wsId: string) => listOutputStyles(findWs(wsId).path))
+  // MCP servers, managed through Claude Code itself in the repo's main checkout.
+  const mcpRepo = (repoId: string) => {
+    const repo = store.get().repos.find((r) => r.id === repoId)
+    if (!repo) throw new Error('Repository not found')
+    const key = store.get().settings.anthropicApiKey.trim()
+    return { cwd: repo.path, env: key ? { ANTHROPIC_API_KEY: key } : ({} as Record<string, string>) }
+  }
+  h('mcp:status', (repoId: string) => {
+    const r = mcpRepo(repoId)
+    return mcp.status(r.cwd, r.env)
+  })
+  h('mcp:add', (repoId: string, spec) => {
+    const r = mcpRepo(repoId)
+    return mcp.add(r.cwd, r.env, spec)
+  })
+  h('mcp:remove', (repoId: string, name: string, scope: string) => {
+    const r = mcpRepo(repoId)
+    return mcp.remove(r.cwd, r.env, name, scope)
+  })
+  h('mcp:toggle', (repoId: string, name: string, enabled: boolean) => {
+    const r = mcpRepo(repoId)
+    return mcp.toggle(r.cwd, r.env, name, !!enabled)
+  })
+  h('mcp:reconnect', (repoId: string, name: string) => {
+    const r = mcpRepo(repoId)
+    return mcp.reconnect(r.cwd, r.env, name)
+  })
+  h('mcp:signIn', (repoId: string) => mcp.openSignIn(mcpRepo(repoId).cwd))
   h('chat:phone', (id: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
