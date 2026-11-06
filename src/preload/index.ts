@@ -65,6 +65,7 @@ const api: Api = {
   setZoom: (f) => webFrame.setZoomFactor(f),
   cloneRepo: inv('repo:clone') as Api['cloneRepo'],
   pickFolder: inv('folder:pick') as Api['pickFolder'],
+  reorderRepos: inv('repo:reorder') as Api['reorderRepos'],
   pickFiles: inv('files:pick') as Api['pickFiles'],
   modelDetails: inv('models:details') as Api['modelDetails'],
   previewConductorImport: inv('conductor:preview') as Api['previewConductorImport'],

@@ -487,6 +487,12 @@ function registerIpc() {
     s.repos = s.repos.filter((r) => r.id !== id)
     store.save()
   })
+  h('repo:reorder', (ids: string[]) => {
+    const s = store.get()
+    const pos = new Map(ids.map((id, i) => [id, i]))
+    s.repos = [...s.repos].sort((a, b) => (pos.get(a.id) ?? Infinity) - (pos.get(b.id) ?? Infinity))
+    store.save()
+  })
   h('repo:hidden', (id: string, hidden: boolean) => {
     const r = store.get().repos.find((x) => x.id === id)
     if (r) r.hidden = hidden
