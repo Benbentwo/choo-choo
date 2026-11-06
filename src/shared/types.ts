@@ -147,7 +147,20 @@ export interface Chat {
   sharedChatId?: string
   /** Context window of the model, as Claude Code last reported it. */
   contextWindow?: number
+  /** Set while the session continues somewhere else, such as on your phone through Remote Control. */
+  remote?: ChatRemote
   createdAt: number
+}
+
+export interface ChatRemote {
+  kind: 'phone'
+  startedAt: number
+  /** The claude.ai/code link for the session, once Claude Code prints it. */
+  url?: string
+  /** `url` is the claude.ai/code session list, because Claude Code didn't print the session's own link. */
+  listOnly?: boolean
+  /** QR code for `url`, as an SVG data URL. */
+  qr?: string
 }
 
 export interface Scripts {
@@ -532,6 +545,10 @@ export interface Api {
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
   stopChat(chatId: string): Promise<void>
+  /** Hands the chat's session to Remote Control, to steer from claude.ai/code or the Claude app. */
+  continueOnPhone(chatId: string): Promise<Chat>
+  /** Stops Remote Control and copies the turns made there into the chat. */
+  bringBackFromPhone(chatId: string): Promise<Chat>
   /** Sends the advisor's notes to the agent, or dismisses them. */
   actOnAdvice(chatId: string, itemId: string, action: 'send' | 'dismiss'): Promise<void>
   onChatEvent(cb: (e: ChatEvent) => void): () => void

@@ -128,6 +128,7 @@ export async function send(
   opts: { fromAdvisor?: boolean } = {}
 ) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
+  if (chat.remote) throw new Error('This chat is continuing on your phone. Bring it back first.')
   const now = Date.now()
   const checkpoint = (await git.snapshot(ws.path)) ?? undefined
   const userItem: ChatItem = {
