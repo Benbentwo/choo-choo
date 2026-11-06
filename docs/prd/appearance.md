@@ -19,8 +19,8 @@ People spend all day in this window. They want it to look the way they like, and
 
 Settings > Appearance:
 
-- **Theme**: Choo Choo (dark), Choo Choo Light, Dark, Light, Midnight, Graphite, Forest, Plum, Paper, or System (follows macOS, using the Choo Choo pair).
-- **Accent**: Choo Choo Orange (default), Sky, Blue, Violet, Pink, Orange, Amber, Green, Teal, or any `#rrggbb`.
+- **Theme**: Choo Choo (dark), Choo Choo Light, Dark, Light, Midnight, Graphite, Forest, Plum, Cyber Wave (from Warp), Paper, or System (follows macOS, using the Choo Choo pair).
+- **Accent**: Choo Choo Orange (default), Sky, Blue, Violet, Pink, Orange, Amber, Green, Teal, Cyber Wave Magenta, or any `#rrggbb`.
 - **Size** (interface zoom), **density** (comfortable or compact).
 - **UI font**: Manrope (bundled, default), System, Inter, Rounded, Serif. **Code font**: JetBrains Mono (bundled, default), SF Mono, Fira Code, Menlo.
 - **Reduce motion**.

@@ -192,6 +192,28 @@ export const THEMES: Theme[] = [
     }
   },
   {
+    // Warp's bundled "Cyber Wave": deep teal fading to black (#002633 → #000000), white text,
+    // and its terminal green/red for diffs. Flattened to solid colors along that gradient.
+    id: 'cyberwave',
+    label: 'Cyber Wave',
+    dark: true,
+    tokens: {
+      bg: '#001820',
+      panel: '#001c26',
+      sidebar: '#001219',
+      raised: '#062a36',
+      hover: '#0a3240',
+      line: '#0d3644',
+      fg: '#f1f1f1',
+      muted: '#8fb0bc',
+      faint: '#557a87',
+      add: '#b4fa72',
+      del: '#ff8272',
+      code: '#000d12',
+      scroll: '#14404e'
+    }
+  },
+  {
     id: 'paper',
     label: 'Paper',
     dark: false,
@@ -224,7 +246,9 @@ export const ACCENTS: { id: string; label: string; dark: string; light: string }
   { id: 'orange', label: 'Orange', dark: '#fb923c', light: '#ea580c' },
   { id: 'amber', label: 'Amber', dark: '#fbbf24', light: '#b45309' },
   { id: 'green', label: 'Green', dark: '#4ade80', light: '#16a34a' },
-  { id: 'teal', label: 'Teal', dark: '#2dd4bf', light: '#0d9488' }
+  { id: 'teal', label: 'Teal', dark: '#2dd4bf', light: '#0d9488' },
+  // Pairs with the Cyber Wave theme: Warp's terminal magenta on dark, its purple accent on light.
+  { id: 'cyberwave', label: 'Cyber Wave Magenta', dark: '#ff8ffd', light: '#7b008f' }
 ]
 
 // Manrope and JetBrains Mono are bundled with the app (src/renderer/src/assets/fonts).
