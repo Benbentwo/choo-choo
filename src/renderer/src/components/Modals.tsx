@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, Settings } from '@shared/types'
+import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, Settings, Telemetry } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
 import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
@@ -66,14 +66,14 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'agents' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<'general' | 'agents' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   return (
     <Shell onClose={onClose} width="w-[620px]">
       <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
         <div className="pb-3 font-medium">Settings</div>
         <div className="ml-auto flex gap-1">
-          {(['general', 'agents', 'appearance'] as const).map((t) => (
+          {(['general', 'agents', 'telemetry', 'appearance'] as const).map((t) => (
             <button
               key={t}
               role="tab"
@@ -88,6 +88,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="max-h-[70vh] overflow-y-auto">
         {tab === 'appearance' ? (
           <AppearanceSettings />
+        ) : tab === 'telemetry' ? (
+          <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (
           <ExtrasSection extras={settings.extras} save={(patch) => void save({ extras: { ...settings.extras, ...patch } })} />
         ) : (
@@ -155,6 +157,67 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         )}
       </div>
     </Shell>
+  )
+}
+
+function TelemetrySection({ t, save }: { t: Telemetry; save: (patch: Partial<Telemetry>) => void }) {
+  const input = 'w-56 rounded-md border border-line bg-bg px-2 py-1 outline-none'
+  const check = (k: 'metrics' | 'logs' | 'traces' | 'logPrompts' | 'logToolDetails' | 'logToolContent') => (
+    <input type="checkbox" checked={t[k]} onChange={(e) => save({ [k]: e.target.checked })} />
+  )
+  return (
+    <>
+      <div className="border-b border-line px-5 py-2.5 text-[12px] text-faint">
+        Send OpenTelemetry metrics, events and traces from Claude agents to any OTLP collector, such as Honeycomb, Datadog, Grafana or a local collector. Each export is tagged with choo.repo, choo.workspace and choo.branch. Applies from the next message you send.
+      </div>
+      <Row label="Export telemetry" hint="Off by default. Export errors never stop the agent.">
+        <input type="checkbox" checked={t.enabled} onChange={(e) => save({ enabled: e.target.checked })} />
+      </Row>
+      {t.enabled && (
+        <>
+          <Row label="Endpoint" hint="OTLP base URL. HTTP usually listens on port 4318, gRPC on 4317.">
+            <input key={`e${t.endpoint}`} className={input} defaultValue={t.endpoint} placeholder="http://localhost:4318" onBlur={(e) => save({ endpoint: e.target.value.trim() })} />
+          </Row>
+          <Row label="Protocol">
+            <select className="rounded-md border border-line bg-bg px-2 py-1 outline-none" value={t.protocol} onChange={(e) => save({ protocol: e.target.value as Telemetry['protocol'] })}>
+              <option value="http/protobuf">HTTP (protobuf)</option>
+              <option value="http/json">HTTP (JSON)</option>
+              <option value="grpc">gRPC</option>
+            </select>
+          </Row>
+          <Row label="Headers" hint="Sent with every export, for auth. Comma-separated key=value pairs.">
+            <input key={`h${t.headers}`} type="password" className={input} defaultValue={t.headers} placeholder="Authorization=Bearer …" onBlur={(e) => save({ headers: e.target.value })} />
+          </Row>
+          <Row label="Service name" hint="Reported as service.name.">
+            <input key={`s${t.serviceName}`} className={input} defaultValue={t.serviceName} placeholder="choo-choo" onBlur={(e) => save({ serviceName: e.target.value })} />
+          </Row>
+          <Row label="Resource attributes" hint="Extra tags on everything exported, e.g. team=platform,env=dev.">
+            <input key={`r${t.resourceAttributes}`} className={input} defaultValue={t.resourceAttributes} placeholder="key=value,key2=value2" onBlur={(e) => save({ resourceAttributes: e.target.value })} />
+          </Row>
+          <Row label="Metrics" hint="Counters for tokens, cost, sessions, lines changed and tool decisions.">
+            {check('metrics')}
+          </Row>
+          <Row label="Log events" hint="A record for each prompt, API request, API error and tool result.">
+            {check('logs')}
+          </Row>
+          <Row label="Traces" hint="Spans for each turn, model request and tool call, with subagents nested under their parent. Beta in Claude Code.">
+            {check('traces')}
+          </Row>
+          <div className="border-b border-line px-5 py-2.5 text-[12px] text-faint">Content. By default only structure is exported, never what the agent reads or writes. Turn these on only if your backend may store your code.</div>
+          <Row label="Include prompts" hint="Your message text on prompt events and turn spans.">
+            {check('logPrompts')}
+          </Row>
+          <Row label="Include tool inputs" hint="File paths, shell commands and search patterns on tool events.">
+            {check('logToolDetails')}
+          </Row>
+          {t.traces && (
+            <Row label="Include tool output" hint="File contents, command output and web results on tool spans, up to 60 KB each.">
+              {check('logToolContent')}
+            </Row>
+          )}
+        </>
+      )}
+    </>
   )
 }
 
