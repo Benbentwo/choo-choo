@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { enabledSubagents, expandShortcuts, redactSecrets, parseAdvice, renderTurn, steerMessage, systemAppend } from '../src/main/extras'
 import { DEFAULT_EXTRAS, normalizeExtras, type ChatItem } from '../src/shared/types'
+import { buildSystemPrompt, REMINDER_NOTE } from '../src/shared/systemPrompt'
 
 describe('enabledSubagents', () => {
   it('passes nothing when every agent is off', () => {
@@ -108,5 +109,21 @@ describe('redactSecrets', () => {
   it('leaves ordinary code and commit hashes alone', () => {
     const t = 'const total = add(a, b)\ncommit 3e97ab4c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a'
     expect(redactSecrets(t)).toBe(t)
+  })
+})
+
+describe('buildSystemPrompt', () => {
+  it('uses the bare Claude Code preset when nothing is set', () => {
+    expect(buildSystemPrompt(undefined, undefined)).toEqual({ type: 'preset', preset: 'claude_code' })
+    expect(buildSystemPrompt({ mode: 'replace', text: '  ' }, undefined)).toEqual({ type: 'preset', preset: 'claude_code' })
+  })
+  it('appends global, then repo, then the app hint', () => {
+    expect(buildSystemPrompt({ mode: 'append', text: 'G' }, { mode: 'append', text: 'R' }, 'X')).toEqual({ type: 'preset', preset: 'claude_code', append: 'G\n\nR\n\nX' })
+  })
+  it('a global replace becomes the base and the repo text follows', () => {
+    expect(buildSystemPrompt({ mode: 'replace', text: 'G' }, { mode: 'append', text: 'R' })).toBe(`G\n\n${REMINDER_NOTE}\n\nR`)
+  })
+  it('a repo replace ignores the global prompt', () => {
+    expect(buildSystemPrompt({ mode: 'append', text: 'G' }, { mode: 'replace', text: 'R' }, 'X')).toBe(`R\n\n${REMINDER_NOTE}\n\nX`)
   })
 })

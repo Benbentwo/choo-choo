@@ -16,6 +16,7 @@ const api: Api = {
   addRepo: inv('repo:add') as Api['addRepo'],
   removeRepo: inv('repo:remove') as Api['removeRepo'],
   setRepoHidden: inv('repo:hidden') as Api['setRepoHidden'],
+  setRepoPrompt: inv('repo:prompt') as Api['setRepoPrompt'],
   createWorkspace: inv('ws:create') as Api['createWorkspace'],
   openOrchestrator: inv('ws:orchestrator') as Api['openOrchestrator'],
   archiveWorkspace: inv('ws:archive') as Api['archiveWorkspace'],

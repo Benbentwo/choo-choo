@@ -8,6 +8,17 @@ export interface Repo {
   hidden?: boolean
   /** Scripts set in the app (e.g. imported from Conductor); a choo-choo.json or conductor.json in the repo wins. */
   scripts?: Scripts
+  /** Extra or replacement system prompt for agents in this repo. */
+  systemPrompt?: PromptCustom
+}
+
+/**
+ * Custom instructions for Claude agents. "append" keeps Claude Code's own system prompt
+ * and adds the text after it; "replace" sends only the text.
+ */
+export interface PromptCustom {
+  mode: 'append' | 'replace'
+  text: string
 }
 
 /** What a new workspace starts from, besides a fresh branch off the default branch. */
@@ -257,6 +268,8 @@ export interface Settings extends AppearanceSettings {
   claudeBinary: 'bundled' | 'installed'
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
   extras: Extras
+  /** Instructions for every Claude agent. A repo's own prompt adds to or replaces this. */
+  systemPrompt?: PromptCustom
 }
 
 export type ExtraAgentId = 'scout' | 'reviewer' | 'securityReviewer' | 'quickWorker'
@@ -354,6 +367,7 @@ export interface Api {
   addRepo(path: string): Promise<Repo>
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
+  setRepoPrompt(repoId: string, prompt: PromptCustom | undefined): Promise<void>
   /** `folders` are extra directories the first chat may read and edit (linked workspaces, added folders). */
   createWorkspace(repoId: string, source?: WorkspaceSource, folders?: string[]): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
   listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
