@@ -7,15 +7,21 @@ describe('themes', () => {
     for (const t of THEMES) expect(Object.keys(t.tokens).sort()).toEqual(keys)
   })
 
-  it('keeps the default look on the original dark palette', () => {
-    expect(DEFAULT_APPEARANCE.theme).toBe('dark')
+  it('defaults to the Choo Choo brand look', () => {
+    expect(DEFAULT_APPEARANCE).toMatchObject({ theme: 'choo', accent: 'choo', uiFont: 'manrope', monoFont: 'jetbrains' })
+    expect(resolveTheme('choo', false).tokens.bg).toBe('#202226')
+    expect(resolveAccent('choo', true)).toBe('#f4773d')
+    expect(resolveAccent('choo', false)).toBe('#9c431a')
+  })
+
+  it('keeps the original dark palette available', () => {
     expect(resolveTheme('dark', false).tokens.bg).toBe('#1a1817')
   })
 
   it('follows the OS for the system theme and falls back for unknown ids', () => {
-    expect(resolveTheme('system', true).dark).toBe(true)
-    expect(resolveTheme('system', false).dark).toBe(false)
-    expect(resolveTheme('nope', false).id).toBe('dark')
+    expect(resolveTheme('system', true).id).toBe('choo')
+    expect(resolveTheme('system', false).id).toBe('choo-light')
+    expect(resolveTheme('nope', false).id).toBe('choo')
   })
 
   it('picks the accent shade for the theme and passes custom colors through', () => {

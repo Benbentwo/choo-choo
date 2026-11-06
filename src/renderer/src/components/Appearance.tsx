@@ -82,8 +82,8 @@ function ThemeCard({ id, label, selected, children }: { id: string; label: strin
 export function AppearanceSettings() {
   const s = useStore((x) => x.settings)
   const a = { ...DEFAULT_APPEARANCE, ...s }
-  const dark = THEMES.find((t) => t.id === 'dark')!
-  const light = THEMES.find((t) => t.id === 'light')!
+  const dark = THEMES.find((t) => t.id === 'choo')!
+  const light = THEMES.find((t) => t.id === 'choo-light')!
   const isCustom = a.accent.startsWith('#')
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
 

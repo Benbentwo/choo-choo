@@ -65,6 +65,12 @@ export function TerminalView({ id, workspaceId, attach }: { id: string; workspac
       }
     }
     window.addEventListener(APPEARANCE_EVENT, onLook)
+    // The bundled mono font may still be loading; re-measure cells once it is in.
+    void document.fonts.load(`12px ${resolved(look()).mono}`).then(() => {
+      if (disposed) return
+      term.options.fontFamily = resolved(look()).mono
+      doFit()
+    })
 
     return () => {
       disposed = true

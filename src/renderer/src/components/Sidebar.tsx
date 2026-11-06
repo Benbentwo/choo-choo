@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore, newWorkspace, restoreWorkspace } from '../store'
 import { IconBranch, IconGear, IconHome, IconLeft, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
+import { BrandMark } from './BrandMark'
 
 export function Sidebar() {
   const s = useStore()
@@ -126,6 +127,7 @@ export function Sidebar() {
         </div>
       )}
       <div className="flex items-center gap-2 border-t border-line px-3 py-2 text-faint">
+        <BrandMark size={14} />
         <span className="flex-1 text-[11px]">Choo Choo</span>
         <button className="rounded p-1 hover:bg-hover hover:text-fg" title="Settings (⌘,)" onClick={() => s.set({ modal: 'settings' })}>
           <IconGear />

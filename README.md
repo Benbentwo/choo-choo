@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/choo-choo-horizontal-dark.svg">
+    <img src="docs/brand/choo-choo-horizontal-light.svg" alt="Choo Choo" width="420">
+  </picture>
+</p>
+
 # Choo Choo
 
 A Mac desktop app for running many Claude Code agents in parallel, each in its own git worktree, then reviewing and shipping their work from one window.
