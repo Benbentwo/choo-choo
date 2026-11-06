@@ -1,3 +1,4 @@
+import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 export interface Repo {
   id: string
   name: string
@@ -27,6 +28,32 @@ export interface Workspace {
   createdAt: number
   archived?: boolean
   archivedAt?: number
+  /** The repo's orchestrator: runs in the main checkout and directs other workspaces. */
+  orchestrator?: boolean
+  /** Started by the orchestrator. */
+  orchestrated?: boolean
+  /** Set while this workspace is shared with coworkers. */
+  share?: { id: string; link: string; sharedAt: number; autoSync: boolean }
+  /** Set when this workspace was opened from a coworker's share. */
+  importedShare?: { id: string; link: string; sharedBy: string; sharedAt: number }
+}
+
+/** A share found in a repository's remote. */
+export interface ShareInfo {
+  id: string
+  title: string
+  branch: string
+  sharedBy: string
+  sharedAt: number
+  chats: number
+}
+
+export interface ShareStatus {
+  link: string
+  sharedAt: number
+  autoSync: boolean
+  /** public, private or internal, when gh can tell. A share in a public repo is public. */
+  visibility?: string
 }
 
 export type ModelId = 'opus' | 'sonnet' | 'haiku' | 'codex'
@@ -65,6 +92,10 @@ export interface Chat {
   lastUuid?: string
   /** Set by a revert: the next turn forks the session at this entry. */
   forkAt?: string | null
+  /** Transcript from a coworker's share, sent ahead of the first message here. */
+  handoff?: string
+  /** The sharer's chat id, so refreshing a share updates the right tab. */
+  sharedChatId?: string
   createdAt: number
 }
 
@@ -159,7 +190,7 @@ export interface DiffStats {
   files: number
 }
 
-export interface Settings {
+export interface Settings extends AppearanceSettings {
   defaultModel: ModelId
   defaultEffort: Effort
   defaultPermission: Permission
@@ -209,7 +240,8 @@ export const DEFAULT_SETTINGS: Settings = {
   anthropicApiKey: '',
   notifications: true,
   claudeBinary: 'bundled',
-  extras: DEFAULT_EXTRAS
+  extras: DEFAULT_EXTRAS,
+  ...DEFAULT_APPEARANCE
 }
 
 export interface AppState {
@@ -266,6 +298,8 @@ export interface Api {
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
   createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  /** Opens the repo's orchestrator, creating it the first time. */
+  openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
@@ -291,6 +325,8 @@ export interface Api {
   readFile(workspaceId: string, path: string): Promise<FilePreview>
   revertTo(chatId: string, itemId: string): Promise<string>
   saveSettings(patch: Partial<Settings>): Promise<Settings>
+  /** Interface zoom, 1 = 100%. */
+  setZoom(factor: number): void
   cloneRepo(url: string): Promise<Repo>
   listGithubRepos(): Promise<GithubRepo[]>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
@@ -316,6 +352,15 @@ export interface Api {
   onStateChanged(cb: () => void): () => void
   onUpdateReady(cb: (version: string) => void): () => void
   installUpdate(): Promise<void>
+  shareStatus(workspaceId: string): Promise<ShareStatus | null>
+  shareWorkspace(workspaceId: string): Promise<ShareStatus>
+  setShareAutoSync(workspaceId: string, on: boolean): Promise<void>
+  unshareWorkspace(workspaceId: string): Promise<void>
+  listShares(): Promise<{ repoId: string; repoName: string; shares: ShareInfo[] }[]>
+  openShare(link: string): Promise<{ workspace: Workspace; chat: Chat }>
+  openShareById(repoId: string, id: string): Promise<{ workspace: Workspace; chat: Chat }>
+  refreshShare(workspaceId: string): Promise<boolean>
+  onOpenShareLink(cb: (link: string) => void): () => void
 }
 
 export interface ReviewFinding {

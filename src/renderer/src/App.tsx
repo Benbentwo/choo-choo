@@ -5,10 +5,14 @@ import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
 import { Modals } from './components/Modals'
+import { useAppearance } from './appearance'
+import { useShareRefresh } from './components/ShareModals'
 
 export function App() {
   const s = useStore()
+  useAppearance()
   const ws = s.workspaces.find((w) => w.id === s.selectedWs && !w.archived) ?? null
+  useShareRefresh(ws)
 
   useEffect(() => {
     void window.api.pendingPermissions().then((list) => list.forEach(addPermission))
@@ -40,6 +44,8 @@ export function App() {
           return st.set({ modal: st.modal === 'palette' ? null : 'palette' })
         case 'settings':
           return st.set({ modal: 'settings' })
+        case 'open-share':
+          return st.set({ modal: 'open-share' })
         case 'new-workspace':
           if (curWs) void newWorkspace(curWs.repoId)
           return
@@ -60,11 +66,13 @@ export function App() {
       }
     })
     const offState = window.api.onStateChanged(() => void refreshState())
+    const offLink = window.api.onOpenShareLink((link) => useStore.getState().set({ modal: 'open-share', shareLinkDraft: link }))
     const offNav = window.api.onNavigate((wsId, chatId) => {
       useStore.getState().setActiveChat(wsId, chatId)
       useStore.getState().selectWorkspace(wsId)
     })
     return () => {
+      offLink()
       offState()
       offNav()
       offChat()
@@ -79,7 +87,7 @@ export function App() {
         {ws ? (
           <>
             <Center ws={ws} />
-            {s.rightOpen && <RightPanel ws={ws} />}
+            {s.rightOpen && !ws.orchestrator && <RightPanel ws={ws} />}
           </>
         ) : (
           <Home />
@@ -87,7 +95,7 @@ export function App() {
       </div>
       <Modals />
       {s.error && (
-        <div className="fixed right-4 bottom-4 z-50 max-w-md rounded-lg border border-del/40 bg-raised px-4 py-3 text-[12px] shadow-xl">
+        <div className="anim-toast fixed right-4 bottom-4 z-50 max-w-md rounded-lg border border-del/40 bg-raised px-4 py-3 text-[12px] shadow-xl">
           <div className="mb-1 font-medium text-del">Something went wrong</div>
           <div className="selectable text-muted whitespace-pre-wrap">{s.error}</div>
           <button className="mt-2 text-muted hover:text-fg" onClick={() => s.set({ error: null })}>

@@ -39,6 +39,8 @@ Code layout:
    ```
 4. Describe what changed and why, and add a screenshot for UI changes.
 
+PRs are labeled automatically from their branch name, title and files (start a title with "Fix", "Add" or "Docs", or a branch with `fix/`, `feat/` or `docs/`). The label decides where the change shows in the release notes, so a maintainer may adjust it.
+
 CI builds the app on macOS for both Apple silicon and Intel. A maintainer reviews and squash-merges.
 
 ## Ground rules

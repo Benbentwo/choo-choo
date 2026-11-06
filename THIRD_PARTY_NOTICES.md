@@ -2,6 +2,14 @@
 
 Choo Choo's own code is MIT licensed (see [LICENSE](LICENSE)). npm dependencies keep their own licenses, listed in each package under `node_modules`.
 
+## Fonts
+
+The app bundles [Manrope](https://github.com/sharanda/manrope) and [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) under the SIL Open Font License 1.1. The full license texts sit next to the font files in [src/renderer/src/assets/fonts](src/renderer/src/assets/fonts).
+
+## Brand assets
+
+The Choo Choo name, logo and app icon in [docs/brand](docs/brand) and [resources](resources) are not covered by the MIT license. See [docs/brand/README.md](docs/brand/README.md).
+
 ## Claude Agent SDK
 
 The app bundles [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) and the Claude Code binary it ships with. They are not MIT licensed: their use is governed by Anthropic's terms, linked from the package's README. Choo Choo does not modify them.

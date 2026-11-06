@@ -5,6 +5,7 @@ import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
 import { enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
+import * as orchestrator from './orchestrator'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
 
@@ -31,6 +32,7 @@ export function resolveAdvice(chat: Chat, itemId: string, action: 'send' | 'dism
 
 // Tools that only read; asking about them would be noise.
 const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'WebFetch', 'TodoWrite', 'Task', 'Agent', 'NotebookRead', 'BashOutput', 'ExitPlanMode', 'ToolSearch', 'Skill'])
+for (const t of orchestrator.READ_ONLY) READ_ONLY_TOOLS.add(t)
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
 
 const pending = new Map<string, { req: PermissionRequest; resolve: (d: PermissionDecision) => void }>()
@@ -120,6 +122,8 @@ export async function send(
   onDone?: (chat: Chat) => void,
   images: string[] = [],
   onAsk?: (chat: Chat, req: PermissionRequest) => void,
+  /** Builds extra query() options, such as the orchestrator's tools. */
+  extraOptions?: (sdk: Awaited<ReturnType<typeof loadSdk>>) => Record<string, unknown>,
   opts: { fromAdvisor?: boolean } = {}
 ) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
@@ -157,6 +161,9 @@ export async function send(
   const resume = forkAt === null ? undefined : chat.sdkSessionId
   chat.forkAt = undefined
   const tools = new Map<string, Extract<ChatItem, { kind: 'tool' }>>()
+  // A chat opened from a coworker's share starts with their transcript as context.
+  const prompt = chat.handoff ? `${chat.handoff}\n\n${text}` : text
+  chat.handoff = undefined
   let endTurn = () => {}
   const turnDone = new Promise<void>((r) => (endTurn = r))
   const put = (item: ChatItem) => {
@@ -170,7 +177,7 @@ export async function send(
       const started = Date.now()
       const res = await runCodex({
         cwd: ws.path,
-        prompt: text,
+        prompt,
         effort: chat.effort,
         readOnly: !!chat.planMode,
         threadId: forkAt === null ? undefined : chat.codexThreadId,
@@ -188,7 +195,8 @@ export async function send(
       chat.status = 'idle'
       return
     }
-    const { query } = await loadSdk()
+    const sdkMod = await loadSdk()
+    const { query } = sdkMod
     const extras = store.get().settings.extras
     const append = systemAppend(extras, !!chat.planMode)
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
@@ -215,7 +223,7 @@ export async function send(
       return { behavior: 'allow', updatedInput: input }
     }
     const q = query({
-      prompt: userMessage(expandShortcuts(text, extras), images, turnDone) as never,
+      prompt: userMessage(expandShortcuts(prompt, extras), images, turnDone) as never,
       options: {
         pathToClaudeCodeExecutable: claudeExecutable(),
         cwd: ws.path,
@@ -233,7 +241,8 @@ export async function send(
         settingSources: ['user', 'project', 'local'],
         agents: enabledSubagents(extras),
         ...(append ? { systemPrompt: { type: 'preset', preset: 'claude_code', append } } : {}),
-        env: { ...process.env, ...env }
+        env: { ...process.env, ...env },
+        ...extraOptions?.(sdkMod)
       } as never
     })
     r.query = q
@@ -344,7 +353,7 @@ export async function send(
     onDone?.(chat)
   }
   if (turnOk && !abort.signal.aborted && store.get().settings.extras.advisor) {
-    await advise(chat, ws, userItem.id, env, emit, (msg) => send(chat, ws, msg, env, emit, onDone, [], onAsk, { fromAdvisor: true }), !opts.fromAdvisor)
+    await advise(chat, ws, userItem.id, env, emit, (msg) => send(chat, ws, msg, env, emit, onDone, [], onAsk, extraOptions, { fromAdvisor: true }), !opts.fromAdvisor)
   }
 }
 
