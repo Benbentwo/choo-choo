@@ -4,7 +4,7 @@ import * as store from './store'
 import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
-import { enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
+import { BUILTIN_ADVISOR_TOOL, builtinAdvisorResult, claudeAdvisorOptions, enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
 import * as orchestrator from './orchestrator'
 import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
 import * as notion from './integrations/notion'
@@ -271,6 +271,7 @@ export async function send(
       }
       return { behavior: 'allow', updatedInput: input }
     }
+    const advisorOpts = claudeAdvisorOptions(extras.claudeAdvisor)
     const extra = extraOptions?.(sdkMod) ?? {}
     const mcpServers: Record<string, unknown> = { ...(extra.mcpServers as Record<string, unknown> | undefined) }
     if (store.get().settings.notionAgentTools) {
@@ -299,7 +300,9 @@ export async function send(
         systemPrompt,
         // Newer models (Opus 5.5 and up) leave out the task-list tools unless asked. Turn them on so
         // sessions and their subagents keep a visible checklist, as on older models.
-        env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...env },
+        env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...advisorOpts.env, ...env },
+        // Claude Code's built-in advisor, when chosen in Settings > Agents.
+        ...(advisorOpts.settings ? { settings: advisorOpts.settings } : {}),
         ...extra,
         ...(Object.keys(mcpServers).length ? { mcpServers } : {})
       } as never
@@ -353,6 +356,26 @@ export async function send(
               }
               tools.set(block.id, item)
               put(item)
+            } else if (block.type === 'server_tool_use' && block.name === 'advisor') {
+              // Claude Code's advisor runs on Anthropic's side; show the consultation as a card.
+              streamItem = null
+              const item: Extract<ChatItem, { kind: 'tool' }> = {
+                id: block.id,
+                kind: 'tool',
+                name: BUILTIN_ADVISOR_TOOL,
+                input: {},
+                ...(parentId ? { parentId } : {}),
+                ts: Date.now()
+              }
+              tools.set(block.id, item)
+              put(item)
+            } else if (block.type === 'advisor_tool_result') {
+              const t = tools.get(block.tool_use_id)
+              if (!t) continue
+              const r = builtinAdvisorResult(block.content)
+              t.result = r.text
+              t.isError = r.isError
+              put({ ...t })
             }
           }
           break

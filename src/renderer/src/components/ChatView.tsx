@@ -105,6 +105,7 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
     case 'tool':
       if (item.name === 'ExitPlanMode') return <PlanItem item={item} chat={chat} />
       if (item.name === 'Agent' || item.name === 'Task') return <SubagentItem item={item} calls={children ?? []} />
+      if (item.name === 'Advisor') return <BuiltinAdvisorItem item={item} />
       return <ToolItem item={item} />
     case 'result':
       return (
@@ -256,6 +257,24 @@ function ToolItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/** A consultation of Claude Code's own advisor tool, mid-turn. */
+function BuiltinAdvisorItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
+  const [open, setOpen] = useState(false)
+  if (item.result === undefined) return <div className="my-1.5 text-[11px] text-faint">Advising…</div>
+  const label = item.isError ? item.result : 'Advisor reviewed the conversation'
+  const hasText = !item.isError && item.result !== 'Reviewed.'
+  return (
+    <div className="my-1.5 text-[11px]">
+      <button className={`flex items-center gap-1 ${item.isError ? 'text-del' : 'text-faint hover:text-fg'}`} onClick={() => hasText && setOpen(!open)} disabled={!hasText}>
+        {hasText && (open ? <IconDown /> : <IconRight />)}
+        <span className="text-violet-300">Advisor</span>
+        <span>{label.replace(/^Advisor /, '')}</span>
+      </button>
+      {open && <div className="mt-1 rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2 text-[12px] whitespace-pre-wrap text-muted">{item.result}</div>}
     </div>
   )
 }

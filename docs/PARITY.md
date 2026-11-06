@@ -94,6 +94,7 @@ Features Conductor doesn't have. Each one is off until you turn it on in Setting
 - ✅ **Security reviewer**: adds a Security review button to the Review tab; its findings show in the same list and inline in diffs, tagged "security".
 - ✅ **Quick worker** (Haiku): `/quick <task>` hands mechanical work to it.
 - ✅ **Advisor**: after each finished turn, a second model reviews the turn with read-only tools and posts notes as a card with Send to agent and Dismiss. Per-chat Advisor toggle in the composer. A red dot in the sidebar marks a workspace with an unhandled blocker. Optional automatic sending of blockers, at most once per message.
+- ✅ **Claude Code advisor**: Settings › Agents picks Claude Code's own advisor tool for Claude chats (my Claude Code setting, off, Fable, Opus or Sonnet). Claude consults it mid-task; each consultation shows as an "Advisor" line in the chat. Sits beside the post-turn advisor above.
 - ✅ **Review plan** (always available, no setting): the plan card in plan mode has a Review plan button. Three fresh Opus reviewers (design, readiness, codebase fit) read only the plan and the repo, never the chat, and post findings as a card with Revise the plan and Dismiss. Adapted from Google's [Elephant-Goldfish Model](https://github.com/google/elephant-goldfish-model) (Apache 2.0).
 - ✅ Subagent calls show as one collapsible card per agent, with the steps it took inside.
 - ✅ Settings › Claude Code: run the bundled binary or your installed `claude`. When Claude Code isn't signed in, the chat says to run `claude` and `/login`.
