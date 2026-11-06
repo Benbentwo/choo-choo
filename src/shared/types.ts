@@ -8,6 +8,17 @@ export interface Repo {
   hidden?: boolean
   /** Scripts set in the app (e.g. imported from Conductor); a choo-choo.json or conductor.json in the repo wins. */
   scripts?: Scripts
+  /** Extra or replacement system prompt for agents in this repo. */
+  systemPrompt?: PromptCustom
+}
+
+/**
+ * Custom instructions for Claude agents. "append" keeps Claude Code's own system prompt
+ * and adds the text after it; "replace" sends only the text.
+ */
+export interface PromptCustom {
+  mode: 'append' | 'replace'
+  text: string
 }
 
 /** What a new workspace starts from, besides a fresh branch off the default branch. */
@@ -153,6 +164,8 @@ export interface Chat {
   handoff?: string
   /** The sharer's chat id, so refreshing a share updates the right tab. */
   sharedChatId?: string
+  /** Context window of the model, as Claude Code last reported it. */
+  contextWindow?: number
   createdAt: number
 }
 
@@ -276,6 +289,8 @@ export interface Settings extends AppearanceSettings {
   claudeBinary: 'bundled' | 'installed'
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
   extras: Extras
+  /** Instructions for every Claude agent. A repo's own prompt adds to or replaces this. */
+  systemPrompt?: PromptCustom
   /** OpenTelemetry export for Claude agents. Off by default. */
   telemetry: Telemetry
 }
@@ -439,6 +454,30 @@ export interface PermissionRequest {
 
 export type PermissionDecision = 'allow' | 'always' | 'deny'
 
+/** One Claude API response in a session, read from Claude Code's transcript. */
+export interface UsagePoint {
+  ts: number
+  model: string
+  /** Uncached input tokens. */
+  input: number
+  cacheWrite: number
+  cacheRead: number
+  output: number
+  /** Made by a subagent, so it isn't in the main context window. */
+  subagent?: boolean
+}
+
+export interface SessionUsage {
+  points: UsagePoint[]
+  /** Times the conversation was compacted. */
+  compactions: number[]
+  contextWindow: number
+  /** Running cost Claude Code reported at the end of the last turn. */
+  costUsd?: number
+  /** Why there is nothing to show, when points is empty. */
+  empty?: string
+}
+
 export interface ChatEvent {
   chatId: string
   item?: ChatItem
@@ -454,6 +493,7 @@ export interface Api {
   addRepo(path: string): Promise<Repo>
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
+  setRepoPrompt(repoId: string, prompt: PromptCustom | undefined): Promise<void>
   /** `folders` are extra directories the first chat may read and edit (linked workspaces, added folders). */
   createWorkspace(repoId: string, source?: WorkspaceSource, folders?: string[]): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
   listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
@@ -480,6 +520,7 @@ export interface Api {
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
+  getChatUsage(chatId: string): Promise<SessionUsage>
   updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'reviewKind' | 'permission' | 'advisor' | 'advisorBlocker'>>): Promise<Chat>
   respondPermission(requestId: string, decision: PermissionDecision): void
   pendingPermissions(): Promise<PermissionRequest[]>

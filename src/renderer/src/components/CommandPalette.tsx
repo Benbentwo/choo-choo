@@ -125,6 +125,12 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     out.push({ id: 'integrations', tab: 'settings', section: st, label: 'Integrations', keywords: 'linear notion sign in connect', icon: <IconGear />, run: () => useStore.getState().set({ modal: 'settings', settingsTab: 'integrations' }) })
     out.push({ id: 'appearance', tab: 'settings', section: st, label: 'Appearance', keywords: 'theme accent font size density', icon: <IconGear />, run: () => useStore.getState().set({ modal: 'settings', settingsTab: 'appearance' }) })
     out.push({ id: 'telemetry', tab: 'settings', section: st, label: 'Telemetry', keywords: 'observability opentelemetry otel otlp traces metrics', icon: <IconGear />, run: () => useStore.getState().set({ modal: 'settings', settingsTab: 'telemetry' }) })
+    {
+      const st2 = useStore.getState()
+      const wsId = st2.selectedWs
+      const chatId = wsId ? (st2.activeChat[wsId] ?? st2.chats.find((c) => c.workspaceId === wsId)?.id) : undefined
+      if (chatId) out.push({ id: 'usage', tab: 'settings', section: st, label: 'Session usage and context', keywords: 'tokens cost context graph chart telemetry', icon: <IconGear />, run: () => useStore.getState().set({ modal: 'usage', usageChat: chatId }) })
+    }
     out.push({
       id: 'notify',
       tab: 'settings',
