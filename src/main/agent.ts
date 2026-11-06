@@ -248,16 +248,11 @@ export async function send(
         settingSources: ['user', 'project', 'local'],
         agents: enabledSubagents(extras),
         ...(append ? { systemPrompt: { type: 'preset', preset: 'claude_code', append } } : {}),
-<<<<<<< Updated upstream
         // Newer models (Opus 5.5 and up) leave out the task-list tools unless asked. Turn them on so
         // sessions and their subagents keep a visible checklist, as on older models.
         env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...env },
-        ...extraOptions?.(sdkMod)
-=======
-        env: { ...process.env, ...env },
         ...extra,
         ...(Object.keys(mcpServers).length ? { mcpServers } : {})
->>>>>>> Stashed changes
       } as never
     })
     r.query = q
