@@ -53,17 +53,33 @@ jobs:
       - run: npm ci
       - run: npm test
       # Signs and notarizes when the Apple secrets are set; otherwise builds an unsigned app.
+      # The signing variables are only exported when set: electron-builder treats an empty CSC_LINK as a path.
       - run: node scripts/install-mac-binaries.cjs
-      - run: npx electron-vite build && npx electron-builder --mac --publish always -c.extraMetadata.version=${{ steps.rel.outputs.version }}
+      - name: Build and upload
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SIGN_CSC_LINK: ${{ secrets.CSC_LINK }}
+          SIGN_CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          SIGN_APPLE_ID: ${{ secrets.APPLE_ID }}
+          SIGN_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          SIGN_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          VERSION: ${{ steps.rel.outputs.version }}
           # electron-builder uploads the dmg, zip and latest-mac.yml (read by the updater) into the release.
           GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$SIGN_CSC_LINK" ]; then
+            export CSC_LINK="$SIGN_CSC_LINK" CSC_KEY_PASSWORD="$SIGN_CSC_KEY_PASSWORD"
+            if [ -n "$SIGN_APPLE_ID" ]; then
+              export APPLE_ID="$SIGN_APPLE_ID" APPLE_APP_SPECIFIC_PASSWORD="$SIGN_APPLE_APP_SPECIFIC_PASSWORD" APPLE_TEAM_ID="$SIGN_APPLE_TEAM_ID"
+            fi
+            sign=()
+          else
+            echo "::warning::No signing secrets; building an unsigned app."
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            # Ad-hoc sign like the preview build, so Apple silicon will run it.
+            sign=(-c.mac.identity=- -c.mac.hardenedRuntime=false)
+          fi
+          npx electron-vite build
+          npx electron-builder --mac --publish always -c.extraMetadata.version="$VERSION" "${sign[@]}"
       - name: Publish the release
         if: github.event_name == 'workflow_dispatch'
         run: gh release edit "${{ steps.rel.outputs.tag }}" --draft=false --latest
