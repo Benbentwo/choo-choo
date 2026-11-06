@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
-import { DEFAULT_SETTINGS, type Effort, type ModelId, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
+import { DEFAULT_SETTINGS, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
 
 export interface Doc {
   kind: 'diff' | 'file'
@@ -32,6 +32,7 @@ interface UI {
   /** Settings tab to open on. */
   settingsTab: 'general' | 'appearance'
   recentPaths: string[]
+  modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */
   draftRepo: string | null
   /** A share link to open, from a choo-choo:// URL. */
@@ -72,6 +73,7 @@ export const useStore = create<UI>((set, get) => ({
   paletteMode: 'all',
   settingsTab: 'general',
   recentPaths: [],
+  modelDetails: {},
   draftRepo: null,
   shareLinkDraft: null,
   history: [],
@@ -143,14 +145,35 @@ export function newWorkspace(repoId: string) {
   useStore.getState().set({ selectedWs: null, draftRepo: repoId })
 }
 
-export async function createWorkspace(repoId: string, opts: { source?: WorkspaceSource; text: string; model: ModelId; effort: Effort }) {
-  const { workspace, chat, context } = await window.api.createWorkspace(repoId, opts.source)
+export interface DraftContext {
+  images: string[]
+  files: string[]
+  folders: string[]
+  /** Workspace ids whose worktrees the agent can see. */
+  links: string[]
+}
+
+export async function createWorkspace(repoId: string, opts: { source?: WorkspaceSource; text: string; model: ModelId; effort: Effort; extra?: DraftContext }) {
+  const st = useStore.getState()
+  const linked = (opts.extra?.links ?? []).map((id) => st.workspaces.find((w) => w.id === id)).filter((w): w is Workspace => !!w)
+  const files = opts.extra?.files ?? []
+  const folders = [...(opts.extra?.folders ?? []), ...linked.map((w) => w.path), ...files.map((f) => f.slice(0, f.lastIndexOf('/')))]
+  const { workspace, chat, context } = await window.api.createWorkspace(repoId, opts.source, folders)
   await window.api.updateChat(chat.id, { model: opts.model, effort: opts.effort })
   await refreshState()
   useStore.getState().setActiveChat(workspace.id, chat.id)
   useStore.getState().selectWorkspace(workspace.id)
-  const prompt = [context, opts.text.trim()].filter(Boolean).join('\n\n')
-  if (prompt) await window.api.sendMessage(chat.id, prompt)
+  const notes: string[] = []
+  if (linked.length)
+    notes.push(
+      'Linked workspaces (other worktrees you can read and edit):\n' +
+        linked.map((w) => `- ${w.title} (${st.repos.find((r) => r.id === w.repoId)?.name ?? 'repo'}, branch ${w.branch}): ${w.path}`).join('\n')
+    )
+  if (files.length) notes.push('Attached files:\n' + files.map((f) => `- ${f}`).join('\n'))
+  if (opts.extra?.folders.length) notes.push('Extra folders you can use:\n' + opts.extra.folders.map((f) => `- ${f}`).join('\n'))
+  const images = opts.extra?.images ?? []
+  const prompt = [context, ...notes, opts.text.trim() || (images.length ? 'See the attached image.' : '')].filter(Boolean).join('\n\n')
+  if (prompt) await window.api.sendMessage(chat.id, prompt, images)
 }
 
 /** Opens the repo's orchestrator, which starts and directs workspaces for you. */
@@ -262,4 +285,18 @@ export function ago(ts: number, now = Date.now()): string {
   if (s < 86400 * 30) return `${Math.floor(s / 86400)}d`
   if (s < 86400 * 365) return `${Math.floor(s / (86400 * 30))}mo`
   return `${Math.floor(s / (86400 * 365))}y`
+}
+
+/** Model name with its current version when known, e.g. "Opus 5.5". */
+export function modelLabel(id: ModelId, details = useStore.getState().modelDetails): string {
+  return details[id]?.displayName ?? MODEL_NAMES[id] ?? id
+}
+const MODEL_NAMES: Record<ModelId, string> = { opus: 'Opus', fable: 'Fable', sonnet: 'Sonnet', haiku: 'Haiku', codex: 'Codex' }
+
+export async function loadModelDetails() {
+  try {
+    useStore.getState().set({ modelDetails: await window.api.modelDetails() })
+  } catch {
+    /* labels fall back to plain names */
+  }
 }

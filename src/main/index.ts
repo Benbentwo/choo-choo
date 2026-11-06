@@ -18,6 +18,7 @@ import { suggestName } from './naming'
 import { checkNow, installUpdate, startUpdater } from './updater'
 import { registerDevFeedback } from './devFeedback'
 import * as conductor from './conductorImport'
+import { modelDetails } from './models'
 import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
@@ -127,7 +128,7 @@ function newChat(workspaceId: string): Chat {
   return chat
 }
 
-async function createWorkspace(repoId: string, source?: WorkspaceSource) {
+async function createWorkspace(repoId: string, source?: WorkspaceSource, folders: string[] = []) {
   const s = store.get()
   const repo = s.repos.find((r) => r.id === repoId)
   if (!repo) throw new Error('Unknown repo')
@@ -165,6 +166,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource) {
   const workspace: Workspace = { id: randomUUID(), repoId, name, branch, baseRef, path, title, named, createdAt: Date.now() }
   s.workspaces.push(workspace)
   const chat = newChat(workspace.id)
+  if (folders.length) chat.additionalDirectories = [...new Set(folders)]
   runScript(workspace, 'setup')
   return { workspace, chat, context }
 }
@@ -477,7 +479,11 @@ function registerIpc() {
     if (r) r.hidden = hidden
     store.save()
   })
-  h('ws:create', (repoId: string, source?: WorkspaceSource) => createWorkspace(repoId, source))
+  h('ws:create', (repoId: string, source?: WorkspaceSource, folders?: string[]) => createWorkspace(repoId, source, folders))
+  h('files:pick', async () => {
+    const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'], message: 'Give the agent these files' })
+    return r.canceled ? [] : r.filePaths
+  })
   h('ws:sources', (repoId: string, kind: WorkspaceSource['kind'], query: string) => listSources(repoId, kind, query))
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))
@@ -587,6 +593,7 @@ function registerIpc() {
     return addRepo(dest)
   })
   h('gh:repos', () => gh.listMyRepos())
+  h('models:details', () => modelDetails())
   h('conductor:preview', () => previewConductor())
   h('conductor:import', (opts: { useWorkspacesRoot: boolean }) => importConductor(opts))
   h('repo:quickstart', async (name: string) => {
