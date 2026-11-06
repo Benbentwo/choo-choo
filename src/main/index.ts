@@ -814,6 +814,10 @@ if (process.defaultApp) {
   if (process.argv[1]) app.setAsDefaultProtocolClient('choo-choo', process.execPath, [resolve(process.argv[1])])
 } else app.setAsDefaultProtocolClient('choo-choo')
 
+// Name the app explicitly so the menu bar and About panel say Choo Choo, not Electron, in dev too.
+app.setName('Choo Choo')
+app.setAboutPanelOptions({ applicationName: 'Choo Choo', applicationVersion: app.getVersion() })
+
 app.whenReady().then(async () => {
   await fixPath()
   // Packaged builds get the icon from the .icns; in dev, show the brand icon in the Dock too.
