@@ -7,6 +7,7 @@ import { runCodex } from './codex'
 import { enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
 import * as orchestrator from './orchestrator'
 import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
+import * as notion from './integrations/notion'
 import { buildSystemPrompt } from '@shared/systemPrompt'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
@@ -270,6 +271,12 @@ export async function send(
       }
       return { behavior: 'allow', updatedInput: input }
     }
+    const extra = extraOptions?.(sdkMod) ?? {}
+    const mcpServers: Record<string, unknown> = { ...(extra.mcpServers as Record<string, unknown> | undefined) }
+    if (store.get().settings.notionAgentTools) {
+      const server = await notion.agentServer()
+      if (server) mcpServers.notion = server
+    }
     const q = query({
       prompt: userMessage(expandShortcuts(prompt, extras), images, turnDone) as never,
       options: {
@@ -293,7 +300,8 @@ export async function send(
         // Newer models (Opus 5.5 and up) leave out the task-list tools unless asked. Turn them on so
         // sessions and their subagents keep a visible checklist, as on older models.
         env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...env },
-        ...extraOptions?.(sdkMod)
+        ...extra,
+        ...(Object.keys(mcpServers).length ? { mcpServers } : {})
       } as never
     })
     r.query = q

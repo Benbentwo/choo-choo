@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review (PR #38) |
+| Status | Shipped (PR #38) |
 | Owner | Claude |
 | Requested by | Ben, 2026-11-06 ("consider how this link might be helpful": Google's Elephant-Goldfish Model) |
 | Last updated | 2026-11-06 |

@@ -24,7 +24,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Comment mode](prd/comment-mode.md) | Shipped (dev builds only) |
 | [Custom system prompts](prd/system-prompts.md) | In review |
 | [Telemetry](prd/telemetry.md) | In review |
-| [Review plan](prd/plan-review.md) | In review |
+| [Review plan](prd/plan-review.md) | Shipped |
 | [Integrations](prd/integrations.md) | Planned |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
