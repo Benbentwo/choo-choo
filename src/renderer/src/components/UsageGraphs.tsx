@@ -77,8 +77,8 @@ function Frame({ yTicks, yMax, scale, hover, setHover, children, label }: { yTic
   const y = (v: number) => M.t + IH - (v / yMax) * IH
   return (
     <svg
-      width={W}
-      height={H}
+      width="100%"
+      viewBox={`0 0 ${W} ${H}`}
       role="img"
       aria-label={label}
       className="block select-none"
@@ -218,7 +218,7 @@ function Tooltip({ p, i, usage }: { p: UsagePoint; i: number; usage: SessionUsag
   )
 }
 
-export function UsageGraphs({ chat }: { chat: Chat }) {
+export function UsageGraphs({ chat, compact }: { chat: Chat; compact?: boolean }) {
   const [usage, setUsage] = useState<SessionUsage | null>(null)
   const [view, setView] = useState<View>('turn')
   const mode: Mode = view === 'time' ? 'time' : 'turn'
@@ -254,7 +254,7 @@ export function UsageGraphs({ chat }: { chat: Chat }) {
   const btn = (active: boolean) => `rounded px-2 py-0.5 ${active ? 'bg-hover text-fg' : 'text-muted hover:text-fg'}`
 
   return (
-    <div className="px-5 py-4">
+    <div className={compact ? 'px-3 py-3' : 'px-5 py-4'}>
       <div className="mb-3 flex flex-wrap items-baseline gap-x-6 gap-y-1">
         <Stat label="responses" value={String(points.length)} />
         <Stat label="tokens" value={fmt(SERIES.reduce((n, s) => n + sum(s.id), 0))} />
@@ -278,7 +278,7 @@ export function UsageGraphs({ chat }: { chat: Chat }) {
         <UsageTable points={points} usage={usage} />
       ) : (
         <>
-          <div className="mb-1 flex items-center gap-3 text-[12px]">
+          <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
             <span className="font-medium">Usage</span>
             <span className="text-faint">tokens per Claude response</span>
             <div className="ml-auto flex gap-3">

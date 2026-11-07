@@ -12,7 +12,7 @@ export interface Doc {
 /** Which list the ⌘K palette opens on. */
 export type PaletteMode = 'all' | 'files' | 'grep'
 
-export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'review'
+export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'graphs' | 'review'
 
 interface UI {
   repos: Repo[]

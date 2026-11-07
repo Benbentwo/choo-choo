@@ -8,12 +8,14 @@ import { BottomPanel } from './BottomPanel'
 import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
 import { fmt } from './Stats'
 import { MergedActions } from './Reflect'
+import { UsageGraphs } from './UsageGraphs'
 
 const TABS: { id: RightTab; label: string }[] = [
   { id: 'artifacts', label: 'Artifacts' },
   { id: 'files', label: 'All files' },
   { id: 'changes', label: 'Changes' },
-  { id: 'checks', label: 'Checks' }
+  { id: 'checks', label: 'Checks' },
+  { id: 'graphs', label: 'Graphs' }
 ]
 
 export function RightPanel({ ws }: { ws: Workspace }) {
@@ -72,6 +74,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
           {s.rightTab === 'files' && <FilesTab ws={ws} filter={filter} />}
           {s.rightTab === 'artifacts' && <ArtifactsTab ws={ws} />}
           {s.rightTab === 'checks' && <ChecksTab ws={ws} />}
+          {s.rightTab === 'graphs' && <GraphsTab ws={ws} />}
           {s.rightTab === 'review' && <ReviewTab ws={ws} />}
         </div>
       </div>
@@ -328,5 +331,24 @@ function MenuBtn(p: { label: string; onClick: () => void }) {
     <button onClick={p.onClick} className="block w-full rounded px-2 py-1.5 text-left hover:bg-hover">
       {p.label}
     </button>
+  )
+}
+
+/** The usage graphs for the chat open in the center, sized for the side panel. */
+function GraphsTab({ ws }: { ws: Workspace }) {
+  const s = useStore()
+  const chats = s.chats.filter((c) => c.workspaceId === ws.id)
+  const chat = chats.find((c) => c.id === s.activeChat[ws.id]) ?? chats[0]
+  if (!chat) return <div className="px-4 py-6 text-center text-faint">No chats yet.</div>
+  return (
+    <div>
+      <div className="flex items-center gap-2 px-3 pt-2 text-[12px]">
+        <span className="truncate text-muted">{chat.title}</span>
+        <button className="ml-auto shrink-0 text-faint hover:text-fg" onClick={() => s.set({ modal: 'usage', usageChat: chat.id })}>
+          Open larger
+        </button>
+      </div>
+      <UsageGraphs key={chat.id} chat={chat} compact />
+    </div>
   )
 }
