@@ -7,7 +7,7 @@ const exec = promisify(execFile)
 
 export async function prForBranch(cwd: string, branch: string): Promise<PrInfo | null> {
   try {
-    const { stdout } = await exec('gh', ['pr', 'view', branch, '--json', 'number,url,state,isDraft,title,mergeable'], { cwd })
+    const { stdout } = await exec('gh', ['pr', 'view', branch, '--json', 'number,url,state,isDraft,title,mergeable,reviewDecision,mergeStateStatus'], { cwd })
     return JSON.parse(stdout) as PrInfo
   } catch {
     return null

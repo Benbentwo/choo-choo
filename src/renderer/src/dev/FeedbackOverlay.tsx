@@ -60,7 +60,13 @@ export function FeedbackOverlay() {
         setActive((a) => !a)
         setTarget(null)
         setHover(null)
-      } else if (e.key === 'Escape' && active && !target) setActive(false)
+      } else if (e.key === 'Escape' && active) {
+        // Comment mode is the top layer: Esc backs out of it and nothing underneath (dialogs, menus) sees the key.
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        if (target) setTarget(null)
+        else setActive(false)
+      }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)

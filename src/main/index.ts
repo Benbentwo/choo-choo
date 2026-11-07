@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, s
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
 import type { Artifact, Chat, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
@@ -114,7 +114,7 @@ async function addRepo(path: string): Promise<Repo> {
     store.save()
     return existing
   }
-  const repo: Repo = { id: randomUUID(), name: basename(root), path: root, defaultBranch: await git.defaultBranch(root) }
+  const repo: Repo = { id: randomUUID(), name: basename(root), path: root, defaultBranch: await git.defaultBranch(root), githubOwner: await git.githubOwner(root) }
   s.repos.push(repo)
   s.recentPaths = [root, ...(s.recentPaths ?? []).filter((p) => p !== root)].slice(0, 10)
   store.save()
@@ -604,6 +604,60 @@ async function archiveWorkspace(id: string) {
   store.save()
 }
 
+/** Folders a workspace occupies on disk (never the main checkout, which an orchestrator uses). */
+function workspaceFolders(ws: Workspace, repo: Repo | undefined): string[] {
+  return [ws.path, ws.archivePath].filter((p): p is string => !!p && p !== repo?.path && existsSync(p))
+}
+
+/** Removes a worktree folder through git when it can, then deletes whatever is left. Refuses the repo itself. */
+async function deleteFolder(repoPath: string, path: string) {
+  if (resolve(path) === resolve(repoPath)) return
+  if (existsSync(repoPath)) await git.removeWorktree(repoPath, path)
+  rmSync(path, { recursive: true, force: true })
+}
+
+async function stopWorkspace(ws: Workspace) {
+  for (const c of store.get().chats.filter((c) => c.workspaceId === ws.id)) await agent.stop(c.id)
+  pty.killPrefix(`${ws.id}:`)
+}
+
+function forgetWorkspace(ws: Workspace) {
+  const s = store.get()
+  for (const c of s.chats.filter((c) => c.workspaceId === ws.id)) store.deleteChatItems(c.id)
+  s.chats = s.chats.filter((c) => c.workspaceId !== ws.id)
+  s.workspaces = s.workspaces.filter((w) => w.id !== ws.id)
+}
+
+async function deleteWorkspace(id: string) {
+  const ws = findWs(id)
+  const repo = store.get().repos.find((r) => r.id === ws.repoId)
+  await stopWorkspace(ws)
+  for (const p of workspaceFolders(ws, repo)) await deleteFolder(repo?.path ?? '', p)
+  forgetWorkspace(ws)
+  store.save()
+  send('state:changed')
+}
+
+async function removeProject(id: string, opts: { deleteFiles: boolean }) {
+  const s = store.get()
+  const repo = s.repos.find((r) => r.id === id)
+  if (!repo) return
+  const wss = s.workspaces.filter((w) => w.repoId === id)
+  const kept: string[] = []
+  for (const ws of wss) {
+    await stopWorkspace(ws)
+    const folders = workspaceFolders(ws, repo)
+    if (opts.deleteFiles) for (const p of folders) await deleteFolder(repo.path, p)
+    else kept.push(...folders)
+    forgetWorkspace(ws)
+  }
+  if (kept.length) s.leftovers = [...(s.leftovers ?? []), { id: randomUUID(), repoName: repo.name, repoPath: repo.path, paths: kept, removedAt: Date.now() }]
+  s.repos = s.repos.filter((r) => r.id !== id)
+  for (const g of s.groups ?? []) g.repoIds = g.repoIds.filter((r) => r !== id)
+  store.save()
+  send('state:changed')
+}
+
 /** Env for Claude agents: workspace vars, the API key, and OpenTelemetry export if it's on. */
 function agentEnv(ws: Workspace): Record<string, string> {
   const settings = store.get().settings
@@ -629,10 +683,15 @@ function registerIpc() {
     return addRepo(r.filePaths[0])
   })
   h('repo:add', (p: string) => addRepo(p))
-  h('repo:remove', (id: string) => {
+  h('repo:remove', (id: string) => removeProject(id, { deleteFiles: false }))
+  h('repo:removeProject', (id: string, opts: { deleteFiles: boolean }) => removeProject(id, opts))
+  h('ws:delete', (id: string) => deleteWorkspace(id))
+  h('leftover:delete', async (id: string) => {
     const s = store.get()
-    s.repos = s.repos.filter((r) => r.id !== id)
-    for (const g of s.groups ?? []) g.repoIds = g.repoIds.filter((r) => r !== id)
+    const l = s.leftovers?.find((x) => x.id === id)
+    if (!l) return
+    for (const p of l.paths) await deleteFolder(l.repoPath, p)
+    s.leftovers = s.leftovers!.filter((x) => x.id !== id)
     store.save()
   })
   h('repo:reorder', (ids: string[]) => {
@@ -1109,6 +1168,11 @@ app.whenReady().then(async () => {
   // Packaged builds get the icon from the .icns; in dev, show the brand icon in the Dock too.
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
+  // Projects added before avatars existed: look up their GitHub owner once.
+  void Promise.all(store.get().repos.filter((r) => r.githubOwner === undefined).map(async (r) => (r.githubOwner = existsSync(r.path) ? await git.githubOwner(r.path) : ''))).then(() => {
+    store.save()
+    send('state:changed')
+  })
   registerIpc()
   cloud.recoverAfterRestart()
   void remote.recoverAfterRestart((id) => store.get().workspaces.find((w) => w.id === id), emitChat)

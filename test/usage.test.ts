@@ -61,3 +61,22 @@ describe('sessionUsage', () => {
     expect(sessionUsage('../etc', { root: tmpdir() }).points).toEqual([])
   })
 })
+
+describe('what each response was about', () => {
+  it('keeps the prompt it answered and what it did', async () => {
+    const { parseTranscript } = await import('../src/main/usage')
+    const u = (input: number, output: number) => ({ input_tokens: input, output_tokens: output, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 })
+    const lines = [
+      { type: 'user', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: 'Add a dark theme' } },
+      { type: 'assistant', timestamp: '2026-01-01T00:00:01Z', message: { id: 'm1', model: 'claude-opus-5-5', usage: u(10, 5), content: [{ type: 'tool_use', name: 'Read' }] } },
+      { type: 'assistant', timestamp: '2026-01-01T00:00:01Z', message: { id: 'm1', model: 'claude-opus-5-5', usage: u(10, 9), content: [{ type: 'tool_use', name: 'Edit' }] } },
+      { type: 'user', timestamp: '2026-01-01T00:00:02Z', message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } },
+      { type: 'assistant', timestamp: '2026-01-01T00:00:03Z', message: { id: 'm2', model: 'claude-opus-5-5', usage: u(12, 3), content: [{ type: 'text', text: 'Done, the theme is in place.' }] } }
+    ]
+    const { points } = parseTranscript(lines.map((l) => JSON.stringify(l)).join('\n'))
+    expect(points.map((p) => [p.prompt, p.did])).toEqual([
+      ['Add a dark theme', 'Used Read, Edit'],
+      ['Add a dark theme', 'Done, the theme is in place.']
+    ])
+  })
+})

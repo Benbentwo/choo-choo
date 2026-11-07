@@ -31,6 +31,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Claude Code session controls](prd/claude-code-controls.md) | Shipped (PR #49) |
 | [MCP servers](prd/mcp-servers.md) | Shipped (PR #50) |
 | [Plugins and skills](prd/plugins.md) | In review |
+| [Managing projects, and PR status](prd/projects-and-pr-status.md) | In review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

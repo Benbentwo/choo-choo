@@ -6,6 +6,8 @@ export interface Repo {
   path: string
   defaultBranch: string
   hidden?: boolean
+  /** GitHub owner (user or org) from the origin remote, for the project's avatar. Empty string when it isn't on GitHub. */
+  githubOwner?: string
   /** Scripts set in the app (e.g. imported from Conductor); a choo-choo.json or conductor.json in the repo wins. */
   scripts?: Scripts
   /** Extra or replacement system prompt for agents in this repo. */
@@ -248,6 +250,10 @@ export interface PrInfo {
   isDraft: boolean
   title: string
   mergeable?: string
+  /** APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or empty when the repo needs no review. */
+  reviewDecision?: string
+  /** GitHub's overall verdict: CLEAN, BLOCKED, BEHIND, DIRTY, UNSTABLE, … */
+  mergeStateStatus?: string
 }
 
 /** One piece of review feedback on a PR, ready to hand to the agent. */
@@ -525,6 +531,16 @@ export interface AppState {
   groups?: RepoGroup[]
   /** Folders added as projects, most recent first; shown under Recents in the Add project menu. */
   recentPaths?: string[]
+  /** Workspace folders left on disk when a project was removed without cleanup; Settings > Projects can delete them. */
+  leftovers?: Leftover[]
+}
+
+export interface Leftover {
+  id: string
+  repoName: string
+  repoPath: string
+  paths: string[]
+  removedAt: number
 }
 
 export interface CheckRun {
@@ -569,6 +585,10 @@ export interface UsagePoint {
   output: number
   /** Made by a subagent, so it isn't in the main context window. */
   subagent?: boolean
+  /** The person's message this response answers, shortened. */
+  prompt?: string
+  /** What the response did: the start of its text, or the tools it called. */
+  did?: string
 }
 
 export interface SessionUsage {
@@ -762,6 +782,11 @@ export interface Api {
   /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
   cloneRepo(url: string, dir?: string): Promise<Repo>
   pickFolder(): Promise<string | null>
+  /** Removes a project. With deleteFiles, its workspace folders (and archived copies) are deleted; otherwise they're kept as a leftover. */
+  removeProject(repoId: string, opts: { deleteFiles: boolean }): Promise<void>
+  /** Permanently deletes a workspace: its folder, archived copy and chats. The branch is kept. */
+  deleteWorkspace(wsId: string): Promise<void>
+  deleteLeftover(id: string): Promise<void>
   /** Sets the sidebar order of projects. */
   reorderRepos(ids: string[]): Promise<void>
   pickFiles(): Promise<string[]>

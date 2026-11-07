@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Workspace } from '@shared/types'
+import type { Repo, Workspace } from '@shared/types'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
 import { useStore, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette } from '../store'
@@ -16,6 +16,17 @@ export function Sidebar() {
   useEffect(() => window.api.onUpdateReady(setUpdate), [])
   const [view, setView] = useState<View>(loadView)
   const [menu, setMenu] = useState<'view' | 'add' | null>(null)
+  const [repoMenu, setRepoMenu] = useState<{ id: string; el: HTMLElement } | null>(null)
+  const repoMenuItems = (repo: Repo): MenuItem[] => [
+    {
+      label: repo.hidden ? 'Show in sidebar' : 'Hide from sidebar',
+      onClick: () => void window.api.setRepoHidden(repo.id, !repo.hidden).then(() => useStore.getState().set({ repos: s.repos.map((r) => (r.id === repo.id ? { ...r, hidden: !r.hidden } : r)) }))
+    },
+    { label: 'Reveal in Finder', onClick: () => void window.api.revealInFinder(repo.path) },
+    { label: 'Manage workspaces…', onClick: () => s.set({ modal: 'settings', settingsTab: 'projects' }) },
+    { kind: 'sep' },
+    { label: 'Remove project…', onClick: () => s.set({ modal: 'remove-repo', removeRepoId: repo.id }) }
+  ]
   const [drag, setDrag] = useState<{ id: string; over: string | null; after: boolean } | null>(null)
   const moveRepo = (id: string, target: string, after: boolean) => {
     if (id === target) return
@@ -102,6 +113,7 @@ export function Sidebar() {
           <button className="rounded p-0.5 hover:bg-hover hover:text-fg" title="Add project" onClick={() => setMenu(menu === 'add' ? null : 'add')}>
             <IconPlus />
           </button>
+          {repoMenu && s.repos.some((r) => r.id === repoMenu.id) && <Menu anchor={repoMenu.el} items={repoMenuItems(s.repos.find((r) => r.id === repoMenu.id)!)} onClose={() => setRepoMenu(null)} />}
           {menu && <Menu anchor={headerRef.current} items={menu === 'view' ? viewItems : addProjectItems()} onClose={() => setMenu(null)} />}
         </div>
         {s.groups.length > 0 && (
@@ -176,13 +188,14 @@ export function Sidebar() {
                 title="Drag to reorder"
                 className="group flex h-9 cursor-grab items-center gap-2 rounded-md px-2 hover:bg-hover active:cursor-grabbing"
               >
-                <IconRepo className="shrink-0 text-faint" />
+                <RepoIcon repo={repo} />
                 <span className={`flex-1 truncate font-medium ${repo.hidden ? 'text-faint' : ''}`}>{repo.name}</span>
                 <button
-                  className="hidden rounded px-1 text-[11px] text-faint group-hover:block hover:text-fg"
-                  onClick={() => void window.api.setRepoHidden(repo.id, !repo.hidden).then(() => useStore.getState().set({ repos: s.repos.map((r) => (r.id === repo.id ? { ...r, hidden: !r.hidden } : r)) }))}
+                  className={`rounded p-1 text-muted hover:bg-raised hover:text-fg ${repoMenu?.id === repo.id ? '' : 'invisible group-hover:visible'}`}
+                  title="Project settings"
+                  onClick={(e) => setRepoMenu({ id: repo.id, el: e.currentTarget })}
                 >
-                  {repo.hidden ? 'Show' : 'Hide'}
+                  <IconDots />
                 </button>
                 <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="Orchestrator: tell it what you want and it runs workspaces for you" onClick={() => void openOrchestrator(repo.id)}>
                   <IconOrchestrator />
@@ -315,4 +328,11 @@ function loadView(): View {
   } catch {
     return d
   }
+}
+
+/** The GitHub owner's avatar when the project is on GitHub, otherwise the plain repo icon. */
+export function RepoIcon({ repo }: { repo: Repo }) {
+  const [failed, setFailed] = useState(false)
+  if (!repo.githubOwner || failed) return <IconRepo className="shrink-0 text-faint" />
+  return <img src={`https://avatars.githubusercontent.com/${repo.githubOwner}?s=40`} alt="" title={repo.githubOwner} onError={() => setFailed(true)} className="h-4 w-4 shrink-0 rounded-[4px]" />
 }
