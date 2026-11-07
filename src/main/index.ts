@@ -114,7 +114,7 @@ async function addRepo(path: string): Promise<Repo> {
     store.save()
     return existing
   }
-  const repo: Repo = { id: randomUUID(), name: basename(root), path: root, defaultBranch: await git.defaultBranch(root) }
+  const repo: Repo = { id: randomUUID(), name: basename(root), path: root, defaultBranch: await git.defaultBranch(root), githubOwner: await git.githubOwner(root) }
   s.repos.push(repo)
   s.recentPaths = [root, ...(s.recentPaths ?? []).filter((p) => p !== root)].slice(0, 10)
   store.save()
@@ -1168,6 +1168,11 @@ app.whenReady().then(async () => {
   // Packaged builds get the icon from the .icns; in dev, show the brand icon in the Dock too.
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
+  // Projects added before avatars existed: look up their GitHub owner once.
+  void Promise.all(store.get().repos.filter((r) => r.githubOwner === undefined).map(async (r) => (r.githubOwner = existsSync(r.path) ? await git.githubOwner(r.path) : ''))).then(() => {
+    store.save()
+    send('state:changed')
+  })
   registerIpc()
   cloud.recoverAfterRestart()
   void remote.recoverAfterRestart((id) => store.get().workspaces.find((w) => w.id === id), emitChat)

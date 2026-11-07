@@ -38,6 +38,7 @@ function niceTicks(max: number): number[] {
 }
 
 type Mode = 'turn' | 'time'
+type View = Mode | 'table'
 
 function useScale(points: UsagePoint[], mode: Mode) {
   return useMemo(() => {
@@ -162,6 +163,34 @@ function ContextChart({ points, usage, scale, dark, hover, setHover }: { points:
   )
 }
 
+/** What a response was about, shown over the usage chart while hovering it. */
+function TurnPopup({ p, i, left }: { p: UsagePoint; i: number; left: number }) {
+  if (!p.prompt && !p.did) return null
+  return (
+    <div
+      className="pointer-events-none absolute top-1 z-10 w-[300px] rounded-md border border-line bg-raised px-3 py-2 text-[12px] shadow-xl"
+      style={left > 55 ? { right: `${100 - left + 2}%` } : { left: `${left + 2}%` }}
+    >
+      <div className="mb-1 text-faint">
+        Response {i + 1} · {clock(p.ts)}
+        {p.subagent && ' · subagent'}
+      </div>
+      {p.prompt && (
+        <div className="mb-1">
+          <span className="text-faint">You: </span>
+          {p.prompt}
+        </div>
+      )}
+      {p.did && (
+        <div className="text-muted">
+          <span className="text-faint">Claude: </span>
+          {p.did}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Tooltip({ p, i, usage }: { p: UsagePoint; i: number; usage: SessionUsage }) {
   const rows: [string, number][] = [
     ['Input', p.input],
@@ -191,10 +220,10 @@ function Tooltip({ p, i, usage }: { p: UsagePoint; i: number; usage: SessionUsag
 
 export function UsageGraphs({ chat }: { chat: Chat }) {
   const [usage, setUsage] = useState<SessionUsage | null>(null)
-  const [mode, setMode] = useState<Mode>('turn')
+  const [view, setView] = useState<View>('turn')
+  const mode: Mode = view === 'time' ? 'time' : 'turn'
   const [on, setOn] = useState<Set<Series>>(() => new Set(SERIES.map((s) => s.id)))
   const [hover, setHover] = useState<number | null>(null)
-  const [table, setTable] = useState(false)
   const itemCount = useStore((s) => s.items[chat.id]?.length ?? 0)
   const dark = document.documentElement.style.colorScheme !== 'light'
 
@@ -233,19 +262,19 @@ export function UsageGraphs({ chat }: { chat: Chat }) {
         {usage.costUsd != null && <Stat label="cost" value={`$${usage.costUsd.toFixed(2)}`} />}
         <Stat label="context now" value={`${Math.round((lastCtx / usage.contextWindow) * 100)}%`} />
         <div className="ml-auto flex gap-1 text-[12px]" role="tablist" aria-label="X axis">
-          <button className={btn(mode === 'turn')} onClick={() => setMode('turn')}>
+          <button className={btn(view === 'turn')} onClick={() => setView('turn')}>
             By response
           </button>
-          <button className={btn(mode === 'time')} onClick={() => setMode('time')}>
+          <button className={btn(view === 'time')} onClick={() => setView('time')}>
             By time
           </button>
-          <button className={btn(table)} onClick={() => setTable(!table)}>
+          <button className={btn(view === 'table')} onClick={() => setView('table')}>
             Table
           </button>
         </div>
       </div>
 
-      {table ? (
+      {view === 'table' ? (
         <UsageTable points={points} usage={usage} />
       ) : (
         <>
@@ -261,7 +290,10 @@ export function UsageGraphs({ chat }: { chat: Chat }) {
               ))}
             </div>
           </div>
-          <UsageChart points={points} scale={scale} on={on} dark={dark} hover={hover} setHover={setHover} />
+          <div className="relative">
+            <UsageChart points={points} scale={scale} on={on} dark={dark} hover={hover} setHover={setHover} />
+            {hover != null && <TurnPopup p={points[hover]} i={hover} left={(scale.x(hover) / W) * 100} />}
+          </div>
           <div className="mt-4 mb-1 flex items-center gap-3 text-[12px]">
             <span className="font-medium">Context</span>
             <span className="text-faint">tokens in the window after each response</span>

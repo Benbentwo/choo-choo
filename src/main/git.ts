@@ -253,3 +253,9 @@ export async function grep(cwd: string, query: string, limit = 200): Promise<Gre
   }
   return hits
 }
+
+/** The GitHub owner of the origin remote (https or ssh), or '' when origin isn't on github.com. */
+export async function githubOwner(repo: string): Promise<string> {
+  const url = (await tryGit(repo, ['config', '--get', 'remote.origin.url']))?.trim() ?? ''
+  return url.match(/github\.com[:/]([^/]+)\//i)?.[1] ?? ''
+}

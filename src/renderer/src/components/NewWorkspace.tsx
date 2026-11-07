@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Effort, IntegrationId, ModelId, SourceOption, WorkspaceSource } from '@shared/types'
 import { useStore, createWorkspace, reportError, modelLabel, type DraftContext } from '../store'
-import { IconBranch, IconDown, IconFolder, IconGithub, IconImage, IconPlus, IconRepo, IconSidebar, IconX } from '../icons'
+import { IconBranch, IconDown, IconFolder, IconGithub, IconImage, IconPlus, IconSidebar, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
+import { RepoIcon } from './Sidebar'
 import { EFFORT_LABEL, EFFORTS, MODELS } from './Composer'
 import { useIntegrations } from './Integrations'
 
@@ -101,7 +102,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
         <div className="rounded-xl border border-line bg-panel">
           <div className="flex items-center gap-2 px-3 pt-2.5">
             <button ref={repoBtn} className="flex items-center gap-1.5 rounded px-1.5 py-1 font-medium hover:bg-hover" onClick={() => setMenu('repo')}>
-              <IconRepo className="text-faint" /> {repo.name} <IconDown className="text-faint" />
+              <RepoIcon repo={repo} /> {repo.name} <IconDown className="text-faint" />
             </button>
             {source && (
               <span className="flex min-w-0 items-center gap-1 rounded bg-raised px-2 py-0.5 text-[12px] text-muted">

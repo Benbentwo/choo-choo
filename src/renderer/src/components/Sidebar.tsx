@@ -188,7 +188,7 @@ export function Sidebar() {
                 title="Drag to reorder"
                 className="group flex h-9 cursor-grab items-center gap-2 rounded-md px-2 hover:bg-hover active:cursor-grabbing"
               >
-                <IconRepo className="shrink-0 text-faint" />
+                <RepoIcon repo={repo} />
                 <span className={`flex-1 truncate font-medium ${repo.hidden ? 'text-faint' : ''}`}>{repo.name}</span>
                 <button
                   className={`rounded p-1 text-muted hover:bg-raised hover:text-fg ${repoMenu?.id === repo.id ? '' : 'invisible group-hover:visible'}`}
@@ -328,4 +328,11 @@ function loadView(): View {
   } catch {
     return d
   }
+}
+
+/** The GitHub owner's avatar when the project is on GitHub, otherwise the plain repo icon. */
+export function RepoIcon({ repo }: { repo: Repo }) {
+  const [failed, setFailed] = useState(false)
+  if (!repo.githubOwner || failed) return <IconRepo className="shrink-0 text-faint" />
+  return <img src={`https://avatars.githubusercontent.com/${repo.githubOwner}?s=40`} alt="" title={repo.githubOwner} onError={() => setFailed(true)} className="h-4 w-4 shrink-0 rounded-[4px]" />
 }

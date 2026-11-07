@@ -134,14 +134,27 @@ function GroupModal({ onClose }: { onClose: () => void }) {
 
 function UsageFor({ onClose }: { onClose: () => void }) {
   const chat = useStore((s) => s.chats.find((c) => c.id === s.usageChat))
+  const allChats = useStore((s) => s.chats)
   if (!chat) return null
+  // Each chat tab (including a Review) is its own Claude session; switch between them here.
+  const siblings = allChats.filter((c) => c.workspaceId === chat.workspaceId)
   return (
     <Shell onClose={onClose} width="w-[780px]">
       <div className="flex items-center gap-2 border-b border-line px-5 py-3">
-        <span className="font-medium">Session usage</span>
-        <span className="truncate text-faint">{chat.title}</span>
+        <span className="shrink-0 font-medium">Session usage</span>
+        <div className="no-scrollbar flex min-w-0 gap-1 overflow-x-auto">
+          {siblings.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => useStore.getState().set({ usageChat: c.id })}
+              className={`max-w-[200px] shrink-0 truncate rounded px-2 py-0.5 text-[12px] ${c.id === chat.id ? 'bg-hover text-fg' : 'text-muted hover:text-fg'}`}
+            >
+              {c.title}
+            </button>
+          ))}
+        </div>
       </div>
-      <UsageGraphs chat={chat} />
+      <UsageGraphs key={chat.id} chat={chat} />
     </Shell>
   )
 }

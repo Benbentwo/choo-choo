@@ -93,7 +93,7 @@ export function BottomPanel({ ws }: { ws: Workspace }) {
   }
 
   const TabBtn = (p: { id: string; label: string; closable?: boolean; live?: boolean }) => (
-    <div className={`group flex h-9 items-center gap-1 border-b-2 px-2.5 ${cur === p.id ? 'border-fg text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
+    <div className={`group flex h-9 shrink-0 items-center gap-1 border-b-2 px-2.5 whitespace-nowrap ${cur === p.id ? 'border-fg text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
       <button
         onClick={() => {
           setCur(p.id)
@@ -117,19 +117,21 @@ export function BottomPanel({ ws }: { ws: Workspace }) {
   return (
     <div className={`flex min-h-0 flex-col border-t border-line ${s.bottomOpen ? 'flex-[1_1_50%]' : ''}`}>
       <div className="flex h-9 shrink-0 items-center gap-0.5 px-1">
-        <button className="rounded p-1 text-muted hover:text-fg" onClick={() => s.set({ bottomOpen: !s.bottomOpen })}>
+        <button className="shrink-0 rounded p-1 text-muted hover:text-fg" onClick={() => s.set({ bottomOpen: !s.bottomOpen })}>
           {s.bottomOpen ? <IconDown /> : <IconRight />}
         </button>
-        <TabBtn id="setup" label="Setup" live={running[`${ws.id}:setup`]} />
-        <TabBtn id="run" label="Run" live={isRunning} />
-        {terms.map((tt) => (
-          <TabBtn key={tt.id} id={tt.id} label={terms.length > 1 ? `Terminal ${tt.n}` : 'Terminal'} closable={terms.length > 1} />
-        ))}
-        <button className="rounded p-1 text-muted hover:text-fg" onClick={addTerm} title="New terminal">
-          <IconPlus />
-        </button>
-        <div className="flex-1" />
-        <div className="mr-1 flex items-center rounded-md border border-line">
+        {/* Tabs scroll sideways instead of wrapping when there are many terminals. */}
+        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+          <TabBtn id="setup" label="Setup" live={running[`${ws.id}:setup`]} />
+          <TabBtn id="run" label="Run" live={isRunning} />
+          {terms.map((tt) => (
+            <TabBtn key={tt.id} id={tt.id} label={terms.length > 1 ? `Terminal ${tt.n}` : 'Terminal'} closable={terms.length > 1} />
+          ))}
+          <button className="shrink-0 rounded p-1 text-muted hover:text-fg" onClick={addTerm} title="New terminal">
+            <IconPlus />
+          </button>
+        </div>
+        <div className="mr-1 flex shrink-0 items-center rounded-md border border-line">
           <button className="flex items-center gap-1.5 px-2 py-0.5 hover:bg-hover" title={isRunning ? 'Stop (⌘R)' : 'Run (⌘R)'} onClick={() => void toggleRun()}>
             {isRunning ? <IconStop width={11} height={11} /> : <IconPlay width={11} height={11} />} {isRunning ? 'Stop' : 'Run'} <span className="text-faint">⌘R</span>
           </button>

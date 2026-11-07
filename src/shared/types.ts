@@ -6,6 +6,8 @@ export interface Repo {
   path: string
   defaultBranch: string
   hidden?: boolean
+  /** GitHub owner (user or org) from the origin remote, for the project's avatar. Empty string when it isn't on GitHub. */
+  githubOwner?: string
   /** Scripts set in the app (e.g. imported from Conductor); a choo-choo.json or conductor.json in the repo wins. */
   scripts?: Scripts
   /** Extra or replacement system prompt for agents in this repo. */
@@ -579,6 +581,10 @@ export interface UsagePoint {
   output: number
   /** Made by a subagent, so it isn't in the main context window. */
   subagent?: boolean
+  /** The person's message this response answers, shortened. */
+  prompt?: string
+  /** What the response did: the start of its text, or the tools it called. */
+  did?: string
 }
 
 export interface SessionUsage {

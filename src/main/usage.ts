@@ -17,6 +17,23 @@ export function parseTranscript(text: string, subagent = false): { points: Usage
   const order: UsagePoint[] = []
   const compactions: number[] = []
   const models = new Set<string>()
+  let prompt: string | undefined
+  const short = (s: string, n = 160) => {
+    const t = s.replace(/\s+/g, ' ').trim()
+    return t.length > n ? `${t.slice(0, n - 1)}…` : t
+  }
+  /** Text and tool names in one transcript line of an assistant message. */
+  const describe = (content: unknown): { text?: string; tools: string[] } => {
+    const tools: string[] = []
+    let text: string | undefined
+    if (Array.isArray(content))
+      for (const b of content) {
+        if (b?.type === 'text' && b.text?.trim() && !text) text = short(b.text)
+        else if (b?.type === 'tool_use' && b.name) tools.push(String(b.name))
+      }
+    return { text, tools }
+  }
+  const didOf = (d: { text?: string; tools: string[] }) => d.text ?? (d.tools.length ? `Used ${[...new Set(d.tools)].join(', ')}` : undefined)
   for (const line of text.split('\n')) {
     if (!line.trim()) continue
     let e: any
@@ -31,6 +48,13 @@ export function parseTranscript(text: string, subagent = false): { points: Usage
       compactions.push(ts)
       continue
     }
+    if (e.type === 'user' && !e.isSidechain && !e.isMeta) {
+      const c = e.message?.content
+      const t = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b: any) => b?.type === 'text').map((b: any) => b.text).join(' ') : ''
+      // Tool results also arrive as user lines; only a real message moves the prompt on.
+      if (t.trim() && !t.startsWith('<')) prompt = short(t)
+      continue
+    }
     if (e.type !== 'assistant' || !e.message?.usage) continue
     // Synthetic messages (errors, interrupts) carry no real usage.
     if (e.message.model === '<synthetic>') continue
@@ -43,15 +67,21 @@ export function parseTranscript(text: string, subagent = false): { points: Usage
       cacheWrite: num(u.cache_creation_input_tokens),
       cacheRead: num(u.cache_read_input_tokens),
       output: num(u.output_tokens),
-      ...(subagent || e.isSidechain ? { subagent: true } : {})
+      ...(subagent || e.isSidechain ? { subagent: true } : {}),
+      ...(prompt && !subagent && !e.isSidechain ? { prompt } : {})
     }
+    const d = describe(e.message.content)
     const id = e.message.id as string | undefined
     const prev = id ? byId.get(id) : undefined
     if (prev) {
       // Later lines of the same response can report the final output count.
       prev.output = Math.max(prev.output, point.output)
+      if (!prev.did || (d.text && prev.did.startsWith('Used '))) prev.did = didOf(d) ?? prev.did
+      else if (d.tools.length && prev.did.startsWith('Used ')) prev.did = `Used ${[...new Set([...prev.did.slice(5).split(', '), ...d.tools])].join(', ')}`
       continue
     }
+    const did = didOf(d)
+    if (did) point.did = did
     if (id) byId.set(id, point)
     order.push(point)
   }
