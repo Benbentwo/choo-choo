@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, s
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
 import type { Artifact, Chat, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
@@ -604,6 +604,60 @@ async function archiveWorkspace(id: string) {
   store.save()
 }
 
+/** Folders a workspace occupies on disk (never the main checkout, which an orchestrator uses). */
+function workspaceFolders(ws: Workspace, repo: Repo | undefined): string[] {
+  return [ws.path, ws.archivePath].filter((p): p is string => !!p && p !== repo?.path && existsSync(p))
+}
+
+/** Removes a worktree folder through git when it can, then deletes whatever is left. Refuses the repo itself. */
+async function deleteFolder(repoPath: string, path: string) {
+  if (resolve(path) === resolve(repoPath)) return
+  if (existsSync(repoPath)) await git.removeWorktree(repoPath, path)
+  rmSync(path, { recursive: true, force: true })
+}
+
+async function stopWorkspace(ws: Workspace) {
+  for (const c of store.get().chats.filter((c) => c.workspaceId === ws.id)) await agent.stop(c.id)
+  pty.killPrefix(`${ws.id}:`)
+}
+
+function forgetWorkspace(ws: Workspace) {
+  const s = store.get()
+  for (const c of s.chats.filter((c) => c.workspaceId === ws.id)) store.deleteChatItems(c.id)
+  s.chats = s.chats.filter((c) => c.workspaceId !== ws.id)
+  s.workspaces = s.workspaces.filter((w) => w.id !== ws.id)
+}
+
+async function deleteWorkspace(id: string) {
+  const ws = findWs(id)
+  const repo = store.get().repos.find((r) => r.id === ws.repoId)
+  await stopWorkspace(ws)
+  for (const p of workspaceFolders(ws, repo)) await deleteFolder(repo?.path ?? '', p)
+  forgetWorkspace(ws)
+  store.save()
+  send('state:changed')
+}
+
+async function removeProject(id: string, opts: { deleteFiles: boolean }) {
+  const s = store.get()
+  const repo = s.repos.find((r) => r.id === id)
+  if (!repo) return
+  const wss = s.workspaces.filter((w) => w.repoId === id)
+  const kept: string[] = []
+  for (const ws of wss) {
+    await stopWorkspace(ws)
+    const folders = workspaceFolders(ws, repo)
+    if (opts.deleteFiles) for (const p of folders) await deleteFolder(repo.path, p)
+    else kept.push(...folders)
+    forgetWorkspace(ws)
+  }
+  if (kept.length) s.leftovers = [...(s.leftovers ?? []), { id: randomUUID(), repoName: repo.name, repoPath: repo.path, paths: kept, removedAt: Date.now() }]
+  s.repos = s.repos.filter((r) => r.id !== id)
+  for (const g of s.groups ?? []) g.repoIds = g.repoIds.filter((r) => r !== id)
+  store.save()
+  send('state:changed')
+}
+
 /** Env for Claude agents: workspace vars, the API key, and OpenTelemetry export if it's on. */
 function agentEnv(ws: Workspace): Record<string, string> {
   const settings = store.get().settings
@@ -629,10 +683,15 @@ function registerIpc() {
     return addRepo(r.filePaths[0])
   })
   h('repo:add', (p: string) => addRepo(p))
-  h('repo:remove', (id: string) => {
+  h('repo:remove', (id: string) => removeProject(id, { deleteFiles: false }))
+  h('repo:removeProject', (id: string, opts: { deleteFiles: boolean }) => removeProject(id, opts))
+  h('ws:delete', (id: string) => deleteWorkspace(id))
+  h('leftover:delete', async (id: string) => {
     const s = store.get()
-    s.repos = s.repos.filter((r) => r.id !== id)
-    for (const g of s.groups ?? []) g.repoIds = g.repoIds.filter((r) => r !== id)
+    const l = s.leftovers?.find((x) => x.id === id)
+    if (!l) return
+    for (const p of l.paths) await deleteFolder(l.repoPath, p)
+    s.leftovers = s.leftovers!.filter((x) => x.id !== id)
     store.save()
   })
   h('repo:reorder', (ids: string[]) => {
@@ -903,9 +962,10 @@ function registerIpc() {
   h('plugins:details', (repoId: string, id: string) => plugins.details(pr(repoId).cwd, pr(repoId).env, String(id)))
   h('plugins:localSkills', (repoId: string) => plugins.localSkills(pr(repoId).cwd))
   h('shell:reveal', (p: string) => {
-    // Only Claude Code's own folder or a repo, so a renderer can't point Finder anywhere.
+    // Only Claude Code's own folder, a repo or a workspace, so a renderer can't point Finder anywhere.
     if (typeof p !== 'string' || !isAbsolute(p) || !existsSync(p)) return
-    const roots = [join(homedir(), '.claude'), ...store.get().repos.map((r) => r.path)]
+    const st = store.get()
+    const roots = [join(homedir(), '.claude'), ...st.repos.map((r) => r.path), ...st.workspaces.map((w) => w.path)]
     const inside = (root: string) => {
       const rel = relative(root, resolve(p))
       return !rel.startsWith('..') && !isAbsolute(rel)
@@ -967,7 +1027,6 @@ function registerIpc() {
   h('shell:open', (url: string) => {
     if (/^https?:\/\//.test(url)) return shell.openExternal(url)
   })
-  h('shell:reveal', (p: string) => shell.showItemInFolder(p))
 }
 
 function buildMenu() {

@@ -525,6 +525,16 @@ export interface AppState {
   groups?: RepoGroup[]
   /** Folders added as projects, most recent first; shown under Recents in the Add project menu. */
   recentPaths?: string[]
+  /** Workspace folders left on disk when a project was removed without cleanup; Settings > Projects can delete them. */
+  leftovers?: Leftover[]
+}
+
+export interface Leftover {
+  id: string
+  repoName: string
+  repoPath: string
+  paths: string[]
+  removedAt: number
 }
 
 export interface CheckRun {
@@ -762,6 +772,11 @@ export interface Api {
   /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
   cloneRepo(url: string, dir?: string): Promise<Repo>
   pickFolder(): Promise<string | null>
+  /** Removes a project. With deleteFiles, its workspace folders (and archived copies) are deleted; otherwise they're kept as a leftover. */
+  removeProject(repoId: string, opts: { deleteFiles: boolean }): Promise<void>
+  /** Permanently deletes a workspace: its folder, archived copy and chats. The branch is kept. */
+  deleteWorkspace(wsId: string): Promise<void>
+  deleteLeftover(id: string): Promise<void>
   /** Sets the sidebar order of projects. */
   reorderRepos(ids: string[]): Promise<void>
   pickFiles(): Promise<string[]>

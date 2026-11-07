@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
-import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace } from '@shared/types'
+import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover } from '@shared/types'
 
 export interface Doc {
   kind: 'diff' | 'file'
@@ -29,7 +29,10 @@ interface UI {
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
   settings: Settings
-  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | 'group' | null
+  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | 'group' | 'remove-repo' | null
+  /** Project the Remove project dialog is for. */
+  removeRepoId: string | null
+  leftovers: Leftover[]
   /** Project groups: several repos with one shared orchestrator. */
   groups: RepoGroup[]
   /** The group open in the group editor; null makes a new one. */
@@ -38,7 +41,7 @@ interface UI {
   usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'agents' | 'mcp' | 'plugins' | 'integrations' | 'telemetry' | 'appearance'
+  settingsTab: 'general' | 'projects' | 'agents' | 'mcp' | 'plugins' | 'integrations' | 'telemetry' | 'appearance'
   recentPaths: string[]
   modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */
@@ -85,6 +88,8 @@ export const useStore = create<UI>((set, get) => ({
   paletteMode: 'all',
   settingsTab: 'general',
   recentPaths: [],
+  removeRepoId: null,
+  leftovers: [],
   modelDetails: {},
   draftRepo: null,
   shareLinkDraft: null,
@@ -96,7 +101,7 @@ export const useStore = create<UI>((set, get) => ({
   rightTab: 'changes',
   error: null,
 
-  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [] }),
+  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [] }),
   selectWorkspace: (id, fromHistory) => {
     if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null })
     const { history, historyIndex } = get()
