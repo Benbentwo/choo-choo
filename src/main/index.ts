@@ -903,9 +903,10 @@ function registerIpc() {
   h('plugins:details', (repoId: string, id: string) => plugins.details(pr(repoId).cwd, pr(repoId).env, String(id)))
   h('plugins:localSkills', (repoId: string) => plugins.localSkills(pr(repoId).cwd))
   h('shell:reveal', (p: string) => {
-    // Only Claude Code's own folder or a repo, so a renderer can't point Finder anywhere.
+    // Only Claude Code's own folder, a repo or a workspace, so a renderer can't point Finder anywhere.
     if (typeof p !== 'string' || !isAbsolute(p) || !existsSync(p)) return
-    const roots = [join(homedir(), '.claude'), ...store.get().repos.map((r) => r.path)]
+    const st = store.get()
+    const roots = [join(homedir(), '.claude'), ...st.repos.map((r) => r.path), ...st.workspaces.map((w) => w.path)]
     const inside = (root: string) => {
       const rel = relative(root, resolve(p))
       return !rel.startsWith('..') && !isAbsolute(rel)
@@ -967,7 +968,6 @@ function registerIpc() {
   h('shell:open', (url: string) => {
     if (/^https?:\/\//.test(url)) return shell.openExternal(url)
   })
-  h('shell:reveal', (p: string) => shell.showItemInFolder(p))
 }
 
 function buildMenu() {
