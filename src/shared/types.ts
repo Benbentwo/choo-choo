@@ -1,5 +1,6 @@
 import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 import type { ReflectProposal, ReflectResult } from './reflect'
+import type { UpdateStatus } from './updates'
 export interface Repo {
   id: string
   name: string
@@ -381,6 +382,10 @@ export interface Settings extends AppearanceSettings {
   archiveRetentionDays: number
   /** Which Claude Code to run: the copy bundled with the app, or the `claude` you installed. */
   claudeBinary: 'bundled' | 'installed'
+  /** Check GitHub Releases for new Choo Choo versions. Checking by hand still works when off. */
+  checkAppUpdates: boolean
+  /** Check npm for new Claude Code versions. Checking by hand still works when off. */
+  checkClaudeUpdates: boolean
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
   extras: Extras
   /** Give agents Notion's MCP tools when Notion is connected. */
@@ -515,6 +520,8 @@ export const DEFAULT_SETTINGS: Settings = {
   notifications: true,
   orchestratorAutoUpdates: true,
   claudeBinary: 'bundled',
+  checkAppUpdates: true,
+  checkClaudeUpdates: true,
   extras: DEFAULT_EXTRAS,
   notionAgentTools: true,
   telemetry: DEFAULT_TELEMETRY,
@@ -831,8 +838,14 @@ export interface Api {
   revealInFinder(path: string): Promise<void>
   onMenu(cb: (action: string) => void): () => void
   onStateChanged(cb: () => void): () => void
-  onUpdateReady(cb: (version: string) => void): () => void
-  installUpdate(): Promise<void>
+  updateStatus(): Promise<UpdateStatus>
+  /** Checks now, whatever the Settings toggles say. */
+  checkForUpdates(which?: 'app' | 'claude' | 'all'): Promise<UpdateStatus>
+  /** Restarts into a downloaded update, runs brew upgrade, or opens the release page. */
+  installAppUpdate(): Promise<void>
+  /** Runs `claude update` on your installed Claude Code. */
+  updateClaude(): Promise<UpdateStatus>
+  onUpdateStatus(cb: (status: UpdateStatus) => void): () => void
   shareStatus(workspaceId: string): Promise<ShareStatus | null>
   shareWorkspace(workspaceId: string): Promise<ShareStatus>
   setShareAutoSync(workspaceId: string, on: boolean): Promise<void>

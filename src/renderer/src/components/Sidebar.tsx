@@ -7,13 +7,12 @@ import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
 import { IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
 import { BrandMark } from './BrandMark'
+import { UpdateBanners } from './Updates'
 
 export function Sidebar() {
   const s = useStore()
   const [showHidden, setShowHidden] = useState(false)
   const [showArchived, setShowArchived] = useState<Record<string, boolean>>({})
-  const [update, setUpdate] = useState<string | null>(null)
-  useEffect(() => window.api.onUpdateReady(setUpdate), [])
   const [view, setView] = useState<View>(loadView)
   const [menu, setMenu] = useState<'view' | 'add' | null>(null)
   const [repoMenu, setRepoMenu] = useState<{ id: string; el: HTMLElement } | null>(null)
@@ -237,15 +236,7 @@ export function Sidebar() {
         )}
       </div>
 
-      {update && (
-        <div className="mx-2 mb-2 rounded-lg border border-line bg-raised p-3">
-          <div className="mb-1 font-medium">Update ready</div>
-          <div className="mb-2 text-[12px] text-muted">Choo Choo {update} has downloaded.</div>
-          <button className="rounded-md bg-fg px-2.5 py-1 text-[12px] font-medium text-bg" onClick={() => void window.api.installUpdate()}>
-            Restart to update
-          </button>
-        </div>
-      )}
+      <UpdateBanners openSettings={() => s.set({ modal: 'settings', settingsTab: 'updates' })} />
       <div className="flex items-center gap-2 border-t border-line px-3 py-2 text-faint">
         <BrandMark size={14} />
         <span className="flex-1 text-[11px]">Choo Choo</span>
