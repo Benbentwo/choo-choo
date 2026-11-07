@@ -250,6 +250,10 @@ export interface PrInfo {
   isDraft: boolean
   title: string
   mergeable?: string
+  /** APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or empty when the repo needs no review. */
+  reviewDecision?: string
+  /** GitHub's overall verdict: CLEAN, BLOCKED, BEHIND, DIRTY, UNSTABLE, … */
+  mergeStateStatus?: string
 }
 
 /** One piece of review feedback on a PR, ready to hand to the agent. */

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { FileChange, PrComment, PrInfo, Workspace } from '@shared/types'
+import type { CheckRun, FileChange, PrComment, PrInfo, Workspace } from '@shared/types'
+import { fixChecksPrompt, nextPrAction, resolveConflictsPrompt, summarizeChecks } from '@shared/prStatus'
 import { newSince, prCommentsPrompt } from '@shared/prComments'
 import { useStore, reportError, openDoc, type RightTab } from '../store'
 import { IconComment, IconDown, IconEye, IconPR, IconSearch } from '../icons'
@@ -152,6 +153,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const [menu, setMenu] = useState(false)
   const [busy, setBusy] = useState(false)
   const [comments, setComments] = useState<PrComment[]>([])
+  const [checks, setChecks] = useState<CheckRun[]>([])
   const [addedAt, setAddedAt] = useState(() => localStorage.getItem(addedKey(ws.id)) ?? undefined)
   const chats = s.chats.filter((c) => c.workspaceId === ws.id)
   const chatId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
@@ -163,12 +165,17 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       void window.api.getPr(ws.id).then((p) => {
         if (!live) return
         setPr(p)
-        if (p?.state !== 'OPEN') return setComments([])
+        if (p?.state !== 'OPEN') {
+          setChecks([])
+          return setComments([])
+        }
         window.api.getPrComments(ws.id).then((c) => live && setComments(c), () => {})
+        window.api.getChecks(ws.id).then((c) => live && setChecks(c), () => {})
       })
     setAddedAt(localStorage.getItem(addedKey(ws.id)) ?? undefined)
     load()
-    const t = setInterval(load, 60_000)
+    // Poll faster while checks are running so the button flips to Merge or Fix soon after they finish.
+    const t = setInterval(load, 30_000)
     return () => {
       live = false
       clearInterval(t)
@@ -219,6 +226,17 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
     }
   }
 
+  const sum = summarizeChecks(checks)
+  const action = pr ? nextPrAction(pr, sum) : null
+  const ask = async (text: string) => {
+    if (!chatId) return
+    s.setActiveChat(ws.id, chatId)
+    try {
+      await window.api.sendMessage(chatId, text)
+    } catch (e) {
+      reportError(e)
+    }
+  }
   const color = pr?.state === 'MERGED' ? 'text-violet-400' : pr?.state === 'CLOSED' ? 'text-del' : pr?.isDraft ? 'text-muted' : 'text-add'
   return (
     <>
@@ -236,10 +254,36 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
           <IconComment /> {fresh.length && addedAt ? `${fresh.length} new` : comments.length}
         </button>
       )}
+      {pr?.state === 'OPEN' && sum.total > 0 && (
+        <button
+          className={`no-drag flex items-center gap-1.5 rounded-md border border-line px-2 py-1 hover:bg-hover ${sum.failed.length ? 'text-del' : sum.pending ? 'text-muted' : 'text-add'}`}
+          onClick={() => s.set({ rightTab: 'checks' })}
+          title={sum.failed.length ? `Failing: ${sum.failed.map((c) => c.name).join(', ')}` : sum.pending ? `${sum.pending} checks running` : 'All checks passed'}
+        >
+          {sum.pending && !sum.failed.length ? (
+            <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-faint border-t-fg" />
+          ) : (
+            <span className={`h-2 w-2 rounded-full ${sum.failed.length ? 'bg-del' : 'bg-add'}`} />
+          )}
+          {sum.failed.length ? `${sum.failed.length} failed` : sum.pending ? `${sum.passed}/${sum.total}` : 'Checks'}
+        </button>
+      )}
       <div className="no-drag relative flex items-center rounded-md border border-line">
-        {pr ? (
-          <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => void window.api.openExternal(pr.url)} title={pr.title}>
-            <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : 'Open'} #{pr.number}
+        {pr && action === 'resolve' ? (
+          <button className="flex items-center gap-1.5 px-2.5 py-1 text-amber-400 hover:bg-hover disabled:opacity-40" disabled={agentBusy} onClick={() => void ask(resolveConflictsPrompt(pr, repo?.defaultBranch ?? 'main'))} title="Ask the agent to merge the base branch and resolve conflicts">
+            <IconPR /> Resolve conflicts
+          </button>
+        ) : pr && action === 'fix' ? (
+          <button className="flex items-center gap-1.5 px-2.5 py-1 text-del hover:bg-hover disabled:opacity-40" disabled={agentBusy} onClick={() => void ask(fixChecksPrompt(pr, sum.failed))} title="Ask the agent to fix the failing checks">
+            <IconPR /> Fix checks
+          </button>
+        ) : pr && action === 'merge' ? (
+          <button className="flex items-center gap-1.5 bg-add/15 px-2.5 py-1 text-add hover:bg-add/25 disabled:opacity-40" disabled={busy} onClick={() => void merge()} title={`Squash and merge #${pr.number}`}>
+            <IconPR /> {busy ? 'Merging…' : 'Merge'}
+          </button>
+        ) : pr ? (
+          <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => void window.api.openExternal(pr.url)} title={action === 'review' ? 'Waiting for an approving review' : action === 'waiting' ? 'Checks are running' : pr.title}>
+            <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : action === 'review' ? 'Needs review' : 'Open'} #{pr.number}
           </button>
         ) : (
           <button
@@ -258,7 +302,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
           <div className="absolute top-8 right-0 z-30 w-52 rounded-lg border border-line bg-raised p-1 text-fg shadow-xl" onMouseLeave={() => setMenu(false)}>
             {pr ? (
               <>
-                <MenuBtn label="Open on GitHub" onClick={() => { setMenu(false); void window.api.openExternal(pr.url) }} />
+                <MenuBtn label={`Open #${pr.number} on GitHub`} onClick={() => { setMenu(false); void window.api.openExternal(pr.url) }} />
                 {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
                 {pr.state === 'OPEN' && comments.length > 0 && <MenuBtn label={`Add all comments to chat (${comments.length})`} onClick={() => void addComments()} />}
                 {pr.state === 'OPEN' && <MenuBtn label="Push latest changes" onClick={() => { setMenu(false); if (chatId) void window.api.sendMessage(chatId, 'Commit any uncommitted changes and push this branch.') }} />}
