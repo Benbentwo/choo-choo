@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react'
-import type { FileChange, PrInfo, Workspace } from '@shared/types'
+import type { CheckRun, FileChange, PrComment, PrInfo, Workspace } from '@shared/types'
+import { fixChecksPrompt, nextPrAction, resolveConflictsPrompt, summarizeChecks } from '@shared/prStatus'
+import { newSince, prCommentsPrompt } from '@shared/prComments'
 import { useStore, reportError, openDoc, type RightTab } from '../store'
-import { IconDown, IconEye, IconPR, IconSearch } from '../icons'
+import { IconComment, IconDown, IconEye, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
 import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
 import { fmt } from './Stats'
 import { MergedActions } from './Reflect'
+import { UsageGraphs } from './UsageGraphs'
 
 const TABS: { id: RightTab; label: string }[] = [
   { id: 'artifacts', label: 'Artifacts' },
   { id: 'files', label: 'All files' },
   { id: 'changes', label: 'Changes' },
-  { id: 'checks', label: 'Checks' }
+  { id: 'checks', label: 'Checks' },
+  { id: 'graphs', label: 'Graphs' }
 ]
 
 export function RightPanel({ ws }: { ws: Workspace }) {
@@ -70,6 +74,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
           {s.rightTab === 'files' && <FilesTab ws={ws} filter={filter} />}
           {s.rightTab === 'artifacts' && <ArtifactsTab ws={ws} />}
           {s.rightTab === 'checks' && <ChecksTab ws={ws} />}
+          {s.rightTab === 'graphs' && <GraphsTab ws={ws} />}
           {s.rightTab === 'review' && <ReviewTab ws={ws} />}
         </div>
       </div>
@@ -150,15 +155,30 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const [pr, setPr] = useState<PrInfo | null>(null)
   const [menu, setMenu] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [comments, setComments] = useState<PrComment[]>([])
+  const [checks, setChecks] = useState<CheckRun[]>([])
+  const [addedAt, setAddedAt] = useState(() => localStorage.getItem(addedKey(ws.id)) ?? undefined)
   const chats = s.chats.filter((c) => c.workspaceId === ws.id)
   const chatId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
   const agentBusy = chats.some((c) => c.status === 'running')
 
   useEffect(() => {
     let live = true
-    const load = () => void window.api.getPr(ws.id).then((p) => live && setPr(p))
+    const load = () =>
+      void window.api.getPr(ws.id).then((p) => {
+        if (!live) return
+        setPr(p)
+        if (p?.state !== 'OPEN') {
+          setChecks([])
+          return setComments([])
+        }
+        window.api.getPrComments(ws.id).then((c) => live && setComments(c), () => {})
+        window.api.getChecks(ws.id).then((c) => live && setChecks(c), () => {})
+      })
+    setAddedAt(localStorage.getItem(addedKey(ws.id)) ?? undefined)
     load()
-    const t = setInterval(load, 60_000)
+    // Poll faster while checks are running so the button flips to Merge or Fix soon after they finish.
+    const t = setInterval(load, 30_000)
     return () => {
       live = false
       clearInterval(t)
@@ -179,6 +199,23 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
     }
   }
 
+  const fresh = newSince(comments, addedAt)
+
+  /** Conductor's "Add all comments to chat": hands every open comment to the agent with file and line context. */
+  const addComments = async () => {
+    setMenu(false)
+    if (!chatId || !pr || !comments.length) return
+    s.setActiveChat(ws.id, chatId)
+    try {
+      await window.api.sendMessage(chatId, prCommentsPrompt(pr, comments))
+      const newest = comments.reduce((m, c) => (c.createdAt > m ? c.createdAt : m), '')
+      localStorage.setItem(addedKey(ws.id), newest)
+      setAddedAt(newest)
+    } catch (e) {
+      reportError(e)
+    }
+  }
+
   const merge = async () => {
     setMenu(false)
     setBusy(true)
@@ -192,50 +229,126 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
     }
   }
 
+  const sum = summarizeChecks(checks)
+  const action = pr ? nextPrAction(pr, sum) : null
+  const ask = async (text: string) => {
+    if (!chatId) return
+    s.setActiveChat(ws.id, chatId)
+    try {
+      await window.api.sendMessage(chatId, text)
+    } catch (e) {
+      reportError(e)
+    }
+  }
   const color = pr?.state === 'MERGED' ? 'text-violet-400' : pr?.state === 'CLOSED' ? 'text-del' : pr?.isDraft ? 'text-muted' : 'text-add'
   return (
-    <div className="no-drag relative flex items-center rounded-md border border-line">
-      {pr ? (
-        <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => void window.api.openExternal(pr.url)} title={pr.title}>
-          <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : 'Open'} #{pr.number}
-        </button>
-      ) : (
+    <>
+      {pr?.state === 'OPEN' && comments.length > 0 && (
         <button
-          className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover disabled:opacity-40"
-          disabled={agentBusy || (!hasChanges && !stats?.files)}
-          onClick={() => void create(false)}
-          title={agentBusy ? 'Wait for the agent to finish' : 'Ask the agent to commit, push and open a PR'}
+          className={`no-drag flex items-center gap-1.5 rounded-md border px-2 py-1 disabled:opacity-40 ${fresh.length ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25' : 'border-line text-muted hover:bg-hover hover:text-fg'}`}
+          disabled={agentBusy}
+          onClick={() => void addComments()}
+          title={
+            agentBusy
+              ? 'Wait for the agent to finish'
+              : `Add all ${comments.length} PR comment${comments.length === 1 ? '' : 's'} to chat${fresh.length && addedAt ? ` (${fresh.length} new)` : ''}`
+          }
         >
-          <IconPR /> Create PR
+          <IconComment /> {fresh.length && addedAt ? `${fresh.length} new` : comments.length}
         </button>
       )}
-      <button className="border-l border-line px-1.5 py-1 hover:bg-hover" onClick={() => setMenu(!menu)}>
-        <IconDown />
-      </button>
-      {menu && (
-        <div className="absolute top-8 right-0 z-30 w-52 rounded-lg border border-line bg-raised p-1 text-fg shadow-xl" onMouseLeave={() => setMenu(false)}>
-          {pr ? (
-            <>
-              <MenuBtn label="Open on GitHub" onClick={() => { setMenu(false); void window.api.openExternal(pr.url) }} />
-              {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
-              {pr.state === 'OPEN' && <MenuBtn label="Push latest changes" onClick={() => { setMenu(false); if (chatId) void window.api.sendMessage(chatId, 'Commit any uncommitted changes and push this branch.') }} />}
-            </>
+      {pr?.state === 'OPEN' && sum.total > 0 && (
+        <button
+          className={`no-drag flex items-center gap-1.5 rounded-md border border-line px-2 py-1 hover:bg-hover ${sum.failed.length ? 'text-del' : sum.pending ? 'text-muted' : 'text-add'}`}
+          onClick={() => s.set({ rightTab: 'checks' })}
+          title={sum.failed.length ? `Failing: ${sum.failed.map((c) => c.name).join(', ')}` : sum.pending ? `${sum.pending} checks running` : 'All checks passed'}
+        >
+          {sum.pending && !sum.failed.length ? (
+            <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-faint border-t-fg" />
           ) : (
-            <>
-              <MenuBtn label="Create PR" onClick={() => void create(false)} />
-              <MenuBtn label="Create draft PR" onClick={() => void create(true)} />
-            </>
+            <span className={`h-2 w-2 rounded-full ${sum.failed.length ? 'bg-del' : 'bg-add'}`} />
           )}
-        </div>
+          {sum.failed.length ? `${sum.failed.length} failed` : sum.pending ? `${sum.passed}/${sum.total}` : 'Checks'}
+        </button>
       )}
-    </div>
+      <div className="no-drag relative flex items-center rounded-md border border-line">
+        {pr && action === 'resolve' ? (
+          <button className="flex items-center gap-1.5 px-2.5 py-1 text-amber-400 hover:bg-hover disabled:opacity-40" disabled={agentBusy} onClick={() => void ask(resolveConflictsPrompt(pr, repo?.defaultBranch ?? 'main'))} title="Ask the agent to merge the base branch and resolve conflicts">
+            <IconPR /> Resolve conflicts
+          </button>
+        ) : pr && action === 'fix' ? (
+          <button className="flex items-center gap-1.5 px-2.5 py-1 text-del hover:bg-hover disabled:opacity-40" disabled={agentBusy} onClick={() => void ask(fixChecksPrompt(pr, sum.failed))} title="Ask the agent to fix the failing checks">
+            <IconPR /> Fix checks
+          </button>
+        ) : pr && action === 'merge' ? (
+          <button className="flex items-center gap-1.5 bg-add/15 px-2.5 py-1 text-add hover:bg-add/25 disabled:opacity-40" disabled={busy} onClick={() => void merge()} title={`Squash and merge #${pr.number}`}>
+            <IconPR /> {busy ? 'Merging…' : 'Merge'}
+          </button>
+        ) : pr ? (
+          <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => void window.api.openExternal(pr.url)} title={action === 'review' ? 'Waiting for an approving review' : action === 'waiting' ? 'Checks are running' : pr.title}>
+            <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : action === 'review' ? 'Needs review' : 'Open'} #{pr.number}
+          </button>
+        ) : (
+          <button
+            className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover disabled:opacity-40"
+            disabled={agentBusy || (!hasChanges && !stats?.files)}
+            onClick={() => void create(false)}
+            title={agentBusy ? 'Wait for the agent to finish' : 'Ask the agent to commit, push and open a PR'}
+          >
+            <IconPR /> Create PR
+          </button>
+        )}
+        <button className="border-l border-line px-1.5 py-1 hover:bg-hover" onClick={() => setMenu(!menu)}>
+          <IconDown />
+        </button>
+        {menu && (
+          <div className="absolute top-8 right-0 z-30 w-52 rounded-lg border border-line bg-raised p-1 text-fg shadow-xl" onMouseLeave={() => setMenu(false)}>
+            {pr ? (
+              <>
+                <MenuBtn label={`Open #${pr.number} on GitHub`} onClick={() => { setMenu(false); void window.api.openExternal(pr.url) }} />
+                {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
+                {pr.state === 'OPEN' && comments.length > 0 && <MenuBtn label={`Add all comments to chat (${comments.length})`} onClick={() => void addComments()} />}
+                {pr.state === 'OPEN' && <MenuBtn label="Push latest changes" onClick={() => { setMenu(false); if (chatId) void window.api.sendMessage(chatId, 'Commit any uncommitted changes and push this branch.') }} />}
+              </>
+            ) : (
+              <>
+                <MenuBtn label="Create PR" onClick={() => void create(false)} />
+                <MenuBtn label="Create draft PR" onClick={() => void create(true)} />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   )
 }
+
+/** localStorage key for when a workspace's PR comments were last added to chat. */
+const addedKey = (wsId: string) => `prCommentsAddedAt:${wsId}`
 
 function MenuBtn(p: { label: string; onClick: () => void }) {
   return (
     <button onClick={p.onClick} className="block w-full rounded px-2 py-1.5 text-left hover:bg-hover">
       {p.label}
     </button>
+  )
+}
+
+/** The usage graphs for the chat open in the center, sized for the side panel. */
+function GraphsTab({ ws }: { ws: Workspace }) {
+  const s = useStore()
+  const chats = s.chats.filter((c) => c.workspaceId === ws.id)
+  const chat = chats.find((c) => c.id === s.activeChat[ws.id]) ?? chats[0]
+  if (!chat) return <div className="px-4 py-6 text-center text-faint">No chats yet.</div>
+  return (
+    <div>
+      <div className="flex items-center gap-2 px-3 pt-2 text-[12px]">
+        <span className="truncate text-muted">{chat.title}</span>
+        <button className="ml-auto shrink-0 text-faint hover:text-fg" onClick={() => s.set({ modal: 'usage', usageChat: chat.id })}>
+          Open larger
+        </button>
+      </div>
+      <UsageGraphs key={chat.id} chat={chat} compact />
+    </div>
   )
 }

@@ -1,17 +1,21 @@
 import { randomUUID } from 'node:crypto'
-import type { Chat, ChatItem, PermissionDecision, PermissionRequest, Workspace } from '@shared/types'
+import type { BackgroundTask, Chat, ChatItem, PermissionDecision, PermissionRequest, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 import { claudeExecutable } from './claudeBinary'
 import { runCodex } from './codex'
-import { enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
+import { BUILTIN_ADVISOR_TOOL, builtinAdvisorResult, enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
 import * as orchestrator from './orchestrator'
+import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
+import * as notion from './integrations/notion'
+import { buildSystemPrompt } from '@shared/systemPrompt'
+import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, runningTasks } from './claudeOptions'
 
-type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string }) => void
+type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[] }) => void
 
 interface Running {
   abort: AbortController
-  query?: { interrupt(): Promise<unknown> }
+  query?: { interrupt(): Promise<unknown>; stopTask?(taskId: string): Promise<void> }
 }
 
 const running = new Map<string, Running>()
@@ -27,7 +31,51 @@ export function resolveAdvice(chat: Chat, itemId: string, action: 'send' | 'dism
   store.upsertItem(chat.id, item)
   chat.advisorBlocker = false
   store.save()
-  return { item, message: action === 'send' ? steerMessage({ silent: false, blocker: !!item.blocker, notes: item.text.split('\n') }) : undefined }
+  if (action !== 'send') return { item }
+  const notes = item.text.split('\n')
+  return { item, message: item.source === 'planReview' ? revisePlanMessage(notes) : steerMessage({ silent: false, blocker: !!item.blocker, notes }) }
+}
+
+/** Plan reviews in flight, per chat. */
+const reviewingPlans = new Map<string, AbortController>()
+
+/**
+ * Has fresh reviewers check the plan in an ExitPlanMode card. They see only the plan text and the repo,
+ * never this chat, so they catch what the planning agent knows but didn't write down.
+ */
+export async function reviewPlan(chat: Chat, ws: Workspace, planItemId: string, env: Record<string, string>, emit: Emit) {
+  if (reviewingPlans.has(chat.id)) throw new Error('The plan is already being reviewed')
+  const plan = store.chatItems(chat.id).find((x) => x.id === planItemId)
+  const text = plan?.kind === 'tool' && plan.name === 'ExitPlanMode' ? String((plan.input as { plan?: string })?.plan ?? '').trim() : ''
+  if (!text) throw new Error('No plan to review')
+  const item: Extract<ChatItem, { kind: 'advisor' }> = { id: randomUUID(), kind: 'advisor', source: 'planReview', planItemId, text: '', pending: true, ts: Date.now() }
+  const put = () => {
+    store.upsertItem(chat.id, { ...item })
+    emit(chat.id, { item: { ...item } })
+  }
+  put()
+  const abort = new AbortController()
+  reviewingPlans.set(chat.id, abort)
+  try {
+    const res = await runPlanReview(text, {
+      cwd: ws.path,
+      model: 'opus',
+      env: { ...process.env, ...env },
+      executable: claudeExecutable(),
+      signal: abort.signal
+    })
+    item.silent = res.silent
+    item.blocker = res.blocker
+    item.text = abort.signal.aborted ? 'Plan review stopped' : res.text
+  } catch (e) {
+    item.silent = true
+    item.text = `Plan review failed: ${(e as Error).message || String(e)}`
+  } finally {
+    item.pending = false
+    put()
+    store.save()
+    if (reviewingPlans.get(chat.id) === abort) reviewingPlans.delete(chat.id)
+  }
 }
 
 // Tools that only read; asking about them would be noise.
@@ -85,8 +133,16 @@ export function isRunning(chatId: string) {
   return running.has(chatId)
 }
 
+/** Stops one background task of a running Claude turn. */
+export async function stopTask(chatId: string, taskId: string) {
+  const q = running.get(chatId)?.query
+  if (!q?.stopTask) throw new Error('This chat has no running turn')
+  await q.stopTask(taskId)
+}
+
 export async function stop(chatId: string) {
   advising.get(chatId)?.abort()
+  reviewingPlans.get(chatId)?.abort()
   const r = running.get(chatId)
   if (!r) return
   if (!r.query) return r.abort.abort()
@@ -127,6 +183,7 @@ export async function send(
   opts: { fromAdvisor?: boolean } = {}
 ) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
+  if (chat.remote) throw new Error(chat.remote.kind === 'cloud' ? 'This chat runs in the cloud. Bring it back first.' : 'This chat is continuing on your phone. Bring it back first.')
   const now = Date.now()
   const checkpoint = (await git.snapshot(ws.path)) ?? undefined
   const userItem: ChatItem = {
@@ -146,6 +203,11 @@ export async function send(
   chat.status = 'running'
   chat.unread = false
   chat.advisorBlocker = false
+  if (chat.model !== 'codex') {
+    const g = goalCommand(text)
+    if (g === null) chat.goal = undefined
+    else if (g) chat.goal = { condition: g, setAt: now, iterations: 0 }
+  }
   store.save()
   emit(chat.id, { chat })
 
@@ -197,8 +259,9 @@ export async function send(
     }
     const sdkMod = await loadSdk()
     const { query } = sdkMod
-    const extras = store.get().settings.extras
-    const append = systemAppend(extras, !!chat.planMode)
+    const { settings, repos } = store.get()
+    const extras = settings.extras
+    const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, systemAppend(extras, !!chat.planMode))
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
       if (toolName === 'ExitPlanMode' && chat.planMode) {
         // The plan card asks the user; the agent must not start building on its own.
@@ -222,6 +285,15 @@ export async function send(
       }
       return { behavior: 'allow', updatedInput: input }
     }
+    const session = chatSettings(chat, extras)
+    const budget = budgetFor(chat, settings)
+    const tasks = new Map<string, BackgroundTask>()
+    const extra = extraOptions?.(sdkMod) ?? {}
+    const mcpServers: Record<string, unknown> = { ...(extra.mcpServers as Record<string, unknown> | undefined) }
+    if (store.get().settings.notionAgentTools) {
+      const server = await notion.agentServer()
+      if (server) mcpServers.notion = server
+    }
     const q = query({
       prompt: userMessage(expandShortcuts(prompt, extras), images, turnDone) as never,
       options: {
@@ -233,25 +305,36 @@ export async function send(
         ...(forkAt ? { resumeSessionAt: forkAt, forkSession: true } : {}),
         additionalDirectories: chat.additionalDirectories,
         // Conductor runs agents unattended inside an isolated worktree.
-        permissionMode: chat.planMode ? 'plan' : !chat.permission || chat.permission === 'full' ? 'bypassPermissions' : 'default',
+        permissionMode: permissionMode(chat),
         allowDangerouslySkipPermissions: true,
         canUseTool,
         includePartialMessages: true,
         abortController: abort,
         settingSources: ['user', 'project', 'local'],
         agents: enabledSubagents(extras),
-        ...(append ? { systemPrompt: { type: 'preset', preset: 'claude_code', append } } : {}),
+        // Always Claude Code's own prompt unless the user replaced it; the SDK's default is a bare one.
+        systemPrompt,
         // Newer models (Opus 5.5 and up) leave out the task-list tools unless asked. Turn them on so
         // sessions and their subagents keep a visible checklist, as on older models.
-        env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...env },
-        ...extraOptions?.(sdkMod)
+        env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...session.env, ...env },
+        // Claude Code advisor, fast mode and output style for this chat.
+        ...(session.settings ? { settings: session.settings } : {}),
+        ...(budget ? { maxBudgetUsd: budget } : {}),
+        ...extra,
+        ...(Object.keys(mcpServers).length ? { mcpServers } : {})
       } as never
     })
     r.query = q
 
     for await (const msg of q as AsyncIterable<any>) {
       if ((msg.type === 'assistant' || msg.type === 'user') && msg.uuid) lastUuid = msg.uuid
+      if (applyTaskEvent(tasks, msg)) emit(chat.id, { tasks: runningTasks(tasks) })
       switch (msg.type) {
+        case 'active_goal':
+          chat.goal = goalFrom(msg.value)
+          store.save()
+          emit(chat.id, { chat })
+          break
         case 'system':
           if (msg.subtype === 'init') {
             if (msg.session_id) chat.sdkSessionId = msg.session_id
@@ -296,6 +379,26 @@ export async function send(
               }
               tools.set(block.id, item)
               put(item)
+            } else if (block.type === 'server_tool_use' && block.name === 'advisor') {
+              // Claude Code's advisor runs on Anthropic's side; show the consultation as a card.
+              streamItem = null
+              const item: Extract<ChatItem, { kind: 'tool' }> = {
+                id: block.id,
+                kind: 'tool',
+                name: BUILTIN_ADVISOR_TOOL,
+                input: {},
+                ...(parentId ? { parentId } : {}),
+                ts: Date.now()
+              }
+              tools.set(block.id, item)
+              put(item)
+            } else if (block.type === 'advisor_tool_result') {
+              const t = tools.get(block.tool_use_id)
+              if (!t) continue
+              const r = builtinAdvisorResult(block.content)
+              t.result = r.text
+              t.isError = r.isError
+              put({ ...t })
             }
           }
           break
@@ -316,9 +419,13 @@ export async function send(
         case 'result':
           endTurn()
           turnOk = msg.subtype === 'success' && !msg.is_error
+          // Claude Code only ends a turn under an active /goal once the goal is met or cleared.
+          if (turnOk && chat.goal) chat.goal = undefined
           if (!turnOk) {
             const hint = authHint(typeof msg.result === 'string' ? msg.result : (msg.errors ?? []).join('\n'))
             if (hint) put({ id: randomUUID(), kind: 'error', text: hint, ts: Date.now() })
+            if (msg.subtype === 'error_max_budget_usd' && budget)
+              put({ id: randomUUID(), kind: 'error', text: `Stopped at this chat's spend cap of $${budget}. Raise or remove it in the model menu to keep going.`, ts: Date.now() })
           }
           put({
             id: randomUUID(),
@@ -330,6 +437,12 @@ export async function send(
             ts: Date.now()
           })
           if (msg.session_id) chat.sdkSessionId = msg.session_id
+          {
+            // Remember the main model's context window for the usage graph.
+            const usage = Object.entries((msg.modelUsage ?? {}) as Record<string, { contextWindow?: number; outputTokens?: number }>)
+            const main = usage.find(([k]) => k.includes(chat.model)) ?? usage.sort((a, b) => (b[1].outputTokens ?? 0) - (a[1].outputTokens ?? 0))[0]
+            if (main?.[1].contextWindow) chat.contextWindow = main[1].contextWindow
+          }
           break
       }
     }
@@ -345,6 +458,7 @@ export async function send(
     })
   } finally {
     endTurn()
+    emit(chat.id, { tasks: [] })
     for (const [id, p] of pending) if (p.req.chatId === chat.id) respondPermission(id, 'deny')
     if (streamItem) put({ ...streamItem, streaming: false })
     running.delete(chat.id)
@@ -439,5 +553,6 @@ export async function revert(chat: Chat, ws: Workspace, itemId: string): Promise
 
 export function stopAll() {
   for (const a of advising.values()) a.abort()
+  for (const a of reviewingPlans.values()) a.abort()
   for (const r of running.values()) r.abort.abort()
 }

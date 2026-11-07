@@ -2,11 +2,12 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, s
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
-import type { Artifact, Chat, FilePreview, Repo, Settings, Workspace } from '@shared/types'
+import type { Artifact, Chat, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
+import { sessionUsage } from './usage'
 import * as store from './store'
 import * as git from './git'
 import * as agent from './agent'
@@ -20,12 +21,19 @@ import * as updates from './updater'
 import { registerDevFeedback } from './devFeedback'
 import * as conductor from './conductorImport'
 import { modelDetails } from './models'
+import { listOutputStyles } from './claudeOptions'
+import * as mcp from './mcp'
+import * as plugins from './plugins'
 import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import * as archive from './archive'
+import * as remote from './remote'
+import * as cloud from './cloud'
+import { registerIntegrationsIpc } from './integrations'
+import * as notion from './integrations/notion'
 
 let win: BrowserWindow | null = null
 
@@ -106,7 +114,7 @@ async function addRepo(path: string): Promise<Repo> {
     store.save()
     return existing
   }
-  const repo: Repo = { id: randomUUID(), name: basename(root), path: root, defaultBranch: await git.defaultBranch(root) }
+  const repo: Repo = { id: randomUUID(), name: basename(root), path: root, defaultBranch: await git.defaultBranch(root), githubOwner: await git.githubOwner(root) }
   s.repos.push(repo)
   s.recentPaths = [root, ...(s.recentPaths ?? []).filter((p) => p !== root)].slice(0, 10)
   store.save()
@@ -162,6 +170,8 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     if (source?.kind === 'issue') {
       const issue = await gh.issueText(repo.path, source.number)
       context = gh.issueContext(source.number, issue)
+    } else if (source?.kind === 'notion') {
+      context = notion.pageContext(await notion.fetchPage(source.id))
     }
   }
   const workspace: Workspace = { id: randomUUID(), repoId, name, branch, baseRef, path, title, named, createdAt: Date.now() }
@@ -252,6 +262,7 @@ async function listSources(repoId: string, kind: WorkspaceSource['kind'], query:
   if (!repo) throw new Error('Unknown repo')
   if (kind === 'pr') return gh.listPrs(repo.path, query)
   if (kind === 'issue') return gh.listIssues(repo.path, query)
+  if (kind === 'notion') return notion.search(query)
   const q = query.toLowerCase()
   return (await git.remoteBranches(repo.path))
     .filter((b) => b.name.toLowerCase().includes(q))
@@ -285,12 +296,26 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
   const env = agentEnv(ws)
   let extra: Parameters<typeof agent.send>[8]
   if (ws.orchestrator && repo) {
+    const scope = scopeFor(ws, repo)
     // The orchestrator's tools only exist on Claude.
     if (chat.model === 'codex') chat.model = 'opus'
-    extra = (sdk) => orchestrator.queryOptions(sdk, repo, orchestratorHost)
+    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost)
   }
   void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
 }
+
+/** What an orchestrator directs: its repo, or every repo in its project group. */
+function scopeFor(ws: Workspace, repo: Repo): orchestrator.Scope {
+  if (!ws.groupId) return orchestrator.repoScope(repo)
+  const s = store.get()
+  const group = s.groups?.find((g) => g.id === ws.groupId)
+  if (!group) throw new Error('This project group was deleted')
+  const scope = orchestrator.groupScope(group, s.repos)
+  if (!scope.repos.length) throw new Error('Add a repository to this project group first')
+  return scope
+}
+
+const cloudOut = { onData: (i: string, d: string) => send('pty:data', i, d), onExit: (i: string, c: number) => send('pty:exit', i, c), stateChanged: () => send('state:changed') }
 
 const orchestratorHost: orchestrator.Host = {
   createWorkspace: async (repoId) => {
@@ -304,50 +329,179 @@ const orchestratorHost: orchestrator.Host = {
     await archiveWorkspace(id)
     send('state:changed')
   },
-  pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId))
+  pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId)),
+  runInCloud: async (chat, ws, task) => {
+    await cloud.runInCloud(chat, ws, task, agentEnv(ws), emitChat, cloudOut)
+    send('state:changed')
+  },
+  sendToCloud: (chat, ws, text) => cloud.sendToCloud(chat, ws, text, agentEnv(ws), emitChat),
+  prStatus: async (ws) => {
+    const pr = await gh.prForBranch(ws.path, ws.branch)
+    return { pr, checks: pr ? await gh.checks(ws.path, ws.branch).catch(() => []) : [] }
+  }
+}
+
+function orchestratorChat(ws: Workspace, title: string): Chat {
+  const s = store.get()
+  let chat = s.chats.find((c) => c.workspaceId === ws.id)
+  if (!chat) {
+    chat = newChat(ws.id)
+    chat.title = title
+    if (chat.model === 'codex') chat.model = 'opus'
+  }
+  return chat
+}
+
+function newOrchestratorWorkspace(repo: Repo, title: string, groupId?: string): Workspace {
+  const ws: Workspace = {
+    id: randomUUID(),
+    repoId: repo.id,
+    name: 'orchestrator',
+    branch: repo.defaultBranch,
+    baseRef: repo.defaultBranch,
+    path: repo.path,
+    title,
+    named: true,
+    orchestrator: true,
+    ...(groupId ? { groupId } : {}),
+    createdAt: Date.now()
+  }
+  store.get().workspaces.push(ws)
+  return ws
 }
 
 async function openOrchestrator(repoId: string) {
   const s = store.get()
   const repo = s.repos.find((r) => r.id === repoId)
   if (!repo) throw new Error('Unknown repo')
-  let ws = s.workspaces.find((w) => w.repoId === repoId && w.orchestrator)
-  if (!ws) {
-    ws = {
-      id: randomUUID(),
-      repoId,
-      name: 'orchestrator',
-      branch: repo.defaultBranch,
-      baseRef: repo.defaultBranch,
-      path: repo.path,
-      title: 'Orchestrator',
-      named: true,
-      orchestrator: true,
-      createdAt: Date.now()
-    }
-    s.workspaces.push(ws)
-  }
+  const ws = s.workspaces.find((w) => w.repoId === repoId && w.orchestrator && !w.groupId) ?? newOrchestratorWorkspace(repo, 'Orchestrator')
   ws.archived = false
-  let chat = s.chats.find((c) => c.workspaceId === ws.id)
-  if (!chat) {
-    chat = newChat(ws.id)
-    chat.title = 'Orchestrator'
-    if (chat.model === 'codex') chat.model = 'opus'
-  }
+  const chat = orchestratorChat(ws, 'Orchestrator')
   store.save()
   return { workspace: ws, chat }
 }
 
-/** After a workspace the orchestrator started finishes, leave a note in the orchestrator's chat. */
+/** A project group's orchestrator runs in its first repo's checkout and can read the others. */
+async function openGroupOrchestrator(groupId: string) {
+  const s = store.get()
+  const group = s.groups?.find((g) => g.id === groupId)
+  if (!group) throw new Error('Unknown project group')
+  const repos = orchestrator.groupScope(group, s.repos).repos
+  if (!repos.length) throw new Error('Add a repository to this project group first')
+  const ws = s.workspaces.find((w) => w.orchestrator && w.groupId === groupId) ?? newOrchestratorWorkspace(repos[0], group.name, groupId)
+  ws.repoId = repos[0].id
+  ws.path = repos[0].path
+  ws.branch = ws.baseRef = repos[0].defaultBranch
+  ws.title = group.name
+  ws.archived = false
+  const chat = orchestratorChat(ws, 'Orchestrator')
+  chat.additionalDirectories = repos.slice(1).map((r) => r.path)
+  store.save()
+  return { workspace: ws, chat }
+}
+
+function saveGroup(input: { id?: string; name: string; repoIds: string[] }) {
+  const s = store.get()
+  const name = String(input?.name ?? '').trim()
+  const known = new Set(s.repos.map((r) => r.id))
+  const repoIds = [...new Set((input?.repoIds ?? []).filter((id) => known.has(id)))]
+  if (!name) throw new Error('Give the project group a name')
+  if (!repoIds.length) throw new Error('Pick at least one repository')
+  s.groups ??= []
+  if (s.groups.some((g) => g.name.toLowerCase() === name.toLowerCase() && g.id !== input.id)) throw new Error(`There is already a project group called ${name}`)
+  let group = input.id ? s.groups.find((g) => g.id === input.id) : undefined
+  if (input.id && !group) throw new Error('Unknown project group')
+  if (!group) {
+    group = { id: randomUUID(), name, repoIds, createdAt: Date.now() }
+    s.groups.push(group)
+  } else {
+    group.name = name
+    group.repoIds = repoIds
+  }
+  const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === group.id)
+  if (orch) orch.title = name
+  store.save()
+  return group
+}
+
+async function deleteGroup(groupId: string) {
+  const s = store.get()
+  for (const ws of s.workspaces.filter((w) => w.orchestrator && w.groupId === groupId)) {
+    for (const c of s.chats.filter((c) => c.workspaceId === ws.id)) await agent.stop(c.id)
+    ws.archived = true
+    ws.archivedAt = Date.now()
+  }
+  s.groups = (s.groups ?? []).filter((g) => g.id !== groupId)
+  store.save()
+}
+
+/** The orchestrator that started a workspace: its project group's, or its repo's. */
+function orchestratorOf(ws: Workspace): Workspace | undefined {
+  const all = store.get().workspaces.filter((w) => w.orchestrator && !w.archived)
+  if (ws.orchestratorId) {
+    const o = all.find((w) => (w.groupId ? w.groupId === ws.orchestratorId : w.repoId === ws.orchestratorId))
+    if (o) return o
+  }
+  return all.find((w) => w.repoId === ws.repoId && !w.groupId)
+}
+
+/**
+ * Automatic updates: when workspaces an orchestrator started finish, wake it (once its own turn is
+ * over) so it checks them and reports back. Capped per stretch without a message from the person,
+ * so two agents can't keep each other going forever.
+ */
+const MAX_AUTO_WAKES = 8
+const autoWakes = new Map<string, number>()
+const finished = new Map<string, Map<string, { title: string; id: string; state: 'finished' | 'error'; at: number }>>()
+const wakeTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
 function noteForOrchestrator(chat: Chat) {
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
-  if (!ws?.orchestrated) return
-  const orch = store.get().workspaces.find((w) => w.repoId === ws.repoId && w.orchestrator)
+  if (!ws?.orchestrated || ws.orchestrator) return
+  const orch = orchestratorOf(ws)
   const orchChat = orch && store.get().chats.find((c) => c.workspaceId === orch.id)
-  // While it is running it is probably waiting on this workspace and will see the result itself.
-  if (!orchChat || orchChat.status === 'running') return
-  const state = chat.status === 'error' ? 'hit an error' : 'finished'
-  const item = { id: randomUUID(), kind: 'note' as const, text: `${ws.title} ${state}. Ask me to check on it.`, ts: Date.now() }
+  if (!orchChat) return
+  const list = finished.get(orchChat.id) ?? new Map()
+  list.set(ws.id, { title: ws.title, id: ws.id, state: chat.status === 'error' ? 'error' : 'finished', at: Date.now() })
+  finished.set(orchChat.id, list)
+  scheduleWake(orchChat.id)
+}
+
+/** Waits a few seconds so workspaces that finish together go out as one update. */
+function scheduleWake(orchChatId: string) {
+  clearTimeout(wakeTimers.get(orchChatId))
+  wakeTimers.set(
+    orchChatId,
+    setTimeout(() => {
+      wakeTimers.delete(orchChatId)
+      wakeOrchestrator(orchChatId)
+    }, 4000)
+  )
+}
+
+function wakeOrchestrator(orchChatId: string) {
+  const orchChat = store.get().chats.find((c) => c.id === orchChatId)
+  const list = finished.get(orchChatId)
+  if (!orchChat || !list?.size) return
+  // Busy: it may be waiting on these already. Try again when its turn ends.
+  if (agent.isRunning(orchChat.id)) return
+  finished.delete(orchChatId)
+  // Skip what the orchestrator already looked at after it finished.
+  const fresh = [...list.values()].filter((d) => orchestrator.seenAt(d.id) < d.at)
+  if (!fresh.length) return
+  const wakes = autoWakes.get(orchChatId) ?? 0
+  if (store.get().settings.orchestratorAutoUpdates && wakes < MAX_AUTO_WAKES && !orchChat.remote) {
+    autoWakes.set(orchChatId, wakes + 1)
+    try {
+      sendToChat(orchChat, orchestrator.autoUpdatePrompt(fresh))
+      return
+    } catch {
+      /* fall through to a note */
+    }
+  }
+  const names = fresh.map((d) => `${d.title} ${d.state === 'error' ? 'hit an error' : 'finished'}`).join('; ')
+  const paused = store.get().settings.orchestratorAutoUpdates && wakes >= MAX_AUTO_WAKES ? ' (automatic updates paused until you send a message)' : ''
+  const item = { id: randomUUID(), kind: 'note' as const, text: `${names}. Ask me to check on it${paused}.`, ts: Date.now() }
   store.upsertItem(orchChat.id, item)
   orchChat.unread = true
   store.save()
@@ -357,6 +511,7 @@ function noteForOrchestrator(chat: Chat) {
 function onChatDone(chat: Chat) {
   notifyDone(chat)
   noteForOrchestrator(chat)
+  if (finished.has(chat.id)) scheduleWake(chat.id)
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   if (ws) autoSync(ws)
 }
@@ -424,7 +579,10 @@ function artifacts(ws: Workspace): Artifact[] {
 
 async function archiveWorkspace(id: string) {
   const ws = findWs(id)
-  for (const c of store.get().chats.filter((c) => c.workspaceId === id)) await agent.stop(c.id)
+  for (const c of store.get().chats.filter((c) => c.workspaceId === id)) {
+    await agent.stop(c.id)
+    await remote.bringBack(c, ws, emitChat)
+  }
   if (ws.orchestrator) {
     // Lives in the main checkout: never remove that.
     ws.archived = true
@@ -444,6 +602,60 @@ async function archiveWorkspace(id: string) {
   ws.archived = true
   ws.archivedAt = Date.now()
   store.save()
+}
+
+/** Folders a workspace occupies on disk (never the main checkout, which an orchestrator uses). */
+function workspaceFolders(ws: Workspace, repo: Repo | undefined): string[] {
+  return [ws.path, ws.archivePath].filter((p): p is string => !!p && p !== repo?.path && existsSync(p))
+}
+
+/** Removes a worktree folder through git when it can, then deletes whatever is left. Refuses the repo itself. */
+async function deleteFolder(repoPath: string, path: string) {
+  if (resolve(path) === resolve(repoPath)) return
+  if (existsSync(repoPath)) await git.removeWorktree(repoPath, path)
+  rmSync(path, { recursive: true, force: true })
+}
+
+async function stopWorkspace(ws: Workspace) {
+  for (const c of store.get().chats.filter((c) => c.workspaceId === ws.id)) await agent.stop(c.id)
+  pty.killPrefix(`${ws.id}:`)
+}
+
+function forgetWorkspace(ws: Workspace) {
+  const s = store.get()
+  for (const c of s.chats.filter((c) => c.workspaceId === ws.id)) store.deleteChatItems(c.id)
+  s.chats = s.chats.filter((c) => c.workspaceId !== ws.id)
+  s.workspaces = s.workspaces.filter((w) => w.id !== ws.id)
+}
+
+async function deleteWorkspace(id: string) {
+  const ws = findWs(id)
+  const repo = store.get().repos.find((r) => r.id === ws.repoId)
+  await stopWorkspace(ws)
+  for (const p of workspaceFolders(ws, repo)) await deleteFolder(repo?.path ?? '', p)
+  forgetWorkspace(ws)
+  store.save()
+  send('state:changed')
+}
+
+async function removeProject(id: string, opts: { deleteFiles: boolean }) {
+  const s = store.get()
+  const repo = s.repos.find((r) => r.id === id)
+  if (!repo) return
+  const wss = s.workspaces.filter((w) => w.repoId === id)
+  const kept: string[] = []
+  for (const ws of wss) {
+    await stopWorkspace(ws)
+    const folders = workspaceFolders(ws, repo)
+    if (opts.deleteFiles) for (const p of folders) await deleteFolder(repo.path, p)
+    else kept.push(...folders)
+    forgetWorkspace(ws)
+  }
+  if (kept.length) s.leftovers = [...(s.leftovers ?? []), { id: randomUUID(), repoName: repo.name, repoPath: repo.path, paths: kept, removedAt: Date.now() }]
+  s.repos = s.repos.filter((r) => r.id !== id)
+  for (const g of s.groups ?? []) g.repoIds = g.repoIds.filter((r) => r !== id)
+  store.save()
+  send('state:changed')
 }
 
 /** Env for Claude agents: workspace vars, the API key, and OpenTelemetry export if it's on. */
@@ -471,9 +683,21 @@ function registerIpc() {
     return addRepo(r.filePaths[0])
   })
   h('repo:add', (p: string) => addRepo(p))
-  h('repo:remove', (id: string) => {
+  h('repo:remove', (id: string) => removeProject(id, { deleteFiles: false }))
+  h('repo:removeProject', (id: string, opts: { deleteFiles: boolean }) => removeProject(id, opts))
+  h('ws:delete', (id: string) => deleteWorkspace(id))
+  h('leftover:delete', async (id: string) => {
     const s = store.get()
-    s.repos = s.repos.filter((r) => r.id !== id)
+    const l = s.leftovers?.find((x) => x.id === id)
+    if (!l) return
+    for (const p of l.paths) await deleteFolder(l.repoPath, p)
+    s.leftovers = s.leftovers!.filter((x) => x.id !== id)
+    store.save()
+  })
+  h('repo:reorder', (ids: string[]) => {
+    const s = store.get()
+    const pos = new Map(ids.map((id, i) => [id, i]))
+    s.repos = [...s.repos].sort((a, b) => (pos.get(a.id) ?? Infinity) - (pos.get(b.id) ?? Infinity))
     store.save()
   })
   h('repo:hidden', (id: string, hidden: boolean) => {
@@ -481,14 +705,23 @@ function registerIpc() {
     if (r) r.hidden = hidden
     store.save()
   })
+  h('repo:prompt', (id: string, prompt: PromptCustom | undefined) => {
+    const r = store.get().repos.find((x) => x.id === id)
+    if (r) r.systemPrompt = prompt?.text.trim() ? prompt : undefined
+    store.save()
+  })
   h('ws:create', (repoId: string, source?: WorkspaceSource, folders?: string[]) => createWorkspace(repoId, source, folders))
   h('files:pick', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'], message: 'Give the agent these files' })
     return r.canceled ? [] : r.filePaths
   })
+  registerIntegrationsIpc(() => send('state:changed'))
   h('ws:sources', (repoId: string, kind: WorkspaceSource['kind'], query: string) => listSources(repoId, kind, query))
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))
+  h('group:orchestrator', (groupId: string) => openGroupOrchestrator(groupId))
+  h('group:save', (g: { id?: string; name: string; repoIds: string[] }) => saveGroup(g))
+  h('group:delete', (groupId: string) => deleteGroup(groupId))
   h('ws:restore', async (id: string) => {
     const ws = findWs(id)
     if (ws.orchestrator) {
@@ -517,12 +750,24 @@ function registerIpc() {
   h('chat:create', (wsId: string) => newChat(wsId))
   h('chat:close', async (id: string) => {
     await agent.stop(id)
+    const closing = store.get().chats.find((c) => c.id === id)
+    if (closing) {
+      pty.kill(remote.phoneTerminalId(closing))
+      pty.kill(cloud.cloudTerminalId(closing))
+    }
     const s = store.get()
     s.chats = s.chats.filter((c) => c.id !== id)
     store.deleteChatItems(id)
     store.save()
   })
   h('chat:items', (id: string) => store.chatItems(id))
+  h('chat:usage', (id: string) => {
+    const chat = findChat(id)
+    if (chat.model === 'codex') return { points: [], compactions: [], contextWindow: 0, empty: 'Usage graphs are for Claude chats. Codex keeps its own transcript.' }
+    // Claude Code reports a running total, so the last turn's cost covers the session.
+    const last = [...store.chatItems(id)].reverse().find((x) => x.kind === 'result' && x.costUsd != null)
+    return sessionUsage(chat.sdkSessionId, { contextWindow: chat.contextWindow, costUsd: last?.kind === 'result' ? last.costUsd : undefined })
+  })
   h('chat:update', (id: string, patch: Partial<Chat>) => {
     const c = findChat(id)
     if (patch.model) c.model = patch.model
@@ -535,6 +780,9 @@ function registerIpc() {
     if (patch.advisor !== undefined) c.advisor = patch.advisor
     if (patch.advisorBlocker !== undefined) c.advisorBlocker = patch.advisorBlocker
     if (patch.permission) c.permission = patch.permission
+    if (patch.fast !== undefined) c.fast = patch.fast || undefined
+    if (patch.budgetUsd !== undefined) c.budgetUsd = Math.max(0, Number(patch.budgetUsd) || 0)
+    if (patch.outputStyle !== undefined) c.outputStyle = patch.outputStyle || undefined
     store.save()
     return c
   })
@@ -560,6 +808,11 @@ function registerIpc() {
   h('pr:get', (id: string) => {
     const ws = findWs(id)
     return gh.prForBranch(ws.path, ws.branch)
+  })
+  h('pr:comments', async (id: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, ws.branch)
+    return pr ? gh.prComments(ws.path, pr.number) : []
   })
   h('checks:get', (id: string) => {
     const ws = findWs(id)
@@ -619,7 +872,11 @@ function registerIpc() {
     if (!pr) throw new Error('No pull request for this branch')
     await gh.mergePr(ws.path, pr.number)
   })
-  h('chat:send', (id: string, text: string, images: string[] = []) => sendToChat(findChat(id), text, images))
+  h('chat:send', (id: string, text: string, images: string[] = []) => {
+    // The person wrote, so the orchestrator may wake itself again.
+    autoWakes.delete(id)
+    return sendToChat(findChat(id), text, images)
+  })
   h('reflect:run', (wsId: string, feedback = '') => {
     const ws = findWs(wsId)
     const repo = store.get().repos.find((r) => r.id === ws.repoId)
@@ -651,9 +908,96 @@ function registerIpc() {
     if (action === 'send' && agent.isRunning(chat.id)) throw new Error('Wait for the agent to finish first')
     const { item, message } = agent.resolveAdvice(chat, itemId, action)
     emitChat(chatId, { item, chat })
-    if (message) sendToChat(chat, message, [], { fromAdvisor: true })
+    // A plan review is sent because the user clicked "Revise the plan", so it reads as their message.
+    if (message) sendToChat(chat, message, [], { fromAdvisor: item.kind === 'advisor' && item.source !== 'planReview' })
+  })
+  h('plan:review', (chatId: string, planItemId: string) => {
+    const chat = findChat(chatId)
+    const ws = findWs(chat.workspaceId)
+    const env = workspaceEnv(ws)
+    const key = store.get().settings.anthropicApiKey.trim()
+    if (key) env.ANTHROPIC_API_KEY = key
+    return agent.reviewPlan(chat, ws, planItemId, env, emitChat)
   })
   h('chat:stop', (id: string) => agent.stop(id))
+  h('chat:stopTask', (id: string, taskId: string) => agent.stopTask(id, taskId))
+  h('chat:outputStyles', (wsId: string) => listOutputStyles(findWs(wsId).path))
+  // MCP servers, managed through Claude Code itself in the repo's main checkout.
+  const mcpRepo = (repoId: string) => {
+    const repo = store.get().repos.find((r) => r.id === repoId)
+    if (!repo) throw new Error('Repository not found')
+    const key = store.get().settings.anthropicApiKey.trim()
+    return { cwd: repo.path, env: key ? { ANTHROPIC_API_KEY: key } : ({} as Record<string, string>) }
+  }
+  h('mcp:status', (repoId: string) => {
+    const r = mcpRepo(repoId)
+    return mcp.status(r.cwd, r.env)
+  })
+  h('mcp:add', (repoId: string, spec) => {
+    const r = mcpRepo(repoId)
+    return mcp.add(r.cwd, r.env, spec)
+  })
+  h('mcp:remove', (repoId: string, name: string, scope: string) => {
+    const r = mcpRepo(repoId)
+    return mcp.remove(r.cwd, r.env, name, scope)
+  })
+  h('mcp:toggle', (repoId: string, name: string, enabled: boolean) => {
+    const r = mcpRepo(repoId)
+    return mcp.toggle(r.cwd, r.env, name, !!enabled)
+  })
+  h('mcp:reconnect', (repoId: string, name: string) => {
+    const r = mcpRepo(repoId)
+    return mcp.reconnect(r.cwd, r.env, name)
+  })
+  h('mcp:signIn', (repoId: string) => mcp.openSignIn(mcpRepo(repoId).cwd))
+  // Plugins and skills, through `claude plugin …`.
+  const pr = (repoId: string) => mcpRepo(repoId)
+  h('plugins:installed', (repoId: string) => plugins.installed(pr(repoId).cwd, pr(repoId).env))
+  h('plugins:available', (repoId: string, fresh?: boolean) => plugins.available(pr(repoId).cwd, pr(repoId).env, !!fresh))
+  h('plugins:marketplaces', (repoId: string) => plugins.marketplaces(pr(repoId).cwd, pr(repoId).env))
+  h('plugins:addMarketplace', (repoId: string, source: string) => plugins.addMarketplace(pr(repoId).cwd, pr(repoId).env, String(source)))
+  h('plugins:removeMarketplace', (repoId: string, name: string) => plugins.removeMarketplace(pr(repoId).cwd, pr(repoId).env, String(name)))
+  h('plugins:install', (repoId: string, id: string, scope: string, acceptSha?: string) => plugins.install(pr(repoId).cwd, pr(repoId).env, String(id), String(scope), acceptSha))
+  h('plugins:uninstall', (repoId: string, id: string, scope: string) => plugins.uninstall(pr(repoId).cwd, pr(repoId).env, String(id), String(scope)))
+  h('plugins:setEnabled', (repoId: string, id: string, enabled: boolean, scope: string) => plugins.setEnabled(pr(repoId).cwd, pr(repoId).env, String(id), !!enabled, String(scope)))
+  h('plugins:details', (repoId: string, id: string) => plugins.details(pr(repoId).cwd, pr(repoId).env, String(id)))
+  h('plugins:localSkills', (repoId: string) => plugins.localSkills(pr(repoId).cwd))
+  h('shell:reveal', (p: string) => {
+    // Only Claude Code's own folder, a repo or a workspace, so a renderer can't point Finder anywhere.
+    if (typeof p !== 'string' || !isAbsolute(p) || !existsSync(p)) return
+    const st = store.get()
+    const roots = [join(homedir(), '.claude'), ...st.repos.map((r) => r.path), ...st.workspaces.map((w) => w.path)]
+    const inside = (root: string) => {
+      const rel = relative(root, resolve(p))
+      return !rel.startsWith('..') && !isAbsolute(rel)
+    }
+    if (roots.some(inside)) shell.showItemInFolder(p)
+  })
+  h('chat:phone', (id: string) => {
+    const chat = findChat(id)
+    const ws = findWs(chat.workspaceId)
+    return remote.continueOnPhone(chat, ws, agentEnv(ws), emitChat, (i, c) => send('pty:exit', i, c), (i, d) => send('pty:data', i, d))
+  })
+  h('chat:cloud', (id: string, task: string) => {
+    const chat = findChat(id)
+    const ws = findWs(chat.workspaceId)
+    return cloud.runInCloud(chat, ws, typeof task === 'string' ? task : '', agentEnv(ws), emitChat, cloudOut)
+  })
+  h('chat:cloudSend', (id: string, text: string) => {
+    const chat = findChat(id)
+    const ws = findWs(chat.workspaceId)
+    return cloud.sendToCloud(chat, ws, String(text ?? ''), agentEnv(ws), emitChat)
+  })
+  h('chat:cloudBack', (id: string) => {
+    const chat = findChat(id)
+    const ws = findWs(chat.workspaceId)
+    return cloud.teleportBack(chat, ws, agentEnv(ws), emitChat, cloudOut)
+  })
+  h('chat:cloudForget', (id: string) => cloud.forgetCloud(findChat(id), emitChat))
+  h('chat:phoneBack', (id: string) => {
+    const chat = findChat(id)
+    return remote.bringBack(chat, findWs(chat.workspaceId), emitChat)
+  })
   ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny') => agent.respondPermission(id, d))
   h('permission:pending', () => agent.pendingPermissions())
   h('git:changes', (wsId: string) => {
@@ -687,7 +1031,6 @@ function registerIpc() {
   h('shell:open', (url: string) => {
     if (/^https?:\/\//.test(url)) return shell.openExternal(url)
   })
-  h('shell:reveal', (p: string) => shell.showItemInFolder(p))
 }
 
 function buildMenu() {
@@ -829,7 +1172,14 @@ app.whenReady().then(async () => {
   // Packaged builds get the icon from the .icns; in dev, show the brand icon in the Dock too.
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
+  // Projects added before avatars existed: look up their GitHub owner once.
+  void Promise.all(store.get().repos.filter((r) => r.githubOwner === undefined).map(async (r) => (r.githubOwner = existsSync(r.path) ? await git.githubOwner(r.path) : ''))).then(() => {
+    store.save()
+    send('state:changed')
+  })
   registerIpc()
+  cloud.recoverAfterRestart()
+  void remote.recoverAfterRestart((id) => store.get().workspaces.find((w) => w.id === id), emitChat)
   archive.startArchiveCleanup()
   registerShareIpc({
     workspacesRoot: WORKSPACES_ROOT,

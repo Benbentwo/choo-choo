@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, Settings, Telemetry } from '@shared/types'
+import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, PromptCustom, Settings, Telemetry } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
-import { useStore, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
-import { EFFORTS, MODELS, PERMISSIONS } from './Composer'
+import { useStore, openGroupOrchestrator, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
+import { EFFORT_LABEL, EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
 import { QuickStartModalBody } from './AddProject'
+import { ProjectsSettings, RemoveProjectBody } from './ProjectsSettings'
 import { AppearanceSettings } from './Appearance'
+import { IntegrationsSettings } from './Integrations'
+import { McpSettings } from './McpSettings'
+import { PluginSettings } from './PluginSettings'
 import { OpenShareModal, ShareModal } from './ShareModals'
 import { CommandPalette } from './CommandPalette'
 import { UpdatesSettings } from './Updates'
+import { UsageGraphs } from './UsageGraphs'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -31,6 +36,14 @@ export function Modals() {
   if (modal === 'settings') return <SettingsModal onClose={close} />
   if (modal === 'palette') return <CommandPalette onClose={close} />
   if (modal === 'create') return <CreateModal onClose={close} />
+  if (modal === 'remove-repo') {
+    const repo = useStore.getState().repos.find((r) => r.id === useStore.getState().removeRepoId)
+    return repo ? (
+      <Shell onClose={close} width="w-[480px]">
+        <RemoveProjectBody repo={repo} onClose={close} />
+      </Shell>
+    ) : null
+  }
   if (modal === 'conductor') return <ConductorImportModal onClose={close} />
   if (modal === 'quickstart')
     return (
@@ -40,7 +53,111 @@ export function Modals() {
     )
   if (modal === 'open-share') return <OpenShareModal onClose={close} />
   if (modal === 'share') return <ShareFor onClose={close} />
+  if (modal === 'usage') return <UsageFor onClose={close} />
+  if (modal === 'group') return <GroupModal onClose={close} />
   return null
+}
+
+/** Create or edit a project group: a name and the repos its orchestrator directs. */
+function GroupModal({ onClose }: { onClose: () => void }) {
+  const repos = useStore((s) => s.repos)
+  const existing = useStore((s) => s.groups.find((g) => g.id === s.editGroup))
+  const [name, setName] = useState(existing?.name ?? '')
+  const [picked, setPicked] = useState<string[]>(existing?.repoIds ?? [])
+  const [busy, setBusy] = useState(false)
+  const toggle = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
+  const submit = async () => {
+    setBusy(true)
+    try {
+      const g = await window.api.saveGroup({ id: existing?.id, name, repoIds: picked })
+      await refreshState()
+      onClose()
+      if (!existing) await openGroupOrchestrator(g.id)
+    } catch (e) {
+      reportError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const remove = async () => {
+    if (!existing) return
+    try {
+      await window.api.deleteGroup(existing.id)
+      await refreshState()
+      onClose()
+    } catch (e) {
+      reportError(e)
+    }
+  }
+  return (
+    <Shell onClose={onClose} width="w-[460px]">
+      <div className="border-b border-line px-5 py-3 font-medium">{existing ? 'Edit project group' : 'New project group'}</div>
+      <div className="space-y-4 px-5 py-4">
+        <div className="text-[12px] text-muted">
+          A project group gives several repositories one orchestrator and one shared memory. It starts workspaces in whichever repo each piece of work belongs to.
+        </div>
+        <input
+          autoFocus
+          className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent"
+          placeholder="Name, e.g. Storefront"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && name.trim() && picked.length && void submit()}
+        />
+        <div className="max-h-64 overflow-y-auto rounded-md border border-line">
+          {repos.length === 0 && <div className="px-3 py-2 text-faint">Add a repository first.</div>}
+          {repos.map((r) => (
+            <label key={r.id} className="flex cursor-pointer items-center gap-2 border-b border-line px-3 py-2 last:border-0 hover:bg-hover">
+              <input type="checkbox" checked={picked.includes(r.id)} onChange={() => toggle(r.id)} />
+              <span className="flex-1 truncate">{r.name}</span>
+              {picked[0] === r.id && <span className="text-[11px] text-faint">runs here</span>}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 border-t border-line px-5 py-3">
+        {existing && (
+          <button className="rounded-md px-2.5 py-1 text-del hover:bg-hover" onClick={() => void remove()}>
+            Delete group
+          </button>
+        )}
+        <div className="flex-1" />
+        <button className="rounded-md px-2.5 py-1 hover:bg-hover" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="rounded-md bg-fg px-3 py-1 font-medium text-bg disabled:opacity-40" disabled={busy || !name.trim() || !picked.length} onClick={() => void submit()}>
+          {existing ? 'Save' : 'Create and open orchestrator'}
+        </button>
+      </div>
+    </Shell>
+  )
+}
+
+function UsageFor({ onClose }: { onClose: () => void }) {
+  const chat = useStore((s) => s.chats.find((c) => c.id === s.usageChat))
+  const allChats = useStore((s) => s.chats)
+  if (!chat) return null
+  // Each chat tab (including a Review) is its own Claude session; switch between them here.
+  const siblings = allChats.filter((c) => c.workspaceId === chat.workspaceId)
+  return (
+    <Shell onClose={onClose} width="w-[780px]">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <span className="shrink-0 font-medium">Session usage</span>
+        <div className="no-scrollbar flex min-w-0 gap-1 overflow-x-auto">
+          {siblings.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => useStore.getState().set({ usageChat: c.id })}
+              className={`max-w-[200px] shrink-0 truncate rounded px-2 py-0.5 text-[12px] ${c.id === chat.id ? 'bg-hover text-fg' : 'text-muted hover:text-fg'}`}
+            >
+              {c.title}
+            </button>
+          ))}
+        </div>
+      </div>
+      <UsageGraphs key={chat.id} chat={chat} />
+    </Shell>
+  )
 }
 
 function ShareFor({ onClose }: { onClose: () => void }) {
@@ -67,30 +184,40 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'agents' | 'updates' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'integrations' | 'updates' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   return (
-    <Shell onClose={onClose} width="w-[620px]">
+    <Shell onClose={onClose} width="w-[780px]">
       <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
         <div className="pb-3 font-medium">Settings</div>
         <div className="ml-auto flex gap-1">
-          {(['general', 'agents', 'updates', 'telemetry', 'appearance'] as const).map((t) => (
+          {(['general', 'projects', 'agents', 'prompts', 'mcp', 'plugins', 'integrations', 'updates', 'telemetry', 'appearance'] as const).map((t) => (
             <button
               key={t}
               role="tab"
               onClick={() => setTab(t)}
               className={`-mb-px border-b-2 px-2.5 pb-2.5 capitalize ${tab === t ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}
             >
-              {t}
+              {t === 'mcp' ? 'MCP' : t}
             </button>
           ))}
         </div>
       </div>
       <div className="max-h-[70vh] overflow-y-auto">
-        {tab === 'appearance' ? (
+        {tab === 'projects' ? (
+          <ProjectsSettings />
+        ) : tab === 'appearance' ? (
           <AppearanceSettings />
         ) : tab === 'updates' ? (
           <UpdatesSettings settings={settings} save={(patch) => void save(patch)} />
+        ) : tab === 'integrations' ? (
+          <IntegrationsSettings />
+        ) : tab === 'mcp' ? (
+          <McpSettings />
+        ) : tab === 'plugins' ? (
+          <PluginSettings />
+        ) : tab === 'prompts' ? (
+          <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
         ) : tab === 'telemetry' ? (
           <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (
@@ -110,12 +237,12 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
               <select className={select} value={settings.defaultEffort} onChange={(e) => void save({ defaultEffort: e.target.value as Settings['defaultEffort'] })}>
                 {EFFORTS.map((e) => (
                   <option key={e} value={e}>
-                    {e}
+                    {EFFORT_LABEL[e]}
                   </option>
                 ))}
               </select>
             </Row>
-            <Row label="Default permissions" hint="Full access runs agents unattended, like Conductor. The others ask before tools that change things.">
+            <Row label="Default permissions" hint="Full access runs agents unattended, like Conductor. Auto lets Claude Code's classifier approve safe tool calls and block risky ones. The others ask before tools that change things.">
               <select className={select} value={settings.defaultPermission} onChange={(e) => void save({ defaultPermission: e.target.value as Settings['defaultPermission'] })}>
                 {PERMISSIONS.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -123,6 +250,16 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                   </option>
                 ))}
               </select>
+            </Row>
+            <Row label="Spend cap per message" hint="Claude chats stop a message's run once it has cost this many dollars. Change it per chat in the model menu. Empty means no cap.">
+              <input
+                type="number"
+                min={0}
+                className={`${select} w-24`}
+                defaultValue={settings.defaultBudgetUsd || ''}
+                placeholder="none"
+                onBlur={(e) => void save({ defaultBudgetUsd: Number(e.target.value) || 0 })}
+              />
             </Row>
             <Row label="Branch prefix" hint="New workspaces branch as prefix/name. Empty uses your GitHub username.">
               <input className={`${select} w-44`} defaultValue={settings.branchPrefix} placeholder="auto" onBlur={(e) => void save({ branchPrefix: e.target.value })} />
@@ -138,6 +275,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             </Row>
             <Row label="Notifications" hint="Notify when an agent finishes while the app is in the background.">
               <input type="checkbox" checked={settings.notifications} onChange={(e) => void save({ notifications: e.target.checked })} />
+            </Row>
+            <Row label="Orchestrator updates" hint="When a workspace the orchestrator started finishes, wake the orchestrator so it checks the work and reports back.">
+              <input type="checkbox" checked={settings.orchestratorAutoUpdates} onChange={(e) => void save({ orchestratorAutoUpdates: e.target.checked })} />
             </Row>
             <Row label="Workspaces folder" hint="Where new workspaces are created. Empty uses ~/choo-choo/workspaces.">
               <input className={`${select} w-44`} defaultValue={settings.workspacesRoot ?? ''} placeholder="~/choo-choo/workspaces" onBlur={(e) => void save({ workspacesRoot: e.target.value })} />
@@ -160,6 +300,87 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         )}
       </div>
     </Shell>
+  )
+}
+
+const EMPTY_PROMPT: PromptCustom = { mode: 'append', text: '' }
+
+/** One prompt editor: append to or replace Claude Code's system prompt. */
+function PromptEditor({ value, save, scope }: { value?: PromptCustom; save: (p: PromptCustom) => void; scope: 'global' | 'repo' }) {
+  const [draft, setDraft] = useState<PromptCustom>(value ?? EMPTY_PROMPT)
+  const field = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
+  const commit = (p: PromptCustom) => {
+    setDraft(p)
+    save(p)
+  }
+  return (
+    <div className="px-5 py-3.5">
+      <div className="mb-2 flex items-center gap-3">
+        <select className={field} value={draft.mode} onChange={(e) => commit({ ...draft, mode: e.target.value as PromptCustom['mode'] })}>
+          <option value="append">Add to Claude Code's prompt</option>
+          <option value="replace">Replace Claude Code's prompt</option>
+        </select>
+        <span className="text-[12px] text-faint">
+          {draft.mode === 'append'
+            ? scope === 'global'
+              ? 'Keeps Claude Code\'s tools guidance and safety rules.'
+              : 'Added after your global instructions.'
+            : scope === 'global'
+              ? 'Sends only your text. A repo prompt is added after it.'
+              : 'Sends only this text in this repo, ignoring the global one.'}
+        </span>
+      </div>
+      {draft.mode === 'replace' && (
+        <div className="mb-2 rounded-md border border-line bg-raised px-3 py-2 text-[12px] text-muted">
+          Replacing drops Claude Code's guidance on tools, git and safety, so the agent only knows what you write here. CLAUDE.md files, skills and subagents still load.
+        </div>
+      )}
+      <textarea
+        className={`${field} h-40 w-full resize-y font-mono text-[12px] leading-relaxed`}
+        value={draft.text}
+        placeholder={draft.mode === 'append' ? 'e.g. Write tests with vitest. Keep commits small and explain why in the message.' : 'You are a coding agent working in a git worktree…'}
+        onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+        onBlur={() => save(draft)}
+      />
+    </div>
+  )
+}
+
+function PromptsSection({ global, saveGlobal }: { global?: PromptCustom; saveGlobal: (p: PromptCustom) => void }) {
+  const repos = useStore((s) => s.repos)
+  const [repoId, setRepoId] = useState(() => {
+    const s = useStore.getState()
+    return s.workspaces.find((w) => w.id === s.selectedWs)?.repoId ?? repos[0]?.id ?? ''
+  })
+  const repo = repos.find((r) => r.id === repoId)
+  const saveRepo = (p: PromptCustom) => {
+    if (!repo) return
+    const systemPrompt = p.text.trim() ? p : undefined
+    void window.api.setRepoPrompt(repo.id, systemPrompt).then(() =>
+      useStore.getState().set({ repos: useStore.getState().repos.map((r) => (r.id === repo.id ? { ...r, systemPrompt } : r)) })
+    )
+  }
+  return (
+    <>
+      <div className="border-b border-line px-5 py-2.5 text-[12px] text-faint">
+        Instructions for Claude agents. Changes apply to new chats; a chat keeps the prompt it started with. For instructions you want in git, use the repo's CLAUDE.md instead.
+      </div>
+      <div className="px-5 pt-3.5 font-medium">All repos</div>
+      <PromptEditor value={global} save={saveGlobal} scope="global" />
+      <div className="flex items-center gap-3 border-t border-line px-5 pt-3.5">
+        <div className="font-medium">This repo</div>
+        {repos.length > 0 && (
+          <select className="ml-auto rounded-md border border-line bg-bg px-2 py-1 outline-none" value={repoId} onChange={(e) => setRepoId(e.target.value)}>
+            {repos.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {repo ? <PromptEditor key={repo.id} value={repo.systemPrompt} save={saveRepo} scope="repo" /> : <div className="px-5 py-3.5 text-faint">Add a repository first.</div>}
+    </>
   )
 }
 
@@ -265,6 +486,18 @@ function ExtrasSection({ extras, save }: { extras: Extras; save: (patch: Partial
           </Row>
         </>
       )}
+      <Row
+        label="Claude Code advisor"
+        hint="Claude Code's own advisor tool. In Claude chats, Claude consults a stronger model mid-task when it decides to (before picking an approach, when stuck, before saying it's done). Different from the advisor above, which reviews after each turn. Needs a Claude sign-in or Anthropic API key and a main model the advisor can advise; counts toward your usage."
+      >
+        <select className={select} value={extras.claudeAdvisor} onChange={(e) => save({ claudeAdvisor: e.target.value as Extras['claudeAdvisor'] })}>
+          <option value="inherit">Use my Claude Code setting</option>
+          <option value="off">Off</option>
+          <option value="fable">Fable</option>
+          <option value="opus">Opus</option>
+          <option value="sonnet">Sonnet</option>
+        </select>
+      </Row>
     </>
   )
 }

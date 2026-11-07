@@ -20,6 +20,11 @@ export interface CodexRun {
 }
 
 /** Arguments for `codex exec --json`, resuming a thread when we have one. */
+/** Codex has no "max" effort; its highest is xhigh. */
+export function codexEffort(e: Effort): string {
+  return e === 'max' ? 'xhigh' : e
+}
+
 export function codexArgs(o: { cwd: string; effort: Effort; readOnly?: boolean; threadId?: string; imagePaths: string[]; prompt: string }): string[] {
   const args = [
     'exec',
@@ -30,7 +35,7 @@ export function codexArgs(o: { cwd: string; effort: Effort; readOnly?: boolean; 
     '-C',
     o.cwd,
     '-c',
-    `model_reasoning_effort="${o.effort}"`
+    `model_reasoning_effort="${codexEffort(o.effort)}"`
   ]
   if (o.threadId) args.push('resume', o.threadId)
   for (const p of o.imagePaths) args.push('-i', p)

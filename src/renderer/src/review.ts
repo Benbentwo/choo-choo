@@ -36,9 +36,30 @@ export function findingsFromItems(items: ChatItem[]): ReviewFinding[] | null {
       const f = parseFindings(it.text)
       if (f) return f
     }
+    if (it.kind === 'tool' && it.name === 'ReportFindings') {
+      const f = reportedFindings(it.input)
+      if (f) return f
+    }
   }
   return null
 }
+
+/** Findings from Claude Code's own /code-review, which reports them with the ReportFindings tool. */
+export function reportedFindings(input: unknown): ReviewFinding[] | null {
+  const list = (input as { findings?: unknown })?.findings
+  if (!Array.isArray(list)) return null
+  return list
+    .filter((f: any) => f && typeof f.file === 'string' && typeof f.summary === 'string')
+    .map((f: any) => ({
+      file: f.file.replace(/^\.?\//, ''),
+      line: Number.isInteger(f.line) && f.line > 0 ? f.line : undefined,
+      severity: f.verdict === 'CONFIRMED' ? 'high' : f.verdict === 'PLAUSIBLE' ? 'medium' : f.category === 'correctness' ? 'medium' : 'low',
+      message: typeof f.failure_scenario === 'string' && f.failure_scenario ? `${f.summary} ${f.failure_scenario}` : f.summary
+    }))
+}
+
+/** Runs Claude Code's built-in /code-review skill. */
+export const CLAUDE_CODE_REVIEW_PROMPT = '/code-review'
 
 const FINDINGS_FORMAT = [
   'Summarize briefly, then end your reply with every finding in a single ```json block: an array of',

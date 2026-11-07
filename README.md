@@ -15,7 +15,7 @@ An open-source, MIT-licensed alternative to [Conductor](https://conductor.build)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS](https://img.shields.io/badge/macOS-Apple%20silicon%20%7C%20Intel-lightgrey)
 
-[Download](https://github.com/Benbentwo/choo-choo/releases/latest) · [Features](#features) · [Coming from Conductor](#coming-from-conductor) · [Contributing](CONTRIBUTING.md)
+[Download](https://github.com/Benbentwo/choo-choo/releases/latest) · [Features](#features) · [Coming from Conductor](#coming-from-conductor) · [Docs](docs/README.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -36,6 +36,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Review before you ship.** Changes view with diffs, an agent code review whose findings show inline with Fix buttons, and per-tool permission prompts.
 - **PRs in one click.** Create a PR (or draft), watch checks, re-run failures and squash-merge, all through your `gh` login.
 - **Real terminals.** Setup, Run (⌘R) and terminal tabs per workspace, driven by `choo-choo.json` or `conductor.json`.
+- **Start from Notion.** Sign in to Notion, then start a workspace from a Notion page or task. Agents can also search, read and update Notion while you're signed in.
 - **Codex too.** Optionally run OpenAI's Codex CLI as a workspace agent.
 - **Keyboard first.** ⌘K search, ⌘T/⌘W tabs, ⌘B/⌘J panels, ⌘⇧U next unread.
 - **Native Mac app.** Apple silicon and Intel builds, desktop notifications, update checks for the app and for Claude Code (Settings > Updates, each with its own on/off toggle).
@@ -103,6 +104,14 @@ Codex is optional: install the Codex CLI (`npm i -g @openai/codex`) and run `cod
 
 Click the orchestrator icon next to a repository in the sidebar. Tell the orchestrator what you want and it splits the work into workspaces, gives each agent a task, waits for them, reads their transcripts and diffs, and sends follow-ups. It runs in the repo's main checkout and cannot edit files there. It keeps a memory file per repository at `~/choo-choo/memory/<repo>.md`, which it reads on every turn and which you can edit yourself.
 
+## Integrations
+
+Settings > Integrations lists the services you can sign in to. Each one signs in through your browser; there are no tokens to paste. Tokens are encrypted with the macOS keychain (Electron `safeStorage`) in `~/Library/Application Support/Choo Choo/data/integrations.json`.
+
+**Notion** needs no setup: Choo Choo signs in to Notion's hosted MCP server (`mcp.notion.com`) and registers itself on the fly, so there is no Notion app or client secret. After signing in, pick the Notion tab in the new-workspace composer to start from a page or task (search, or paste a page link); the page becomes the agent's brief. While Notion is connected, agents also get Notion's tools to search, read and update pages. Turn that off with the checkbox under Notion.
+
+Adding a service: write `src/main/integrations/<name>.ts` exporting a `Provider` (see `index.ts`), sign in with `startLoopback` and `pkce` from `oauth.ts` (or `mcpOAuth.ts` for a hosted MCP server), store the result with `setAuth` from `tokens.ts`, and add it to the `providers` list.
+
 ## Shared sessions
 
 Share a workspace with a coworker from the workspace's ⋯ menu > Share with coworkers. Choo Choo pushes one commit to a hidden ref, `refs/choo-choo/shares/<id>`, in the repository's `origin` remote. It holds the branch, your uncommitted and untracked files (not gitignored ones), and every chat in the workspace. You get a `choo-choo://share` link to send. By default the share updates after every agent turn.
@@ -128,6 +137,8 @@ npm run dist:mac # build arm64 and Intel .dmg and .zip files into dist/
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) to send a change.
+
+Project docs live in [docs/](docs/README.md): the [product overview](docs/product.md), [architecture](docs/architecture.md), a PRD for each feature area and the decision records behind them.
 
 ### Comment mode: point at the UI and let Claude change it
 

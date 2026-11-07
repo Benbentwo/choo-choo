@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
-import { DEFAULT_SETTINGS, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type Settings, type Workspace } from '@shared/types'
+import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover } from '@shared/types'
 
 export interface Doc {
   kind: 'diff' | 'file'
@@ -12,7 +12,7 @@ export interface Doc {
 /** Which list the ⌘K palette opens on. */
 export type PaletteMode = 'all' | 'files' | 'grep'
 
-export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'review'
+export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'graphs' | 'review'
 
 interface UI {
   repos: Repo[]
@@ -22,15 +22,26 @@ interface UI {
   stats: Record<string, DiffStats>
   /** Tool calls waiting for the user's OK, per chat. */
   permissions: Record<string, PermissionRequest[]>
+  /** Background tasks of each chat's running turn. */
+  tasks: Record<string, BackgroundTask[]>
   selectedWs: string | null
   activeChat: Record<string, string>
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
   settings: Settings
-  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | null
+  modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | 'group' | 'remove-repo' | null
+  /** Project the Remove project dialog is for. */
+  removeRepoId: string | null
+  leftovers: Leftover[]
+  /** Project groups: several repos with one shared orchestrator. */
+  groups: RepoGroup[]
+  /** The group open in the group editor; null makes a new one. */
+  editGroup: string | null
+  /** The chat whose usage graphs are open. */
+  usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'agents' | 'updates' | 'telemetry' | 'appearance'
+  settingsTab: 'general' | 'projects' | 'agents' | 'mcp' | 'plugins' | 'integrations' | 'updates' | 'telemetry' | 'appearance'
   recentPaths: string[]
   modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */
@@ -65,14 +76,20 @@ export const useStore = create<UI>((set, get) => ({
   items: {},
   stats: {},
   permissions: {},
+  tasks: {},
   selectedWs: null,
   activeChat: {},
   openDoc: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
+  groups: [],
+  editGroup: null,
+  usageChat: null,
   paletteMode: 'all',
   settingsTab: 'general',
   recentPaths: [],
+  removeRepoId: null,
+  leftovers: [],
   modelDetails: {},
   draftRepo: null,
   shareLinkDraft: null,
@@ -84,7 +101,7 @@ export const useStore = create<UI>((set, get) => ({
   rightTab: 'changes',
   error: null,
 
-  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [] }),
+  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [] }),
   selectWorkspace: (id, fromHistory) => {
     if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null })
     const { history, historyIndex } = get()
@@ -186,6 +203,22 @@ export async function openOrchestrator(repoId: string) {
   } catch (e) {
     reportError(e)
   }
+}
+
+/** Opens a project group's orchestrator, which directs workspaces across all of its repos. */
+export async function openGroupOrchestrator(groupId: string) {
+  try {
+    const { workspace, chat } = await window.api.openGroupOrchestrator(groupId)
+    await refreshState()
+    useStore.getState().setActiveChat(workspace.id, chat.id)
+    useStore.getState().selectWorkspace(workspace.id)
+  } catch (e) {
+    reportError(e)
+  }
+}
+
+export function editGroup(groupId: string | null) {
+  useStore.getState().set({ modal: 'group', editGroup: groupId })
 }
 
 export async function addRepository() {

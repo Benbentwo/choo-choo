@@ -45,7 +45,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 
 ### Chat
 - ✅ Chat tabs per workspace, ⌘T / ⌘W
-- ✅ Model picker (Opus / Sonnet / Haiku) and effort (Low / Medium / High)
+- ✅ Model picker (Opus / Fable / Sonnet / Haiku) and effort (Low / Medium / High / Extra high / Max)
 - ✅ Streaming replies with markdown, collapsible tool calls, cost and duration
 - ✅ Stop (button or Esc)
 - ✅ @mention file autocomplete, /command autocomplete (built-ins, project and user commands, skills)
@@ -54,7 +54,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Next unread (button and ⌘⇧U)
 - ✅ Revert to here: restores files and forks the conversation
 - ✅ Codex agent (via the `codex` CLI)
-- ✅ Per-tool permission prompts (Full access, Ask for commands, Ask for edits and commands)
+- ✅ Per-tool permission prompts (Full access, Auto, Ask for commands, Ask for edits and commands)
 
 ### Right panel
 - ✅ Changes: committed, uncommitted and untracked vs merge base, with diff view
@@ -64,6 +64,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Review: agent code review in a new tab
 - ✅ Create PR (agent commits, pushes, opens PR), draft option; PR status, open, squash merge
 - ✅ Review findings inline in the diff, with Fix buttons
+- ✅ Add all PR comments to chat: unresolved review threads, change requests and comments, with file/line context; new-comment count in the header
 
 ### Bottom panel
 - ✅ Terminal tabs (xterm + pty), persist across workspace switches
@@ -78,6 +79,8 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 
 ### Beyond Conductor
 - ✅ Shared sessions: share a workspace (branch, uncommitted files, chats) with coworkers through the repo's own remote; they continue with their own Claude login
+- ✅ Orchestrator: one chat per repo that starts workspaces, briefs their agents, waits on them, follows up and keeps a memory file. It wakes itself with an automatic update when a workspace it started finishes, can run workspaces in a Claude Code cloud session, and watches each workspace's PR and CI checks. See [PRD](prd/orchestrator.md).
+- ✅ Project groups: several repos share one orchestrator and one memory; it starts each workspace in the repo the work belongs to.
 
 ## Build sequence
 1. **Foundation**: app scaffold, layout, repos, worktree sessions, agent chat, Changes + diff, terminal.
@@ -95,7 +98,16 @@ Features Conductor doesn't have. Each one is off until you turn it on in Setting
 - ✅ **Security reviewer**: adds a Security review button to the Review tab; its findings show in the same list and inline in diffs, tagged "security".
 - ✅ **Quick worker** (Haiku): `/quick <task>` hands mechanical work to it.
 - ✅ **Advisor**: after each finished turn, a second model reviews the turn with read-only tools and posts notes as a card with Send to agent and Dismiss. Per-chat Advisor toggle in the composer. A red dot in the sidebar marks a workspace with an unhandled blocker. Optional automatic sending of blockers, at most once per message.
+- ✅ **Claude Code advisor**: Settings › Agents picks Claude Code's own advisor tool for Claude chats (my Claude Code setting, off, Fable, Opus or Sonnet). Claude consults it mid-task; each consultation shows as an "Advisor" line in the chat. Sits beside the post-turn advisor above.
+- ✅ **Review plan** (always available, no setting): the plan card in plan mode has a Review plan button. Three fresh Opus reviewers (design, readiness, codebase fit) read only the plan and the repo, never the chat, and post findings as a card with Revise the plan and Dismiss. Adapted from Google's [Elephant-Goldfish Model](https://github.com/google/elephant-goldfish-model) (Apache 2.0).
+- ✅ **Claude Code session controls** ([PRD](prd/claude-code-controls.md)): auto mode, a Goal button for `/goal`, fast mode, a spend cap per message, Compact, output styles, Claude Code's own `/code-review` in the Review tab, and a list of running background tasks with Stop.
+- ✅ **MCP servers** ([PRD](prd/mcp-servers.md)): Settings › MCP lists every server Claude Code loads for a repo, with status, tools and errors. You can add (HTTP, SSE or stdio; every repo or the repo's .mcp.json), remove, turn off per repo, retry, and sign in through Claude Code's /mcp.
+- ✅ **Plugins and skills** ([PRD](prd/plugins.md)): Settings › Plugins lets you browse marketplaces (Anthropic's is one click away), install for every repo or one repo, turn plugins on or off, uninstall, and see what each one adds and costs. It also lists your own skills, commands and agents.
 - ✅ Subagent calls show as one collapsible card per agent, with the steps it took inside.
 - ✅ Settings › Claude Code: run the bundled binary or your installed `claude`. When Claude Code isn't signed in, the chat says to run `claude` and `/login`.
 - ✅ Settings › Telemetry: OpenTelemetry export (metrics, log events, beta traces) from Claude agents to any OTLP collector, tagged with `choo.repo`, `choo.workspace` and `choo.branch`. Prompt and tool content are separate opt-ins.
+- ✅ **Continue on phone**: hand a chat to Claude Code's Remote Control and steer it from the Claude app or claude.ai/code (QR code and link), then bring it back with the phone turns copied in. See [PRD](prd/remote-sessions.md).
+- ✅ **Run in the cloud**: push a workspace to a Claude Code cloud session (`claude --cloud`) that keeps going with the Mac closed, send it follow-ups, and bring it back into the worktree with `claude --teleport`.
+- ✅ Session usage graphs: per chat, tokens per Claude response (input, cache write, cache read, output) and context-window fill, by response or by time, with compactions marked and a table view. Read from Claude Code's own transcript, so no collector is needed and past sessions work too. Open from the chart button on the chat tabs, the Usage link after a turn, or ⌘K.
+- ✅ Settings › Integrations: browser sign-in, tokens in the keychain. Notion signs in to Notion's hosted MCP with no setup; start a workspace from a Notion page or task, and agents get Notion's tools.
 - Everything runs on the official Agent SDK and an unmodified Claude Code binary, with each user's own sign-in through Claude Code's /login. Choo Choo never shows its own Claude login or handles tokens, which keeps it within Anthropic's terms. oh-my-pi's own Claude subscription login is not used: it impersonates Claude Code.

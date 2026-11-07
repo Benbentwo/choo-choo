@@ -2,14 +2,30 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { Chat, ChatItem, Repo, Workspace } from '@shared/types'
+import type { Chat, ChatItem, CheckRun, PrInfo, Repo, RepoGroup, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 
 /**
  * The orchestrator is a chat that lives in the repo's main checkout. The person tells it what
  * they want, and it splits the work across workspaces, each with its own agent, then follows up.
+ * A project group gets one orchestrator for several repos, with one shared memory.
  */
+
+/** What one orchestrator directs: a single repo, or a project group of repos. */
+export interface Scope {
+  /** The repo id, or the group id. */
+  id: string
+  name: string
+  repos: Repo[]
+  group?: boolean
+}
+
+export const repoScope = (repo: Repo): Scope => ({ id: repo.id, name: repo.name, repos: [repo] })
+
+export function groupScope(group: RepoGroup, repos: Repo[]): Scope {
+  return { id: group.id, name: group.name, repos: group.repoIds.map((id) => repos.find((r) => r.id === id)).filter((r): r is Repo => !!r), group: true }
+}
 
 /** What the orchestrator needs from the app. Kept small so this file has no Electron imports. */
 export interface Host {
@@ -20,46 +36,62 @@ export interface Host {
   archiveWorkspace(workspaceId: string): Promise<void>
   /** Chats waiting for the person to approve a tool call. */
   pendingChatIds(): Set<string>
+  /** Pushes the workspace and starts a Claude Code cloud session on it with this task. */
+  runInCloud(chat: Chat, ws: Workspace, task: string): Promise<void>
+  /** Queues a follow-up into the workspace's cloud session. */
+  sendToCloud(chat: Chat, ws: Workspace, text: string): Promise<void>
+  /** The pull request for the workspace's branch and its checks. */
+  prStatus(ws: Workspace): Promise<{ pr: PrInfo | null; checks: CheckRun[] }>
 }
 
 const MEMORY_ROOT = () => join(homedir(), 'choo-choo', 'memory')
 const MEMORY_LIMIT = 20_000
 const MAX_WAIT_MIN = 30
 
-export function memoryPath(repo: Repo): string {
-  const safe = repo.name.replace(/[^\w.-]/g, '_') || repo.id
-  return join(MEMORY_ROOT(), `${safe}.md`)
+/** Repo memory sits at memory/<repo>.md, a project group's at memory/groups/<group>.md. */
+export function memoryPath(scope: Scope): string {
+  const safe = scope.name.replace(/[^\w.-]/g, '_') || scope.id
+  return scope.group ? join(MEMORY_ROOT(), 'groups', `${safe}.md`) : join(MEMORY_ROOT(), `${safe}.md`)
 }
 
-export function readMemory(repo: Repo): string {
-  const f = memoryPath(repo)
+export function readMemory(scope: Scope): string {
+  const f = memoryPath(scope)
   return existsSync(f) ? readFileSync(f, 'utf8') : ''
 }
 
-export function writeMemory(repo: Repo, content: string) {
-  mkdirSync(MEMORY_ROOT(), { recursive: true })
-  const f = memoryPath(repo)
+export function writeMemory(scope: Scope, content: string) {
+  const f = memoryPath(scope)
+  mkdirSync(join(f, '..'), { recursive: true })
   writeFileSync(`${f}.tmp`, content)
   renameSync(`${f}.tmp`, f)
 }
 
-export function systemPrompt(repo: Repo, memory: string): string {
+export function systemPrompt(scope: Scope, memory: string): string {
+  const intro = scope.group
+    ? [
+        `You are the orchestrator for the ${scope.name} project in Choo Choo. It spans these repositories:`,
+        ...scope.repos.map((r) => `- ${r.name} at ${r.path}`),
+        'The person tells you what they want; you get it done by directing other agents. Pass `repo` to start_workspace to say which repository each piece of work belongs in. Work that spans repos gets one workspace per repo.'
+      ]
+    : [`You are the orchestrator for the ${scope.name} repository in Choo Choo. The person tells you what they want; you get it done by directing other agents.`]
   return [
-    `You are the orchestrator for the ${repo.name} repository in Choo Choo. The person tells you what they want; you get it done by directing other agents.`,
+    ...intro,
     '',
     'How you work:',
     '- Each workspace is its own git worktree and branch with its own coding agent. Start one per independent piece of work with start_workspace, and give it a complete, self-contained task: the goal, the relevant files, constraints, and what "done" means (for example tests pass and a PR is open).',
     '- Run independent tasks in parallel. Keep dependent work in one workspace, or wait for the first to finish before starting the next.',
-    '- After starting work, call wait_for_workspaces, then check results with read_workspace. Send corrections or next steps with message_workspace.',
-    '- You run in the main checkout. Never edit files there and never commit, push or switch branches in it. Read code, git log and gh output freely to plan.',
+    '- After starting work, call wait_for_workspaces, then check results with read_workspace. Send corrections or next steps with message_workspace. You do not have to wait: when a workspace you started finishes while you are idle, Choo Choo wakes you with an automatic update so you can check it and report back.',
+    '- Use pr_status to see a workspace\'s pull request and CI checks, and to wait for checks to finish.',
+    '- start_workspace with where: "cloud" runs the agent in a Claude Code cloud session on Anthropic\'s machines instead of this Mac. Use it for long, self-contained tasks or when the person asks. You cannot read a cloud transcript or wait for it to stop; follow its progress through pr_status, and it reports on claude.ai/code.',
+    `- You run in ${scope.group ? "the first repo's main checkout, with the other repos readable" : 'the main checkout'}. Never edit files there and never commit, push or switch branches in it. Read code, git log and gh output freely to plan.`,
     '- Do not archive a workspace unless the person asks or its work is merged.',
     '- When a workspace needs a tool approval, tell the person; you cannot approve for them.',
     '- Keep replies short: what you started, what finished, what needs the person.',
     '',
     'Memory:',
-    '- You have a memory file for this repo that persists across conversations. It is shown below. Save durable facts with update_memory: the person\'s preferences, decisions, conventions, ongoing initiatives and which workspace owns what. Rewrite it whole each time, keep it under ~150 lines, and remove things that are no longer true. Do not save secrets.',
+    `- You have a memory file for this ${scope.group ? 'project' : 'repo'} that persists across conversations. It is shown below. Save durable facts with update_memory: the person\'s preferences, decisions, conventions, ongoing initiatives and which workspace owns what. Rewrite it whole each time, keep it under ~150 lines, and remove things that are no longer true. Do not save secrets.`,
     '',
-    `<memory path="${memoryPath(repo)}">`,
+    `<memory path="${memoryPath(scope)}">`,
     memory.trim() || '(empty)',
     '</memory>'
   ].join('\n')
@@ -82,10 +114,13 @@ function workspaceChats(wsId: string): Chat[] {
   return store.get().chats.filter((c) => c.workspaceId === wsId)
 }
 
+const cloudChat = (ws: Workspace) => workspaceChats(ws.id).find((c) => c.remote?.kind === 'cloud')
+
 function statusOf(ws: Workspace, pending: Set<string>): string {
   const chats = workspaceChats(ws.id)
   if (chats.some((c) => pending.has(c.id))) return 'needs-approval'
   if (chats.some((c) => c.status === 'running')) return 'running'
+  if (cloudChat(ws)) return 'in-cloud'
   if (chats.some((c) => c.status === 'error')) return 'error'
   return 'idle'
 }
@@ -109,9 +144,14 @@ export function transcript(items: ChatItem[], last: number): string {
   return lines.join('\n')
 }
 
-function ownWorkspace(repo: Repo, id: string): Workspace {
+/** When each orchestrator last looked at each workspace, so automatic updates skip what it has already seen. */
+const seen = new Map<string, number>()
+const markSeen = (ws: Workspace) => seen.set(ws.id, Date.now())
+export const seenAt = (wsId: string) => seen.get(wsId) ?? 0
+
+function ownWorkspace(scope: Scope, id: string): Workspace {
   const ws = store.get().workspaces.find((w) => w.id === id || w.name === id)
-  if (!ws || ws.repoId !== repo.id || ws.orchestrator) throw new Error(`No workspace ${id} in ${repo.name}. Call list_workspaces for ids.`)
+  if (!ws || !scope.repos.some((r) => r.id === ws.repoId) || ws.orchestrator) throw new Error(`No workspace ${id} in ${scope.name}. Call list_workspaces for ids.`)
   return ws
 }
 
@@ -122,53 +162,91 @@ function mainChat(ws: Workspace): Chat {
   return chat
 }
 
-function summary(ws: Workspace, pending: Set<string>) {
+function summary(ws: Workspace, pending: Set<string>, scope: Scope) {
+  markSeen(ws)
+  const cloud = cloudChat(ws)?.remote
   return {
     id: ws.id,
     title: ws.title,
+    ...(scope.group ? { repo: scope.repos.find((r) => r.id === ws.repoId)?.name } : {}),
     branch: ws.branch,
     status: statusOf(ws, pending),
+    ...(cloud ? { cloudSession: cloud.url ?? 'starting' } : {}),
     startedByOrchestrator: !!ws.orchestrated,
     lastMessage: clip(lastAssistantText(mainChat(ws).id), 600)
   }
 }
 
+/** One line per check, failures first. */
+export function checksSummary(checks: CheckRun[]): { state: 'none' | 'pending' | 'fail' | 'pass'; lines: string[] } {
+  if (!checks.length) return { state: 'none', lines: [] }
+  const order = { fail: 0, cancel: 1, pending: 2, pass: 3, skipping: 4 }
+  const sorted = [...checks].sort((a, b) => order[a.bucket] - order[b.bucket])
+  const state = checks.some((c) => c.bucket === 'fail' || c.bucket === 'cancel') ? 'fail' : checks.some((c) => c.bucket === 'pending') ? 'pending' : 'pass'
+  return { state, lines: sorted.map((c) => `${c.bucket.toUpperCase()} ${c.workflow ? `${c.workflow} / ` : ''}${c.name}${c.link ? ` ${c.link}` : ''}`) }
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Options merged into the orchestrator's query(): its tools, its prompt and what it may not do. */
-export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'), repo: Repo, host: Host): Record<string, unknown> {
+export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'), scope: Scope, host: Host): Record<string, unknown> {
   const { tool, createSdkMcpServer } = sdk
-  const live = () => store.get().workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.orchestrator)
+  const inScope = (w: Workspace) => scope.repos.some((r) => r.id === w.repoId)
+  const live = () => store.get().workspaces.filter((w) => inScope(w) && !w.archived && !w.orchestrator)
+  const repoNames = scope.repos.map((r) => r.name)
+  const pickRepo = (name?: string): Repo => {
+    if (!name) {
+      if (scope.repos.length === 1) return scope.repos[0]
+      throw new Error(`Say which repo with \`repo\`: one of ${repoNames.join(', ')}.`)
+    }
+    const r = scope.repos.find((x) => x.name === name || x.id === name) ?? scope.repos.find((x) => x.name.toLowerCase() === name.toLowerCase())
+    if (!r) throw new Error(`No repo ${name} here. Use one of ${repoNames.join(', ')}.`)
+    return r
+  }
 
   const tools = [
-    tool('list_workspaces', 'List the active workspaces in this repo with their status and the last thing each agent said.', {}, async () => {
+    tool('list_workspaces', `List the active workspaces in ${scope.group ? 'this project' : 'this repo'} with their status and the last thing each agent said.`, {}, async () => {
       const pending = host.pendingChatIds()
-      return text(JSON.stringify(live().map((w) => summary(w, pending)), null, 2))
+      return text(JSON.stringify(live().map((w) => summary(w, pending, scope)), null, 2))
     }),
     tool(
       'start_workspace',
       'Create a new workspace (worktree, branch and agent) and give its agent a task. Returns right away; the agent works in the background.',
       {
         task: z.string().describe('Complete instructions for the agent. It cannot see this conversation.'),
-        model: z.enum(['opus', 'fable', 'sonnet', 'haiku', 'codex']).optional().describe('Defaults to the person\'s default model.'),
-        plan_first: z.boolean().optional().describe('Start in plan mode: the agent proposes a plan and waits instead of editing.')
+        ...(scope.group ? { repo: z.string().describe(`Which repository: ${repoNames.join(', ')}.`) } : {}),
+        where: z.enum(['local', 'cloud']).optional().describe('local (default) runs on this Mac. cloud runs in a Claude Code cloud session that keeps going with the Mac closed.'),
+        model: z.enum(['opus', 'fable', 'sonnet', 'haiku', 'codex']).optional().describe('Defaults to the person\'s default model. Ignored in the cloud.'),
+        plan_first: z.boolean().optional().describe('Start in plan mode: the agent proposes a plan and waits instead of editing. Local only.')
       },
       async (a) => {
+        const repo = pickRepo((a as { repo?: string }).repo)
         const { workspace, chat } = await host.createWorkspace(repo.id)
         workspace.orchestrated = true
+        workspace.orchestratorId = scope.id
+        if (a.where === 'cloud') {
+          store.save()
+          await host.runInCloud(chat, workspace, a.task)
+          return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'in-cloud', note: 'The cloud session link shows in list_workspaces once Claude Code prints it. Follow progress with pr_status.' }))
+        }
         if (a.model) chat.model = a.model
         if (a.plan_first) chat.planMode = true
         store.save()
         host.sendToChat(chat, a.task)
-        return text(JSON.stringify({ id: workspace.id, name: workspace.name, branch: workspace.branch, status: 'running' }))
+        return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'running' }))
       }
     ),
     tool(
       'message_workspace',
-      "Send a follow-up message to a workspace's agent. Fails if it is still running; wait for it first.",
+      "Send a follow-up message to a workspace's agent. Fails if it is still running; wait for it first. For a cloud workspace the message is queued into the cloud session.",
       { workspace_id: z.string(), message: z.string() },
       async (a) => {
-        const ws = ownWorkspace(repo, a.workspace_id)
+        const ws = ownWorkspace(scope, a.workspace_id)
+        const cloud = cloudChat(ws)
+        if (cloud) {
+          await host.sendToCloud(cloud, ws, a.message)
+          return text(`Queued in ${ws.title}'s cloud session.`)
+        }
         const chat = mainChat(ws)
         if (chat.status === 'running') throw new Error(`${ws.title} is still running. Call wait_for_workspaces first.`)
         host.sendToChat(chat, a.message)
@@ -180,8 +258,9 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
       "Read a workspace's recent transcript, its changed files and status.",
       { workspace_id: z.string(), last: z.number().int().min(1).max(200).optional().describe('How many transcript entries, default 40.') },
       async (a) => {
-        const ws = ownWorkspace(repo, a.workspace_id)
+        const ws = ownWorkspace(scope, a.workspace_id)
         const chat = mainChat(ws)
+        markSeen(ws)
         let changes = ''
         try {
           const files = await git.changes(ws.path, ws.baseRef)
@@ -191,10 +270,12 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
           changes = `(could not read changes: ${(e as Error).message})`
         }
         const pending = host.pendingChatIds()
+        const cloud = cloudChat(ws)?.remote
         return text(
           [
             `# ${ws.title} (${ws.branch}) status: ${statusOf(ws, pending)}`,
             `Path: ${ws.path}`,
+            ...(cloud ? [`Cloud session: ${cloud.url ?? 'starting'}. Its turns are not visible here; use pr_status for its branch.`] : []),
             '',
             '## Changes vs base',
             changes || 'none',
@@ -207,13 +288,13 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
     ),
     tool(
       'wait_for_workspaces',
-      'Wait until the given workspaces stop running (or need the person to approve something), then return their status and last messages.',
+      'Wait until the given workspaces stop running (or need the person to approve something), then return their status and last messages. Cloud workspaces return right away; use pr_status for them.',
       {
         workspace_ids: z.array(z.string()).min(1),
         timeout_minutes: z.number().min(1).max(MAX_WAIT_MIN).optional().describe(`Default 10, at most ${MAX_WAIT_MIN}.`)
       },
       async (a, extra) => {
-        const wss = a.workspace_ids.map((id) => ownWorkspace(repo, id))
+        const wss = a.workspace_ids.map((id) => ownWorkspace(scope, id))
         const signal = (extra as { signal?: AbortSignal } | undefined)?.signal
         const deadline = Date.now() + (a.timeout_minutes ?? 10) * 60_000
         // Give freshly started agents a moment to flip to running.
@@ -224,13 +305,50 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
           await sleep(2000)
         }
         const pending = host.pendingChatIds()
-        const out = wss.map((w) => summary(w, pending))
+        const out = wss.map((w) => summary(w, pending, scope))
         const still = out.filter((o) => o.status === 'running').length
         return text((still ? `Timed out with ${still} still running.\n` : '') + JSON.stringify(out, null, 2))
       }
     ),
-    tool('stop_workspace', "Stop a workspace's running agent.", { workspace_id: z.string() }, async (a) => {
-      const ws = ownWorkspace(repo, a.workspace_id)
+    tool(
+      'pr_status',
+      "Show the pull request for a workspace's branch and its CI checks. With wait_for_checks, waits until no check is pending (or the PR merges or closes).",
+      {
+        workspace_id: z.string(),
+        wait_for_checks: z.boolean().optional(),
+        timeout_minutes: z.number().min(1).max(MAX_WAIT_MIN).optional().describe(`How long to wait, default 15, at most ${MAX_WAIT_MIN}.`)
+      },
+      async (a, extra) => {
+        const ws = ownWorkspace(scope, a.workspace_id)
+        markSeen(ws)
+        const signal = (extra as { signal?: AbortSignal } | undefined)?.signal
+        const deadline = Date.now() + (a.timeout_minutes ?? 15) * 60_000
+        let r = await host.prStatus(ws)
+        while (a.wait_for_checks && Date.now() < deadline && !signal?.aborted) {
+          const done = r.pr && r.pr.state !== 'OPEN'
+          const sum = checksSummary(r.checks)
+          // No PR yet (a cloud agent may still be working) or checks not started: keep waiting.
+          if (done || (r.pr && sum.state !== 'pending' && sum.state !== 'none')) break
+          await sleep(30_000)
+          r = await host.prStatus(ws)
+        }
+        if (!r.pr) return text(`No pull request for ${ws.branch} yet.`)
+        const sum = checksSummary(r.checks)
+        return text(
+          [
+            `PR #${r.pr.number} ${r.pr.state}${r.pr.isDraft ? ' (draft)' : ''}: ${r.pr.title}`,
+            r.pr.url,
+            r.pr.mergeable ? `Mergeable: ${r.pr.mergeable}` : '',
+            `Checks: ${sum.state}`,
+            ...sum.lines
+          ]
+            .filter(Boolean)
+            .join('\n')
+        )
+      }
+    ),
+    tool("stop_workspace", "Stop a workspace's running agent.", { workspace_id: z.string() }, async (a) => {
+      const ws = ownWorkspace(scope, a.workspace_id)
       for (const c of workspaceChats(ws.id)) await host.stopChat(c.id)
       return text(`Stopped ${ws.title}.`)
     }),
@@ -239,17 +357,17 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
       'Archive a workspace: removes its worktree but keeps the branch, so it can be restored. Only when the person asks or the work is merged.',
       { workspace_id: z.string() },
       async (a) => {
-        const ws = ownWorkspace(repo, a.workspace_id)
+        const ws = ownWorkspace(scope, a.workspace_id)
         await host.archiveWorkspace(ws.id)
         return text(`Archived ${ws.title}.`)
       }
     ),
     tool(
       'update_memory',
-      "Replace this repo's memory file with new content. It is shown to you at the start of every turn.",
+      `Replace this ${scope.group ? 'project' : 'repo'}'s memory file with new content. It is shown to you at the start of every turn.`,
       { content: z.string().max(MEMORY_LIMIT) },
       async (a) => {
-        writeMemory(repo, a.content)
+        writeMemory(scope, a.content)
         return text(`Saved memory (${a.content.length} characters).`)
       }
     )
@@ -260,10 +378,21 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
       choo: createSdkMcpServer({ name: 'choo', version: '1.0.0', tools, alwaysLoad: true, timeout: (MAX_WAIT_MIN + 2) * 60_000 })
     },
     // Memory can change between turns, so render the prompt fresh each time.
-    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(repo, readMemory(repo)), snapshot: false },
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, readMemory(scope)), snapshot: false },
     disallowedTools: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit']
   }
 }
 
 /** Tools that only read, so they never need the person's OK. */
-export const READ_ONLY = ['list_workspaces', 'read_workspace', 'wait_for_workspaces'].map((t) => `mcp__choo__${t}`)
+export const READ_ONLY = ['list_workspaces', 'read_workspace', 'wait_for_workspaces', 'pr_status'].map((t) => `mcp__choo__${t}`)
+
+/** The message that wakes an idle orchestrator when workspaces it started finish. */
+export function autoUpdatePrompt(done: { title: string; id: string; state: 'finished' | 'error' | 'needs-approval' }[]): string {
+  const what = (s: string) => (s === 'error' ? 'hit an error' : s === 'needs-approval' ? 'is waiting for the person to approve a tool call' : 'finished')
+  return [
+    '[Automatic update from Choo Choo, not from the person]',
+    ...done.map((d) => `- ${d.title} (${d.id}) ${what(d.state)}.`),
+    '',
+    'Check on them with read_workspace, send next steps if the work is not done, and tell the person briefly where things stand. Do not message the person if nothing changed for them.'
+  ].join('\n')
+}

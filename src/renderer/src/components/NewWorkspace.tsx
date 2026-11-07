@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Effort, ModelId, SourceOption, WorkspaceSource } from '@shared/types'
+import type { Effort, IntegrationId, ModelId, SourceOption, WorkspaceSource } from '@shared/types'
 import { useStore, createWorkspace, reportError, modelLabel, type DraftContext } from '../store'
-import { IconBranch, IconDown, IconFolder, IconGithub, IconImage, IconPlus, IconRepo, IconSidebar, IconX } from '../icons'
+import { IconBranch, IconDown, IconFolder, IconGithub, IconImage, IconPlus, IconSidebar, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
-import { EFFORTS, MODELS } from './Composer'
+import { RepoIcon } from './Sidebar'
+import { EFFORT_LABEL, EFFORTS, MODELS } from './Composer'
+import { useIntegrations } from './Integrations'
 
 const KINDS: { id: WorkspaceSource['kind']; label: string }[] = [
   { id: 'pr', label: 'PRs' },
   { id: 'branch', label: 'Branches' },
-  { id: 'issue', label: 'Issues' }
+  { id: 'issue', label: 'Issues' },
+  { id: 'notion', label: 'Notion' }
 ]
+/** Source tabs that need a sign-in from Settings > Integrations. */
+const SIGN_IN: Record<IntegrationId, string> = { linear: 'pick an issue', notion: 'start from a page or task' }
 
 /** Conductor-style composer for a new workspace: pick the repo, the model, and optionally a PR, branch or issue to start from. */
 export function NewWorkspace({ repoId }: { repoId: string }) {
@@ -80,7 +85,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
     ...MODELS.map((m) => ({ label: modelLabel(m.id, s.modelDetails), hint: s.modelDetails[m.id]?.description, checked: m.id === model, keepOpen: true, onClick: () => setModel(m.id) })),
     { kind: 'sep' },
     { kind: 'label', label: 'Effort' },
-    ...EFFORTS.map((e) => ({ label: e[0].toUpperCase() + e.slice(1), checked: e === effort, keepOpen: true, onClick: () => setEffort(e) }))
+    ...EFFORTS.map((e) => ({ label: EFFORT_LABEL[e], checked: e === effort, keepOpen: true, onClick: () => setEffort(e) }))
   ]
   const currentModel = modelLabel(model, s.modelDetails)
 
@@ -97,7 +102,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
         <div className="rounded-xl border border-line bg-panel">
           <div className="flex items-center gap-2 px-3 pt-2.5">
             <button ref={repoBtn} className="flex items-center gap-1.5 rounded px-1.5 py-1 font-medium hover:bg-hover" onClick={() => setMenu('repo')}>
-              <IconRepo className="text-faint" /> {repo.name} <IconDown className="text-faint" />
+              <RepoIcon repo={repo} /> {repo.name} <IconDown className="text-faint" />
             </button>
             {source && (
               <span className="flex min-w-0 items-center gap-1 rounded bg-raised px-2 py-0.5 text-[12px] text-muted">
@@ -108,7 +113,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
               </span>
             )}
             <div className="flex-1" />
-            <button ref={sourceBtn} className="flex items-center gap-1 rounded px-1.5 py-1 text-muted hover:bg-hover hover:text-fg" title="Start from a PR, branch or issue" onClick={() => setMenu(menu === 'source' ? null : 'source')}>
+            <button ref={sourceBtn} className="flex items-center gap-1 rounded px-1.5 py-1 text-muted hover:bg-hover hover:text-fg" title="Start from a PR, branch, issue or Notion page" onClick={() => setMenu(menu === 'source' ? null : 'source')}>
               <IconGithub /> <IconDown className="text-faint" />
             </button>
           </div>
@@ -157,7 +162,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
           <div className="flex items-center gap-2 px-3 pb-2.5">
             <button ref={modelBtn} className="flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-hover" onClick={() => setMenu('model')}>
               <span>{currentModel}</span>
-              <span className="text-muted capitalize">{effort}</span>
+              <span className="text-muted">{EFFORT_LABEL[effort]}</span>
               <IconDown className="text-faint" />
             </button>
             <div className="flex-1" />
@@ -171,7 +176,9 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
           </div>
         </div>
         <div className="mt-2 px-1 text-[12px] text-faint">
-          {source ? `Starts the workspace on ${source.source.kind === 'issue' ? 'a new branch for' : ''} ${source.title}.` : `Starts a new branch from ${repo.defaultBranch}.`}
+          {source
+            ? `Starts the workspace on ${source.source.kind === 'issue' || source.source.kind === 'notion' ? 'a new branch for' : ''} ${source.title}.`
+            : `Starts a new branch from ${repo.defaultBranch}.`}
         </div>
       </div>
       {menu === 'repo' && <Menu anchor={repoBtn.current} align="left" items={repoItems} onClose={() => setMenu(null)} />}
@@ -198,12 +205,18 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
   const [items, setItems] = useState<SourceOption[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [sel, setSel] = useState(0)
+  const [signingIn, setSigningIn] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const integrations = useIntegrations()
+  const service = kind === 'notion' ? kind : null
+  const account = service ? integrations.items?.find((i) => i.id === service) : undefined
+  const needsSignIn = !!service && !account?.connected
 
   useEffect(() => {
     let live = true
     setItems(null)
     setErr(null)
+    if (needsSignIn) return
     const t = setTimeout(() => {
       window.api.listSources(repoId, kind, q.trim()).then(
         (r) => live && (setItems(r), setSel(0)),
@@ -214,7 +227,19 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
       live = false
       clearTimeout(t)
     }
-  }, [repoId, kind, q])
+  }, [repoId, kind, q, needsSignIn])
+
+  const signIn = async () => {
+    setSigningIn(true)
+    try {
+      if (service) await window.api.connectIntegration(service)
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e))
+    } finally {
+      setSigningIn(false)
+      integrations.refresh()
+    }
+  }
 
   useEffect(() => {
     const down = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && onClose()
@@ -244,7 +269,7 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
             setKind(KINDS[(KINDS.findIndex((k) => k.id === kind) + 1) % KINDS.length].id)
           }
         }}
-        placeholder={kind === 'branch' ? 'Search branches' : 'Search by title, number, or author'}
+        placeholder={kind === 'branch' ? 'Search branches' : kind === 'notion' ? 'Search Notion pages and tasks, or paste a link' : 'Search by title, number, or author'}
         className="w-full border-b border-line bg-transparent px-3 py-2.5 outline-none placeholder:text-faint"
       />
       <div className="flex gap-1 border-b border-line px-2 py-1.5">
@@ -255,9 +280,19 @@ function SourcePicker({ anchor, repoId, onPick, onClose }: { anchor: HTMLElement
         ))}
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
-        {err && <div className="px-2 py-3 text-[12px] text-faint">{err.includes('gh') ? 'Could not reach GitHub. Is gh signed in?' : err}</div>}
-        {!err && items === null && <div className="px-2 py-3 text-[12px] text-faint">Loading…</div>}
-        {items?.length === 0 && <div className="px-2 py-3 text-[12px] text-faint">Nothing found.</div>}
+        {err && <div className="px-2 py-3 text-[12px] text-faint">{err.includes('gh') && !service ? 'Could not reach GitHub. Is gh signed in?' : err}</div>}
+        {needsSignIn && account && (
+          <div className="flex items-center gap-3 px-2 py-3 text-[12px] text-faint">
+            <span className="flex-1">{account.configured ? (signingIn ? 'Finish signing in in your browser…' : `Sign in to ${account.label} to ${SIGN_IN[account.id]}.`) : `${account.label} sign-in isn't available in this build yet.`}</span>
+            {account.configured && (
+              <button disabled={signingIn} className="rounded-md bg-fg px-2.5 py-1 font-medium text-bg disabled:opacity-50" onClick={() => void signIn()}>
+                {signingIn ? 'Waiting…' : `Sign in to ${account.label}`}
+              </button>
+            )}
+          </div>
+        )}
+        {!err && (needsSignIn ? !account : items === null) && <div className="px-2 py-3 text-[12px] text-faint">Loading…</div>}
+        {items?.length === 0 && <div className="px-2 py-3 text-[12px] text-faint">{kind === 'notion' && !q.trim() ? 'Type to search Notion, or paste a page link.' : 'Nothing found.'}</div>}
         {items?.map((o, i) => (
           <button key={JSON.stringify(o.source)} onMouseEnter={() => setSel(i)} onClick={() => onPick(o)} className={`flex w-full items-center gap-3 rounded px-2 py-1.5 text-left ${i === sel ? 'bg-hover' : ''}`}>
             <div className="min-w-0 flex-1">

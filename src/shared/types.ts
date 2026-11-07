@@ -7,12 +7,52 @@ export interface Repo {
   path: string
   defaultBranch: string
   hidden?: boolean
+  /** GitHub owner (user or org) from the origin remote, for the project's avatar. Empty string when it isn't on GitHub. */
+  githubOwner?: string
   /** Scripts set in the app (e.g. imported from Conductor); a choo-choo.json or conductor.json in the repo wins. */
   scripts?: Scripts
+  /** Extra or replacement system prompt for agents in this repo. */
+  systemPrompt?: PromptCustom
+}
+
+/**
+ * Custom instructions for Claude agents. "append" keeps Claude Code's own system prompt
+ * and adds the text after it; "replace" sends only the text.
+ */
+export interface PromptCustom {
+  mode: 'append' | 'replace'
+  text: string
+}
+
+/** A project group: several repos that share one orchestrator and one memory. */
+export interface RepoGroup {
+  id: string
+  name: string
+  repoIds: string[]
+  createdAt: number
 }
 
 /** What a new workspace starts from, besides a fresh branch off the default branch. */
-export type WorkspaceSource = { kind: 'pr'; number: number } | { kind: 'branch'; name: string } | { kind: 'issue'; number: number }
+export type WorkspaceSource =
+  | { kind: 'pr'; number: number }
+  | { kind: 'branch'; name: string }
+  | { kind: 'issue'; number: number }
+  /** A Notion page (often a task in a database), by its id or URL. */
+  | { kind: 'notion'; id: string }
+
+/** Services you sign in to from Settings > Integrations. */
+export type IntegrationId = 'linear' | 'notion'
+
+export interface IntegrationStatus {
+  id: IntegrationId
+  label: string
+  description: string
+  connected: boolean
+  /** Who is signed in, when the service tells us. */
+  account?: string
+  /** False when this build has no OAuth app for the service, so sign-in can't work yet. */
+  configured: boolean
+}
 
 export interface SourceOption {
   source: WorkspaceSource
@@ -64,6 +104,10 @@ export interface Workspace {
   orchestrator?: boolean
   /** Started by the orchestrator. */
   orchestrated?: boolean
+  /** Which orchestrator started it: a repo id or a project group id. */
+  orchestratorId?: string
+  /** Set on a project group's orchestrator. It runs in the first repo's checkout. */
+  groupId?: string
   /** Set while this workspace is shared with coworkers. */
   share?: { id: string; link: string; sharedAt: number; autoSync: boolean }
   /** Set when this workspace was opened from a coworker's share. */
@@ -96,9 +140,33 @@ export interface ModelDetails {
   description: string
   resolvedModel?: string
 }
-export type Effort = 'low' | 'medium' | 'high'
-/** full: never ask (Conductor's default). edits: auto-accept file edits, ask for the rest. ask: ask before every tool that changes something. */
-export type Permission = 'full' | 'edits' | 'ask'
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+/**
+ * full: never ask (Conductor's default). auto: Claude Code's auto mode, where a classifier approves safe
+ * calls and blocks risky ones. edits: auto-accept file edits, ask for the rest. ask: ask before every tool that changes something.
+ */
+export type Permission = 'full' | 'auto' | 'edits' | 'ask'
+
+/** A /goal Claude Code is working toward, as its evaluator last reported it. */
+export interface ChatGoal {
+  condition: string
+  setAt: number
+  /** Turns the evaluator has checked. */
+  iterations: number
+  /** The evaluator's latest reason for "not yet". */
+  lastReason?: string
+}
+
+/** A background shell, subagent or workflow Claude Code is running during a turn. */
+export interface BackgroundTask {
+  id: string
+  description: string
+  /** local_bash, local_agent, local_workflow, mcp_task… */
+  type?: string
+  status: 'running' | 'completed' | 'failed' | 'stopped'
+  startedAt: number
+  summary?: string
+}
 
 export interface Chat {
   id: string
@@ -135,7 +203,35 @@ export interface Chat {
   handoff?: string
   /** The sharer's chat id, so refreshing a share updates the right tab. */
   sharedChatId?: string
+  /** Context window of the model, as Claude Code last reported it. */
+  contextWindow?: number
+  /** Fast mode: faster output on models that support it, at a higher price. */
+  fast?: boolean
+  /** Stop a message's run once it has cost this many dollars. Missing uses the Settings default. */
+  budgetUsd?: number
+  /** Claude Code output style, such as Explanatory or Learning. Missing means the default. */
+  outputStyle?: string
+  /** Set while a /goal is active. */
+  goal?: ChatGoal
+  /** Set while the session continues somewhere else, such as on your phone through Remote Control. */
+  remote?: ChatRemote
   createdAt: number
+}
+
+export interface ChatRemote {
+  /** phone: Remote Control on this Mac. cloud: a Claude Code cloud session on Anthropic's machines. */
+  kind: 'phone' | 'cloud'
+  startedAt: number
+  /** Cloud session id (session_…), for follow-ups and teleport. */
+  sessionId?: string
+  /** Pulling the cloud session back with `claude --teleport` right now. */
+  teleporting?: boolean
+  /** The claude.ai/code link for the session, once Claude Code prints it. */
+  url?: string
+  /** `url` is the claude.ai/code session list, because Claude Code didn't print the session's own link. */
+  listOnly?: boolean
+  /** QR code for `url`, as an SVG data URL. */
+  qr?: string
 }
 
 export interface Scripts {
@@ -155,6 +251,30 @@ export interface PrInfo {
   isDraft: boolean
   title: string
   mergeable?: string
+  /** APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or empty when the repo needs no review. */
+  reviewDecision?: string
+  /** GitHub's overall verdict: CLEAN, BLOCKED, BEHIND, DIRTY, UNSTABLE, … */
+  mergeStateStatus?: string
+}
+
+/** One piece of review feedback on a PR, ready to hand to the agent. */
+export interface PrComment {
+  id: string
+  /** inline: an unresolved review thread on a line; review: a review's summary; comment: a conversation comment. */
+  kind: 'inline' | 'review' | 'comment'
+  author: string
+  body: string
+  /** For threads, the time of the newest reply. */
+  createdAt: string
+  url: string
+  path?: string
+  line?: number
+  startLine?: number
+  outdated?: boolean
+  diffHunk?: string
+  /** Review state, e.g. CHANGES_REQUESTED or COMMENTED. */
+  state?: string
+  replies?: { author: string; body: string }[]
 }
 
 export interface SlashCommandInfo {
@@ -203,6 +323,10 @@ export type ChatItem =
   | {
       id: string
       kind: 'advisor'
+      /** Who wrote the notes: the advisor (default), or fresh reviewers checking a plan. */
+      source?: 'planReview'
+      /** For a plan review, the plan card it reviewed. */
+      planItemId?: string
       /** Empty while the advisor is still reviewing. */
       text: string
       pending?: boolean
@@ -245,6 +369,8 @@ export interface Settings extends AppearanceSettings {
   defaultModel: ModelId
   defaultEffort: Effort
   defaultPermission: Permission
+  /** Spend cap per message for new chats, in dollars. 0 means no cap. */
+  defaultBudgetUsd?: number
   /** Branch prefix; empty uses the GitHub user or git user.name. */
   branchPrefix: string
   /** Optional. Without it the agent uses your Claude Code login. */
@@ -262,8 +388,14 @@ export interface Settings extends AppearanceSettings {
   checkClaudeUpdates: boolean
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
   extras: Extras
+  /** Give agents Notion's MCP tools when Notion is connected. */
+  notionAgentTools: boolean
+  /** Instructions for every Claude agent. A repo's own prompt adds to or replaces this. */
+  systemPrompt?: PromptCustom
   /** OpenTelemetry export for Claude agents. Off by default. */
   telemetry: Telemetry
+  /** Wake an idle orchestrator when a workspace it started finishes, so it checks and reports back. */
+  orchestratorAutoUpdates: boolean
 }
 
 export type ExtraAgentId = 'scout' | 'reviewer' | 'securityReviewer' | 'quickWorker'
@@ -278,14 +410,22 @@ export interface Extras {
   advisorSteer: boolean
   /** Have the reviewer check the changes when you click Create PR. Needs the reviewer agent. */
   reviewBeforePr: boolean
+  /**
+   * Claude Code's own advisor tool: Claude consults a stronger model mid-task, when it decides to.
+   * 'inherit' leaves it to the advisorModel in the user's Claude Code settings.
+   */
+  claudeAdvisor: ClaudeAdvisor
 }
+
+export type ClaudeAdvisor = 'inherit' | 'off' | 'fable' | 'opus' | 'sonnet'
 
 export const DEFAULT_EXTRAS: Extras = {
   agents: { scout: false, reviewer: false, securityReviewer: false, quickWorker: false },
   advisor: false,
   advisorModel: 'sonnet',
   advisorSteer: false,
-  reviewBeforePr: true
+  reviewBeforePr: true,
+  claudeAdvisor: 'inherit'
 }
 
 /** Fills in fields an older or partial save is missing. */
@@ -378,10 +518,12 @@ export const DEFAULT_SETTINGS: Settings = {
   branchPrefix: '',
   anthropicApiKey: '',
   notifications: true,
+  orchestratorAutoUpdates: true,
   claudeBinary: 'bundled',
   checkAppUpdates: true,
   checkClaudeUpdates: true,
   extras: DEFAULT_EXTRAS,
+  notionAgentTools: true,
   telemetry: DEFAULT_TELEMETRY,
   archiveRetentionDays: 30,
   ...DEFAULT_APPEARANCE
@@ -392,8 +534,20 @@ export interface AppState {
   workspaces: Workspace[]
   chats: Chat[]
   settings: Settings
+  /** Project groups, each with its own orchestrator. */
+  groups?: RepoGroup[]
   /** Folders added as projects, most recent first; shown under Recents in the Add project menu. */
   recentPaths?: string[]
+  /** Workspace folders left on disk when a project was removed without cleanup; Settings > Projects can delete them. */
+  leftovers?: Leftover[]
+}
+
+export interface Leftover {
+  id: string
+  repoName: string
+  repoPath: string
+  paths: string[]
+  removedAt: number
 }
 
 export interface CheckRun {
@@ -427,6 +581,34 @@ export interface PermissionRequest {
 
 export type PermissionDecision = 'allow' | 'always' | 'deny'
 
+/** One Claude API response in a session, read from Claude Code's transcript. */
+export interface UsagePoint {
+  ts: number
+  model: string
+  /** Uncached input tokens. */
+  input: number
+  cacheWrite: number
+  cacheRead: number
+  output: number
+  /** Made by a subagent, so it isn't in the main context window. */
+  subagent?: boolean
+  /** The person's message this response answers, shortened. */
+  prompt?: string
+  /** What the response did: the start of its text, or the tools it called. */
+  did?: string
+}
+
+export interface SessionUsage {
+  points: UsagePoint[]
+  /** Times the conversation was compacted. */
+  compactions: number[]
+  contextWindow: number
+  /** Running cost Claude Code reported at the end of the last turn. */
+  costUsd?: number
+  /** Why there is nothing to show, when points is empty. */
+  empty?: string
+}
+
 export interface ChatEvent {
   chatId: string
   item?: ChatItem
@@ -434,6 +616,88 @@ export interface ChatEvent {
   permission?: PermissionRequest
   /** A pending permission request that no longer needs an answer. */
   permissionDone?: string
+  /** Background tasks of the running turn. Empty when none are running. */
+  tasks?: BackgroundTask[]
+}
+
+/** An MCP server as Claude Code reports it for a repo. */
+export interface McpServerView {
+  name: string
+  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
+  /** Config scope: user, project, local, claudeai, managed… */
+  scope: string
+  /** Where it came from: a config scope, plugin, claudeai, managed… */
+  source: string
+  error?: string
+  transport: string
+  /** URL, or the command line for a stdio server. */
+  target: string
+  tools: { name: string; description?: string }[]
+  /** Defined in Claude Code's own config (user, project or local), so it can be removed here. */
+  removable: boolean
+}
+
+/** A server to add with `claude mcp add`. */
+export interface McpAddSpec {
+  name: string
+  /** user: every repo. project: this repo's .mcp.json, shared through git. */
+  scope: 'user' | 'project'
+  transport: 'stdio' | 'http' | 'sse'
+  /** The command line for stdio, or the URL. */
+  target: string
+  /** KEY=value per line, for stdio. */
+  env?: string
+  /** Name: value per line, for http and sse. */
+  headers?: string
+}
+
+/** A Claude Code plugin as `claude plugin list` reports it. */
+export interface InstalledPlugin {
+  /** name@marketplace */
+  id: string
+  name: string
+  marketplace: string
+  version: string
+  /** user, project, local, or a scope managed elsewhere (managed, synced…). */
+  scope: string
+  enabled: boolean
+  /** Installed in user, project or local settings, so it can be uninstalled here. */
+  manageable: boolean
+}
+
+/** A plugin a configured marketplace offers. */
+export interface AvailablePlugin {
+  id: string
+  name: string
+  description: string
+  marketplace: string
+  installs?: number
+}
+
+export interface Marketplace {
+  name: string
+  source: string
+}
+
+export type PluginInstallResult =
+  | { ok: true; message?: string }
+  /** The plugin installs by running this command; a person must approve it first. */
+  | { ok: false; confirm: { command: string; sha256: string } }
+
+/** A skill, command or agent file in ~/.claude or the repo's .claude folder. */
+export interface LocalSkill {
+  kind: 'skill' | 'command' | 'agent'
+  name: string
+  description: string
+  scope: 'user' | 'project'
+  path: string
+}
+
+/** An output style a chat can use. */
+export interface OutputStyleInfo {
+  name: string
+  description: string
+  source: 'built-in' | 'user' | 'project'
 }
 
 export interface Api {
@@ -442,11 +706,22 @@ export interface Api {
   addRepo(path: string): Promise<Repo>
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
+  setRepoPrompt(repoId: string, prompt: PromptCustom | undefined): Promise<void>
   /** `folders` are extra directories the first chat may read and edit (linked workspaces, added folders). */
   createWorkspace(repoId: string, source?: WorkspaceSource, folders?: string[]): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
   listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
+  listIntegrations(): Promise<IntegrationStatus[]>
+  /** Opens the service's sign-in page in the browser and resolves once the app has a token. */
+  connectIntegration(id: IntegrationId): Promise<IntegrationStatus>
+  disconnectIntegration(id: IntegrationId): Promise<void>
   /** Opens the repo's orchestrator, creating it the first time. */
   openOrchestrator(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  /** Opens a project group's orchestrator, creating it the first time. */
+  openGroupOrchestrator(groupId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  /** Creates or updates a project group. */
+  saveGroup(group: { id?: string; name: string; repoIds: string[] }): Promise<RepoGroup>
+  /** Deletes the group and hides its orchestrator. Workspaces and memory stay. */
+  deleteGroup(groupId: string): Promise<void>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   /** Reviews the workspace's chats for friction and suggests agent-setup changes. Writes nothing. */
@@ -464,7 +739,31 @@ export interface Api {
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
-  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'reviewKind' | 'permission' | 'advisor' | 'advisorBlocker'>>): Promise<Chat>
+  getChatUsage(chatId: string): Promise<SessionUsage>
+  updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'reviewKind' | 'permission' | 'advisor' | 'advisorBlocker' | 'fast' | 'budgetUsd' | 'outputStyle'>>): Promise<Chat>
+  /** Output styles for a workspace's chats: built-in, user and project. */
+  listOutputStyles(wsId: string): Promise<OutputStyleInfo[]>
+  /** Stops one background task of a running Claude turn. */
+  stopTask(chatId: string, taskId: string): Promise<void>
+  mcpStatus(repoId: string): Promise<McpServerView[]>
+  mcpAdd(repoId: string, spec: McpAddSpec): Promise<McpServerView[]>
+  mcpRemove(repoId: string, name: string, scope: string): Promise<McpServerView[]>
+  mcpToggle(repoId: string, name: string, enabled: boolean): Promise<McpServerView[]>
+  mcpReconnect(repoId: string, name: string): Promise<McpServerView[]>
+  /** Opens Terminal on Claude Code's /mcp screen to sign in to a server. */
+  mcpSignIn(repoId: string): Promise<void>
+  pluginsInstalled(repoId: string): Promise<InstalledPlugin[]>
+  pluginsAvailable(repoId: string, fresh?: boolean): Promise<AvailablePlugin[]>
+  pluginMarketplaces(repoId: string): Promise<Marketplace[]>
+  pluginAddMarketplace(repoId: string, source: string): Promise<void>
+  pluginRemoveMarketplace(repoId: string, name: string): Promise<void>
+  pluginInstall(repoId: string, id: string, scope: 'user' | 'project', acceptSha?: string): Promise<PluginInstallResult>
+  pluginUninstall(repoId: string, id: string, scope: string): Promise<void>
+  pluginSetEnabled(repoId: string, id: string, enabled: boolean, scope: string): Promise<void>
+  pluginDetails(repoId: string, id: string): Promise<string>
+  localSkills(repoId: string): Promise<LocalSkill[]>
+  /** Shows a file or folder in Finder. */
+  revealPath(path: string): Promise<void>
   respondPermission(requestId: string, decision: PermissionDecision): void
   pendingPermissions(): Promise<PermissionRequest[]>
   addChatFolder(chatId: string): Promise<Chat>
@@ -477,6 +776,8 @@ export interface Api {
   isScriptRunning(workspaceId: string, kind: ScriptKind): Promise<boolean>
   getPr(workspaceId: string): Promise<PrInfo | null>
   mergePr(workspaceId: string): Promise<void>
+  /** Unresolved review threads, reviews and comments on the workspace's PR. */
+  getPrComments(workspaceId: string): Promise<PrComment[]>
   getChecks(workspaceId: string): Promise<CheckRun[]>
   rerunCheck(workspaceId: string, link: string): Promise<void>
   getArtifacts(workspaceId: string): Promise<Artifact[]>
@@ -488,6 +789,13 @@ export interface Api {
   /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
   cloneRepo(url: string, dir?: string): Promise<Repo>
   pickFolder(): Promise<string | null>
+  /** Removes a project. With deleteFiles, its workspace folders (and archived copies) are deleted; otherwise they're kept as a leftover. */
+  removeProject(repoId: string, opts: { deleteFiles: boolean }): Promise<void>
+  /** Permanently deletes a workspace: its folder, archived copy and chats. The branch is kept. */
+  deleteWorkspace(wsId: string): Promise<void>
+  deleteLeftover(id: string): Promise<void>
+  /** Sets the sidebar order of projects. */
+  reorderRepos(ids: string[]): Promise<void>
   pickFiles(): Promise<string[]>
   /** Current versions behind the Claude model aliases, from the Agent SDK. Empty if it couldn't be read. */
   modelDetails(): Promise<Partial<Record<ModelId, ModelDetails>>>
@@ -498,8 +806,22 @@ export interface Api {
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
   stopChat(chatId: string): Promise<void>
+  /** Hands the chat's session to Remote Control, to steer from claude.ai/code or the Claude app. */
+  continueOnPhone(chatId: string): Promise<Chat>
+  /** Stops Remote Control and copies the turns made there into the chat. */
+  bringBackFromPhone(chatId: string): Promise<Chat>
+  /** Commits and pushes the workspace, then starts a Claude Code cloud session on its branch with `task`. */
+  runInCloud(chatId: string, task: string): Promise<Chat>
+  /** Queues a follow-up message into the chat's cloud session. */
+  sendToCloud(chatId: string, text: string): Promise<void>
+  /** Pulls the cloud session and its branch back with `claude --teleport`, and resumes it here. */
+  bringBackFromCloud(chatId: string): Promise<Chat>
+  /** Stops following the cloud session in this chat. The session keeps running on claude.ai. */
+  forgetCloud(chatId: string): Promise<Chat>
   /** Sends the advisor's notes to the agent, or dismisses them. */
   actOnAdvice(chatId: string, itemId: string, action: 'send' | 'dismiss'): Promise<void>
+  /** Has fresh reviewers, who never saw the chat, check the plan in a plan card. */
+  reviewPlan(chatId: string, planItemId: string): Promise<void>
   onChatEvent(cb: (e: ChatEvent) => void): () => void
   getChanges(workspaceId: string): Promise<FileChange[]>
   getDiffStats(workspaceId: string): Promise<DiffStats>

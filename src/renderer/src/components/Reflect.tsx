@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { PrInfo, Workspace } from '@shared/types'
 import { isExecutableTarget, lineDiff, type ReflectProposal, type ReflectResult } from '@shared/reflect'
 import { useStore, refreshState, reportError } from '../store'
@@ -103,7 +104,7 @@ export function SessionFeedback({ ws, archive, onClose }: { ws: Workspace; archi
   }
 
   return (
-    <div className="anim-backdrop fixed inset-0 z-40 flex items-start justify-center bg-black/50 pt-[12vh]" onMouseDown={() => !busy && onClose()}>
+    <Overlay onMouseDown={() => !busy && onClose()} top="pt-[12vh]">
       <div className="anim-pop w-[560px] max-w-[92vw] rounded-xl border border-line bg-panel shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
         <div className="border-b border-line px-5 py-3">
           <div className="font-medium">How did this session go?</div>
@@ -147,7 +148,7 @@ export function SessionFeedback({ ws, archive, onClose }: { ws: Workspace; archi
           </button>
         </div>
       </div>
-    </div>
+    </Overlay>
   )
 }
 
@@ -216,7 +217,7 @@ export function ReflectModal({ ws, feedback = '', archiveAfter, onClose, onArchi
 
   const done = archiveAfter ? 'Archive' : 'Close'
   return (
-    <div className="anim-backdrop fixed inset-0 z-40 flex items-start justify-center bg-black/50 pt-[8vh]" onMouseDown={() => !applying && cancel()}>
+    <Overlay onMouseDown={() => !applying && cancel()} top="pt-[8vh]">
       <div className="anim-pop flex max-h-[84vh] w-[860px] max-w-[94vw] flex-col rounded-xl border border-line bg-panel shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
         <div className="border-b border-line px-5 py-3">
           <div className="font-medium">Reflect on this session</div>
@@ -271,7 +272,7 @@ export function ReflectModal({ ws, feedback = '', archiveAfter, onClose, onArchi
           )}
         </div>
       </div>
-    </div>
+    </Overlay>
   )
 }
 
@@ -324,5 +325,18 @@ function ProposalCard({ d, onChange }: { d: Draft; onChange: (p: Partial<Draft>)
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Full-window backdrop rendered at the document root. The Archive button lives in the draggable
+ * title bar, and anything rendered inside a drag region can't be clicked in Electron.
+ */
+function Overlay({ children, onMouseDown, top }: { children: ReactNode; onMouseDown: () => void; top: string }) {
+  return createPortal(
+    <div className={`no-drag anim-backdrop fixed inset-0 z-40 flex items-start justify-center bg-black/50 ${top}`} onMouseDown={onMouseDown}>
+      {children}
+    </div>,
+    document.body
   )
 }

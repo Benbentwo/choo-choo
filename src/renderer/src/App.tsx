@@ -26,6 +26,7 @@ export function App() {
       if (e.item) st.upsertItem(e.chatId, e.item)
       if (e.permission) addPermission(e.permission)
       if (e.permissionDone) removePermission(e.permissionDone)
+      if (e.tasks) st.set({ tasks: { ...st.tasks, [e.chatId]: e.tasks } })
       if (e.chat) {
         st.upsertChat(e.chat)
         if (e.chat.status !== 'running') void refreshStats(e.chat.workspaceId)

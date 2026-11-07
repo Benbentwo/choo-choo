@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
-import type { Workspace } from '@shared/types'
+import { useEffect, useRef, useState } from 'react'
+import type { Repo, Workspace } from '@shared/types'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
-import { useStore, newWorkspace, restoreWorkspace, openOrchestrator, archiveWorkspace, openPalette } from '../store'
+import { useStore, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
 import { IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
@@ -15,6 +15,25 @@ export function Sidebar() {
   const [showArchived, setShowArchived] = useState<Record<string, boolean>>({})
   const [view, setView] = useState<View>(loadView)
   const [menu, setMenu] = useState<'view' | 'add' | null>(null)
+  const [repoMenu, setRepoMenu] = useState<{ id: string; el: HTMLElement } | null>(null)
+  const repoMenuItems = (repo: Repo): MenuItem[] => [
+    {
+      label: repo.hidden ? 'Show in sidebar' : 'Hide from sidebar',
+      onClick: () => void window.api.setRepoHidden(repo.id, !repo.hidden).then(() => useStore.getState().set({ repos: s.repos.map((r) => (r.id === repo.id ? { ...r, hidden: !r.hidden } : r)) }))
+    },
+    { label: 'Reveal in Finder', onClick: () => void window.api.revealInFinder(repo.path) },
+    { label: 'Manage workspaces…', onClick: () => s.set({ modal: 'settings', settingsTab: 'projects' }) },
+    { kind: 'sep' },
+    { label: 'Remove project…', onClick: () => s.set({ modal: 'remove-repo', removeRepoId: repo.id }) }
+  ]
+  const [drag, setDrag] = useState<{ id: string; over: string | null; after: boolean } | null>(null)
+  const moveRepo = (id: string, target: string, after: boolean) => {
+    if (id === target) return
+    const ids = s.repos.map((r) => r.id).filter((x) => x !== id)
+    ids.splice(ids.indexOf(target) + (after ? 1 : 0), 0, id)
+    useStore.getState().set({ repos: ids.map((x) => s.repos.find((r) => r.id === x)!) })
+    void window.api.reorderRepos(ids)
+  }
   const headerRef = useRef<HTMLDivElement>(null)
   const updateView = (p: Partial<View>) => {
     const v = { ...view, ...p }
@@ -56,7 +75,8 @@ export function Sidebar() {
       ]
     },
     { kind: 'sep' },
-    { label: 'Add project…', icon: <IconPlus />, keepOpen: true, onClick: () => setMenu('add') }
+    { label: 'Add project…', icon: <IconPlus />, keepOpen: true, onClick: () => setMenu('add') },
+    { label: 'New project group…', icon: <IconOrchestrator />, onClick: () => editGroup(null) }
   ]
   const hiddenCount = s.repos.filter((r) => r.hidden).length
 
@@ -92,8 +112,41 @@ export function Sidebar() {
           <button className="rounded p-0.5 hover:bg-hover hover:text-fg" title="Add project" onClick={() => setMenu(menu === 'add' ? null : 'add')}>
             <IconPlus />
           </button>
+          {repoMenu && s.repos.some((r) => r.id === repoMenu.id) && <Menu anchor={repoMenu.el} items={repoMenuItems(s.repos.find((r) => r.id === repoMenu.id)!)} onClose={() => setRepoMenu(null)} />}
           {menu && <Menu anchor={headerRef.current} items={menu === 'view' ? viewItems : addProjectItems()} onClose={() => setMenu(null)} />}
         </div>
+        {s.groups.length > 0 && (
+          <div className="mb-3">
+            <div className="mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
+              <span className="flex-1">Project groups</span>
+              <button className="rounded p-0.5 hover:bg-hover hover:text-fg" title="New project group" onClick={() => editGroup(null)}>
+                <IconPlus />
+              </button>
+            </div>
+            {s.groups.map((g) => {
+              const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === g.id && !w.archived)
+              const names = g.repoIds.map((id) => s.repos.find((r) => r.id === id)?.name).filter(Boolean).join(', ')
+              const running = !!orch && s.chats.some((c) => c.workspaceId === orch.id && c.status === 'running')
+              const active = !!orch && s.selectedWs === orch.id
+              return (
+                <div key={g.id} className={`group flex h-9 cursor-pointer items-center gap-2 rounded-md px-2 ${active ? 'bg-raised' : 'hover:bg-hover'}`} onClick={() => void openGroupOrchestrator(g.id)} title={`Orchestrator for ${names}`}>
+                  {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : <IconOrchestrator className="shrink-0 text-faint" />}
+                  <span className="truncate font-medium">{g.name}</span>
+                  <span className="flex-1 truncate text-[11px] text-faint">{names}</span>
+                  <button
+                    className="invisible rounded px-1 text-[11px] text-faint group-hover:visible hover:text-fg"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      editGroup(g.id)
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
         {visible.length === 0 && (
           <button onClick={() => s.set({ modal: 'create' })} className="mx-2 mt-2 w-[calc(100%-16px)] rounded-lg border border-dashed border-line px-3 py-4 text-left text-muted hover:border-faint hover:text-fg">
             Add a repository to get started
@@ -105,18 +158,43 @@ export function Sidebar() {
           ))}
         {view.group === 'project' && visible.map((repo) => {
           // The orchestrator, if open, sits at the top of its repo.
-          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived)).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
+          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId)).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
           const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived && !w.orchestrator).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           return (
-            <div key={repo.id} className="mb-1">
-              <div className="group flex h-9 items-center gap-2 rounded-md px-2 hover:bg-hover">
-                <IconRepo className="shrink-0 text-faint" />
+            <div
+              key={repo.id}
+              className={`mb-1 ${drag?.over === repo.id && drag.id !== repo.id ? (drag.after ? 'shadow-[0_2px_0_var(--color-accent)]' : 'shadow-[0_-2px_0_var(--color-accent)]') : ''} ${drag?.id === repo.id ? 'opacity-50' : ''}`}
+              onDragOver={(e) => {
+                if (!drag) return
+                e.preventDefault()
+                const r = e.currentTarget.getBoundingClientRect()
+                const after = e.clientY > r.top + Math.min(r.height, 36) / 2
+                if (drag.over !== repo.id || drag.after !== after) setDrag({ ...drag, over: repo.id, after })
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (drag) moveRepo(drag.id, repo.id, drag.after)
+                setDrag(null)
+              }}
+            >
+              <div
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  setDrag({ id: repo.id, over: null, after: false })
+                }}
+                onDragEnd={() => setDrag(null)}
+                title="Drag to reorder"
+                className="group flex h-9 cursor-grab items-center gap-2 rounded-md px-2 hover:bg-hover active:cursor-grabbing"
+              >
+                <RepoIcon repo={repo} />
                 <span className={`flex-1 truncate font-medium ${repo.hidden ? 'text-faint' : ''}`}>{repo.name}</span>
                 <button
-                  className="hidden rounded px-1 text-[11px] text-faint group-hover:block hover:text-fg"
-                  onClick={() => void window.api.setRepoHidden(repo.id, !repo.hidden).then(() => useStore.getState().set({ repos: s.repos.map((r) => (r.id === repo.id ? { ...r, hidden: !r.hidden } : r)) }))}
+                  className={`rounded p-1 text-muted hover:bg-raised hover:text-fg ${repoMenu?.id === repo.id ? '' : 'invisible group-hover:visible'}`}
+                  title="Project settings"
+                  onClick={(e) => setRepoMenu({ id: repo.id, el: e.currentTarget })}
                 >
-                  {repo.hidden ? 'Show' : 'Hide'}
+                  <IconDots />
                 </button>
                 <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="Orchestrator: tell it what you want and it runs workspaces for you" onClick={() => void openOrchestrator(repo.id)}>
                   <IconOrchestrator />
@@ -241,4 +319,11 @@ function loadView(): View {
   } catch {
     return d
   }
+}
+
+/** The GitHub owner's avatar when the project is on GitHub, otherwise the plain repo icon. */
+export function RepoIcon({ repo }: { repo: Repo }) {
+  const [failed, setFailed] = useState(false)
+  if (!repo.githubOwner || failed) return <IconRepo className="shrink-0 text-faint" />
+  return <img src={`https://avatars.githubusercontent.com/${repo.githubOwner}?s=40`} alt="" title={repo.githubOwner} onError={() => setFailed(true)} className="h-4 w-4 shrink-0 rounded-[4px]" />
 }
