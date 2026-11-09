@@ -116,8 +116,10 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
           {buttonAction(item.text) ? (
             <ActionItem label={buttonAction(item.text)!} text={item.text} />
           ) : (
-            <div className={`max-w-[85%] rounded-xl bg-raised px-4 py-2.5 whitespace-pre-wrap ${item.fromAdvisor ? 'border border-accent/40' : ''}`}>
-              {item.fromAdvisor && <div className="mb-1 text-[11px] text-faint">Sent automatically from the advisor</div>}
+            <div
+              className={`max-w-[85%] rounded-xl px-4 py-2.5 whitespace-pre-wrap ${item.fromAdvisor ? 'border border-advisor/40 bg-advisor/10' : 'bg-raised'}`}
+            >
+              {item.fromAdvisor && <div className="mb-1 text-[11px] font-medium text-advisor">From the advisor</div>}
               {item.sentWhileRunning && (
                 <div className="mb-1 text-[11px] text-faint">{item.sentWhileRunning === 'steer' ? 'Sent while Claude was working · steered in' : 'Sent while Claude was working · queued'}</div>
               )}
@@ -175,12 +177,19 @@ function AdvisorItem({ item, chat }: { item: Extract<ChatItem, { kind: 'advisor'
   const who = plan ? 'Plan review' : 'Advisor'
   if (item.pending)
     return <div className="my-3 text-[11px] text-faint">{plan ? 'Fresh reviewers who haven’t seen this chat are reading the plan…' : 'Advisor is reviewing this turn…'}</div>
-  if (item.silent) return <div className="my-3 text-[11px] text-faint">{who}: {item.text}</div>
+  if (item.silent)
+    return (
+      <div className="my-3 text-[11px] text-faint">
+        <span className={plan ? '' : 'text-advisor'}>{who}</span>: {item.text}
+      </div>
+    )
   const act = (action: 'send' | 'dismiss') => window.api.actOnAdvice(chat.id, item.id, action).catch(reportError)
   return (
-    <div className={`my-3 rounded-lg border px-3 py-2 ${item.blocker && !item.resolved ? 'border-del/30 bg-del/10' : 'border-line bg-raised'} ${item.resolved === 'dismissed' ? 'opacity-60' : ''}`}>
+    <div
+      className={`my-3 rounded-lg border px-3 py-2 ${item.blocker && !item.resolved ? 'border-del/30 bg-del/10' : plan ? 'border-line bg-raised' : 'border-advisor/30 bg-advisor/5'} ${item.resolved === 'dismissed' ? 'opacity-60' : ''}`}
+    >
       <div className="mb-1 flex items-center gap-2 text-[11px]">
-        <span className="font-medium text-muted">{who}</span>
+        <span className={`font-medium ${plan ? 'text-muted' : 'text-advisor'}`}>{who}</span>
         {plan && <span className="text-faint">from reviewers who only saw the plan</span>}
         {item.blocker && <span className="rounded bg-del/15 px-1 text-del">blocker</span>}
         <span className="flex-1" />
@@ -346,10 +355,10 @@ function BuiltinAdvisorItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }
     <div className="my-1.5 text-[11px]">
       <button className={`flex items-center gap-1 ${item.isError ? 'text-del' : 'text-faint hover:text-fg'}`} onClick={() => hasText && setOpen(!open)} disabled={!hasText}>
         {hasText && (open ? <IconDown /> : <IconRight />)}
-        <span className="text-violet-300">Advisor</span>
+        <span className="text-advisor">Advisor</span>
         <span>{label.replace(/^Advisor /, '')}</span>
       </button>
-      {open && <div className="mt-1 rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2 text-[12px] whitespace-pre-wrap text-muted">{item.result}</div>}
+      {open && <div className="mt-1 rounded-md border border-advisor/30 bg-advisor/5 px-3 py-2 text-[12px] whitespace-pre-wrap text-muted">{item.result}</div>}
     </div>
   )
 }

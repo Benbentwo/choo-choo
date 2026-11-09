@@ -32,6 +32,8 @@
   --color-code: #111218;
   --color-scroll: #3f424a;
   --color-accent: #f4773d;
+  /* The advisor's own color (composer toggle, its cards and the messages it relays), so they never read as a normal prompt. */
+  --color-advisor: #c4b5fd;
   --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
 }
