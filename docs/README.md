@@ -34,6 +34,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [MCP servers](prd/mcp-servers.md) | Shipped (PR #50) |
 | [Plugins and skills](prd/plugins.md) | In review |
 | [Managing projects, and PR status](prd/projects-and-pr-status.md) | In review |
+| [PRs page](prd/pr-inbox.md) | Shipped |
 | [Add-ons](prd/add-ons.md) | Shipped: views, background pages, orchestrator tools, project pins; Plan board next |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.

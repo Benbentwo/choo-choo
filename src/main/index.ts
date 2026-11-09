@@ -36,6 +36,8 @@ import * as cloud from './cloud'
 import { registerIntegrationsIpc } from './integrations'
 import * as notion from './integrations/notion'
 import * as addonHost from './addonHost'
+import { originUrl, githubSlug } from './share'
+import { prBranch, type PrInbox } from '@shared/prInbox'
 
 let win: BrowserWindow | null = null
 
@@ -183,6 +185,28 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
   if (folders.length) chat.additionalDirectories = [...new Set(folders)]
   runScript(workspace, 'setup')
   return { workspace, chat, context }
+}
+
+/** The PRs page's list, with each PR tied to its local project and any workspace already on its branch. */
+async function loadPrInbox(): Promise<PrInbox> {
+  const prs = await gh.prInbox()
+  const s = store.get()
+  const bySlug = new Map<string, string>()
+  await Promise.all(
+    s.repos.map(async (r) => {
+      if (r.githubOwner === '' || !existsSync(r.path)) return
+      const slug = githubSlug(await originUrl(r.path).catch(() => ''))
+      if (slug && !bySlug.has(slug)) bySlug.set(slug, r.id)
+    })
+  )
+  for (const p of prs) {
+    const repoId = bySlug.get(p.repo.toLowerCase())
+    if (!repoId) continue
+    p.repoId = repoId
+    const branch = prBranch(p)
+    p.workspaceId = s.workspaces.find((w) => w.repoId === repoId && !w.archived && !w.orchestrator && w.branch === branch)?.id
+  }
+  return { prs, fetchedAt: Date.now() }
 }
 
 async function previewConductor() {
@@ -925,6 +949,7 @@ function registerIpc() {
     return addRepo(dest)
   })
   h('gh:repos', () => gh.listMyRepos())
+  h('prs:inbox', () => loadPrInbox())
   h('models:details', () => modelDetails())
   h('conductor:preview', () => previewConductor())
   h('conductor:import', (opts: { useWorkspacesRoot: boolean }) => importConductor(opts))

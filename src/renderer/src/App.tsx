@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons, refreshPrInbox } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
 import { AddonPage } from './components/Addons'
+import { PrInboxPage } from './components/PrInbox'
 import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
 import { TitleTips } from './components/Tip'
@@ -27,6 +28,9 @@ export function App() {
     void window.api.pendingPermissions().then((list) => list.forEach(addPermission))
     void loadModelDetails()
     void refreshAddons()
+    // The PRs count in the sidebar stays current in the background; the PRs page reloads more often.
+    void refreshPrInbox()
+    const prTimer = setInterval(() => void refreshPrInbox(), 5 * 60_000)
     const offAddons = window.api.onAddonsChanged(() => void refreshAddons())
     void refreshState().then(() => {
       for (const w of useStore.getState().workspaces) if (!w.archived) void refreshStats(w.id)
@@ -93,6 +97,7 @@ export function App() {
       useStore.getState().selectWorkspace(wsId)
     })
     return () => {
+      clearInterval(prTimer)
       offAddons()
       offLink()
       offState()
@@ -112,6 +117,8 @@ export function App() {
             <Center ws={ws} />
             {s.rightOpen && !ws.orchestrator && <RightPanel ws={ws} />}
           </>
+        ) : s.prsPage ? (
+          <PrInboxPage />
         ) : s.addonPage ? (
           <AddonPage page={s.addonPage} />
         ) : s.draftRepo ? (
