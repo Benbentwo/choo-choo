@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
+import type { AddonInfo } from '@shared/addons'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover } from '@shared/types'
 
 export interface Doc {
@@ -13,7 +14,15 @@ export interface Doc {
 /** Which list the ⌘K palette opens on. */
 export type PaletteMode = 'all' | 'files' | 'grep'
 
-export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'graphs' | 'review'
+/** `addon:<key>/<viewId>` is a tab an add-on adds beside a workspace. */
+export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'graphs' | 'review' | `addon:${string}`
+
+/** An add-on view open in the center: one from the sidebar's top list, or one under a project. */
+export interface AddonPage {
+  key: string
+  viewId: string
+  repoId?: string
+}
 
 interface UI {
   repos: Repo[]
@@ -26,6 +35,10 @@ interface UI {
   /** Background tasks of each chat's running turn. */
   tasks: Record<string, BackgroundTask[]>
   selectedWs: string | null
+  /** Installed add-ons; the ones that are on add views to the sidebar and the right panel. */
+  addons: AddonInfo[]
+  /** The add-on view shown in the center instead of a workspace or Home. */
+  addonPage: AddonPage | null
   activeChat: Record<string, string>
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
@@ -48,7 +61,7 @@ interface UI {
   usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'projects' | 'agents' | 'mcp' | 'plugins' | 'integrations' | 'updates' | 'telemetry' | 'appearance'
+  settingsTab: 'general' | 'projects' | 'agents' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance'
   recentPaths: string[]
   modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */
@@ -85,6 +98,8 @@ export const useStore = create<UI>((set, get) => ({
   permissions: {},
   tasks: {},
   selectedWs: null,
+  addons: [],
+  addonPage: null,
   activeChat: {},
   openDoc: {},
   codeComments: {},
@@ -113,18 +128,18 @@ export const useStore = create<UI>((set, get) => ({
 
   hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [] }),
   selectWorkspace: (id, fromHistory) => {
-    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null })
+    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null, addonPage: null })
     const { history, historyIndex } = get()
     const h = [...history.slice(0, historyIndex + 1), id].slice(-50)
-    set({ selectedWs: id, draftRepo: null, history: h, historyIndex: h.length - 1 })
+    set({ selectedWs: id, draftRepo: null, addonPage: null, history: h, historyIndex: h.length - 1 })
   },
   back: () => {
     const { history, historyIndex } = get()
-    if (historyIndex > 0) set({ historyIndex: historyIndex - 1, selectedWs: history[historyIndex - 1] })
+    if (historyIndex > 0) set({ historyIndex: historyIndex - 1, selectedWs: history[historyIndex - 1], addonPage: null })
   },
   forward: () => {
     const { history, historyIndex } = get()
-    if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, selectedWs: history[historyIndex + 1] })
+    if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, selectedWs: history[historyIndex + 1], addonPage: null })
   },
   setActiveChat: (wsId, chatId) =>
     set((s) => ({ activeChat: { ...s.activeChat, [wsId]: chatId }, openDoc: { ...s.openDoc, [wsId]: null } })),
@@ -169,7 +184,20 @@ export function reportError(e: unknown) {
 
 /** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
 export function newWorkspace(repoId: string) {
-  useStore.getState().set({ selectedWs: null, draftRepo: repoId })
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null })
+}
+
+/** Shows an add-on's view in the center. */
+export function openAddonPage(page: AddonPage) {
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: page })
+}
+
+export async function refreshAddons(fresh = false) {
+  try {
+    useStore.getState().set({ addons: await window.api.addonsList(fresh) })
+  } catch {
+    /* Claude Code isn't available; Settings > Add-ons shows why */
+  }
 }
 
 export interface DraftContext {

@@ -9,6 +9,7 @@ import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
 import { fmt } from './Stats'
 import { MergedActions } from './Reflect'
 import { UsageGraphs } from './UsageGraphs'
+import { AddonFrame, addonTabId, addonViews } from './Addons'
 
 const TABS: { id: RightTab; label: string }[] = [
   { id: 'artifacts', label: 'Artifacts' },
@@ -24,6 +25,13 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   const [filter, setFilter] = useState('')
   const [searching, setSearching] = useState(false)
   const stats = s.stats[ws.id]
+  const addonTabs = addonViews(s.addons, 'workspace')
+  const addonTab = addonTabs.find((t) => addonTabId(t.addon, t.view) === s.rightTab)
+
+  // The add-on behind the open tab was turned off: fall back to Changes.
+  useEffect(() => {
+    if (s.rightTab.startsWith('addon:') && !addonTab) s.set({ rightTab: 'changes' })
+  }, [s.rightTab, !!addonTab])
 
   useEffect(() => {
     void window.api.getChanges(ws.id).then(setChanges, () => setChanges([]))
@@ -43,7 +51,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
       </div>
 
       <div className={`flex min-h-0 flex-col ${s.bottomOpen ? 'flex-[1_1_50%]' : 'flex-1'}`}>
-        <div className="flex h-10 shrink-0 items-center gap-1 px-2">
+        <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto px-2 whitespace-nowrap [scrollbar-width:none]">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -54,6 +62,14 @@ export function RightPanel({ ws }: { ws: Workspace }) {
               {t.id === 'changes' && changes.length > 0 && <span className="ml-1.5 text-faint">{changes.length}</span>}
             </button>
           ))}
+          {addonTabs.map(({ addon, view }) => {
+            const id = addonTabId(addon, view)
+            return (
+              <button key={id} title={`From the ${addon.name} add-on`} onClick={() => s.set({ rightTab: id })} className={`rounded-md px-2.5 py-1 ${s.rightTab === id ? 'bg-raised text-fg' : 'text-muted hover:text-fg'}`}>
+                {view.title}
+              </button>
+            )
+          })}
           <div className="flex-1" />
           <button className="rounded p-1 text-faint hover:text-fg" onClick={() => { setSearching(!searching); setFilter('') }} title="Filter files">
             <IconSearch />
@@ -69,7 +85,12 @@ export function RightPanel({ ws }: { ws: Workspace }) {
             className="mx-3 mb-2 rounded-md border border-line bg-bg px-2 py-1 outline-none focus:border-faint"
           />
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        {addonTab && (
+          <div className="flex min-h-0 flex-1">
+            <AddonFrame addon={addonTab.addon} view={addonTab.view} repoId={ws.repoId} workspaceId={ws.id} />
+          </div>
+        )}
+        <div className={`min-h-0 flex-1 overflow-y-auto ${addonTab ? 'hidden' : ''}`}>
           {s.rightTab === 'changes' && <ChangesList ws={ws} changes={filter ? changes.filter((c) => c.path.toLowerCase().includes(filter.toLowerCase())) : changes} />}
           {s.rightTab === 'files' && <FilesTab ws={ws} filter={filter} />}
           {s.rightTab === 'artifacts' && <ArtifactsTab ws={ws} />}

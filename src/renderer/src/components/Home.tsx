@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useStore, addRepository, openOrchestrator } from '../store'
-import { IconEye, IconFolder, IconFolderPlus, IconGear, IconGlobe, IconOrchestrator, IconSidebar, IconTool } from '../icons'
+import { IconAddon, IconEye, IconFolder, IconFolderPlus, IconGear, IconGlobe, IconOrchestrator, IconSidebar, IconTool } from '../icons'
 import { BrandMark } from './BrandMark'
 
 export function Home() {
@@ -12,7 +12,7 @@ export function Home() {
       return false
     }
   })
-  const settings = (tab: 'agents' | 'plugins' | 'mcp' | 'integrations' | 'appearance') => () => s.set({ modal: 'settings', settingsTab: tab })
+  const settings = (tab: 'agents' | 'plugins' | 'addons' | 'mcp' | 'integrations' | 'appearance') => () => s.set({ modal: 'settings', settingsTab: tab })
   const firstRepo = s.repos.find((r) => !r.hidden)
   const explore: { title: string; body: string; icon: React.ReactNode; run: () => void }[] = [
     { title: 'Helper agents', body: 'Scout, reviewer, security reviewer and an advisor that checks each turn (from oh-my-pi).', icon: <IconEye width={16} height={16} />, run: settings('agents') },
@@ -23,6 +23,7 @@ export function Home() {
       run: firstRepo ? () => void openOrchestrator(firstRepo.id) : () => s.set({ modal: 'create' })
     },
     { title: 'Plugins and skills', body: 'Install Claude Code plugins and turn skills on or off.', icon: <IconTool width={16} height={16} />, run: settings('plugins') },
+    { title: 'Add-ons', body: 'Add views and tools to Choo Choo, from public sources or your team\'s private repo.', icon: <IconAddon width={16} height={16} />, run: settings('addons') },
     { title: 'MCP servers', body: 'See and manage the tools your agents can reach, per project.', icon: <IconGear width={16} height={16} />, run: settings('mcp') },
     { title: 'Integrations', body: 'Connect Linear and Notion so agents can use them.', icon: <IconGlobe width={16} height={16} />, run: settings('integrations') },
     { title: 'Themes', body: 'Colors, accent, font size and density.', icon: <IconEye width={16} height={16} />, run: settings('appearance') },

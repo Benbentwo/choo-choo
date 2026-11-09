@@ -35,6 +35,7 @@ import * as remote from './remote'
 import * as cloud from './cloud'
 import { registerIntegrationsIpc } from './integrations'
 import * as notion from './integrations/notion'
+import * as addonHost from './addonHost'
 
 let win: BrowserWindow | null = null
 
@@ -354,6 +355,44 @@ const orchestratorHost: orchestrator.Host = {
     const pr = await gh.prForBranch(ws.path, ws.branch)
     return { pr, checks: pr ? await gh.checks(ws.path, ws.branch).catch(() => []) : [] }
   }
+}
+
+/** What add-on views may ask the app to do; see addonApi.ts for the permission checks in front of it. */
+const addonDeps: addonHost.Deps = {
+  host: {
+    repos: () => store.get().repos,
+    workspaces: () => store.get().workspaces,
+    chats: () => store.get().chats,
+    chatItems: (id) => store.chatItems(id),
+    pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId)),
+    createWorkspace: (repoId) => createWorkspace(repoId),
+    sendToChat: (chat, text) => sendToChat(chat, text),
+    stopChat: (id) => agent.stop(id),
+    prStatus: orchestratorHost.prStatus,
+    notify: (title, body, workspaceId) => {
+      if (!store.get().settings.notifications || !Notification.isSupported()) return
+      const n = new Notification({ title, body })
+      n.on('click', () => {
+        win?.show()
+        win?.focus()
+        if (workspaceId) addonDeps.host.openWorkspace(workspaceId)
+      })
+      n.show()
+    },
+    openWorkspace: (workspaceId) => {
+      const chat = store.get().chats.find((c) => c.workspaceId === workspaceId && !c.review) ?? store.get().chats.find((c) => c.workspaceId === workspaceId)
+      if (chat) send('navigate', workspaceId, chat.id)
+    },
+    saved: () => {
+      store.save()
+      send('state:changed')
+    }
+  },
+  env: () => {
+    const key = store.get().settings.anthropicApiKey.trim()
+    return key ? { ANTHROPIC_API_KEY: key } : ({} as Record<string, string>)
+  },
+  send
 }
 
 function orchestratorChat(ws: Workspace, title: string): Chat {
@@ -1214,6 +1253,8 @@ if (process.defaultApp) {
   if (process.argv[1]) app.setAsDefaultProtocolClient('choo-choo', process.execPath, [resolve(process.argv[1])])
 } else app.setAsDefaultProtocolClient('choo-choo')
 
+addonHost.registerScheme()
+
 // Name the app explicitly so the menu bar and About panel say Choo Choo, not Electron, in dev too.
 app.setName('Choo Choo')
 app.setAboutPanelOptions({ applicationName: 'Choo Choo', applicationVersion: app.getVersion() })
@@ -1229,6 +1270,7 @@ app.whenReady().then(async () => {
     send('state:changed')
   })
   registerIpc()
+  addonHost.start(addonDeps)
   cloud.recoverAfterRestart()
   void remote.recoverAfterRestart((id) => store.get().workspaces.find((w) => w.id === id), emitChat)
   archive.startArchiveCleanup()

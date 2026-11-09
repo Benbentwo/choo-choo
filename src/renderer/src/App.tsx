@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
+import { AddonPage } from './components/Addons'
 import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
 import { TitleTips } from './components/Tip'
@@ -19,6 +20,8 @@ export function App() {
   useEffect(() => {
     void window.api.pendingPermissions().then((list) => list.forEach(addPermission))
     void loadModelDetails()
+    void refreshAddons()
+    const offAddons = window.api.onAddonsChanged(() => void refreshAddons())
     void refreshState().then(() => {
       for (const w of useStore.getState().workspaces) if (!w.archived) void refreshStats(w.id)
     })
@@ -84,6 +87,7 @@ export function App() {
       useStore.getState().selectWorkspace(wsId)
     })
     return () => {
+      offAddons()
       offLink()
       offState()
       offPr()
@@ -102,6 +106,8 @@ export function App() {
             <Center ws={ws} />
             {s.rightOpen && !ws.orchestrator && <RightPanel ws={ws} />}
           </>
+        ) : s.addonPage ? (
+          <AddonPage page={s.addonPage} />
         ) : s.draftRepo ? (
           <NewWorkspace repoId={s.draftRepo} />
         ) : (

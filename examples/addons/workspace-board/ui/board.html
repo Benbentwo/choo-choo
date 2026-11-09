@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Board</title>
+    <link rel="stylesheet" href="base.css" />
+    <style>
+      body { display: flex; flex-direction: column; }
+      .start { display: flex; gap: 8px; align-items: flex-start; padding: 12px 16px; border-bottom: 1px solid var(--choo-line); }
+      .start textarea { flex: 1; min-height: 34px; height: 34px; resize: vertical; }
+      .board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 14px 16px; overflow: auto; }
+      .col h2 { margin: 0 0 8px; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--choo-faint); display: flex; gap: 6px; align-items: center; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+      .card { display: block; width: 100%; text-align: left; background: var(--choo-panel); border: 1px solid var(--choo-line); border-radius: 10px; padding: 9px 11px; margin-bottom: 8px; }
+      .card .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .card .meta { font-size: 11px; color: var(--choo-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .card .last { font-size: 12px; color: var(--choo-muted); margin-top: 5px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+      .empty { font-size: 12px; color: var(--choo-faint); padding: 6px 2px; }
+      #problem { padding: 0 16px; }
+    </style>
+  </head>
+  <body>
+    <form class="start" id="start">
+      <select id="repo" hidden></select>
+      <textarea id="task" placeholder="Describe a task to start a new workspace…"></textarea>
+      <button class="primary" id="go" disabled>Start</button>
+    </form>
+    <div id="problem" class="error"></div>
+    <div class="board" id="board"></div>
+
+    <script src="/@choo/host.js"></script>
+    <script>
+      const COLUMNS = [
+        { id: 'needs-approval', title: 'Needs you', color: 'var(--choo-accent)' },
+        { id: 'running', title: 'Running', color: 'var(--choo-add)' },
+        { id: 'idle', title: 'Waiting for you to look', color: 'var(--choo-muted)' },
+        { id: 'error', title: 'Hit an error', color: 'var(--choo-del)' }
+      ]
+      const $ = (id) => document.getElementById(id)
+      const el = (tag, cls, text) => {
+        const e = document.createElement(tag)
+        if (cls) e.className = cls
+        if (text !== undefined) e.textContent = text
+        return e
+      }
+      let repos = []
+
+      async function draw() {
+        // In the "repo" slot the context names the project; in the sidebar's top list it doesn't.
+        const repoId = choo.context.repoId
+        const list = await choo.workspaces.list(repoId ? { repoId } : undefined)
+        const board = $('board')
+        board.replaceChildren()
+        for (const col of COLUMNS) {
+          const mine = list.filter((w) => (w.status === 'in-cloud' ? 'running' : w.status) === col.id)
+          const c = el('div', 'col')
+          const h = el('h2')
+          const dot = el('span', 'dot')
+          dot.style.background = col.color
+          h.append(dot, `${col.title} · ${mine.length}`)
+          c.append(h)
+          if (!mine.length) c.append(el('div', 'empty', 'Nothing here'))
+          for (const w of mine) {
+            const card = el('button', 'card')
+            card.append(el('div', 'title', w.title))
+            const repo = repos.find((r) => r.id === w.repoId)
+            card.append(el('div', 'meta', `${repoId || !repo ? '' : repo.name + ' · '}${w.branch}`))
+            if (w.lastMessage) card.append(el('div', 'last', w.lastMessage))
+            card.onclick = () => choo.ui.openWorkspace(w.id)
+            c.append(card)
+          }
+          board.append(c)
+        }
+      }
+
+      const show = (e) => ($('problem').textContent = e ? String(e.message || e) : '')
+
+      choo.ready.then(async () => {
+        repos = await choo.repos.list()
+        if (!choo.context.repoId) {
+          const sel = $('repo')
+          sel.hidden = false
+          for (const r of repos) sel.append(new Option(r.name, r.id))
+        }
+        $('task').oninput = () => ($('go').disabled = !$('task').value.trim())
+        $('start').onsubmit = async (e) => {
+          e.preventDefault()
+          const repoId = choo.context.repoId || $('repo').value
+          const task = $('task').value.trim()
+          if (!repoId || !task) return
+          $('go').disabled = true
+          try {
+            await choo.workspaces.start({ repoId, task })
+            $('task').value = ''
+            show()
+          } catch (err) {
+            show(err)
+            $('go').disabled = false
+          }
+        }
+        choo.on('workspaces', () => draw().catch(show))
+        draw().catch(show)
+      })
+    </script>
+  </body>
+</html>

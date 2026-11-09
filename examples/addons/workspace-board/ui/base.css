@@ -1,0 +1,30 @@
+/* Choo Choo sets the --choo-* variables from the person's theme, and updates them when it changes. */
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--choo-bg, #202226);
+  color: var(--choo-fg, #f4ebd8);
+  font: 13px/1.45 var(--choo-font-sans, -apple-system, system-ui, sans-serif);
+}
+button, select, textarea { font: inherit; color: inherit; }
+button {
+  border: 1px solid var(--choo-line);
+  background: var(--choo-panel);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover { background: var(--choo-hover); }
+button.primary { background: var(--choo-fg); color: var(--choo-bg); border-color: var(--choo-fg); font-weight: 500; }
+button:disabled { opacity: 0.5; cursor: default; }
+select, textarea {
+  background: var(--choo-bg);
+  border: 1px solid var(--choo-line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+}
+textarea:focus, select:focus { border-color: var(--choo-faint); }
+.muted { color: var(--choo-muted); }
+.faint { color: var(--choo-faint); }
+.error { color: var(--choo-del); }
