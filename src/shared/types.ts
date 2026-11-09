@@ -377,6 +377,8 @@ export interface Settings extends AppearanceSettings {
   defaultPermission: Permission
   /** A message sent while Claude is working: steer folds it into the running turn, queue sends it after. */
   whileRunning?: 'steer' | 'queue'
+  /** Orgs ("owner") or repos ("owner/repo") left off the PRs page on this machine. */
+  prsHidden?: string[]
   /** Spend cap per message for new chats, in dollars. 0 means no cap. */
   defaultBudgetUsd?: number
   /** Branch prefix; empty uses the GitHub user or git user.name. */

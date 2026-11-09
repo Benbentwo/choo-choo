@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupByRepo, parsePrInbox, prBranch, prInboxQuery } from '../src/shared/prInbox'
+import { groupByRepo, orgsAndRepos, parsePrInbox, prBranch, prInboxQuery, visiblePrs } from '../src/shared/prInbox'
 
 const node = (repo: string, number: number, updatedAt: string, extra: Record<string, unknown> = {}) => ({
   number,
@@ -69,5 +69,27 @@ describe('prInboxQuery', () => {
   it('asks for review requests or own PRs, open and not archived, newest first', () => {
     expect(prInboxQuery('review', 50)).toContain('review: search(query: "is:open is:pr archived:false review-requested:@me sort:updated-desc"')
     expect(prInboxQuery('mine', 20)).toContain('mine: search(query: "is:open is:pr archived:false author:@me sort:updated-desc", type: ISSUE, first: 20)')
+  })
+})
+
+describe('PRs page filter', () => {
+  const prs = parsePrInbox({
+    data: {
+      review: { nodes: [node('Work/api', 1, '2026-11-09T10:00:00Z'), node('Work/web', 2, '2026-11-09T09:00:00Z')] },
+      mine: { nodes: [node('me/side-project', 3, '2026-11-09T08:00:00Z')] }
+    }
+  })
+
+  it('hides a whole org or a single repo, ignoring case', () => {
+    expect(visiblePrs(prs, ['ME']).map((p) => p.number)).toEqual([1, 2])
+    expect(visiblePrs(prs, ['work/web']).map((p) => p.number)).toEqual([1, 3])
+    expect(visiblePrs(prs, undefined)).toHaveLength(3)
+  })
+
+  it('lists orgs and repos with counts for the menu', () => {
+    expect(orgsAndRepos(prs)).toEqual([
+      { org: 'me', count: 1, repos: [{ repo: 'me/side-project', count: 1 }] },
+      { org: 'Work', count: 2, repos: [{ repo: 'Work/api', count: 1 }, { repo: 'Work/web', count: 1 }] }
+    ])
   })
 })

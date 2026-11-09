@@ -113,6 +113,30 @@ export function parsePrInbox(raw: Raw): InboxPr[] {
 
 export type PrFilter = 'review' | 'mine' | 'all'
 
+/** PRs not hidden by the PRs page filter: an entry is an org ("owner") or a repo ("owner/repo"), any case. */
+export function visiblePrs(prs: InboxPr[], hidden: string[] | undefined): InboxPr[] {
+  if (!hidden?.length) return prs
+  const h = new Set(hidden.map((x) => x.toLowerCase()))
+  return prs.filter((p) => {
+    const repo = p.repo.toLowerCase()
+    return !h.has(repo) && !h.has(repo.split('/')[0])
+  })
+}
+
+/** Orgs and their repos among these PRs, with counts, for the filter menu. Sorted by name. */
+export function orgsAndRepos(prs: InboxPr[]): { org: string; count: number; repos: { repo: string; count: number }[] }[] {
+  const orgs = new Map<string, Map<string, number>>()
+  for (const p of prs) {
+    const org = p.repo.split('/')[0]
+    const repos = orgs.get(org) ?? new Map<string, number>()
+    repos.set(p.repo, (repos.get(p.repo) ?? 0) + 1)
+    orgs.set(org, repos)
+  }
+  return [...orgs]
+    .map(([org, repos]) => ({ org, count: [...repos.values()].reduce((a, b) => a + b, 0), repos: [...repos].map(([repo, count]) => ({ repo, count })).sort((a, b) => a.repo.localeCompare(b.repo)) }))
+    .sort((a, b) => a.org.localeCompare(b.org))
+}
+
 /** Groups by repo. Repos are ordered by their most recently updated PR; PRs keep their order. */
 export function groupByRepo(prs: InboxPr[], filter: PrFilter): { repo: string; prs: InboxPr[] }[] {
   const groups = new Map<string, InboxPr[]>()

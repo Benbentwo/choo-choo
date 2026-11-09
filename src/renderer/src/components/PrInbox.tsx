@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { groupByRepo, type InboxPr, type PrFilter } from '@shared/prInbox'
+import { groupByRepo, orgsAndRepos, visiblePrs, type InboxPr, type PrFilter } from '@shared/prInbox'
 import { useStore, refreshPrInbox, openPrWorkspace, reportError } from '../store'
 import { IconGithub, IconPR, IconRight, IconSidebar } from '../icons'
 
@@ -22,7 +22,10 @@ export function PrInboxPage() {
   })
   const [selected, setSelected] = useState<string | null>(null)
   const [opening, setOpening] = useState<string | null>(null)
-  const prs = s.prInbox?.prs ?? []
+  const allPrs = s.prInbox?.prs ?? []
+  const hidden = s.settings.prsHidden ?? []
+  const prs = useMemo(() => visiblePrs(allPrs, hidden), [allPrs, hidden])
+  const [filterMenu, setFilterMenu] = useState(false)
   const groups = useMemo(() => groupByRepo(prs, filter), [prs, filter])
   const flat = groups.flatMap((g) => g.prs)
   const key = (p: InboxPr) => `${p.repo}#${p.number}`
@@ -92,6 +95,16 @@ export function PrInboxPage() {
                 <span className="ml-1.5 text-faint">{counts[f.id]}</span>
               </button>
             ))}
+          </div>
+          <div className="relative">
+            <button
+              className={`rounded-md border px-2.5 py-1 text-[12px] hover:bg-hover hover:text-fg ${hidden.length ? 'border-accent/50 text-accent' : 'border-line text-muted'}`}
+              onClick={() => setFilterMenu(!filterMenu)}
+              title="Choose which orgs and repos show here. Saved on this computer only."
+            >
+              Filter{hidden.length ? ` · ${hidden.length} hidden` : ''}
+            </button>
+            {filterMenu && <RepoFilter prs={allPrs} hidden={hidden} onClose={() => setFilterMenu(false)} />}
           </div>
           <button className="rounded-md border border-line px-2.5 py-1 text-[12px] text-muted hover:bg-hover hover:text-fg disabled:opacity-50" disabled={s.prInboxLoading} onClick={() => void refreshPrInbox()} title="Reload from GitHub">
             {s.prInboxLoading ? 'Loading…' : 'Refresh'}
@@ -213,4 +226,58 @@ function ago(iso: string): string {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`
   return `${Math.floor(s / 86400)}d ago`
+}
+
+/** Tick boxes for each org and its repos. Unticking hides them from the PRs page on this computer. */
+function RepoFilter({ prs, hidden, onClose }: { prs: InboxPr[]; hidden: string[]; onClose: () => void }) {
+  const orgs = useMemo(() => orgsAndRepos(prs), [prs])
+  const lower = new Set(hidden.map((h) => h.toLowerCase()))
+  const save = async (next: string[]) => {
+    try {
+      useStore.getState().set({ settings: await window.api.saveSettings({ prsHidden: next }) })
+    } catch (e) {
+      reportError(e)
+    }
+  }
+  const toggle = (name: string, show: boolean) => {
+    const others = hidden.filter((h) => h.toLowerCase() !== name.toLowerCase())
+    void save(show ? others : [...others, name])
+  }
+  const toggleOrg = (org: string, repos: string[], show: boolean) => {
+    // Showing an org also clears hides on its repos; hiding it needs only the org entry.
+    const inOrg = new Set([org, ...repos].map((x) => x.toLowerCase()))
+    const others = hidden.filter((h) => !inOrg.has(h.toLowerCase()))
+    void save(show ? others : [...others, org])
+  }
+  return (
+    <div className="absolute top-8 right-0 z-30 max-h-[60vh] w-80 overflow-y-auto rounded-lg border border-line bg-raised p-2 text-[12px] shadow-xl" onMouseLeave={onClose}>
+      <div className="mb-1.5 px-1 text-faint">Show PRs from. Saved on this computer only.</div>
+      {orgs.length === 0 && <div className="px-1 py-2 text-faint">No pull requests loaded yet.</div>}
+      {orgs.map((o) => {
+        const orgShown = !lower.has(o.org.toLowerCase())
+        return (
+          <div key={o.org} className="mb-1">
+            <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-hover">
+              <input type="checkbox" checked={orgShown} onChange={(e) => toggleOrg(o.org, o.repos.map((r) => r.repo), e.target.checked)} />
+              <span className="flex-1 font-medium">{o.org}</span>
+              <span className="text-faint">{o.count}</span>
+            </label>
+            {orgShown &&
+              o.repos.map((r) => (
+                <label key={r.repo} className="flex cursor-pointer items-center gap-2 rounded py-0.5 pr-1 pl-6 hover:bg-hover">
+                  <input type="checkbox" checked={!lower.has(r.repo.toLowerCase())} onChange={(e) => toggle(r.repo, e.target.checked)} />
+                  <span className="flex-1 truncate text-muted">{r.repo.split('/')[1]}</span>
+                  <span className="text-faint">{r.count}</span>
+                </label>
+              ))}
+          </div>
+        )
+      })}
+      {hidden.length > 0 && (
+        <button className="mt-1 w-full rounded px-1 py-1 text-left text-muted hover:bg-hover hover:text-fg" onClick={() => void save([])}>
+          Show everything
+        </button>
+      )}
+    </div>
+  )
 }

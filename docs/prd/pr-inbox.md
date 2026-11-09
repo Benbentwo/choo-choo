@@ -37,6 +37,9 @@ Today, reviewing someone's PR means finding it on GitHub, then starting a worksp
 - If the repo isn't a project yet, its header says "not added"; Open clones it (through gh, into the usual repos folder), adds it, then opens the workspace.
 - The list reloads every minute while the page is open, when the window gets focus, and with Refresh. The sidebar count reloads every five minutes in the background.
 - Errors: no gh, or gh not signed in, shows a line saying what to run (`brew install gh`, `gh auth login`).
+- **Filter** lists each org and its repos with counts and tick boxes. Unticking an org or repo hides its PRs from the page and from the sidebar count. The choice is saved in Settings on this computer only (`prsHidden`), so a work laptop can leave out personal repos. The button shows how many are hidden; Show everything clears it.
+- The last good list is saved and shown at once on start-up. When a refresh fails, the page keeps that list and says when it was loaded.
+- The two lists load as separate searches of 50 PRs each, newest first (20 if GitHub times out). One query for both, 100 each with CI status, made GitHub answer HTTP 502.
 
 ## Requirements
 
