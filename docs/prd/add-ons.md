@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review. Views, permissions and the host API are built; orchestrator tools, repo pins and the Plan board follow |
+| Status | Shipped: views, permissions and the host API (PR #55); background pages, orchestrator tools and project pins (PR #56). The Plan board, the first real add-on, follows in a private repo |
 | Owner | Claude (project thread) |
 | Requested by | Ben, 2026-11-09 ("How do we support add-ons that expand functionality? Organizations can have a private add-on … so that the main project can stay open-sourced.") |
 | Last updated | 2026-11-09 |
@@ -36,6 +36,10 @@ People want Choo Choo to do things that don't belong in the core app for everyon
 
 ![The example add-on's board in the sidebar and under a project](../media/add-ons-board.png)
 
+**In the background and for the orchestrator.** An add-on can keep working while its views are closed, and can give the orchestrator tools ("leave a note on each workspace saying what's left"). The panel that turns it on says so and lists the tools by name. Tools that only read run without asking; the others follow the orchestrator chat's permission setting.
+
+**A project's add-ons.** A project can list the add-ons its team should have in its `choo-choo.json` (`addons.sources`, `addons.required`, `addons.recommended`). The project then shows "Set up Plan board" in the sidebar, and Settings › Add-ons opens with "acme-web asks for these add-ons": each with Install or Turn on, and "Not now" for recommended ones. Nothing is added or installed without a click.
+
 **When something's off.** A row shows why an add-on isn't running: "Can't be loaded" with the manifest's problems, "Its plugin is off in Settings › Plugins", or "Paused: it asks for new permissions" with a Review button after an update that asks for more.
 
 ## Requirements
@@ -51,6 +55,10 @@ People want Choo Choo to do things that don't belong in the core app for everyon
 9. Workspaces an add-on starts are ordinary workspaces, record which add-on started them (`Workspace.addonId`), and run with the person's default model and permissions. An add-on can have at most 8 agents running at once.
 10. Each add-on gets 1 MB of its own storage, readable by no other add-on.
 11. With no add-on turned on, startup does no extra work and the app looks as before.
+12. A background page is one more sandboxed frame per add-on, in a window that is never shown, with the add-on's own permissions and nothing more. The window exists only while an add-on that is on has a background page, and doesn't keep the app from quitting.
+13. An add-on's tools are fixed by its manifest, need a background page and the `orchestrator:tools` permission, and are shown by name before it is turned on. A manifest whose tool schema can't be read is not loaded.
+14. A tool call reaches only the background page of the add-on that listed the tool, and only an answer to a call that page was given is accepted. A tool that doesn't answer in five minutes fails; so do pending calls when the page restarts.
+15. Pins never act on their own. Only `owner/repo` and git URLs are accepted as pinned sources (never folders), only ids the project's file names can be installed through it, and installing still ends at the permissions panel.
 
 ## Design
 
@@ -59,6 +67,9 @@ People want Choo Choo to do things that don't belong in the core app for everyon
 - [src/main/addonApi.ts](../../src/main/addonApi.ts): the host API. `call()` checks the permission, validates with zod, and acts through a small `AddonHost` interface, so it has no Electron imports and is unit-tested.
 - [src/main/addonHost.ts](../../src/main/addonHost.ts): registers the `choo-addon://` scheme and serves view files and `/@choo/host.js` with the CSP header; the `addons:*` IPC; grants live in `Settings.addons` (`{ enabled, granted }` per plugin id).
 - [src/main/addonClient.ts](../../src/main/addonClient.ts): the script that gives a view `window.choo` over `postMessage`.
+- Background pages and tools ([decision 0007](../decisions/0007-add-on-tools-run-in-a-background-page.md)): `addonHost.ts` opens the unseen window, which loads the same renderer bundle with `#addon-background` and renders only `AddonBackgrounds`. `toolsets()` hands each running add-on's tools to `orchestrator.queryOptions`, which builds one in-process MCP server per add-on (`addon-<plugin name>`). A call goes main → background window (`addons:tool`) → the add-on's frame → its handler, and back through `addons:toolResult`.
+- App events for frames (`addons:event`): pull request changes and an add-on's own storage changes go to its pages in both windows; workspace changes go to the background window, which has no app state of its own.
+- Pins: `parsePins` and `pinStatus` (shared and `addons.ts`), `addons:pins` and `addons:installPinned`; turned-down recommendations live in `Settings.addonPinsDismissed`.
 - Renderer: `AddonFrame` (the frame and its message bridge) and `AddonPage` in [Addons.tsx](../../src/renderer/src/components/Addons.tsx), [AddonSettings.tsx](../../src/renderer/src/components/AddonSettings.tsx), and slots in Sidebar and RightPanel.
 - Authors: [docs/addon-api.md](../addon-api.md) and the example in [examples/addons](../../examples/addons).
 
@@ -71,10 +82,12 @@ Add-ons are read from the home folder, so they are user-scope plugins. Sources a
 - What leaves the machine: nothing, unless an add-on holds a `net:<host>` permission, which the person sees before turning it on. Then its views can send what their other permissions let them read to that host.
 - What add-ons can't reach: files, shell, other add-ons' files and storage, the app window, Claude tokens, integration tokens, settings. A view's frame can only move between its own add-on's pages.
 - An add-on's hooks and MCP servers are Claude Code plugin parts and run with the person's permissions, as in the terminal. The permissions panel says so.
+- Tools: what a tool returns goes into the orchestrator's context, so an add-on with `orchestrator:tools` can influence what the orchestrator does next. The permission says so, the tools are listed before the add-on is turned on, and the orchestrator's prompt says tool answers come from the add-on, not the person. The handler itself can do only what the add-on's permissions allow.
+- Pins come from a repository's files, which anyone with push access can change. They only ever produce an offer: the source and the add-on are named, installing takes a click, and the add-on's permissions are shown before it runs.
 
 ## Testing
 
-`test/addons.test.ts` covers manifest validation, permissions and states, the CSP, finding installed and available add-ons, file serving (traversal, symlinks, dotfiles), the client script, and every host API method against a fake host. The example add-on was run in the real app under Playwright: install from a local source, turn on, all three slots, and probes from inside a view confirming it has no `require`, no `window.api`, no access to the parent window, no outside network, no other add-on's files, no calls beyond its permissions, and no way to send its frame to a web page or another add-on's pages.
+`test/addons.test.ts` covers manifest validation (views, background page, tools), permissions and states, the CSP, finding installed and available add-ons, pins, file serving (traversal, symlinks, dotfiles), the client script including tool handlers and events, and every host API method against a fake host. `test/orchestrator.test.ts` covers add-on tools reaching the orchestrator. The example add-on was run in the real app under Playwright: install from a local source, turn on, all three slots, and probes from inside a view confirming it has no `require`, no `window.api`, no access to the parent window, no outside network, no other add-on's files, no calls beyond its permissions, and no way to send its frame to a web page or another add-on's pages. Background pages, tools and pins were run the same way: a project pinning the example showed its sidebar row and Settings section, Install and Turn on led to the permissions panel, the unseen window came up (and again after a restart, before any view was opened), both tools were called through the same function the orchestrator's tools call, a note written by a tool appeared in the open Notes view, and turning the add-on off closed the window. Not run: a real orchestrator turn calling an add-on tool, which needs a Claude sign-in the test machine doesn't have.
 
 ## Rollout
 
@@ -87,6 +100,5 @@ Off until an add-on is installed and turned on. `Settings.addons` and `Workspace
 
 ## Future work
 
-1. Orchestrator tools from an add-on's MCP server, and `choo-choo.json` pins so a repo can name the add-ons its team should install.
-2. Plan board: a visual plan of tasks that runs one worktree workspace per task. It lives in a private repo, which also tests private sources end to end. Needs host methods for files under `.choo-choo/` in a repo.
-3. Workspace sources ("New plan from…"), an OAuth host method, a template repo for private add-ons, managed settings for fleets.
+1. Plan board: a visual plan of tasks that runs one worktree workspace per task. It lives in a private repo, which also tests private sources end to end. Needs host methods for files under `.choo-choo/` in a repo.
+2. Workspace sources ("New plan from…"), an OAuth host method, a template repo for private add-ons, managed settings for fleets.

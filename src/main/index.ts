@@ -44,6 +44,7 @@ const REPOS_ROOT = join(homedir(), 'choo-choo', 'repos')
 
 function send(channel: string, ...args: unknown[]) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
+  addonHost.appEvent(channel, args[0])
 }
 
 function findWs(id: string): Workspace {
@@ -315,7 +316,7 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
     const scope = scopeFor(ws, repo)
     // The orchestrator's tools only exist on Claude.
     if (chat.model === 'codex') chat.model = 'opus'
-    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost)
+    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets())
   }
   void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
 }
@@ -1215,6 +1216,10 @@ function createWindow() {
     }
   })
   win.once('ready-to-show', () => win?.show())
+  // window-all-closed never fires while add-ons' unseen background window is open, so quit from here.
+  win.on('closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
   win.webContents.on('did-finish-load', () => {
     if (pendingLink) send('share:link', pendingLink)
     pendingLink = null
@@ -1303,7 +1308,8 @@ app.whenReady().then(async () => {
   })
   app.on('browser-window-focus', () => prWatch.poke())
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // The unseen window that hosts add-ons' background pages doesn't count as the app being open.
+    if (!win || win.isDestroyed()) createWindow()
   })
 })
 

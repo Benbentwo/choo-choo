@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 vi.mock('../src/main/claudeBinary', () => ({ claudeExecutable: () => '/nonexistent/claude' }))
-import { ADDON_API_VERSION, addonKey, addonState, checkCall, describePermission, isAddonRequest, missingGrants, netHost, parseManifest, safeRelativePath, viewCsp, METHOD_PERMISSION } from '../src/shared/addons'
-import { availableFrom, contentType, describeAddons, readManifest, resolveFile } from '../src/main/addons'
+import { ADDON_API_VERSION, addonKey, addonState, checkCall, describePermission, isAddonRequest, isPinSource, missingGrants, netHost, parseManifest, parsePins, safeRelativePath, sourceKey, toolServerName, viewCsp, METHOD_PERMISSION } from '../src/shared/addons'
+import { availableFrom, contentType, describeAddons, pinStatus, readManifest, readPins, resolveFile, toolShape } from '../src/main/addons'
 import { call, MAX_RUNNING_PER_ADDON, transcriptEntries, type AddonHost, type Caller } from '../src/main/addonApi'
 import { HOST_SCRIPT } from '../src/main/addonClient'
 import type { Chat, ChatItem, Repo, Workspace } from '../src/shared/types'
@@ -20,10 +20,10 @@ describe('add-on manifest', () => {
   it('accepts a complete manifest', () => {
     const { manifest, errors } = parseManifest(good)
     expect(errors).toEqual([])
-    expect(manifest).toEqual({ apiVersion: 1, name: 'Plan board', description: undefined, permissions: good.permissions, views: good.views })
+    expect(manifest).toEqual({ apiVersion: 1, name: 'Plan board', description: undefined, permissions: good.permissions, views: good.views, tools: [] })
   })
   it('needs nothing but apiVersion', () => {
-    expect(parseManifest({ apiVersion: 1 }).manifest).toEqual({ apiVersion: 1, name: undefined, description: undefined, permissions: [], views: [] })
+    expect(parseManifest({ apiVersion: 1 }).manifest).toEqual({ apiVersion: 1, name: undefined, description: undefined, permissions: [], views: [], tools: [] })
   })
   it('refuses a manifest for a newer app, and says so', () => {
     const r = parseManifest({ apiVersion: ADDON_API_VERSION + 1 })
@@ -53,6 +53,110 @@ describe('add-on manifest', () => {
   it('keeps view entries inside the add-on', () => {
     expect(safeRelativePath('ui/index.html')).toBe(true)
     for (const p of ['/etc/passwd', '../x.html', 'a/../../x.html', 'a//b.html', './a.html', 'a\\b.html', '']) expect(safeRelativePath(p)).toBe(false)
+  })
+})
+
+describe('background pages and orchestrator tools', () => {
+  const withTools = {
+    apiVersion: 1,
+    permissions: ['storage', 'orchestrator:tools'],
+    background: 'ui/background.html',
+    tools: [
+      { name: 'plan_read', description: 'Read the plan.', readOnly: true },
+      { name: 'plan_update_task', description: 'Change a task.', input: { type: 'object', properties: { task_id: { type: 'string' }, done: { type: 'boolean' } }, required: ['task_id'] } }
+    ]
+  }
+  it('accepts a background page and tools', () => {
+    const { manifest, errors } = parseManifest(withTools)
+    expect(errors).toEqual([])
+    expect(manifest!.background).toBe('ui/background.html')
+    expect(manifest!.tools.map((t) => [t.name, !!t.readOnly, !!t.input])).toEqual([['plan_read', true, false], ['plan_update_task', false, true]])
+  })
+  it('a background page needs no tools', () => {
+    expect(parseManifest({ apiVersion: 1, background: 'bg.html' }).manifest!.background).toBe('bg.html')
+    expect(parseManifest({ apiVersion: 1, background: '../bg.html' }).errors[0]).toMatch(/background must be/)
+    expect(parseManifest({ apiVersion: 1, background: 'bg.js' }).errors[0]).toMatch(/background must be/)
+  })
+  it('tools need a background page to answer them and a permission the person sees', () => {
+    expect(parseManifest({ ...withTools, background: undefined }).errors.join()).toMatch(/need a background page/)
+    expect(parseManifest({ ...withTools, permissions: ['storage'] }).errors.join()).toMatch(/"orchestrator:tools" permission/)
+    expect(describePermission('orchestrator:tools').label).toBe('Give the orchestrator tools')
+  })
+  it('refuses badly named, duplicate or undescribed tools, and too many of them', () => {
+    const bad = (tools: unknown[]) => parseManifest({ ...withTools, tools }).errors.join('\n')
+    expect(bad([{ name: 'Plan-Read', description: 'x' }])).toMatch(/lowercase letters, digits and underscores/)
+    expect(bad([{ name: 'a', description: 'x' }, { name: 'a', description: 'y' }])).toMatch(/both called a/)
+    expect(bad([{ name: 'a' }])).toMatch(/needs a description/)
+    expect(bad([{ name: 'a', description: 'x', input: { type: 'string' } }])).toMatch(/"type": "object"/)
+    expect(bad([{ name: 'a', description: 'x', input: { type: 'object', properties: { p: { description: 'x'.repeat(9000) } } } }])).toMatch(/8 KB/)
+    expect(bad(Array.from({ length: 25 }, (_, i) => ({ name: `t${i}`, description: 'x' })))).toMatch(/at most 24 tools/)
+  })
+  it("turns a tool's JSON Schema into the arguments the Agent SDK checks", () => {
+    const shape = toolShape(withTools.tools[1].input)
+    expect(Object.keys(shape)).toEqual(['task_id', 'done'])
+    expect(shape.task_id.safeParse('t1').success).toBe(true)
+    expect(shape.task_id.safeParse(undefined).success).toBe(false)
+    expect(shape.done.safeParse(undefined).success).toBe(true)
+    expect(toolShape(undefined)).toEqual({})
+  })
+  it("doesn't load an add-on whose tool schema can't be read", () => {
+    const dir = addonFolder({ ...withTools, tools: [{ name: 'a', description: 'x', input: { type: 'object', properties: { p: { type: 'wat' } } } }] })
+    const read = readManifest(dir)
+    expect(read!.manifest).toBeUndefined()
+    expect(read!.errors[0]).toMatch(/Tool a: input isn't a JSON Schema/)
+  })
+  it('names the tool server after the plugin', () => {
+    expect(toolServerName('plan-board.acme-corp')).toBe('addon-plan-board')
+  })
+})
+
+describe('add-ons a project pins', () => {
+  it("reads the addons part of a project's choo-choo.json", () => {
+    const pins = parsePins({ scripts: { run: 'npm start' }, addons: { sources: ['acme/addons', 'https://git.acme.dev/tools/addons.git'], required: ['plan-board@acme'], recommended: ['notes@acme', 'plan-board@acme'] } })
+    expect(pins).toEqual({ sources: ['acme/addons', 'https://git.acme.dev/tools/addons.git'], required: ['plan-board@acme'], recommended: ['notes@acme'] })
+    expect(parsePins({})).toEqual({ sources: [], required: [], recommended: [] })
+    expect(parsePins({ addons: 'all of them' })).toEqual({ sources: [], required: [], recommended: [] })
+  })
+  it('drops anything that is not a plugin id or a git source', () => {
+    const pins = parsePins({ addons: { sources: ['./evil', '/Users/me/x', '../up', 'file:///x', 'http://plain.example/x', 'acme/addons', 7], required: ['no-source', 'a@b', { id: 'x@y' }], recommended: ['x y@z'] } })
+    expect(pins).toEqual({ sources: ['acme/addons'], required: ['a@b'], recommended: [] })
+    for (const ok of ['acme/addons', 'https://github.com/acme/addons', 'git@github.com:acme/addons.git', 'ssh://git@git.acme.dev/tools/addons.git']) expect(isPinSource(ok)).toBe(true)
+    for (const no of ['addons', '~/addons', 'acme/../../etc', 'https://x', 'javascript:alert(1)', '-o/--upload-pack']) expect(isPinSource(no), no).toBe(false)
+  })
+  it('knows two spellings of the same source', () => {
+    expect(sourceKey('https://github.com/Acme/Addons.git')).toBe('acme/addons')
+    expect(sourceKey('git@github.com:acme/addons')).toBe('acme/addons')
+    expect(sourceKey('acme/addons/')).toBe('acme/addons')
+    expect(sourceKey('https://git.acme.dev/tools/addons')).not.toBe('tools/addons')
+  })
+  it('checks pins against what is installed', () => {
+    const pins = parsePins({ addons: { sources: ['acme/addons', 'other/more'], required: ['plan-board@acme', 'lint@acme'], recommended: ['notes@acme', 'gone@acme'] } })
+    const status = pinStatus(
+      'r1',
+      pins,
+      [{ id: 'Plan-Board@acme', name: 'Plan board', state: 'on' }, { id: 'notes@acme', name: 'Notes', state: 'off' }],
+      ['Plan-Board@acme', 'notes@acme', 'lint@acme'],
+      [{ source: 'https://github.com/acme/addons.git' }]
+    )
+    expect(status).toEqual({
+      repoId: 'r1',
+      newSources: ['other/more'],
+      addons: [
+        { id: 'plan-board@acme', name: 'Plan board', required: true, state: 'on' },
+        // A plain plugin of that name is installed: nothing for Choo Choo to turn on.
+        { id: 'lint@acme', name: 'lint', required: true, state: 'invalid' },
+        { id: 'notes@acme', name: 'Notes', required: false, state: 'off' },
+        { id: 'gone@acme', name: 'gone', required: false, state: 'missing' }
+      ]
+    })
+  })
+  it('a project without the file, or with a broken one, pins nothing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'choo-pins-'))
+    expect(readPins(dir).required).toEqual([])
+    writeFileSync(join(dir, 'choo-choo.json'), '{ not json')
+    expect(readPins(dir).required).toEqual([])
+    writeFileSync(join(dir, 'choo-choo.json'), JSON.stringify({ addons: { required: ['a@b'] } }))
+    expect(readPins(dir).required).toEqual(['a@b'])
   })
 })
 
@@ -96,6 +200,8 @@ describe('add-on permissions', () => {
     expect(isAddonRequest({ choo: 1, type: 'hello' })).toBe(true)
     expect(isAddonRequest({ choo: 1, type: 'call', id: 1, method: 'app.info' })).toBe(true)
     expect(isAddonRequest({ choo: 1, type: 'call', method: 'app.info' })).toBe(false)
+    expect(isAddonRequest({ choo: 1, type: 'tool-result', id: 'c1', ok: true, result: 1 })).toBe(true)
+    expect(isAddonRequest({ choo: 1, type: 'tool-result', id: 1, ok: true })).toBe(false)
     expect(isAddonRequest({ type: 'hello' })).toBe(false)
     expect(isAddonRequest('hello')).toBe(false)
   })
@@ -172,7 +278,12 @@ describe('finding add-ons', () => {
   it('the example add-on in this repo is valid', () => {
     const read = readManifest(join(__dirname, '..', 'examples', 'addons', 'workspace-board'))
     expect(read?.errors).toEqual([])
-    for (const v of read!.manifest!.views) expect(resolveFile(join(__dirname, '..', 'examples', 'addons', 'workspace-board'), `/${v.entry}`)).toBeTruthy()
+    const dir = join(__dirname, '..', 'examples', 'addons', 'workspace-board')
+    for (const v of read!.manifest!.views) expect(resolveFile(dir, `/${v.entry}`)).toBeTruthy()
+    // Every tool it lists has a handler in its background page.
+    const background = readFileSync(resolveFile(dir, `/${read!.manifest!.background}`)!, 'utf8')
+    expect(read!.manifest!.tools.length).toBeGreaterThan(0)
+    for (const t of read!.manifest!.tools) expect(background).toContain(`choo.tools.handle('${t.name}'`)
   })
 })
 
@@ -209,6 +320,41 @@ describe('serving view files', () => {
     expect(style.get('--choo-bg')).toBe('#000')
     expect(win.choo.context).toEqual({ viewId: 'board' })
     return expect(p).resolves.toEqual(['ws'])
+  })
+  it("the client script runs the add-on's tool handlers and passes on events", async () => {
+    vi.useFakeTimers()
+    const posted: any[] = []
+    const listeners: ((e: any) => void)[] = []
+    const parent = { postMessage: (m: any) => posted.push(m) }
+    const win: any = { parent, addEventListener: (_: string, cb: (e: any) => void) => listeners.push(cb) }
+    const doc = { documentElement: { style: { setProperty: () => {}, colorScheme: '' }, dataset: {} } }
+    new Function('window', 'document', HOST_SCRIPT)(win, doc)
+    const say = (data: object) => listeners[0]({ source: parent, data: { choo: 1, ...data } })
+    const results = () => posted.filter((m) => m.type === 'tool-result')
+
+    // A call that arrives before the page registered its handler waits for it.
+    say({ type: 'tool', id: 'c1', name: 'plan_read', input: { plan: 'q3' }, context: { repoIds: ['r1'] } })
+    win.choo.tools.handle('plan_read', async (input: any, ctx: any) => ({ plan: input.plan, repos: ctx.repoIds }))
+    win.choo.tools.handle('boom', () => {
+      throw new Error('no such plan')
+    })
+    say({ type: 'tool', id: 'c2', name: 'boom', input: {}, context: { repoIds: [] } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(results()).toHaveLength(2)
+    expect(results()).toContainEqual({ choo: 1, type: 'tool-result', id: 'c1', ok: true, result: { plan: 'q3', repos: ['r1'] } })
+    expect(results()).toContainEqual({ choo: 1, type: 'tool-result', id: 'c2', ok: false, error: 'no such plan' })
+    // Nothing ever handles this one: the orchestrator is told, not left waiting.
+    say({ type: 'tool', id: 'c3', name: 'missing', input: {}, context: { repoIds: [] } })
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(results()[2]).toEqual({ choo: 1, type: 'tool-result', id: 'c3', ok: false, error: 'The add-on has no handler for missing' })
+
+    const heard: any[] = []
+    win.choo.on('store', (e: any) => heard.push(e.key))
+    win.choo.on('prs', (e: any) => heard.push(e.workspaceId))
+    say({ type: 'event', name: 'store', key: 'plan' })
+    say({ type: 'event', name: 'prs', workspaceId: 'w1' })
+    expect(heard).toEqual(['plan', 'w1'])
+    vi.useRealTimers()
   })
 })
 
@@ -348,6 +494,15 @@ describe('host API', () => {
     await expect(call(host, caller(), 'store.set', { key: 'big', value: 'x'.repeat(1024 * 1024) })).rejects.toThrow(/1 MB/)
     await call(host, caller(), 'store.delete', { key: 'plan' })
     expect(await call(host, caller(), 'store.keys', undefined)).toEqual([])
+  })
+  it("tells the add-on's other pages when its data changes", async () => {
+    const { host } = fakeHost()
+    const changes: string[] = []
+    host.storeChanged = (addon, key) => void changes.push(`${addon}:${key}`)
+    await call(host, caller(), 'store.set', { key: 'plan', value: 1 })
+    await call(host, caller(), 'store.get', { key: 'plan' })
+    await call(host, caller(), 'store.delete', { key: 'plan' })
+    expect(changes).toEqual(['board.acme:plan', 'board.acme:plan'])
   })
   it('opens workspaces and notifies under its own name', async () => {
     const { host, state } = fakeHost()

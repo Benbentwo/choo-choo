@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Repo, Workspace } from '@shared/types'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
-import { useStore, openAddonPage, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette } from '../store'
+import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
 import { IconAddon, IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
@@ -216,6 +216,7 @@ export function Sidebar() {
                   <IconPlus />
                 </button>
               </div>
+              <PinRow repoId={repo.id} />
               {repoViews.map(({ addon, view }) => {
                 const on = s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && s.addonPage.repoId === repo.id
                 return (
@@ -353,4 +354,24 @@ export function RepoIcon({ repo }: { repo: Repo }) {
   const [failed, setFailed] = useState(false)
   if (!repo.githubOwner || failed) return <IconRepo className="shrink-0 text-faint" />
   return <img src={`https://avatars.githubusercontent.com/${repo.githubOwner}?s=40`} alt="" title={repo.githubOwner} onError={() => setFailed(true)} className="h-4 w-4 shrink-0 rounded-[4px]" />
+}
+
+/** Shown under a project whose choo-choo.json asks for add-ons that aren't on yet. */
+function PinRow({ repoId }: { repoId: string }) {
+  const pin = useStore((s) => s.addonPins.find((p) => p.repoId === repoId))
+  const dismissed = useStore((s) => s.settings.addonPinsDismissed?.[repoId])
+  const addons = useStore((s) => s.addons)
+  const todo = pinsToSetUp(pin, addons, dismissed)
+  if (!todo.length) return null
+  const required = todo.some((a) => a.required)
+  return (
+    <button
+      title={`This project's choo-choo.json asks for ${todo.map((a) => a.name).join(', ')}`}
+      onClick={() => useStore.getState().set({ modal: 'settings', settingsTab: 'addons' })}
+      className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 pl-5 text-left hover:bg-hover ${required ? 'text-amber-400' : 'text-muted hover:text-fg'}`}
+    >
+      <IconAddon className="shrink-0" />
+      <span className="flex-1 truncate">{required ? `Set up ${todo.length === 1 ? todo[0].name : `${todo.length} add-ons`}` : `${todo.length === 1 ? todo[0].name : `${todo.length} add-ons`} suggested`}</span>
+    </button>
+  )
 }

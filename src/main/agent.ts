@@ -303,12 +303,15 @@ export async function send(
     const { settings, repos } = store.get()
     const extras = settings.extras
     const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, systemAppend(extras, !!chat.planMode))
+    // `autoAllowTools` is ours, not the SDK's: tools the caller vouches for as read-only.
+    const { autoAllowTools, ...extra } = (extraOptions?.(sdkMod) ?? {}) as Record<string, unknown> & { autoAllowTools?: string[] }
+    const autoAllow = new Set(autoAllowTools ?? [])
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
       if (toolName === 'ExitPlanMode' && chat.planMode) {
         // The plan card asks the user; the agent must not start building on its own.
         return { behavior: 'deny', message: 'The plan is shown to the user for approval. Stop here and wait for their reply.' }
       }
-      if (!needsApproval(chat.permission, chat.alwaysAllow, toolName)) return { behavior: 'allow', updatedInput: input }
+      if (autoAllow.has(toolName) || !needsApproval(chat.permission, chat.alwaysAllow, toolName)) return { behavior: 'allow', updatedInput: input }
       const req: PermissionRequest = { id: randomUUID(), chatId: chat.id, toolName, input }
       const decision = await new Promise<PermissionDecision>((resolve) => {
         pending.set(req.id, { req, resolve })
@@ -329,7 +332,6 @@ export async function send(
     const session = chatSettings(chat, extras)
     const budget = budgetFor(chat, settings)
     const tasks = new Map<string, BackgroundTask>()
-    const extra = extraOptions?.(sdkMod) ?? {}
     const mcpServers: Record<string, unknown> = { ...(extra.mcpServers as Record<string, unknown> | undefined) }
     if (store.get().settings.notionAgentTools) {
       const server = await notion.agentServer()

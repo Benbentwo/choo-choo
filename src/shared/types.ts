@@ -1,7 +1,7 @@
 import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
-import type { AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon } from './addons'
+import type { AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
 export interface Repo {
   id: string
   name: string
@@ -405,6 +405,8 @@ export interface Settings extends AppearanceSettings {
   orchestratorAutoUpdates: boolean
   /** Add-ons turned on in Choo Choo and the permissions agreed to, by plugin id. */
   addons?: Record<string, AddonGrant>
+  /** Recommended add-ons the person said "not now" to, by project id. */
+  addonPinsDismissed?: Record<string, string[]>
 }
 
 export type ExtraAgentId = 'scout' | 'reviewer' | 'securityReviewer' | 'quickWorker'
@@ -790,6 +792,15 @@ export interface Api {
   /** One host API call from an add-on's view. The main process checks the add-on's permissions. */
   addonCall(key: string, method: string, args: unknown, context: AddonContext): Promise<AddonCallResult>
   onAddonsChanged(cb: () => void): () => void
+  /** What each project's choo-choo.json asks for, checked against what is installed. Projects that pin nothing are left out. */
+  addonPins(): Promise<PinStatus[]>
+  /** Adds the sources a project's choo-choo.json names and installs one add-on it pins. */
+  addonInstallPinned(repoId: string, id: string, acceptSha?: string): Promise<PluginInstallResult>
+  /** Pings for add-on frames: a pull request changed, an add-on's data changed. */
+  onAddonEvent(cb: (e: AddonAppEvent) => void): () => void
+  /** Background window only: the orchestrator is calling an add-on's tool. */
+  onAddonTool(cb: (call: AddonToolCall) => void): () => void
+  addonToolResult(callId: string, result: { ok: boolean; result?: unknown; error?: string }): Promise<void>
   /** Shows a file or folder in Finder. */
   revealPath(path: string): Promise<void>
   respondPermission(requestId: string, decision: PermissionDecision): void

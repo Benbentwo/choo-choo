@@ -6,7 +6,7 @@
     {
       "name": "workspace-board",
       "source": "./workspace-board",
-      "description": "Every workspace as a card, in columns by what it's doing. Start new ones from the board and keep notes per workspace.",
+      "description": "Every workspace as a card, in columns by what it's doing. Start new ones from the board, keep notes per workspace, and let the orchestrator read and write those notes.",
       "keywords": ["choo-choo-addon"]
     }
   ]

@@ -24,7 +24,7 @@ Choo Choo is an Electron app built with electron-vite. Three processes, one shar
 - **The `Api` interface in `src/shared/types.ts` is the contract** between renderer and main. Add a method there, implement it in `src/main/index.ts` as an `ipcMain.handle`, and expose it in `src/preload/index.ts`.
 - **Main does all I/O.** The renderer never touches the file system, git or the network directly.
 - **Shared logic that needs tests and no Electron goes in `src/shared`** (themes, reflect prompt and parsing, review rules, system prompt builder). Main modules that must be testable keep Electron imports out (for example, `orchestrator.ts` takes a small `Host` interface).
-- **Add-on code never runs in main or the app window.** Add-ons get views in sandboxed frames and the host API in `addonApi.ts`; a new capability is a new method with a permission ([decision 0006](decisions/0006-add-ons-are-claude-code-plugins.md)).
+- **Add-on code never runs in main or the app window.** Add-ons get views and a background page in sandboxed frames and the host API in `addonApi.ts`; a new capability is a new method with a permission ([decision 0006](decisions/0006-add-ons-are-claude-code-plugins.md), [0007](decisions/0007-add-on-tools-run-in-a-background-page.md)).
 - **Theme colors and fonts live in `src/shared/themes.ts`.** Re-skin there, not in `styles.css`.
 - **Shell out to the user's tools** (`git`, `gh`, `codex`, `claude`) rather than reimplementing them. That reuses the user's existing auth.
 
@@ -53,7 +53,7 @@ Choo Choo is an Electron app built with electron-vite. Three processes, one shar
 | `commands.ts` | Lists slash commands and skills for autocomplete |
 | `naming.ts`, `names.ts` | Names a workspace from its first prompt; city names for worktree folders |
 | `updater.ts` | Auto-update from GitHub releases via electron-updater |
-| `addons.ts`, `addonApi.ts`, `addonHost.ts`, `addonClient.ts` | [Add-ons](prd/add-ons.md): finds plugins with a `choo-choo.addon.json`, serves their views on `choo-addon://` in sandboxed frames, and answers their permission-checked host API calls |
+| `addons.ts`, `addonApi.ts`, `addonHost.ts`, `addonClient.ts` | [Add-ons](prd/add-ons.md): finds plugins with a `choo-choo.addon.json`, serves their views on `choo-addon://` in sandboxed frames, answers their permission-checked host API calls, keeps their background pages in a window that is never shown, and passes the orchestrator's calls to their tools |
 | `devFeedback.ts` | Dev-only comment mode writer (see [comment mode](prd/comment-mode.md)) |
 
 ## Data on disk

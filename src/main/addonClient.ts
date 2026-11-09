@@ -9,7 +9,10 @@ export const HOST_SCRIPT = String.raw`(() => {
   if (window.choo) return
   let seq = 0
   const pending = new Map()
-  const listeners = { workspaces: new Set(), theme: new Set() }
+  const listeners = { workspaces: new Set(), theme: new Set(), prs: new Set(), store: new Set() }
+  const tools = new Map()
+  // Calls that arrived before the page registered a handler for them.
+  const waiting = []
   let resolveReady
   const ready = new Promise((r) => (resolveReady = r))
 
@@ -26,6 +29,17 @@ export const HOST_SCRIPT = String.raw`(() => {
       pending.set(id, { resolve, reject })
       window.parent.postMessage({ choo: 1, type: 'call', id, method, args }, '*')
     })
+
+  const post = (m) => window.parent.postMessage(m, '*')
+
+  function runTool(m) {
+    Promise.resolve()
+      .then(() => tools.get(m.name)(m.input, m.context))
+      .then(
+        (result) => post({ choo: 1, type: 'tool-result', id: m.id, ok: true, result: result === undefined ? null : result }),
+        (err) => post({ choo: 1, type: 'tool-result', id: m.id, ok: false, error: String((err && err.message) || err) })
+      )
+  }
 
   window.addEventListener('message', (e) => {
     if (e.source !== window.parent) return
@@ -44,6 +58,15 @@ export const HOST_SCRIPT = String.raw`(() => {
       pending.delete(m.id)
       if (m.ok) p.resolve(m.result)
       else p.reject(new Error(m.error))
+    } else if (m.type === 'tool') {
+      if (tools.has(m.name)) return runTool(m)
+      waiting.push(m)
+      setTimeout(() => {
+        const i = waiting.indexOf(m)
+        if (i < 0) return
+        waiting.splice(i, 1)
+        post({ choo: 1, type: 'tool-result', id: m.id, ok: false, error: 'The add-on has no handler for ' + m.name })
+      }, 10000)
     } else if (m.type === 'event') {
       if (m.name === 'theme') {
         choo.theme = m.theme
@@ -68,7 +91,7 @@ export const HOST_SCRIPT = String.raw`(() => {
     dark: true,
     apiVersion: 0,
     call,
-    /** on('workspaces', cb): something about a workspace changed, list again. on('theme', cb): colors changed. Returns a function that stops listening. */
+    /** on('workspaces', cb): something about a workspace changed, list again. on('prs', cb): a pull request or its checks changed. on('store', cb): this add-on's data changed, from any of its pages. on('theme', cb): colors changed. Returns a function that stops listening. */
     on(name, cb) {
       if (!listeners[name]) throw new Error('Unknown event ' + name)
       listeners[name].add(cb)
@@ -90,12 +113,22 @@ export const HOST_SCRIPT = String.raw`(() => {
       delete: (key) => call('store.delete', { key }),
       keys: () => call('store.keys')
     },
+    tools: {
+      /** In the background page: answer the orchestrator's calls to a tool listed in the manifest. */
+      handle(name, fn) {
+        tools.set(name, fn)
+        for (const m of waiting.filter((w) => w.name === name)) {
+          waiting.splice(waiting.indexOf(m), 1)
+          runTool(m)
+        }
+      }
+    },
     ui: {
       openWorkspace: (workspaceId) => call('ui.openWorkspace', { workspaceId }),
       notify: (title, body, workspaceId) => call('ui.notify', { title, body, workspaceId })
     }
   }
   window.choo = choo
-  window.parent.postMessage({ choo: 1, type: 'hello' }, '*')
+  post({ choo: 1, type: 'hello' })
 })()
 `
