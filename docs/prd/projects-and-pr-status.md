@@ -42,6 +42,7 @@ There was no way to take a project out of Choo Choo or clean up the workspace fo
 
 - IPC: `removeProject`, `deleteWorkspace`, `deleteLeftover` (`src/main/index.ts`). Leftovers are stored in `AppState.leftovers`.
 - PR state: `gh pr view` now also returns `reviewDecision` and `mergeStateStatus`. `src/shared/prStatus.ts` picks the button's action, with tests in `test/prStatus.test.ts`.
+- Keeping PR state fresh: `src/main/prWatch.ts` probes each open workspace's PR (`pulls?head=…`) and its head commit's check runs with conditional requests through `gh api -i` and `If-None-Match`. Unchanged answers are 304s, which don't count against GitHub's rate limit. Probes run every 15s while the window is focused, every 60s otherwise, and right away when it comes to the front. When a probe returns 200 the main process sends `pr:changed`; the renderer bumps `prVersion[wsId]` and the PR button, Checks tab, hover preview and merged actions reload. A full reload also happens every 5 minutes, for changes the probes can't see (PRs from forks, commit statuses). There is no webhook relay: Choo Choo has no server, and webhooks need a public endpoint.
 
 ## Compliance, privacy and security
 

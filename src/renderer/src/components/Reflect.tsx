@@ -23,6 +23,7 @@ export async function archiveAndLeave(wsId: string) {
  */
 export function MergedActions({ ws }: { ws: Workspace }) {
   const stats = useStore((s) => s.stats[ws.id])
+  const prVersion = useStore((s) => s.prVersion[ws.id] ?? 0)
   const [pr, setPr] = useState<PrInfo | null>(null)
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(dismissKey(ws.id)))
   const [archiving, setArchiving] = useState(false)
@@ -32,12 +33,10 @@ export function MergedActions({ ws }: { ws: Workspace }) {
     setDismissed(localStorage.getItem(dismissKey(ws.id)))
     const load = () => void window.api.getPr(ws.id).then((p) => live && setPr(p), () => {})
     load()
-    const t = setInterval(load, 60_000)
     return () => {
       live = false
-      clearInterval(t)
     }
-  }, [ws.id, stats])
+  }, [ws.id, stats, prVersion])
 
   if (!pr || pr.state !== 'MERGED' || ws.orchestrator) return null
   const showContinue = dismissed !== String(pr.number)

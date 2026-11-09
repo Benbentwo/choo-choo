@@ -16,6 +16,7 @@ import { pickCityName } from './names'
 import { readScripts } from './scripts'
 import { listCommands } from './commands'
 import * as gh from './github'
+import { startPrWatch } from './prWatch'
 import { suggestName } from './naming'
 import * as updates from './updater'
 import { registerDevFeedback } from './devFeedback'
@@ -1244,6 +1245,21 @@ app.whenReady().then(async () => {
   buildMenu()
   createWindow()
   updates.startUpdater(send)
+  // PR and check changes: cheap ETag probes, and the UI refetches only when one reports a change.
+  const prWatch = startPrWatch({
+    targets: () => {
+      const s = store.get()
+      return s.workspaces
+        .filter((w) => !w.archived && !w.orchestrator)
+        .flatMap((w) => {
+          const repo = s.repos.find((r) => r.id === w.repoId)
+          return repo?.githubOwner && w.branch !== repo.defaultBranch ? [{ id: w.id, path: w.path, branch: w.branch }] : []
+        })
+    },
+    focused: () => !!win?.isFocused(),
+    onChange: (wsId) => send('pr:changed', wsId)
+  })
+  app.on('browser-window-focus', () => prWatch.poke())
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

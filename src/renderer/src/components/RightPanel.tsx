@@ -161,6 +161,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const chats = s.chats.filter((c) => c.workspaceId === ws.id)
   const chatId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
   const agentBusy = chats.some((c) => c.status === 'running')
+  const prVersion = s.prVersion[ws.id] ?? 0
 
   useEffect(() => {
     let live = true
@@ -177,13 +178,11 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       })
     setAddedAt(localStorage.getItem(addedKey(ws.id)) ?? undefined)
     load()
-    // Poll faster while checks are running so the button flips to Merge or Fix soon after they finish.
-    const t = setInterval(load, 30_000)
     return () => {
       live = false
-      clearInterval(t)
     }
-  }, [ws.id, stats, agentBusy])
+    // prVersion: the PR watcher in the main process saw a change on GitHub.
+  }, [ws.id, stats, agentBusy, prVersion])
 
   const create = async (draft: boolean) => {
     setMenu(false)

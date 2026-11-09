@@ -122,6 +122,7 @@ const api: Api = {
   revealInFinder: inv('shell:reveal') as Api['revealInFinder'],
   onMenu: (cb) => on<[string]>('menu', cb),
   onStateChanged: (cb) => on<[]>('state:changed', cb),
+  onPrChanged: (cb) => on<[string]>('pr:changed', cb),
   updateStatus: inv('updates:status') as Api['updateStatus'],
   checkForUpdates: inv('updates:check') as Api['checkForUpdates'],
   installAppUpdate: inv('updates:install-app') as Api['installAppUpdate'],

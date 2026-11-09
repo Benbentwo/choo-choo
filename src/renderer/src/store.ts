@@ -30,6 +30,8 @@ interface UI {
   openDoc: Record<string, Doc | null>
   /** Comments on diff lines waiting to be sent to the agent as one message, per workspace. */
   codeComments: Record<string, CodeComment[]>
+  /** Bumped when GitHub reports a change to a workspace's PR or checks; PR views reload on it. */
+  prVersion: Record<string, number>
   settings: Settings
   modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | 'group' | 'remove-repo' | null
   /** Project the Remove project dialog is for. */
@@ -83,6 +85,7 @@ export const useStore = create<UI>((set, get) => ({
   activeChat: {},
   openDoc: {},
   codeComments: {},
+  prVersion: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
   groups: [],

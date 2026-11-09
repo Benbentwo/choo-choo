@@ -74,6 +74,10 @@ export function App() {
       }
     })
     const offState = window.api.onStateChanged(() => void refreshState())
+    const offPr = window.api.onPrChanged((wsId) => {
+      const st = useStore.getState()
+      st.set({ prVersion: { ...st.prVersion, [wsId]: (st.prVersion[wsId] ?? 0) + 1 } })
+    })
     const offLink = window.api.onOpenShareLink((link) => useStore.getState().set({ modal: 'open-share', shareLinkDraft: link }))
     const offNav = window.api.onNavigate((wsId, chatId) => {
       useStore.getState().setActiveChat(wsId, chatId)
@@ -82,6 +86,7 @@ export function App() {
     return () => {
       offLink()
       offState()
+      offPr()
       offNav()
       offChat()
       offMenu()

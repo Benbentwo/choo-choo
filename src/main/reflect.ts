@@ -41,12 +41,24 @@ async function readAtRef(repo: Repo, ref: string, file: string): Promise<string 
   }
 }
 
+/** Reflections in progress, so a second request for the same workspace waits on the first. */
+const inFlight = new Map<string, Promise<ReflectResult>>()
+
 /**
  * Has an agent read the workspace's chats and the repo's agent setup, and suggest changes
  * that would have avoided the friction. Read-only: nothing is written here.
+ * A request while one is already running joins it, so the dialog opening twice (React
+ * StrictMode in dev) or Try again mid-run gets the same result instead of an error.
  */
-export async function reflect(ws: Workspace, repo: Repo, env: Record<string, string>, model: string, feedback = ''): Promise<ReflectResult> {
-  if (running.has(ws.id)) throw new Error('Already reflecting on this workspace')
+export function reflect(ws: Workspace, repo: Repo, env: Record<string, string>, model: string, feedback = ''): Promise<ReflectResult> {
+  const current = inFlight.get(ws.id)
+  if (current) return current
+  const p = reflectOnce(ws, repo, env, model, feedback).finally(() => inFlight.delete(ws.id))
+  inFlight.set(ws.id, p)
+  return p
+}
+
+async function reflectOnce(ws: Workspace, repo: Repo, env: Record<string, string>, model: string, feedback: string): Promise<ReflectResult> {
   const chats = store
     .get()
     .chats.filter((c) => c.workspaceId === ws.id)

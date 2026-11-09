@@ -849,6 +849,8 @@ export interface Api {
   revealInFinder(path: string): Promise<void>
   onMenu(cb: (action: string) => void): () => void
   onStateChanged(cb: () => void): () => void
+  /** A workspace's PR or its checks changed on GitHub (or a periodic full refresh is due). */
+  onPrChanged(cb: (workspaceId: string) => void): () => void
   updateStatus(): Promise<UpdateStatus>
   /** Checks now, whatever the Settings toggles say. */
   checkForUpdates(which?: 'app' | 'claude' | 'all'): Promise<UpdateStatus>
