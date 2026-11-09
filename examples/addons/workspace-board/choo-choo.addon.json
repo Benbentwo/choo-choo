@@ -1,0 +1,11 @@
+{
+  "apiVersion": 1,
+  "name": "Workspace board",
+  "description": "Every workspace as a card, in columns by what it's doing. Start new ones from the board and keep notes per workspace.",
+  "permissions": ["repos:read", "workspaces:read", "workspaces:start", "storage"],
+  "views": [
+    { "id": "board", "slot": "app", "title": "Board", "entry": "ui/board.html" },
+    { "id": "repo-board", "slot": "repo", "title": "Board", "entry": "ui/board.html" },
+    { "id": "notes", "slot": "workspace", "title": "Notes", "entry": "ui/notes.html" }
+  ]
+}

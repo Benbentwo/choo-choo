@@ -1,6 +1,7 @@
 import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
+import type { AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon } from './addons'
 export interface Repo {
   id: string
   name: string
@@ -108,6 +109,8 @@ export interface Workspace {
   orchestratorId?: string
   /** Set on a project group's orchestrator. It runs in the first repo's checkout. */
   groupId?: string
+  /** The add-on that started this workspace, by plugin id. */
+  addonId?: string
   /** Set while this workspace is shared with coworkers. */
   share?: { id: string; link: string; sharedAt: number; autoSync: boolean }
   /** Set when this workspace was opened from a coworker's share. */
@@ -400,6 +403,8 @@ export interface Settings extends AppearanceSettings {
   telemetry: Telemetry
   /** Wake an idle orchestrator when a workspace it started finishes, so it checks and reports back. */
   orchestratorAutoUpdates: boolean
+  /** Add-ons turned on in Choo Choo and the permissions agreed to, by plugin id. */
+  addons?: Record<string, AddonGrant>
 }
 
 export type ExtraAgentId = 'scout' | 'reviewer' | 'securityReviewer' | 'quickWorker'
@@ -771,6 +776,20 @@ export interface Api {
   pluginSetEnabled(repoId: string, id: string, enabled: boolean, scope: string): Promise<void>
   pluginDetails(repoId: string, id: string): Promise<string>
   localSkills(repoId: string): Promise<LocalSkill[]>
+  /** Installed add-ons. `fresh` asks Claude Code again instead of using what the app last read. */
+  addonsList(fresh?: boolean): Promise<AddonInfo[]>
+  /** Add-ons the sources offer that aren't installed. */
+  addonsAvailable(): Promise<AvailableAddon[]>
+  addonSources(): Promise<AddonSource[]>
+  addonAddSource(source: string): Promise<void>
+  addonRemoveSource(name: string): Promise<void>
+  addonInstall(id: string, acceptSha?: string): Promise<PluginInstallResult>
+  addonUninstall(id: string): Promise<void>
+  /** Turns an add-on on or off. Turning on needs the permissions the person was shown; it fails if the add-on now asks for others. */
+  addonSetEnabled(id: string, enabled: boolean, permissions?: string[]): Promise<AddonInfo[]>
+  /** One host API call from an add-on's view. The main process checks the add-on's permissions. */
+  addonCall(key: string, method: string, args: unknown, context: AddonContext): Promise<AddonCallResult>
+  onAddonsChanged(cb: () => void): () => void
   /** Shows a file or folder in Finder. */
   revealPath(path: string): Promise<void>
   respondPermission(requestId: string, decision: PermissionDecision): void

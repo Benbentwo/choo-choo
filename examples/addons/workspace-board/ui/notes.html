@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Notes</title>
+    <link rel="stylesheet" href="base.css" />
+    <style>
+      body { display: flex; flex-direction: column; padding: 10px 12px; gap: 6px; }
+      textarea { flex: 1; resize: none; background: transparent; border-color: transparent; padding: 4px; }
+      textarea:focus { border-color: transparent; }
+    </style>
+  </head>
+  <body>
+    <textarea id="notes" placeholder="Notes for this workspace. Only you see them; they stay on this Mac."></textarea>
+    <div id="state" class="faint" style="font-size: 11px"></div>
+    <script src="/@choo/host.js"></script>
+    <script>
+      choo.ready.then(async () => {
+        const key = `notes:${choo.context.workspaceId}`
+        const box = document.getElementById('notes')
+        const state = document.getElementById('state')
+        box.value = (await choo.store.get(key)) || ''
+        let timer
+        box.oninput = () => {
+          state.textContent = ''
+          clearTimeout(timer)
+          timer = setTimeout(async () => {
+            try {
+              if (box.value) await choo.store.set(key, box.value)
+              else await choo.store.delete(key)
+              state.textContent = 'Saved'
+            } catch (e) {
+              state.textContent = e.message
+            }
+          }, 400)
+        }
+      })
+    </script>
+  </body>
+</html>

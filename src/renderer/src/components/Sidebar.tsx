@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { Repo, Workspace } from '@shared/types'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
-import { useStore, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette } from '../store'
+import { useStore, openAddonPage, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
-import { IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
+import { IconAddon, IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
 import { BrandMark } from './BrandMark'
 import { UpdateBanners } from './Updates'
+import { addonViews } from './Addons'
 
 export function Sidebar() {
   const s = useStore()
@@ -79,6 +80,8 @@ export function Sidebar() {
     { label: 'New project group…', icon: <IconOrchestrator />, onClick: () => editGroup(null) }
   ]
   const hiddenCount = s.repos.filter((r) => r.hidden).length
+  const appViews = addonViews(s.addons, 'app')
+  const repoViews = addonViews(s.addons, 'repo')
 
   return (
     <aside className="flex w-[280px] shrink-0 flex-col border-r border-line bg-sidebar">
@@ -96,9 +99,19 @@ export function Sidebar() {
       </div>
 
       <nav className="px-2 pb-3">
-        <NavItem icon={<IconHome />} label="Home" active={!s.selectedWs} onClick={() => s.selectWorkspace(null)} />
+        <NavItem icon={<IconHome />} label="Home" active={!s.selectedWs && !s.addonPage && !s.draftRepo} onClick={() => s.selectWorkspace(null)} />
         <NavItem icon={<IconPlus />} label="Create" onClick={() => s.set({ modal: 'create' })} />
         <NavItem icon={<IconSearch />} label="Search" onClick={() => openPalette()} hint="⌘K" />
+        {appViews.map(({ addon, view }) => (
+          <NavItem
+            key={`${addon.key}/${view.id}`}
+            icon={<IconAddon />}
+            label={view.title}
+            title={`From the ${addon.name} add-on`}
+            active={s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && !s.addonPage.repoId}
+            onClick={() => openAddonPage({ key: addon.key, viewId: view.id })}
+          />
+        ))}
       </nav>
 
       <div className="border-t border-line" />
@@ -203,6 +216,20 @@ export function Sidebar() {
                   <IconPlus />
                 </button>
               </div>
+              {repoViews.map(({ addon, view }) => {
+                const on = s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && s.addonPage.repoId === repo.id
+                return (
+                  <button
+                    key={`${addon.key}/${view.id}`}
+                    title={`From the ${addon.name} add-on`}
+                    onClick={() => openAddonPage({ key: addon.key, viewId: view.id, repoId: repo.id })}
+                    className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 pl-5 text-left ${on ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+                  >
+                    <IconAddon className="shrink-0" />
+                    <span className="flex-1 truncate">{view.title}</span>
+                  </button>
+                )
+              })}
               {wss.map((w) => (
                 <WsRow key={w.id} w={w} />
               ))}
@@ -248,9 +275,9 @@ export function Sidebar() {
   )
 }
 
-function NavItem(p: { icon: React.ReactNode; label: string; active?: boolean; hint?: string; onClick: () => void }) {
+function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; onClick: () => void }) {
   return (
-    <button onClick={p.onClick} className={`flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left ${p.active ? 'bg-raised' : 'hover:bg-hover'}`}>
+    <button onClick={p.onClick} title={p.title} className={`flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left ${p.active ? 'bg-raised' : 'hover:bg-hover'}`}>
       <span className="text-muted">{p.icon}</span>
       <span className="flex-1">{p.label}</span>
       {p.hint && <span className="text-[11px] text-faint">{p.hint}</span>}

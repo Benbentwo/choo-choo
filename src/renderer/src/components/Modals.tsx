@@ -10,6 +10,7 @@ import { AppearanceSettings } from './Appearance'
 import { IntegrationsSettings } from './Integrations'
 import { McpSettings } from './McpSettings'
 import { PluginSettings } from './PluginSettings'
+import { AddonSettings } from './AddonSettings'
 import { OpenShareModal, ShareModal } from './ShareModals'
 import { CommandPalette } from './CommandPalette'
 import { UpdatesSettings } from './Updates'
@@ -184,21 +185,21 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'integrations' | 'updates' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   return (
-    <Shell onClose={onClose} width="w-[880px]">
+    <Shell onClose={onClose} width="w-[940px]">
       <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
         <div className="pb-3 font-medium">Settings</div>
         <div className="ml-auto flex gap-1">
-          {(['general', 'projects', 'agents', 'prompts', 'mcp', 'plugins', 'integrations', 'updates', 'telemetry', 'appearance'] as const).map((t) => (
+          {(['general', 'projects', 'agents', 'prompts', 'mcp', 'plugins', 'addons', 'integrations', 'updates', 'telemetry', 'appearance'] as const).map((t) => (
             <button
               key={t}
               role="tab"
               onClick={() => setTab(t)}
-              className={`-mb-px border-b-2 px-2.5 pb-2.5 capitalize ${tab === t ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}
+              className={`-mb-px border-b-2 px-2.5 pb-2.5 ${t === 'addons' ? '' : 'capitalize'} ${tab === t ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}
             >
-              {t === 'mcp' ? 'MCP' : t}
+              {t === 'mcp' ? 'MCP' : t === 'addons' ? 'Add-ons' : t}
             </button>
           ))}
         </div>
@@ -216,6 +217,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <McpSettings />
         ) : tab === 'plugins' ? (
           <PluginSettings />
+        ) : tab === 'addons' ? (
+          <AddonSettings />
         ) : tab === 'prompts' ? (
           <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
         ) : tab === 'telemetry' ? (

@@ -45,5 +45,5 @@ Settings > Integrations lists available services with a Connect button. Connect 
 ## Open questions
 
 - Which services first? Linear and Notion were named.
-- How do plugins and add-ons map onto Claude Code's own plugin system?
+- ~~How do plugins and add-ons map onto Claude Code's own plugin system?~~ Answered: an add-on is a Claude Code plugin plus a Choo Choo manifest; see [Add-ons](add-ons.md).
 - When do pasted tokens become acceptable (enterprise setups without OAuth apps)?

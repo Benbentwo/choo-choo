@@ -19,7 +19,7 @@ Claude Code plugins bundle skills, agents, hooks, MCP servers and code intellige
 
 ## Non-goals
 
-- Choo Choo's own plugin system or registry. Everything goes through `claude plugin …`.
+- Choo Choo's own plugin system or registry. Everything goes through `claude plugin …`. [Add-ons](add-ons.md) build on plugins the same way.
 - Editing skills in the app. "Show in Finder" opens them in your editor of choice.
 - Plugin eval runs, plugin authoring, and mods.
 
