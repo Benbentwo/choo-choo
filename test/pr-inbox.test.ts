@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupByRepo, parsePrInbox, prBranch, PR_INBOX_QUERY } from '../src/shared/prInbox'
+import { groupByRepo, parsePrInbox, prBranch, prInboxQuery } from '../src/shared/prInbox'
 
 const node = (repo: string, number: number, updatedAt: string, extra: Record<string, unknown> = {}) => ({
   number,
@@ -65,10 +65,9 @@ describe('prBranch', () => {
   })
 })
 
-describe('PR_INBOX_QUERY', () => {
-  it('asks for review requests and own PRs, open and not archived', () => {
-    expect(PR_INBOX_QUERY).toContain('review-requested:@me')
-    expect(PR_INBOX_QUERY).toContain('author:@me')
-    expect(PR_INBOX_QUERY.match(/is:open is:pr archived:false/g)).toHaveLength(2)
+describe('prInboxQuery', () => {
+  it('asks for review requests or own PRs, open and not archived, newest first', () => {
+    expect(prInboxQuery('review', 50)).toContain('review: search(query: "is:open is:pr archived:false review-requested:@me sort:updated-desc"')
+    expect(prInboxQuery('mine', 20)).toContain('mine: search(query: "is:open is:pr archived:false author:@me sort:updated-desc", type: ISSUE, first: 20)')
   })
 })

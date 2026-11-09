@@ -42,11 +42,21 @@ const FIELDS = `... on PullRequest {
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       }`
 
-/** Both searches in one call. `archived:false` keeps PRs in archived repos out. */
-export const PR_INBOX_QUERY = `query {
-  review: search(query: "is:open is:pr archived:false review-requested:@me", type: ISSUE, first: 100) { nodes { ${FIELDS} } }
-  mine: search(query: "is:open is:pr archived:false author:@me", type: ISSUE, first: 100) { nodes { ${FIELDS} } }
+const SEARCH: Record<PrRole, string> = {
+  review: 'is:open is:pr archived:false review-requested:@me',
+  mine: 'is:open is:pr archived:false author:@me'
+}
+
+/**
+ * One search per call, newest first. Both lists of 100 with CI status in one query made GitHub
+ * time out (HTTP 502 after about 10 s), so they go as two smaller requests. `archived:false`
+ * keeps PRs in archived repos out.
+ */
+export function prInboxQuery(role: PrRole, first: number): string {
+  return `query {
+  ${role}: search(query: "${SEARCH[role]} sort:updated-desc", type: ISSUE, first: ${first}) { nodes { ${FIELDS} } }
 }`
+}
 
 interface RawPr {
   number?: number
