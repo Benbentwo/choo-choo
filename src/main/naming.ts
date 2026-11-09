@@ -72,13 +72,19 @@ export function namingContext(chats: ChatItem[][], maxChars = 6000): string {
 export async function suggestTitleFromChats(chats: ChatItem[][]): Promise<string | null> {
   const context = namingContext(chats)
   if (!context.trim()) return null
-  const json = (await askHaiku(
-    'Below is a coding session. Give it a short title that says what the work is about now; if the focus moved, name where it ended up. ' +
-      'Reply with only JSON like {"title":"Automate photo upload"}. Title: 2-5 words, sentence case.\n\n<session>\n' +
-      context +
-      '\n</session>'
-  )) as { title?: string }
-  const title = json.title?.trim().slice(0, 80)
-  if (!title) throw new Error("Couldn't come up with a name. Try again, or rename it yourself.")
+  const failed = "Couldn't come up with a name. Try again, or rename it yourself."
+  let json: { title?: unknown }
+  try {
+    json = await askHaiku(
+      'Below is a coding session. Give it a short title that says what the work is about now; if the focus moved, name where it ended up. ' +
+        'Reply with only JSON like {"title":"Automate photo upload"}. Title: 2-5 words, sentence case.\n\n<session>\n' +
+        context +
+        '\n</session>'
+    )
+  } catch {
+    throw new Error(failed)
+  }
+  const title = typeof json.title === 'string' ? json.title.trim().slice(0, 80) : ''
+  if (!title) throw new Error(failed)
   return title
 }
