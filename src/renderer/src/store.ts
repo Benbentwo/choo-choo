@@ -111,7 +111,7 @@ export const useStore = create<UI>((set, get) => ({
   addonPins: [],
   addonPage: null,
   prsPage: false,
-  prInbox: null,
+  prInbox: readInboxCache(),
   prInboxError: null,
   prInboxLoading: false,
   activeChat: {},
@@ -214,12 +214,34 @@ export function openPrsPage() {
 
 let inboxLoad: Promise<void> | null = null
 
+const INBOX_CACHE_KEY = 'choo.prInbox'
+
+/** The PR list from the last successful load, so the page has something to show at once and when GitHub is down. */
+function readInboxCache(): PrInbox | null {
+  try {
+    const raw = localStorage.getItem(INBOX_CACHE_KEY)
+    return raw ? (JSON.parse(raw) as PrInbox) : null
+  } catch {
+    return null
+  }
+}
+
+function writeInboxCache(inbox: PrInbox) {
+  try {
+    localStorage.setItem(INBOX_CACHE_KEY, JSON.stringify(inbox))
+  } catch {
+    // Storage full or unavailable: the list just loads from GitHub next time.
+  }
+}
+
 /** Reloads the PRs list. Calls made while a load is running share it. */
 export function refreshPrInbox(): Promise<void> {
   inboxLoad ??= (async () => {
     useStore.getState().set({ prInboxLoading: true })
     try {
-      useStore.getState().set({ prInbox: await window.api.prInbox(), prInboxError: null })
+      const inbox = await window.api.prInbox()
+      writeInboxCache(inbox)
+      useStore.getState().set({ prInbox: inbox, prInboxError: null })
     } catch (e) {
       useStore.getState().set({ prInboxError: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e) })
     } finally {

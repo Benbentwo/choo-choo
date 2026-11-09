@@ -50,6 +50,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Streaming replies with markdown, collapsible tool calls, cost and duration
 - ✅ Stop (button or Esc)
 - ✅ Send while Claude works: Steer (default, folded in at the next step) or Queue (sent after), set in Settings > General
+- ✅ `/clear` folds the messages before it behind a "Context cleared" divider, with Show earlier messages
 - ✅ @mention file autocomplete, /command autocomplete (built-ins, project and user commands, skills)
 - ✅ Attach images (paste, drop or pick); add folders for the agent
 - ✅ Plan mode (⇧Tab) with "Approve and build"

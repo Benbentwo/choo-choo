@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Repo, Workspace } from '@shared/types'
+import { visiblePrs } from '@shared/prInbox'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
 import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage } from '../store'
@@ -80,7 +81,7 @@ export function Sidebar() {
     { label: 'New project group…', icon: <IconOrchestrator />, onClick: () => editGroup(null) }
   ]
   const hiddenCount = s.repos.filter((r) => r.hidden).length
-  const toReview = s.prInbox?.prs.filter((p) => p.roles.includes('review')).length ?? 0
+  const toReview = visiblePrs(s.prInbox?.prs ?? [], s.settings.prsHidden).filter((p) => p.roles.includes('review')).length
   const appViews = addonViews(s.addons, 'app')
   const repoViews = addonViews(s.addons, 'repo')
 

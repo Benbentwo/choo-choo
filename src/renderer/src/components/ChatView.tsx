@@ -4,6 +4,8 @@ import remarkGfm from 'remark-gfm'
 import type { Chat, ChatItem } from '@shared/types'
 import { useStore, reportError, removePermission } from '../store'
 import { setDraft } from './Composer'
+import { tidyMarkdown } from '../markdown'
+import { MARKDOWN_COMPONENTS } from './CodeBlock'
 import { API_PRICE_NOTE } from './UsageGraphs'
 import { IconDown, IconRight, IconTool } from '../icons'
 
@@ -20,6 +22,10 @@ export function ChatView({ chat }: { chat: Chat }) {
     return { items, children }
   }, [all])
   const pendingCount = useStore((s) => s.permissions[chat.id]?.length ?? 0)
+  // /clear empties Claude's context, so everything before the latest one folds away behind a divider.
+  const [showEarlier, setShowEarlier] = useState(false)
+  const clearAt = useMemo(() => lastClear(items), [items])
+  useEffect(() => setShowEarlier(false), [chat.id, clearAt])
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
@@ -44,7 +50,23 @@ export function ChatView({ chat }: { chat: Chat }) {
             <div>The agent works in this workspace's own worktree and branch.</div>
           </div>
         )}
-        {items.map((it) => (
+        {clearAt >= 0 && (
+          <>
+            {showEarlier &&
+              items.slice(0, clearAt).map((it) => <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />)}
+            <div className="my-4 flex items-center gap-3 text-[11px] text-faint">
+              <div className="h-px flex-1 bg-line" />
+              <span>Context cleared</span>
+              {clearAt > 0 && (
+                <button className="hover:text-fg hover:underline" onClick={() => setShowEarlier(!showEarlier)}>
+                  {showEarlier ? 'Hide earlier messages' : `Show ${clearAt} earlier message${clearAt === 1 ? '' : 's'}`}
+                </button>
+              )}
+              <div className="h-px flex-1 bg-line" />
+            </div>
+          </>
+        )}
+        {items.slice(clearAt >= 0 ? clearAt + 1 : 0).filter((it, i) => !(clearAt >= 0 && i === 0 && it.kind === 'result' && !it.turns)).map((it) => (
           <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />
         ))}
         <PermissionCards chat={chat} />
@@ -56,6 +78,15 @@ export function ChatView({ chat }: { chat: Chat }) {
       </div>
     </div>
   )
+}
+
+/** Index of the latest /clear the person sent, or -1. */
+function lastClear(items: ChatItem[]): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.kind === 'user' && it.text.trim() === '/clear') return i
+  }
+  return -1
 }
 
 async function revert(chat: Chat, itemId: string) {
@@ -107,7 +138,7 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
     case 'assistant':
       return (
         <div className="prose-chat my-3 leading-relaxed">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{tidyMarkdown(item.text)}</ReactMarkdown>
         </div>
       )
     case 'tool':
@@ -200,7 +231,7 @@ function SubagentItem({ item, calls }: { item: Extract<ChatItem, { kind: 'tool' 
           ))}
           {item.result !== undefined && (
             <div className={`prose-chat mt-2 text-[13px] ${item.isError ? 'text-del' : ''}`}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.result}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{tidyMarkdown(item.result)}</ReactMarkdown>
             </div>
           )}
         </div>
@@ -244,10 +275,24 @@ export function toolSummary(name: string, input: unknown): string {
   }
 }
 
-/** Prompts sent by a button (see prPrompt in RightPanel), shown as that button's name instead of the full text. */
+/**
+ * Prompts sent by a button, shown as that button's name instead of the full text. Each pattern
+ * matches the first line of the prompt builder named beside it; keep them in step.
+ */
+const BUTTON_PROMPTS: [RegExp, (m: RegExpExecArray) => string][] = [
+  [/^Create a (draft )?pull request for the work on this branch \(/, (m) => (m[1] ? 'Create draft PR' : 'Create PR')], // prPrompt
+  [/^Review the changes on this branch compared to `/, () => 'Review code'], // REVIEW_PROMPT
+  [/^Do a security review of the changes on this branch compared to `/, () => 'Security review'], // SECURITY_REVIEW_PROMPT
+  [/^These checks are failing on PR #(\d+):/, (m) => `Fix checks on #${m[1]}`], // fixChecksPrompt
+  [/^PR #(\d+) has merge conflicts with /, (m) => `Resolve conflicts on #${m[1]}`], // resolveConflictsPrompt
+  [/^Address the review feedback on PR #(\d+) \(/, (m) => `Address review comments on #${m[1]}`] // prCommentsPrompt
+]
+
 function buttonAction(text: string): string | null {
-  const m = /^Create a (draft )?pull request for the work on this branch \(/.exec(text)
-  if (m) return m[1] ? 'Create draft PR' : 'Create PR'
+  for (const [re, label] of BUTTON_PROMPTS) {
+    const m = re.exec(text)
+    if (m) return label(m)
+  }
   return null
 }
 
@@ -327,7 +372,7 @@ function PlanItem({ item, chat }: { item: Extract<ChatItem, { kind: 'tool' }>; c
     <div className="my-3 rounded-xl border border-amber-500/40 bg-amber-500/5">
       <div className="border-b border-amber-500/20 px-4 py-2 text-[12px] font-medium text-amber-400">Plan</div>
       <div className="prose-chat px-4 py-1">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{plan}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{tidyMarkdown(plan)}</ReactMarkdown>
       </div>
       {chat.planMode && chat.status !== 'running' && (
         <div className="flex gap-2 px-4 pb-3">
