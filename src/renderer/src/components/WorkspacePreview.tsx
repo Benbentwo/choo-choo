@@ -133,7 +133,7 @@ export function WorkspacePreviewCard({ ws, rect, cardProps, onClose }: { ws: Wor
             >
               <IconPR /> Create PR
             </button>
-            <button className="border-l border-line px-1.5 py-1 hover:bg-hover disabled:opacity-40" disabled={running || pr === undefined} onClick={() => setMenu(!menu)}>
+            <button title="More PR actions" className="border-l border-line px-1.5 py-1 hover:bg-hover disabled:opacity-40" disabled={running || pr === undefined} onClick={() => setMenu(!menu)}>
               <IconDown />
             </button>
             {menu && (

@@ -36,6 +36,7 @@ There was no way to take a project out of Choo Choo or clean up the workspace fo
 3. Deleting a workspace removes its folders and chats; its branch stays.
 4. Resolve conflicts and Fix checks send the agent a prompt with the base branch or the failing checks and links. Merge squash-merges.
 5. Merge shows only when checks pass, the PR isn't a draft, no review is required or outstanding, and GitHub's merge state is clean.
+6. Create PR opens a draft by default. While the PR is a draft, the PR menu offers Mark ready for review, which runs `gh pr ready`.
 
 ## Design
 

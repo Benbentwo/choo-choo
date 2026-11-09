@@ -37,7 +37,7 @@ export function Home() {
     <div className="flex flex-1 flex-col">
       <div className="drag flex h-11 items-center px-3">
         {!s.sidebarOpen && (
-          <button className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
+          <button title="Show sidebar" className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
             <IconSidebar width={16} height={16} />
           </button>
         )}

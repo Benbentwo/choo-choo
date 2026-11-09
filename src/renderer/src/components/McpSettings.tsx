@@ -20,6 +20,13 @@ const SOURCE: Record<string, string> = {
   enterprise: 'Managed by your organization'
 }
 
+/** The scope groups the list is split into, and which sources fall in each. */
+const GROUPS: { label: string; hint: string; sources: string[] }[] = [
+  { label: 'User scope', hint: 'Yours in every repo: your config, plugins and claude.ai connectors', sources: ['user', 'plugin', 'claudeai'] },
+  { label: 'Project scope', hint: 'This repo only: its .mcp.json and your local overrides', sources: ['project', 'local'] },
+  { label: 'Enterprise scope', hint: 'Set by your organization', sources: ['managed', 'enterprise'] }
+]
+
 const field = 'w-full rounded-md border border-line bg-bg px-2 py-1 outline-none'
 
 /** Settings → MCP: the MCP servers Claude Code loads for a repo, with status, tools and controls. */
@@ -90,7 +97,18 @@ export function McpSettings() {
       {servers?.length === 0 && (
         <div className="px-5 py-4 text-[12px] text-faint">No MCP servers yet. Add one here, or with `claude mcp add` in Terminal; both end up in the same place.</div>
       )}
-      {servers?.map((s) => {
+      {servers && servers.length > 0 && [...GROUPS, { label: 'Other', hint: '', sources: [] as string[] }].map((g) => {
+        const known = GROUPS.flatMap((x) => x.sources)
+        const list = servers.filter((s) => (g.sources.length ? g.sources.includes(s.source) : !known.includes(s.source)))
+        if (!list.length && g.label === 'Other') return null
+        return (
+          <section key={g.label}>
+            <div className="flex items-baseline gap-2 border-b border-line bg-raised/40 px-5 py-1.5">
+              <span className="text-[11px] font-medium tracking-wide text-muted uppercase">{g.label}</span>
+              <span className="text-[11px] text-faint">{g.hint}</span>
+            </div>
+            {!list.length && <div className="border-b border-line px-5 py-2.5 text-[12px] text-faint">None.</div>}
+            {list.map((s) => {
         const st = STATUS[s.status] ?? STATUS.failed
         const key = `${s.source}:${s.name}`
         return (
@@ -149,6 +167,9 @@ export function McpSettings() {
               </div>
             )}
           </div>
+        )
+            })}
+          </section>
         )
       })}
     </div>

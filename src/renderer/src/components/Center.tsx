@@ -56,7 +56,7 @@ export function Center({ ws }: { ws: Workspace }) {
     <main className="flex min-w-0 flex-1 flex-col bg-bg">
       <header className="drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
         {!s.sidebarOpen && (
-          <button className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
+          <button title="Show sidebar" className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
             <IconSidebar width={16} height={16} />
           </button>
         )}
@@ -64,7 +64,7 @@ export function Center({ ws }: { ws: Workspace }) {
         <IconRight className="text-faint" />
         <span className="no-drag selectable truncate">{ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch}</span>
         <div className="no-drag relative">
-          <button className="rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => setMenu(!menu)}>
+          <button title="Workspace actions" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => setMenu(!menu)}>
             <IconDots />
           </button>
           {menu && (
@@ -72,6 +72,16 @@ export function Center({ ws }: { ws: Workspace }) {
               <MenuItem label="Reveal in Finder" onClick={() => { setMenu(false); void window.api.revealInFinder(ws.path) }} />
               <MenuItem label="Copy path" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.path) }} />
               <MenuItem label="Copy branch name" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.branch) }} />
+              {active?.sdkSessionId && (
+                <MenuItem
+                  label="Copy resume command"
+                  title="Reopen this chat in Claude Code from a terminal, e.g. if Choo Choo crashes"
+                  onClick={() => {
+                    setMenu(false)
+                    void navigator.clipboard.writeText(`cd '${ws.path.replace(/'/g, `'\\''`)}' && claude --resume ${active.sdkSessionId}`)
+                  }}
+                />
+              )}
               <MenuItem label="Reflect on this session…" onClick={() => { setMenu(false); setReflecting(true) }} />
               <MenuItem label={ws.share ? 'Sharing with coworkers…' : 'Share with coworkers…'} onClick={() => { setMenu(false); s.set({ modal: 'share' }) }} />
               {!ws.orchestrator && active && !active.remote && active.status !== 'running' && (
@@ -105,7 +115,7 @@ export function Center({ ws }: { ws: Workspace }) {
                 {c.title}
               </button>
               {chats.length > 1 && (
-                <button className="invisible rounded text-faint group-hover:visible hover:text-fg" onClick={() => void closeChatTab(c.id)}>
+                <button title="Close chat" className="invisible rounded text-faint group-hover:visible hover:text-fg" onClick={() => void closeChatTab(c.id)}>
                   <IconX width={12} height={12} />
                 </button>
               )}
@@ -116,7 +126,7 @@ export function Center({ ws }: { ws: Workspace }) {
           <div className="flex h-10 max-w-[260px] items-center gap-2 border-b-2 border-fg px-3">
             <span className="truncate font-mono text-[12px]">{diffFile.split('/').pop()}</span>
             {doc?.kind === 'file' && <span className="text-[11px] text-faint">file</span>}
-            <button className="text-faint hover:text-fg" onClick={() => openDoc(ws.id, null)}>
+            <button title="Close file" className="text-faint hover:text-fg" onClick={() => openDoc(ws.id, null)}>
               <IconX width={12} height={12} />
             </button>
           </div>
@@ -148,14 +158,17 @@ export function Center({ ws }: { ws: Workspace }) {
         )}
       </div>
 
+      {/* An open diff or file takes the place of the chat history; the composer stays below it. */}
       {doc?.kind === 'diff' ? (
         <DiffView ws={ws} file={doc.path} />
       ) : doc?.kind === 'file' ? (
         <FileView ws={ws} file={doc.path} line={doc.line} />
       ) : active ? (
+        <ChatView chat={active} />
+      ) : null}
+      {active ? (
         <>
-          <ChatView chat={active} />
-          {hasNextUnread && (
+          {!doc && hasNextUnread && (
             <div className="mx-auto -mb-1 flex w-full max-w-3xl justify-end px-8">
               <button className="flex items-center gap-1 rounded-md border border-line bg-panel px-2.5 py-1 text-[12px] hover:bg-hover" onClick={goToNextUnread}>
                 Next unread <IconRight />
@@ -185,9 +198,9 @@ async function continueOnPhone(chatId: string) {
   }
 }
 
-function MenuItem(p: { label: string; danger?: boolean; onClick: () => void }) {
+function MenuItem(p: { label: string; title?: string; danger?: boolean; onClick: () => void }) {
   return (
-    <button onClick={p.onClick} className={`block w-full rounded px-2 py-1.5 text-left hover:bg-hover ${p.danger ? 'text-del' : ''}`}>
+    <button onClick={p.onClick} title={p.title} className={`block w-full rounded px-2 py-1.5 text-left hover:bg-hover ${p.danger ? 'text-del' : ''}`}>
       {p.label}
     </button>
   )

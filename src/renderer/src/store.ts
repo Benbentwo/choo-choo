@@ -28,6 +28,8 @@ interface UI {
   activeChat: Record<string, string>
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
+  /** Comments on diff lines waiting to be sent to the agent as one message, per workspace. */
+  codeComments: Record<string, CodeComment[]>
   settings: Settings
   modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | 'group' | 'remove-repo' | null
   /** Project the Remove project dialog is for. */
@@ -80,6 +82,7 @@ export const useStore = create<UI>((set, get) => ({
   selectedWs: null,
   activeChat: {},
   openDoc: {},
+  codeComments: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
   groups: [],
@@ -262,6 +265,34 @@ export function goToNextUnread() {
   const s = useStore.getState()
   s.setActiveChat(n.wsId, n.chatId)
   s.selectWorkspace(n.wsId)
+}
+
+/** A comment on a range of lines in the diff, queued in the composer until sent. */
+export interface CodeComment {
+  id: string
+  file: string
+  /** Line numbers in the new file, or in the old file for removed lines. */
+  start: number
+  end: number
+  side: 'new' | 'old'
+  /** The commented lines, as shown in the diff. */
+  code: string
+  text: string
+}
+
+export function setCodeComments(wsId: string, fn: (list: CodeComment[]) => CodeComment[]) {
+  const st = useStore.getState()
+  st.set({ codeComments: { ...st.codeComments, [wsId]: fn(st.codeComments[wsId] ?? []) } })
+}
+
+/** The message that sends queued code comments, followed by anything typed in the composer. */
+export function codeCommentsMessage(list: CodeComment[], text: string): string {
+  const parts = list.map((c) => {
+    const where = `${c.file}:${c.start === c.end ? c.start : `${c.start}-${c.end}`}${c.side === 'old' ? ' (removed lines)' : ''}`
+    const code = c.code.split('\n').map((l) => `    ${l}`).join('\n')
+    return `${where}\n${code}\n${c.text}`
+  })
+  return [`Comments on the code (${list.length}):`, ...parts, ...(text ? [text] : [])].join('\n\n')
 }
 
 export function openDoc(wsId: string, doc: Doc | null) {

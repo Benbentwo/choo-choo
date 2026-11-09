@@ -18,6 +18,8 @@ export function parseTranscript(text: string, subagent = false): { points: Usage
   const compactions: number[] = []
   const models = new Set<string>()
   let prompt: string | undefined
+  /** A message arrived and no main-chat response has answered it yet. */
+  let freshPrompt = false
   const short = (s: string, n = 160) => {
     const t = s.replace(/\s+/g, ' ').trim()
     return t.length > n ? `${t.slice(0, n - 1)}…` : t
@@ -52,7 +54,10 @@ export function parseTranscript(text: string, subagent = false): { points: Usage
       const c = e.message?.content
       const t = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b: any) => b?.type === 'text').map((b: any) => b.text).join(' ') : ''
       // Tool results also arrive as user lines; only a real message moves the prompt on.
-      if (t.trim() && !t.startsWith('<')) prompt = short(t)
+      if (t.trim() && !t.startsWith('<')) {
+        prompt = short(t)
+        freshPrompt = true
+      }
       continue
     }
     if (e.type !== 'assistant' || !e.message?.usage) continue
@@ -82,6 +87,10 @@ export function parseTranscript(text: string, subagent = false): { points: Usage
     }
     const did = didOf(d)
     if (did) point.did = did
+    if (freshPrompt && point.prompt) {
+      point.afterMessage = true
+      freshPrompt = false
+    }
     if (id) byId.set(id, point)
     order.push(point)
   }

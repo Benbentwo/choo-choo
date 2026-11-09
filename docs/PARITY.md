@@ -22,7 +22,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 
 ### Window and navigation
 - ✅ Three-pane layout: sidebar, chat, right panel; collapsible sidebar (⌘B), right panel, bottom panel (⌘J)
-- ✅ Breadcrumb header: repo › branch, workspace menu (Reveal in Finder, copy path/branch, archive)
+- ✅ Breadcrumb header: repo › branch, workspace menu (Reveal in Finder, copy path/branch, copy the active chat's `claude --resume` command, archive)
 - ✅ Back/forward between workspaces
 - ✅ Home view with recent workspaces
 - ✅ Command palette (⌘K) with All / Workspaces / Projects / Actions / Settings tabs; recent workspaces include archived ones (dimmed, accent bar, opening restores)
@@ -35,6 +35,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 ### Workspaces sidebar
 - ✅ "My workspaces" repo list; add a local repo or clone from URL
 - ✅ "+" per repo creates a workspace: a git worktree at `~/choo-choo/workspaces/<repo>/<city>` on `<prefix>/<city>`
+- ✅ Base branch per repo: the new-workspace screen has a "Starts a new branch from" dropdown (detected from `origin/HEAD` at first; the choice is remembered and PRs target it)
 - ✅ Diff stats (+N -M), running spinner, unread dot
 - ✅ Hide repositories, "Show hidden repositories"
 - ✅ Archive workspace (runs archive script, removes worktree, keeps branch)
@@ -48,6 +49,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Model picker (Opus / Fable / Sonnet / Haiku) and effort (Low / Medium / High / Extra high / Max)
 - ✅ Streaming replies with markdown, collapsible tool calls, cost and duration
 - ✅ Stop (button or Esc)
+- ✅ Send while Claude works: Steer (default, folded in at the next step) or Queue (sent after), set in Settings > General
 - ✅ @mention file autocomplete, /command autocomplete (built-ins, project and user commands, skills)
 - ✅ Attach images (paste, drop or pick); add folders for the agent
 - ✅ Plan mode (⇧Tab) with "Approve and build"
@@ -58,6 +60,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 
 ### Right panel
 - ✅ Changes: committed, uncommitted and untracked vs merge base, with diff view
+- ✅ Code comments: click, drag or shift-click line numbers in the diff to comment; comments wait as chips in the composer (which stays below an open diff or file) and go to the agent together, each with its file, lines and code
 - ✅ All files tree with file preview, filter
 - ✅ Artifacts: files the agent wrote
 - ✅ Checks: PR check runs, re-run failed jobs
