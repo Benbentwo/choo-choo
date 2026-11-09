@@ -273,10 +273,24 @@ export function toolSummary(name: string, input: unknown): string {
   }
 }
 
-/** Prompts sent by a button (see prPrompt in RightPanel), shown as that button's name instead of the full text. */
+/**
+ * Prompts sent by a button, shown as that button's name instead of the full text. Each pattern
+ * matches the first line of the prompt builder named beside it; keep them in step.
+ */
+const BUTTON_PROMPTS: [RegExp, (m: RegExpExecArray) => string][] = [
+  [/^Create a (draft )?pull request for the work on this branch \(/, (m) => (m[1] ? 'Create draft PR' : 'Create PR')], // prPrompt
+  [/^Review the changes on this branch compared to `/, () => 'Review code'], // REVIEW_PROMPT
+  [/^Do a security review of the changes on this branch compared to `/, () => 'Security review'], // SECURITY_REVIEW_PROMPT
+  [/^These checks are failing on PR #(\d+):/, (m) => `Fix checks on #${m[1]}`], // fixChecksPrompt
+  [/^PR #(\d+) has merge conflicts with /, (m) => `Resolve conflicts on #${m[1]}`], // resolveConflictsPrompt
+  [/^Address the review feedback on PR #(\d+) \(/, (m) => `Address review comments on #${m[1]}`] // prCommentsPrompt
+]
+
 function buttonAction(text: string): string | null {
-  const m = /^Create a (draft )?pull request for the work on this branch \(/.exec(text)
-  if (m) return m[1] ? 'Create draft PR' : 'Create PR'
+  for (const [re, label] of BUTTON_PROMPTS) {
+    const m = re.exec(text)
+    if (m) return label(m)
+  }
   return null
 }
 
