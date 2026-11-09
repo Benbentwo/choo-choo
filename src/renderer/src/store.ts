@@ -3,7 +3,8 @@ import { readCachedAppearance } from './appearanceCache'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover } from '@shared/types'
 
 export interface Doc {
-  kind: 'diff' | 'file'
+  /** reflect: the workspace's Reflect tab (see `reflects`). */
+  kind: 'diff' | 'file' | 'reflect'
   path: string
   /** Line to scroll to in a file. */
   line?: number
@@ -32,6 +33,8 @@ interface UI {
   codeComments: Record<string, CodeComment[]>
   /** Bumped when GitHub reports a change to a workspace's PR or checks; PR views reload on it. */
   prVersion: Record<string, number>
+  /** A Reflect tab open in the workspace: the person's feedback, and whether to archive after. */
+  reflects: Record<string, { feedback: string; archiveAfter: boolean } | undefined>
   settings: Settings
   modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | 'group' | 'remove-repo' | null
   /** Project the Remove project dialog is for. */
@@ -86,6 +89,7 @@ export const useStore = create<UI>((set, get) => ({
   openDoc: {},
   codeComments: {},
   prVersion: {},
+  reflects: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
   groups: [],
@@ -296,6 +300,20 @@ export function codeCommentsMessage(list: CodeComment[], text: string): string {
     return `${where}\n${code}\n${c.text}`
   })
   return [`Comments on the code (${list.length}):`, ...parts, ...(text ? [text] : [])].join('\n\n')
+}
+
+/** Opens the workspace's Reflect tab, which runs the reflect agent with this feedback. */
+export function startReflect(wsId: string, feedback: string, archiveAfter: boolean) {
+  const s = useStore.getState()
+  s.set({ reflects: { ...s.reflects, [wsId]: { feedback, archiveAfter } }, openDoc: { ...s.openDoc, [wsId]: { kind: 'reflect', path: 'Reflect' } } })
+}
+
+/** Closes the Reflect tab, stopping the agent if it's still reading. */
+export function closeReflect(wsId: string) {
+  const s = useStore.getState()
+  void window.api.cancelReflect(wsId)
+  const open = s.openDoc[wsId]
+  s.set({ reflects: { ...s.reflects, [wsId]: undefined }, openDoc: { ...s.openDoc, [wsId]: open?.kind === 'reflect' ? null : (open ?? null) } })
 }
 
 export function openDoc(wsId: string, doc: Doc | null) {

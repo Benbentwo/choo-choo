@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { Workspace } from '@shared/types'
-import { useStore, openDoc, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread } from '../store'
+import { useStore, openDoc, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread, closeReflect } from '../store'
 import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart, IconPhone } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
 import { FileView } from './FileView'
-import { SessionFeedback } from './Reflect'
+import { ReflectView, SessionFeedback } from './Reflect'
 import { PhonePanel } from './PhonePanel'
 import { CloudPanel, RunInCloudDialog } from './CloudPanel'
 
@@ -17,7 +17,8 @@ export function Center({ ws }: { ws: Workspace }) {
   const activeId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
   const active = chats.find((c) => c.id === activeId)
   const doc = s.openDoc[ws.id] ?? null
-  const diffFile = doc?.path ?? null
+  const diffFile = doc && doc.kind !== 'reflect' ? doc.path : null
+  const reflect = s.reflects[ws.id]
   const [menu, setMenu] = useState(false)
   const [reflecting, setReflecting] = useState(false)
   const [cloudDialog, setCloudDialog] = useState(false)
@@ -34,10 +35,10 @@ export function Center({ ws }: { ws: Workspace }) {
 
   // Looking at a chat marks it read.
   useEffect(() => {
-    if (active?.unread && !diffFile && active.status !== 'running') {
+    if (active?.unread && !doc && active.status !== 'running') {
       void window.api.updateChat(active.id, { unread: false }).then((c) => useStore.getState().upsertChat(c))
     }
-  }, [active?.id, active?.unread, diffFile])
+  }, [active?.id, active?.unread, doc])
 
   const hasNextUnread = !!nextUnread()
 
@@ -106,7 +107,7 @@ export function Center({ ws }: { ws: Workspace }) {
 
       <div className="flex h-11 shrink-0 items-end gap-1 border-b border-line px-4">
         {chats.map((c) => {
-          const on = !diffFile && c.id === activeId
+          const on = !doc && c.id === activeId
           return (
             <div key={c.id} className={`group flex h-10 max-w-[220px] items-center gap-2 border-b-2 px-3 ${on ? 'border-fg text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
               <button className="truncate" onClick={() => s.setActiveChat(ws.id, c.id)}>
@@ -122,6 +123,14 @@ export function Center({ ws }: { ws: Workspace }) {
             </div>
           )
         })}
+        {reflect && (
+          <div className={`flex h-10 items-center gap-2 border-b-2 px-3 ${doc?.kind === 'reflect' ? 'border-fg text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
+            <button onClick={() => openDoc(ws.id, { kind: 'reflect', path: 'Reflect' })}>Reflect</button>
+            <button title="Close Reflect" className="text-faint hover:text-fg" onClick={() => closeReflect(ws.id)}>
+              <IconX width={12} height={12} />
+            </button>
+          </div>
+        )}
         {diffFile && (
           <div className="flex h-10 max-w-[260px] items-center gap-2 border-b-2 border-fg px-3">
             <span className="truncate font-mono text-[12px]">{diffFile.split('/').pop()}</span>
@@ -163,10 +172,12 @@ export function Center({ ws }: { ws: Workspace }) {
         <DiffView ws={ws} file={doc.path} />
       ) : doc?.kind === 'file' ? (
         <FileView ws={ws} file={doc.path} line={doc.line} />
+      ) : doc?.kind === 'reflect' && reflect ? (
+        <ReflectView ws={ws} feedback={reflect.feedback} archiveAfter={reflect.archiveAfter} />
       ) : active ? (
         <ChatView chat={active} />
       ) : null}
-      {active ? (
+      {active && doc?.kind !== 'reflect' ? (
         <>
           {!doc && hasNextUnread && (
             <div className="mx-auto -mb-1 flex w-full max-w-3xl justify-end px-8">
