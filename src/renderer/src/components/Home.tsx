@@ -63,10 +63,10 @@ export function Home() {
         {!hideExplore && (
           <div className="mt-10">
             <div className="mb-2 flex items-center text-[12px] font-medium text-faint">
-              <span className="flex-1">Settings</span>
+              <span className="flex-1">Explore</span>
               <button
                 className="rounded-md border border-line px-2 py-0.5 font-normal text-muted hover:bg-hover hover:text-fg"
-                title="Hide these settings shortcuts. A Show settings link brings them back."
+                title="Hide Explore. A Show Explore link brings it back."
                 onClick={() => {
                   setHideExplore(true)
                   try {
@@ -104,7 +104,7 @@ export function Home() {
               }
             }}
           >
-            Show settings
+            Show Explore
           </button>
         )}
       </div>
