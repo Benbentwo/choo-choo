@@ -20,6 +20,10 @@ export function ChatView({ chat }: { chat: Chat }) {
     return { items, children }
   }, [all])
   const pendingCount = useStore((s) => s.permissions[chat.id]?.length ?? 0)
+  // /clear empties Claude's context, so everything before the latest one folds away behind a divider.
+  const [showEarlier, setShowEarlier] = useState(false)
+  const clearAt = useMemo(() => lastClear(items), [items])
+  useEffect(() => setShowEarlier(false), [chat.id, clearAt])
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
@@ -44,7 +48,23 @@ export function ChatView({ chat }: { chat: Chat }) {
             <div>The agent works in this workspace's own worktree and branch.</div>
           </div>
         )}
-        {items.map((it) => (
+        {clearAt >= 0 && (
+          <>
+            {showEarlier &&
+              items.slice(0, clearAt).map((it) => <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />)}
+            <div className="my-4 flex items-center gap-3 text-[11px] text-faint">
+              <div className="h-px flex-1 bg-line" />
+              <span>Context cleared</span>
+              {clearAt > 0 && (
+                <button className="hover:text-fg hover:underline" onClick={() => setShowEarlier(!showEarlier)}>
+                  {showEarlier ? 'Hide earlier messages' : `Show ${clearAt} earlier message${clearAt === 1 ? '' : 's'}`}
+                </button>
+              )}
+              <div className="h-px flex-1 bg-line" />
+            </div>
+          </>
+        )}
+        {items.slice(clearAt >= 0 ? clearAt + 1 : 0).filter((it, i) => !(clearAt >= 0 && i === 0 && it.kind === 'result' && !it.turns)).map((it) => (
           <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />
         ))}
         <PermissionCards chat={chat} />
@@ -56,6 +76,15 @@ export function ChatView({ chat }: { chat: Chat }) {
       </div>
     </div>
   )
+}
+
+/** Index of the latest /clear the person sent, or -1. */
+function lastClear(items: ChatItem[]): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.kind === 'user' && it.text.trim() === '/clear') return i
+  }
+  return -1
 }
 
 async function revert(chat: Chat, itemId: string) {
