@@ -18,6 +18,11 @@ export async function mergePr(cwd: string, number: number) {
   await exec('gh', ['pr', 'merge', String(number), '--squash', '--delete-branch=false'], { cwd })
 }
 
+/** Takes a draft PR out of draft so reviewers are asked for. */
+export async function markPrReady(cwd: string, number: number) {
+  await exec('gh', ['pr', 'ready', String(number)], { cwd })
+}
+
 /** Unresolved review threads, reviews and conversation comments on a PR. */
 export async function prComments(cwd: string, number: number): Promise<PrComment[]> {
   const { stdout } = await exec(

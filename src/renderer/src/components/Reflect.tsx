@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { PrInfo, Workspace } from '@shared/types'
 import { isExecutableTarget, lineDiff, type ReflectProposal, type ReflectResult } from '@shared/reflect'
-import { useStore, refreshState, reportError } from '../store'
+import { useStore, refreshState, reportError, startReflect, closeReflect } from '../store'
 
 const dismissKey = (wsId: string) => `choo:merged-dismissed:${wsId}`
 
@@ -23,6 +23,7 @@ export async function archiveAndLeave(wsId: string) {
  */
 export function MergedActions({ ws }: { ws: Workspace }) {
   const stats = useStore((s) => s.stats[ws.id])
+  const prVersion = useStore((s) => s.prVersion[ws.id] ?? 0)
   const [pr, setPr] = useState<PrInfo | null>(null)
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(dismissKey(ws.id)))
   const [archiving, setArchiving] = useState(false)
@@ -32,12 +33,10 @@ export function MergedActions({ ws }: { ws: Workspace }) {
     setDismissed(localStorage.getItem(dismissKey(ws.id)))
     const load = () => void window.api.getPr(ws.id).then((p) => live && setPr(p), () => {})
     load()
-    const t = setInterval(load, 60_000)
     return () => {
       live = false
-      clearInterval(t)
     }
-  }, [ws.id, stats])
+  }, [ws.id, stats, prVersion])
 
   if (!pr || pr.state !== 'MERGED' || ws.orchestrator) return null
   const showContinue = dismissed !== String(pr.number)
@@ -81,21 +80,19 @@ const MOODS = [
 export function SessionFeedback({ ws, archive, onClose }: { ws: Workspace; archive: boolean; onClose: () => void }) {
   const [mood, setMood] = useState<(typeof MOODS)[number]['id'] | null>(null)
   const [text, setText] = useState('')
-  const [feedback, setFeedback] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (feedback !== null) return
     const k = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onClose()
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
-  }, [feedback, busy, onClose])
+  }, [busy, onClose])
 
-  if (feedback !== null) return <ReflectModal ws={ws} feedback={feedback} archiveAfter={archive} onClose={onClose} onArchive={() => archiveAndLeave(ws.id)} />
-
+  // The results open as a Reflect tab beside the chats, not in this dialog.
   const reflect = () => {
     const m = MOODS.find((x) => x.id === mood)
-    setFeedback([m ? `Overall: ${m.label}.` : '', text.trim()].filter(Boolean).join('\n'))
+    startReflect(ws.id, [m ? `Overall: ${m.label}.` : '', text.trim()].filter(Boolean).join('\n'), archive)
+    onClose()
   }
   const justArchive = async () => {
     setBusy(true)
@@ -157,43 +154,51 @@ interface Draft extends ReflectProposal {
   editing: boolean
 }
 
-/** Runs the reflect agent and lets the user accept, edit or reject each suggested change. */
-export function ReflectModal({ ws, feedback = '', archiveAfter, onClose, onArchive }: { ws: Workspace; feedback?: string; archiveAfter: boolean; onClose: () => void; onArchive: () => Promise<void> }) {
-  const [result, setResult] = useState<ReflectResult | null>(null)
-  const [drafts, setDrafts] = useState<Draft[]>([])
+/** Results per workspace, so switching to a chat tab and back keeps them (and doesn't rerun the agent). */
+const kept = new Map<string, { feedback: string; result: ReflectResult; drafts: Draft[] }>()
+
+/** The Reflect tab: runs the reflect agent and lets the person accept, edit or reject each suggested change. */
+export function ReflectView({ ws, feedback, archiveAfter }: { ws: Workspace; feedback: string; archiveAfter: boolean }) {
+  const saved = kept.get(ws.id)?.feedback === feedback ? kept.get(ws.id) : undefined
+  const [result, setResult] = useState<ReflectResult | null>(saved?.result ?? null)
+  const [drafts, setDrafts] = useState<Draft[]>(saved?.drafts ?? [])
   const [error, setError] = useState<string | null>(null)
   const [applying, setApplying] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const onClose = () => {
+    kept.delete(ws.id)
+    closeReflect(ws.id)
+  }
 
   useEffect(() => {
+    if (attempt === 0 && kept.get(ws.id)?.feedback === feedback) return
     let live = true
     setResult(null)
     setError(null)
     window.api.reflect(ws.id, feedback).then(
       (r) => {
         if (!live) return
+        const ds = r.proposals.map((p) => ({ ...p, accepted: !isExecutableTarget(p.file), editing: false }))
+        kept.set(ws.id, { feedback, result: r, drafts: ds })
         setResult(r)
-        setDrafts(r.proposals.map((p) => ({ ...p, accepted: !isExecutableTarget(p.file), editing: false })))
+        setDrafts(ds)
       },
       (e) => live && setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
     )
     return () => {
       live = false
     }
-  }, [ws.id, attempt])
+  }, [ws.id, feedback, attempt])
 
-  const cancel = () => {
-    if (!result && !error) void window.api.cancelReflect(ws.id)
-    onClose()
-  }
+  const cancel = onClose
 
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && !applying && cancel()
-    window.addEventListener('keydown', k)
-    return () => window.removeEventListener('keydown', k)
-  })
-
-  const patch = (id: string, p: Partial<Draft>) => setDrafts((ds) => ds.map((d) => (d.id === id ? { ...d, ...p } : d)))
+  const patch = (id: string, p: Partial<Draft>) =>
+    setDrafts((ds) => {
+      const next = ds.map((d) => (d.id === id ? { ...d, ...p } : d))
+      const k = kept.get(ws.id)
+      if (k) k.drafts = next
+      return next
+    })
   const accepted = drafts.filter((d) => d.accepted)
 
   const finish = async (apply: boolean) => {
@@ -201,7 +206,7 @@ export function ReflectModal({ ws, feedback = '', archiveAfter, onClose, onArchi
     try {
       let next: { workspace: Workspace; chat: { id: string } } | null = null
       if (apply && accepted.length) next = await window.api.applyReflection(ws.id, accepted.map(({ accepted: _a, editing: _e, ...p }) => p))
-      if (archiveAfter) await onArchive()
+      if (archiveAfter) await archiveAndLeave(ws.id)
       await refreshState()
       if (next) {
         const s = useStore.getState()
@@ -217,8 +222,8 @@ export function ReflectModal({ ws, feedback = '', archiveAfter, onClose, onArchi
 
   const done = archiveAfter ? 'Archive' : 'Close'
   return (
-    <Overlay onMouseDown={() => !applying && cancel()} top="pt-[8vh]">
-      <div className="anim-pop flex max-h-[84vh] w-[860px] max-w-[94vw] flex-col rounded-xl border border-line bg-panel shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col">
         <div className="border-b border-line px-5 py-3">
           <div className="font-medium">Reflect on this session</div>
           <div className="mt-0.5 text-[12px] text-faint">
@@ -272,7 +277,7 @@ export function ReflectModal({ ws, feedback = '', archiveAfter, onClose, onArchi
           )}
         </div>
       </div>
-    </Overlay>
+    </div>
   )
 }
 

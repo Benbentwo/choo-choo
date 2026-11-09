@@ -78,5 +78,7 @@ describe('what each response was about', () => {
       ['Add a dark theme', 'Used Read, Edit'],
       ['Add a dark theme', 'Done, the theme is in place.']
     ])
+    // Only the first response after the message is marked; the tool result doesn't count as a new message.
+    expect(points.map((p) => !!p.afterMessage)).toEqual([true, false])
   })
 })

@@ -109,12 +109,14 @@ export function ChecksTab({ ws }: { ws: Workspace }) {
     setHasPr(!!pr)
     setRuns(pr ? await window.api.getChecks(ws.id) : [])
   }
+  // Reloads when the PR watcher in the main process sees a change on GitHub.
+  const prVersion = useStore((s) => s.prVersion[ws.id] ?? 0)
   useEffect(() => {
     setRuns(null)
-    void load()
-    const t = setInterval(() => void load(), 20_000)
-    return () => clearInterval(t)
   }, [ws.id])
+  useEffect(() => {
+    void load()
+  }, [ws.id, prVersion])
   if (!runs) return <Empty>Loading…</Empty>
   if (!hasPr) return <Empty>Checks appear once this branch has a pull request</Empty>
   if (runs.length === 0) return <Empty>No checks on this pull request</Empty>

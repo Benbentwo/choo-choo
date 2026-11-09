@@ -16,6 +16,7 @@ import { pickCityName } from './names'
 import { readScripts } from './scripts'
 import { listCommands } from './commands'
 import * as gh from './github'
+import { startPrWatch } from './prWatch'
 import { suggestName } from './naming'
 import * as updates from './updater'
 import { registerDevFeedback } from './devFeedback'
@@ -287,6 +288,20 @@ async function nameWorkspace(ws: Workspace, prompt: string) {
 
 const emitChat = (chatId: string, payload: object) => send('chat:event', { chatId, ...payload })
 
+/** Messages the person sent while a turn couldn't take them (Codex, or the turn was ending), per chat. */
+const afterTurn = new Map<string, { text: string; images: string[] }[]>()
+
+/**
+ * A message the person typed. While Claude is working it goes into the running turn, steered
+ * or queued per Settings; when the turn can't take it, it waits and is sent when the turn ends.
+ */
+function sendFromPerson(chat: Chat, text: string, images: string[]) {
+  if (!agent.isRunning(chat.id)) return sendToChat(chat, text, images)
+  if (agent.pushMessage(chat, text, images.slice(0, 10), store.get().settings.whileRunning ?? 'steer', emitChat)) return
+  afterTurn.set(chat.id, [...(afterTurn.get(chat.id) ?? []), { text, images }])
+  emitChat(chat.id, { item: { id: randomUUID(), kind: 'note', text: 'Your message will be sent when Claude finishes.', ts: Date.now() } })
+}
+
 /** Starts a turn. Fire and forget; progress arrives through chat:event. */
 function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fromAdvisor?: boolean } = {}) {
   if (agent.isRunning(chat.id)) throw new Error('Agent is already running in this chat')
@@ -509,6 +524,17 @@ function wakeOrchestrator(orchChatId: string) {
 }
 
 function onChatDone(chat: Chat) {
+  const next = afterTurn.get(chat.id)?.shift()
+  if (next) {
+    // Let the finished turn wind down (the advisor may still run) before sending what waited.
+    setTimeout(() => {
+      try {
+        sendFromPerson(chat, next.text, next.images)
+      } catch (e) {
+        emitChat(chat.id, { item: { id: randomUUID(), kind: 'error', text: (e as Error).message, ts: Date.now() } })
+      }
+    }, 0)
+  }
   notifyDone(chat)
   noteForOrchestrator(chat)
   if (finished.has(chat.id)) scheduleWake(chat.id)
@@ -710,6 +736,11 @@ function registerIpc() {
     if (r) r.systemPrompt = prompt?.text.trim() ? prompt : undefined
     store.save()
   })
+  h('repo:base', (id: string, branch: string) => {
+    const r = store.get().repos.find((x) => x.id === id)
+    if (r && branch.trim()) r.defaultBranch = branch.trim()
+    store.save()
+  })
   h('ws:create', (repoId: string, source?: WorkspaceSource, folders?: string[]) => createWorkspace(repoId, source, folders))
   h('files:pick', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'], message: 'Give the agent these files' })
@@ -872,10 +903,16 @@ function registerIpc() {
     if (!pr) throw new Error('No pull request for this branch')
     await gh.mergePr(ws.path, pr.number)
   })
+  h('pr:ready', async (id: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, ws.branch)
+    if (!pr) throw new Error('No pull request for this branch')
+    await gh.markPrReady(ws.path, pr.number)
+  })
   h('chat:send', (id: string, text: string, images: string[] = []) => {
     // The person wrote, so the orchestrator may wake itself again.
     autoWakes.delete(id)
-    return sendToChat(findChat(id), text, images)
+    return sendFromPerson(findChat(id), text, images)
   })
   h('reflect:run', (wsId: string, feedback = '') => {
     const ws = findWs(wsId)
@@ -1103,6 +1140,24 @@ function windowBackground(settings: Settings) {
   return resolveTheme(settings.theme, nativeTheme.shouldUseDarkColors).tokens.bg
 }
 
+/**
+ * Web links open in the default browser, never inside the app: new-window links (target=_blank)
+ * and plain links that would navigate the window away from the app alike.
+ */
+app.on('web-contents-created', (_e, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  contents.on('will-navigate', (e, url) => {
+    const appUrl = process.env.ELECTRON_RENDERER_URL
+    if (appUrl && url.startsWith(appUrl)) return // dev-server reloads
+    if (url.startsWith('file://')) return
+    e.preventDefault()
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+  })
+})
+
 function createWindow() {
   applyNativeTheme(store.get().settings)
   win = new BrowserWindow({
@@ -1124,10 +1179,6 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => {
     if (pendingLink) send('share:link', pendingLink)
     pendingLink = null
-  })
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
-    return { action: 'deny' }
   })
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
@@ -1194,6 +1245,21 @@ app.whenReady().then(async () => {
   buildMenu()
   createWindow()
   updates.startUpdater(send)
+  // PR and check changes: cheap ETag probes, and the UI refetches only when one reports a change.
+  const prWatch = startPrWatch({
+    targets: () => {
+      const s = store.get()
+      return s.workspaces
+        .filter((w) => !w.archived && !w.orchestrator)
+        .flatMap((w) => {
+          const repo = s.repos.find((r) => r.id === w.repoId)
+          return repo?.githubOwner && w.branch !== repo.defaultBranch ? [{ id: w.id, path: w.path, branch: w.branch }] : []
+        })
+    },
+    focused: () => !!win?.isFocused(),
+    onChange: (wsId) => send('pr:changed', wsId)
+  })
+  app.on('browser-window-focus', () => prWatch.poke())
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

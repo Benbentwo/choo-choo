@@ -37,7 +37,7 @@ export function Home() {
     <div className="flex flex-1 flex-col">
       <div className="drag flex h-11 items-center px-3">
         {!s.sidebarOpen && (
-          <button className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
+          <button title="Show sidebar" className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
             <IconSidebar width={16} height={16} />
           </button>
         )}
@@ -64,7 +64,8 @@ export function Home() {
             <div className="mb-2 flex items-center text-[12px] font-medium text-faint">
               <span className="flex-1">Explore</span>
               <button
-                className="font-normal hover:text-fg"
+                className="rounded-md border border-line px-2 py-0.5 font-normal text-muted hover:bg-hover hover:text-fg"
+                title="Hide Explore. A Show Explore link brings it back."
                 onClick={() => {
                   setHideExplore(true)
                   try {
@@ -89,6 +90,21 @@ export function Home() {
               ))}
             </div>
           </div>
+        )}
+        {hideExplore && (
+          <button
+            className="mt-10 text-[12px] text-faint hover:text-fg"
+            onClick={() => {
+              setHideExplore(false)
+              try {
+                localStorage.removeItem('home-explore-hidden')
+              } catch {
+                /* storage unavailable */
+              }
+            }}
+          >
+            Show Explore
+          </button>
         )}
       </div>
     </div>

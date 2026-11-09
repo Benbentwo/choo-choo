@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Workspace } from '@shared/types'
-import { useStore } from '../store'
+import { useStore, setCodeComments, type CodeComment } from '../store'
+import { IconX } from '../icons'
 import { useReview } from '../review'
 import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import type { ReviewFinding } from '@shared/types'
@@ -45,6 +46,22 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
   const stats = useStore((s) => s.stats[ws.id])
   const { findings } = useReview(ws.id)
   const mine = (findings ?? []).filter((f) => f.file === file)
+  const queued = useStore((s) => s.codeComments[ws.id]) ?? []
+  const queuedHere = queued.filter((c) => c.file === file)
+  // Selected rows (indexes into lines) for a new comment: click or drag the line numbers, shift-click to extend.
+  const [sel, setSel] = useState<{ a: number; b: number } | null>(null)
+  const [draft, setDraft] = useState('')
+  const [dragging, setDragging] = useState(false)
+
+  useEffect(() => {
+    setSel(null)
+    setDraft('')
+  }, [ws.id, file])
+  useEffect(() => {
+    const up = () => setDragging(false)
+    window.addEventListener('mouseup', up)
+    return () => window.removeEventListener('mouseup', up)
+  }, [])
 
   useEffect(() => {
     setDiff(null)
@@ -55,6 +72,33 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
   const lines = parseDiff(diff)
   const shownLines = new Set(lines.map((l) => l.newNo).filter((n): n is number => n != null))
   const unplaced = mine.filter((f) => !f.line || !shownLines.has(f.line))
+  const numbered = (i: number) => lines[i] && (lines[i].kind === 'add' || lines[i].kind === 'del' || lines[i].kind === 'ctx')
+  const lo = sel ? Math.min(sel.a, sel.b) : -1
+  const hi = sel ? Math.max(sel.a, sel.b) : -1
+  const pick = (i: number, e: React.MouseEvent) => {
+    if (!numbered(i)) return
+    e.preventDefault()
+    if (e.shiftKey && sel) setSel({ a: sel.a, b: i })
+    else setSel({ a: i, b: i })
+    setDragging(true)
+  }
+  const extend = (i: number) => {
+    if (dragging && sel && numbered(i)) setSel({ a: sel.a, b: i })
+  }
+  const addComment = () => {
+    const text = draft.trim()
+    if (!sel || !text) return
+    const picked = lines.slice(lo, hi + 1).filter((l) => l.kind !== 'hunk' && l.kind !== 'meta')
+    const side: CodeComment['side'] = picked.every((l) => l.kind === 'del') ? 'old' : 'new'
+    const nums = picked.map((l) => (side === 'old' ? l.oldNo : l.kind === 'del' ? undefined : l.newNo)).filter((n): n is number => n != null)
+    const code = picked.map((l) => `${l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '} ${l.text}`).join('\n')
+    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), file, start: Math.min(...nums), end: Math.max(...nums), side, code, text }])
+    setSel(null)
+    setDraft('')
+  }
+  /** Queued comments that end on this row. */
+  const queuedAt = (l: (typeof lines)[number]) =>
+    queuedHere.filter((c) => (c.side === 'old' ? l.kind === 'del' && l.oldNo === c.end : l.kind !== 'del' && l.newNo === c.end))
   const Comment = ({ f }: { f: ReviewFinding }) => (
     <div className="my-1 mr-4 ml-[6.5rem] rounded-md border border-line bg-panel px-3 py-2 font-sans">
       <div className="flex items-center gap-2">
@@ -80,12 +124,19 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
           {lines.flatMap((l, i) => [
             <tr
               key={i}
+              onMouseEnter={() => extend(i)}
               className={
-                l.kind === 'add' ? 'bg-add/10' : l.kind === 'del' ? 'bg-del/10' : l.kind === 'hunk' ? 'bg-raised text-faint' : ''
+                i >= lo && i <= hi
+                  ? 'bg-accent/20'
+                  : l.kind === 'add' ? 'bg-add/10' : l.kind === 'del' ? 'bg-del/10' : l.kind === 'hunk' ? 'bg-raised text-faint' : ''
               }
             >
-              <td className="w-12 pr-2 text-right text-faint select-none">{l.oldNo ?? ''}</td>
-              <td className="w-12 pr-2 text-right text-faint select-none">{l.newNo ?? ''}</td>
+              <td className={`w-12 pr-2 text-right text-faint select-none ${numbered(i) ? 'cursor-pointer hover:text-fg' : ''}`} onMouseDown={(e) => pick(i, e)} title={numbered(i) ? 'Comment on this line. Drag or shift-click for several.' : undefined}>
+                {l.oldNo ?? ''}
+              </td>
+              <td className={`w-12 pr-2 text-right text-faint select-none ${numbered(i) ? 'cursor-pointer hover:text-fg' : ''}`} onMouseDown={(e) => pick(i, e)} title={numbered(i) ? 'Comment on this line. Drag or shift-click for several.' : undefined}>
+                {l.newNo ?? ''}
+              </td>
               <td className={`w-4 select-none ${l.kind === 'add' ? 'text-add' : l.kind === 'del' ? 'text-del' : 'text-faint'}`}>
                 {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ''}
               </td>
@@ -101,6 +152,54 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
                       </td>
                     </tr>
                   ))
+              : []),
+            ...queuedAt(l).map((c) => (
+              <tr key={`q${c.id}`}>
+                <td colSpan={4}>
+                  <div className="my-1 mr-4 ml-[6.5rem] flex items-start gap-2 rounded-md border border-accent/40 bg-panel px-3 py-2 font-sans">
+                    <span className="flex-1 whitespace-pre-wrap">{c.text}</span>
+                    <span className="shrink-0 text-[11px] text-faint">In the chat box</span>
+                    <button title="Remove comment" className="shrink-0 text-faint hover:text-fg" onClick={() => setCodeComments(ws.id, (list) => list.filter((x) => x.id !== c.id))}>
+                      <IconX width={11} height={11} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )),
+            ...(sel && i === hi && !dragging
+              ? [
+                  <tr key="new-comment">
+                    <td colSpan={4}>
+                      <div className="my-1 mr-4 ml-[6.5rem] rounded-md border border-line bg-panel p-2 font-sans">
+                        <textarea
+                          autoFocus
+                          rows={2}
+                          className="w-full resize-none bg-transparent outline-none placeholder:text-faint"
+                          placeholder="Comment on these lines. ⌘↵ to add, Esc to cancel."
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                              e.preventDefault()
+                              addComment()
+                            } else if (e.key === 'Escape') {
+                              setSel(null)
+                              setDraft('')
+                            }
+                          }}
+                        />
+                        <div className="flex items-center justify-end gap-2 text-[12px]">
+                          <button className="text-muted hover:text-fg" onClick={() => (setSel(null), setDraft(''))}>
+                            Cancel
+                          </button>
+                          <button className="rounded-md bg-fg px-2.5 py-0.5 font-medium text-bg disabled:opacity-40" disabled={!draft.trim()} onClick={addComment}>
+                            Add comment
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ]
               : [])
           ])}
         </tbody>

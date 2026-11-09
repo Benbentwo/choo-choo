@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import type { Chat, ChatItem } from '@shared/types'
 import { useStore, reportError, removePermission } from '../store'
 import { setDraft } from './Composer'
+import { API_PRICE_NOTE } from './UsageGraphs'
 import { IconDown, IconRight, IconTool } from '../icons'
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -81,17 +82,24 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
               Revert to here
             </button>
           )}
-          <div className={`max-w-[85%] rounded-xl bg-raised px-4 py-2.5 whitespace-pre-wrap ${item.fromAdvisor ? 'border border-accent/40' : ''}`}>
-            {item.fromAdvisor && <div className="mb-1 text-[11px] text-faint">Sent automatically from the advisor</div>}
-            {item.images && item.images.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-2">
-                {item.images.map((src, i) => (
-                  <img key={i} src={src} className="max-h-40 max-w-60 rounded-md border border-line object-contain" />
-                ))}
-              </div>
-            )}
-            {item.text}
-          </div>
+          {buttonAction(item.text) ? (
+            <ActionItem label={buttonAction(item.text)!} text={item.text} />
+          ) : (
+            <div className={`max-w-[85%] rounded-xl bg-raised px-4 py-2.5 whitespace-pre-wrap ${item.fromAdvisor ? 'border border-accent/40' : ''}`}>
+              {item.fromAdvisor && <div className="mb-1 text-[11px] text-faint">Sent automatically from the advisor</div>}
+              {item.sentWhileRunning && (
+                <div className="mb-1 text-[11px] text-faint">{item.sentWhileRunning === 'steer' ? 'Sent while Claude was working · steered in' : 'Sent while Claude was working · queued'}</div>
+              )}
+              {item.images && item.images.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {item.images.map((src, i) => (
+                    <img key={i} src={src} className="max-h-40 max-w-60 rounded-md border border-line object-contain" />
+                  ))}
+                </div>
+              )}
+              {item.text}
+            </div>
+          )}
         </div>
       )
     case 'note':
@@ -113,7 +121,7 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
           {item.ok ? 'Done' : 'Finished with errors'}
           {item.durationMs != null && ` · ${(item.durationMs / 1000).toFixed(0)}s`}
           {item.turns != null && ` · ${item.turns} turns`}
-          {item.costUsd != null && ` · $${item.costUsd.toFixed(2)}`}
+          {item.costUsd != null && <span title={API_PRICE_NOTE}>{` · $${item.costUsd.toFixed(2)} at API prices`}</span>}
           {chat.model !== 'codex' && (
             <>
               {' · '}
@@ -234,6 +242,28 @@ export function toolSummary(name: string, input: unknown): string {
     default:
       return ''
   }
+}
+
+/** Prompts sent by a button (see prPrompt in RightPanel), shown as that button's name instead of the full text. */
+function buttonAction(text: string): string | null {
+  const m = /^Create a (draft )?pull request for the work on this branch \(/.exec(text)
+  if (m) return m[1] ? 'Create draft PR' : 'Create PR'
+  return null
+}
+
+/** A message a button sent: a compact row like a tool call that expands to the prompt it sent. */
+function ActionItem({ label, text }: { label: string; text: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="w-[min(85%,420px)] rounded-lg border border-line bg-panel">
+      <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px]" onClick={() => setOpen(!open)} title="Show the prompt this button sent">
+        {open ? <IconDown className="text-faint" /> : <IconRight className="text-faint" />}
+        <span className="font-medium">{label}</span>
+        <span className="flex-1 truncate text-[11px] text-faint">sent from the button</span>
+      </button>
+      {open && <pre className="max-h-60 overflow-auto border-t border-line px-3 py-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{text}</pre>}
+    </div>
+  )
 }
 
 function ToolItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {

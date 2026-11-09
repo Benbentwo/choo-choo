@@ -36,11 +36,13 @@ There was no way to take a project out of Choo Choo or clean up the workspace fo
 3. Deleting a workspace removes its folders and chats; its branch stays.
 4. Resolve conflicts and Fix checks send the agent a prompt with the base branch or the failing checks and links. Merge squash-merges.
 5. Merge shows only when checks pass, the PR isn't a draft, no review is required or outstanding, and GitHub's merge state is clean.
+6. Create PR opens a draft by default. While the PR is a draft, the PR menu offers Mark ready for review, which runs `gh pr ready`.
 
 ## Design
 
 - IPC: `removeProject`, `deleteWorkspace`, `deleteLeftover` (`src/main/index.ts`). Leftovers are stored in `AppState.leftovers`.
 - PR state: `gh pr view` now also returns `reviewDecision` and `mergeStateStatus`. `src/shared/prStatus.ts` picks the button's action, with tests in `test/prStatus.test.ts`.
+- Keeping PR state fresh: `src/main/prWatch.ts` probes each open workspace's PR (`pulls?head=…`) and its head commit's check runs with conditional requests through `gh api -i` and `If-None-Match`. Unchanged answers are 304s, which don't count against GitHub's rate limit. Probes run every 15s while the window is focused, every 60s otherwise, and right away when it comes to the front. When a probe returns 200 the main process sends `pr:changed`; the renderer bumps `prVersion[wsId]` and the PR button, Checks tab, hover preview and merged actions reload. A full reload also happens every 5 minutes, for changes the probes can't see (PRs from forks, commit statuses). There is no webhook relay: Choo Choo has no server, and webhooks need a public endpoint.
 
 ## Compliance, privacy and security
 

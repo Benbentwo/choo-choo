@@ -6,6 +6,7 @@ import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
 import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
+import { TitleTips } from './components/Tip'
 import { useAppearance } from './appearance'
 import { useShareRefresh } from './components/ShareModals'
 
@@ -73,6 +74,10 @@ export function App() {
       }
     })
     const offState = window.api.onStateChanged(() => void refreshState())
+    const offPr = window.api.onPrChanged((wsId) => {
+      const st = useStore.getState()
+      st.set({ prVersion: { ...st.prVersion, [wsId]: (st.prVersion[wsId] ?? 0) + 1 } })
+    })
     const offLink = window.api.onOpenShareLink((link) => useStore.getState().set({ modal: 'open-share', shareLinkDraft: link }))
     const offNav = window.api.onNavigate((wsId, chatId) => {
       useStore.getState().setActiveChat(wsId, chatId)
@@ -81,6 +86,7 @@ export function App() {
     return () => {
       offLink()
       offState()
+      offPr()
       offNav()
       offChat()
       offMenu()
@@ -103,6 +109,7 @@ export function App() {
         )}
       </div>
       <Modals />
+      <TitleTips />
       {s.error && (
         <div className="anim-toast fixed right-4 bottom-4 z-50 max-w-md rounded-lg border border-del/40 bg-raised px-4 py-3 text-[12px] shadow-xl">
           <div className="mb-1 font-medium text-del">Something went wrong</div>

@@ -40,6 +40,7 @@ Claude Code has session features that Choo Choo chats couldn't reach: auto mode,
 2. Fast mode, output style and the Claude Code advisor go in one `settings` object, built by `chatSettings`.
 3. A goal clears when Claude Code reports it cleared (`active_goal` with no value), when the person sends `/goal clear`, or when a turn finishes successfully. Claude Code only ends a turn under a goal once the goal is resolved.
 4. A spend cap of 0 or empty means no cap. A chat's cap overrides the Settings default.
+5. A message sent while Claude is working goes into the running turn's streaming input. Settings > General "Messages sent while Claude works" picks how: Steer (default) sends it with priority `next`, so Claude Code folds it in at the next tool step; Queue sends it with priority `later`, so it runs as its own turn afterwards. The turn's input stays open while Claude Code reports queued sends (`queued_turn_count`). When the turn can't take a message (Codex, or the turn is ending), it waits and is sent when the turn finishes.
 
 ## Design
 

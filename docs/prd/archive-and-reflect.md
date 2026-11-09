@@ -26,7 +26,7 @@ Finished workspaces pile up, and deleting a worktree loses uncommitted work. Sep
 - **Archive** (sidebar hover button or ⋯ menu): runs the archive script, moves the worktree to `~/choo-choo/archive/<repo>/<name>-<id>`, keeps the branch. Archived workspaces show in the sidebar's Archived list and dimmed in ⌘K recents; opening one restores it.
 - **Retention**: Settings, default 30 days, 0 keeps forever. Cleanup runs at startup and every 6 hours and deletes the folder only; branch and transcript stay.
 - **After merge**: the right panel header shows Continue and Archive. Archive opens "How did this session go?" (mood chips and free text) with Skip and archive, or Reflect and archive. ⋯ > Reflect on this session… opens the same popup without archiving.
-- **Reflect**: an agent reviews the chats and proposes up to 5 changes. Each shows as an editable diff the person accepts, edits or rejects. Accepted changes are written to a new workspace whose agent opens a PR.
+- **Reflect**: an agent reviews the chats and proposes up to 5 changes. They open in a Reflect tab beside the workspace's chats, not a pop-up, so the person can switch to a chat to check something and come back without losing the results. Each change shows as an editable diff the person accepts, edits or rejects. Accepted changes are written to a new workspace whose agent opens a PR. Closing the tab stops the agent if it is still reading.
 
 ## Requirements
 

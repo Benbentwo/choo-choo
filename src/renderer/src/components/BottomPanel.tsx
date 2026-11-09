@@ -104,7 +104,7 @@ export function BottomPanel({ ws }: { ws: Workspace }) {
         {p.label}
       </button>
       {p.closable && (
-        <button className="invisible text-faint group-hover:visible hover:text-fg" onClick={() => closeTerm(p.id)}>
+        <button title="Close terminal" className="invisible text-faint group-hover:visible hover:text-fg" onClick={() => closeTerm(p.id)}>
           <IconX width={11} height={11} />
         </button>
       )}

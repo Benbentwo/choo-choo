@@ -87,10 +87,10 @@ export function Sidebar() {
           <IconSidebar width={16} height={16} />
         </button>
         <div className="flex-1" />
-        <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-30" disabled={s.historyIndex <= 0} onClick={s.back}>
+        <button title="Back" className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-30" disabled={s.historyIndex <= 0} onClick={s.back}>
           <IconLeft width={16} height={16} />
         </button>
-        <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-30" disabled={s.historyIndex >= s.history.length - 1} onClick={s.forward}>
+        <button title="Forward" className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-30" disabled={s.historyIndex >= s.history.length - 1} onClick={s.forward}>
           <IconRight width={16} height={16} />
         </button>
       </div>

@@ -3,7 +3,8 @@ import { readCachedAppearance } from './appearanceCache'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover } from '@shared/types'
 
 export interface Doc {
-  kind: 'diff' | 'file'
+  /** reflect: the workspace's Reflect tab (see `reflects`). */
+  kind: 'diff' | 'file' | 'reflect'
   path: string
   /** Line to scroll to in a file. */
   line?: number
@@ -28,6 +29,12 @@ interface UI {
   activeChat: Record<string, string>
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
+  /** Comments on diff lines waiting to be sent to the agent as one message, per workspace. */
+  codeComments: Record<string, CodeComment[]>
+  /** Bumped when GitHub reports a change to a workspace's PR or checks; PR views reload on it. */
+  prVersion: Record<string, number>
+  /** A Reflect tab open in the workspace: the person's feedback, and whether to archive after. */
+  reflects: Record<string, { feedback: string; archiveAfter: boolean } | undefined>
   settings: Settings
   modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | 'group' | 'remove-repo' | null
   /** Project the Remove project dialog is for. */
@@ -80,6 +87,9 @@ export const useStore = create<UI>((set, get) => ({
   selectedWs: null,
   activeChat: {},
   openDoc: {},
+  codeComments: {},
+  prVersion: {},
+  reflects: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
   groups: [],
@@ -262,6 +272,48 @@ export function goToNextUnread() {
   const s = useStore.getState()
   s.setActiveChat(n.wsId, n.chatId)
   s.selectWorkspace(n.wsId)
+}
+
+/** A comment on a range of lines in the diff, queued in the composer until sent. */
+export interface CodeComment {
+  id: string
+  file: string
+  /** Line numbers in the new file, or in the old file for removed lines. */
+  start: number
+  end: number
+  side: 'new' | 'old'
+  /** The commented lines, as shown in the diff. */
+  code: string
+  text: string
+}
+
+export function setCodeComments(wsId: string, fn: (list: CodeComment[]) => CodeComment[]) {
+  const st = useStore.getState()
+  st.set({ codeComments: { ...st.codeComments, [wsId]: fn(st.codeComments[wsId] ?? []) } })
+}
+
+/** The message that sends queued code comments, followed by anything typed in the composer. */
+export function codeCommentsMessage(list: CodeComment[], text: string): string {
+  const parts = list.map((c) => {
+    const where = `${c.file}:${c.start === c.end ? c.start : `${c.start}-${c.end}`}${c.side === 'old' ? ' (removed lines)' : ''}`
+    const code = c.code.split('\n').map((l) => `    ${l}`).join('\n')
+    return `${where}\n${code}\n${c.text}`
+  })
+  return [`Comments on the code (${list.length}):`, ...parts, ...(text ? [text] : [])].join('\n\n')
+}
+
+/** Opens the workspace's Reflect tab, which runs the reflect agent with this feedback. */
+export function startReflect(wsId: string, feedback: string, archiveAfter: boolean) {
+  const s = useStore.getState()
+  s.set({ reflects: { ...s.reflects, [wsId]: { feedback, archiveAfter } }, openDoc: { ...s.openDoc, [wsId]: { kind: 'reflect', path: 'Reflect' } } })
+}
+
+/** Closes the Reflect tab, stopping the agent if it's still reading. */
+export function closeReflect(wsId: string) {
+  const s = useStore.getState()
+  void window.api.cancelReflect(wsId)
+  const open = s.openDoc[wsId]
+  s.set({ reflects: { ...s.reflects, [wsId]: undefined }, openDoc: { ...s.openDoc, [wsId]: open?.kind === 'reflect' ? null : (open ?? null) } })
 }
 
 export function openDoc(wsId: string, doc: Doc | null) {

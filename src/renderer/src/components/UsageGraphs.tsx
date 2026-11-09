@@ -67,7 +67,9 @@ function useScale(points: UsagePoint[], mode: Mode) {
         for (let k = 0; k <= 4; k++) ticks.push({ at: M.l + (k / 4) * IW, label: clock(t0 + ((t1 - t0) * k) / 4) })
       }
     }
-    return { x, xAt, barW, nearest, ticks, edgeTicks: mode === 'time' }
+    // Responses that answer something you just sent, marked on the x axis.
+    const messages = points.flatMap((p, i) => (p.afterMessage ? [x(i)] : []))
+    return { x, xAt, barW, nearest, ticks, edgeTicks: mode === 'time', messages }
   }, [points, mode])
 }
 
@@ -100,6 +102,11 @@ function Frame({ yTicks, yMax, scale, hover, setHover, children, label }: { yTic
         <text key={i} x={t.at} y={H - 6} textAnchor={scale.edgeTicks && i === 0 ? 'start' : scale.edgeTicks && i === scale.ticks.length - 1 ? 'end' : 'middle'} fontSize={10} fill="var(--color-faint)">
           {t.label}
         </text>
+      ))}
+      {scale.messages.map((at, i) => (
+        <path key={`m${i}`} d={`M${at.toFixed(1)},${M.t + IH + 1}l4,6h-8z`} fill="var(--color-accent)">
+          <title>You sent a message</title>
+        </path>
       ))}
       {children}
       {hover != null && <line x1={scale.x(hover)} x2={scale.x(hover)} y1={M.t} y2={M.t + IH} stroke="var(--color-muted)" strokeWidth={1} pointerEvents="none" />}
@@ -168,12 +175,13 @@ function TurnPopup({ p, i, left }: { p: UsagePoint; i: number; left: number }) {
   if (!p.prompt && !p.did) return null
   return (
     <div
-      className="pointer-events-none absolute top-1 z-10 w-[300px] rounded-md border border-line bg-raised px-3 py-2 text-[12px] shadow-xl"
+      className="pointer-events-none absolute top-1 z-10 w-[300px] rounded-md border border-line bg-raised px-3 py-2 text-[12px] [overflow-wrap:anywhere] shadow-xl"
       style={left > 55 ? { right: `${100 - left + 2}%` } : { left: `${left + 2}%` }}
     >
       <div className="mb-1 text-faint">
         Response {i + 1} · {clock(p.ts)}
         {p.subagent && ' · subagent'}
+        {p.afterMessage && <span className="text-accent"> · after your message</span>}
       </div>
       {p.prompt && (
         <div className="mb-1">
@@ -259,7 +267,7 @@ export function UsageGraphs({ chat, compact }: { chat: Chat; compact?: boolean }
         <Stat label="responses" value={String(points.length)} />
         <Stat label="tokens" value={fmt(SERIES.reduce((n, s) => n + sum(s.id), 0))} />
         <Stat label="output" value={fmt(sum('output'))} />
-        {usage.costUsd != null && <Stat label="cost" value={`$${usage.costUsd.toFixed(2)}`} />}
+        {usage.costUsd != null && <Stat label="at API prices" value={`$${usage.costUsd.toFixed(2)}`} title={API_PRICE_NOTE} />}
         <Stat label="context now" value={`${Math.round((lastCtx / usage.contextWindow) * 100)}%`} />
         <div className="ml-auto flex gap-1 text-[12px]" role="tablist" aria-label="X axis">
           <button className={btn(view === 'turn')} onClick={() => setView('turn')}>
@@ -300,7 +308,7 @@ export function UsageGraphs({ chat, compact }: { chat: Chat; compact?: boolean }
           </div>
           <ContextChart points={points} usage={usage} scale={scale} dark={dark} hover={hover} setHover={setHover} />
           <div className="mt-2 min-h-[20px]">
-            {hover != null ? <Tooltip p={points[hover]} i={hover} usage={usage} /> : <span className="text-[12px] text-faint">Hover a graph for details. Faded bars are subagent responses, which don't fill this chat's context.</span>}
+            {hover != null ? <Tooltip p={points[hover]} i={hover} usage={usage} /> : <span className="text-[12px] text-faint">Hover a graph for details. ▲ on the axis marks the first response after each of your messages. Faded bars are subagent responses, which don't fill this chat's context.</span>}
           </div>
         </>
       )}
@@ -308,9 +316,12 @@ export function UsageGraphs({ chat, compact }: { chat: Chat; compact?: boolean }
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+/** Claude Code's total_cost_usd is priced at API list rates; a subscription isn't billed it. */
+export const API_PRICE_NOTE = "Claude Code's estimate at API list prices. On a Claude subscription you aren't charged this; usage counts toward your plan's limits instead."
+
+function Stat({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <span>
+    <span title={title}>
       <span className="text-[15px] font-medium">{value}</span> <span className="text-[12px] text-faint">{label}</span>
     </span>
   )

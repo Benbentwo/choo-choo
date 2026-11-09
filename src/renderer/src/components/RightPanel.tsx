@@ -161,6 +161,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const chats = s.chats.filter((c) => c.workspaceId === ws.id)
   const chatId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
   const agentBusy = chats.some((c) => c.status === 'running')
+  const prVersion = s.prVersion[ws.id] ?? 0
 
   useEffect(() => {
     let live = true
@@ -177,13 +178,11 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       })
     setAddedAt(localStorage.getItem(addedKey(ws.id)) ?? undefined)
     load()
-    // Poll faster while checks are running so the button flips to Merge or Fix soon after they finish.
-    const t = setInterval(load, 30_000)
     return () => {
       live = false
-      clearInterval(t)
     }
-  }, [ws.id, stats, agentBusy])
+    // prVersion: the PR watcher in the main process saw a change on GitHub.
+  }, [ws.id, stats, agentBusy, prVersion])
 
   const create = async (draft: boolean) => {
     setMenu(false)
@@ -213,6 +212,19 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       setAddedAt(newest)
     } catch (e) {
       reportError(e)
+    }
+  }
+
+  const markReady = async () => {
+    setMenu(false)
+    setBusy(true)
+    try {
+      await window.api.markPrReady(ws.id)
+      setPr(await window.api.getPr(ws.id))
+    } catch (e) {
+      reportError(e)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -292,13 +304,13 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
           <button
             className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover disabled:opacity-40"
             disabled={agentBusy || (!hasChanges && !stats?.files)}
-            onClick={() => void create(false)}
-            title={agentBusy ? 'Wait for the agent to finish' : 'Ask the agent to commit, push and open a PR'}
+            onClick={() => void create(true)}
+            title={agentBusy ? 'Wait for the agent to finish' : 'Ask the agent to commit, push and open a draft PR'}
           >
             <IconPR /> Create PR
           </button>
         )}
-        <button className="border-l border-line px-1.5 py-1 hover:bg-hover" onClick={() => setMenu(!menu)}>
+        <button title="More PR actions" className="border-l border-line px-1.5 py-1 hover:bg-hover" onClick={() => setMenu(!menu)}>
           <IconDown />
         </button>
         {menu && (
@@ -308,12 +320,12 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
                 <MenuBtn label={`Open #${pr.number} on GitHub`} onClick={() => { setMenu(false); void window.api.openExternal(pr.url) }} />
                 {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
                 {pr.state === 'OPEN' && comments.length > 0 && <MenuBtn label={`Add all comments to chat (${comments.length})`} onClick={() => void addComments()} />}
-                {pr.state === 'OPEN' && <MenuBtn label="Push latest changes" onClick={() => { setMenu(false); if (chatId) void window.api.sendMessage(chatId, 'Commit any uncommitted changes and push this branch.') }} />}
+                {pr.state === 'OPEN' && pr.isDraft && <MenuBtn label={busy ? 'Marking ready…' : 'Mark ready for review'} onClick={() => void markReady()} />}
               </>
             ) : (
               <>
-                <MenuBtn label="Create PR" onClick={() => void create(false)} />
                 <MenuBtn label="Create draft PR" onClick={() => void create(true)} />
+                <MenuBtn label="Create PR ready for review" onClick={() => void create(false)} />
               </>
             )}
           </div>

@@ -296,6 +296,8 @@ export type ChatItem =
       resumeAt?: string
       /** Sent automatically to pass on the advisor's feedback. */
       fromAdvisor?: boolean
+      /** Sent while Claude was working: folded into that turn (steer) or run after it (queue). */
+      sentWhileRunning?: 'steer' | 'queue'
     }
   | { id: string; kind: 'note'; text: string; ts: number }
   | { id: string; kind: 'assistant'; text: string; streaming?: boolean; ts: number }
@@ -369,6 +371,8 @@ export interface Settings extends AppearanceSettings {
   defaultModel: ModelId
   defaultEffort: Effort
   defaultPermission: Permission
+  /** A message sent while Claude is working: steer folds it into the running turn, queue sends it after. */
+  whileRunning?: 'steer' | 'queue'
   /** Spend cap per message for new chats, in dollars. 0 means no cap. */
   defaultBudgetUsd?: number
   /** Branch prefix; empty uses the GitHub user or git user.name. */
@@ -515,6 +519,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultModel: 'opus',
   defaultEffort: 'high',
   defaultPermission: 'full',
+  whileRunning: 'steer',
   branchPrefix: '',
   anthropicApiKey: '',
   notifications: true,
@@ -594,6 +599,8 @@ export interface UsagePoint {
   subagent?: boolean
   /** The person's message this response answers, shortened. */
   prompt?: string
+  /** The first response after the person sent a message. */
+  afterMessage?: boolean
   /** What the response did: the start of its text, or the tools it called. */
   did?: string
 }
@@ -707,6 +714,8 @@ export interface Api {
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
   setRepoPrompt(repoId: string, prompt: PromptCustom | undefined): Promise<void>
+  /** The branch new workspaces start from (and PRs target) in this repo. */
+  setRepoBaseBranch(repoId: string, branch: string): Promise<void>
   /** `folders` are extra directories the first chat may read and edit (linked workspaces, added folders). */
   createWorkspace(repoId: string, source?: WorkspaceSource, folders?: string[]): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
   listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
@@ -776,6 +785,8 @@ export interface Api {
   isScriptRunning(workspaceId: string, kind: ScriptKind): Promise<boolean>
   getPr(workspaceId: string): Promise<PrInfo | null>
   mergePr(workspaceId: string): Promise<void>
+  /** Takes the workspace's draft PR out of draft. */
+  markPrReady(workspaceId: string): Promise<void>
   /** Unresolved review threads, reviews and comments on the workspace's PR. */
   getPrComments(workspaceId: string): Promise<PrComment[]>
   getChecks(workspaceId: string): Promise<CheckRun[]>
@@ -838,6 +849,8 @@ export interface Api {
   revealInFinder(path: string): Promise<void>
   onMenu(cb: (action: string) => void): () => void
   onStateChanged(cb: () => void): () => void
+  /** A workspace's PR or its checks changed on GitHub (or a periodic full refresh is due). */
+  onPrChanged(cb: (workspaceId: string) => void): () => void
   updateStatus(): Promise<UpdateStatus>
   /** Checks now, whatever the Settings toggles say. */
   checkForUpdates(which?: 'app' | 'claude' | 'all'): Promise<UpdateStatus>
