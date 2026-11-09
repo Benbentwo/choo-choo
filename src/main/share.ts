@@ -156,6 +156,9 @@ function gitIn(cwd: string, args: string[], input: string): Promise<string> {
     p.stderr.on('data', (d) => (err += d))
     p.on('error', reject)
     p.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(err.trim() || `git ${args[0]} failed`))))
+    // git can exit before it reads its input (a bad ref, say). 'close' reports that; this keeps the
+    // broken pipe from surfacing as an unhandled error.
+    p.stdin.on('error', () => {})
     p.stdin.end(input)
   })
 }
