@@ -417,7 +417,7 @@ export interface Extras {
   agents: Record<ExtraAgentId, boolean>
   /** A second model reviews each finished turn and gives advice. */
   advisor: boolean
-  advisorModel: 'opus' | 'sonnet' | 'haiku'
+  advisorModel: 'fable' | 'opus' | 'sonnet' | 'haiku'
   /** Send blocker-level advice back to the agent automatically. */
   advisorSteer: boolean
   /** Have the reviewer check the changes when you click Create PR. Needs the reviewer agent. */

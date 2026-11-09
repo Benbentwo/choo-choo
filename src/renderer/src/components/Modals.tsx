@@ -485,6 +485,7 @@ function ExtrasSection({ extras, save }: { extras: Extras; save: (patch: Partial
         <>
           <Row label="Advisor model">
             <select className={select} value={extras.advisorModel} onChange={(e) => save({ advisorModel: e.target.value as Extras['advisorModel'] })}>
+              <option value="fable">Fable</option>
               <option value="opus">Opus</option>
               <option value="sonnet">Sonnet</option>
               <option value="haiku">Haiku</option>
