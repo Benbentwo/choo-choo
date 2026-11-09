@@ -20,7 +20,8 @@ const LIGHT_OVERRIDES: Record<string, string> = {
   '--color-sky-500': '#0284c7',
   '--color-yellow-400': '#a16207',
   '--color-amber-400': '#b45309',
-  '--color-violet-400': '#7c3aed'
+  '--color-violet-400': '#7c3aed',
+  '--color-advisor': '#7c3aed'
 }
 
 export function resolved(a: AppearanceSettings) {
