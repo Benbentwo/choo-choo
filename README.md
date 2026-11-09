@@ -36,7 +36,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Review before you ship.** Changes view with diffs, an agent code review whose findings show inline with Fix buttons, and per-tool permission prompts.
 - **PRs in one click.** Create a PR (or draft), watch checks, re-run failures and squash-merge, all through your `gh` login.
 - **Real terminals.** Setup, Run (⌘R) and terminal tabs per workspace, driven by `choo-choo.json` or `conductor.json`.
-- **Start from Notion.** Sign in to Notion, then start a workspace from a Notion page or task. Agents can also search, read and update Notion while you're signed in.
+- **Start from Notion.** Paste a Notion page or task link to start a workspace from it. Agents read and update Notion through the Notion connection Claude already has.
 - **Codex too.** Optionally run OpenAI's Codex CLI as a workspace agent.
 - **Keyboard first.** ⌘K search, ⌘T/⌘W tabs, ⌘B/⌘J panels, ⌘⇧U next unread.
 - **Native Mac app.** Apple silicon and Intel builds, desktop notifications, update checks for the app and for Claude Code (Settings > Updates, each with its own on/off toggle).
@@ -108,7 +108,7 @@ Click the orchestrator icon next to a repository in the sidebar. Tell the orches
 
 Settings > Integrations lists the services you can sign in to. Each one signs in through your browser; there are no tokens to paste. Tokens are encrypted with the macOS keychain (Electron `safeStorage`) in `~/Library/Application Support/Choo Choo/data/integrations.json`.
 
-**Notion** needs no setup: Choo Choo signs in to Notion's hosted MCP server (`mcp.notion.com`) and registers itself on the fly, so there is no Notion app or client secret. After signing in, pick the Notion tab in the new-workspace composer to start from a page or task (search, or paste a page link); the page becomes the agent's brief. While Notion is connected, agents also get Notion's tools to search, read and update pages. Turn that off with the checkbox under Notion.
+**Notion** goes through Claude: Choo Choo does not sign in to Notion or hold a Notion token. Connect Notion to Claude once (under Connectors at claude.ai, or with `/mcp` in Claude Code), and agents get its tools the same way they do in the terminal. Settings > Integrations shows whether that connection is working. To start from a page or task, pick the Notion tab in the new-workspace composer and paste its link; the agent fetches the page as its brief. Turn Notion's tools off for a repo under Settings > MCP.
 
 Adding a service: write `src/main/integrations/<name>.ts` exporting a `Provider` (see `index.ts`), sign in with `startLoopback` and `pkce` from `oauth.ts` (or `mcpOAuth.ts` for a hosted MCP server), store the result with `setAuth` from `tokens.ts`, and add it to the `providers` list.
 

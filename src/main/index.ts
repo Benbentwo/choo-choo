@@ -176,7 +176,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
       const issue = await gh.issueText(repo.path, source.number)
       context = gh.issueContext(source.number, issue)
     } else if (source?.kind === 'notion') {
-      context = notion.pageContext(await notion.fetchPage(source.id))
+      context = notion.pageContext(source.id)
     }
   }
   const workspace: Workspace = { id: randomUUID(), repoId, name, branch, baseRef, path, title, named, createdAt: Date.now() }

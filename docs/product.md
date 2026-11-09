@@ -41,7 +41,7 @@ The detailed requirements live in the [PRDs](prd/). Status as of 2026-11-06:
 - Core Conductor parity (workspaces, chat, review, PRs, terminals, scripts, ⌘K, auto-update): shipped, see [PARITY.md](PARITY.md).
 - [Import from Conductor](prd/conductor-import.md), [Orchestrator](prd/orchestrator.md), [Shared sessions](prd/shared-sessions.md), [Archive and reflect](prd/archive-and-reflect.md), [Extra agents and advisor](prd/extra-agents.md), [Appearance](prd/appearance.md), [Comment mode](prd/comment-mode.md): shipped.
 - [Custom system prompts](prd/system-prompts.md) (PR #32) and [Telemetry](prd/telemetry.md) (PR #33): in review.
-- [Integrations](prd/integrations.md) (Linear, Notion, plugins): planned, OAuth only.
+- [Integrations](prd/integrations.md) (Linear, Notion, plugins): Notion through Claude Code's own connection; others planned, OAuth only.
 - [Add-ons](prd/add-ons.md): extend the app with views and tools from public or private sources; first version in review.
 
 ## Distribution

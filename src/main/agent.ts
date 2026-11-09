@@ -7,7 +7,6 @@ import { runCodex } from './codex'
 import { BUILTIN_ADVISOR_TOOL, builtinAdvisorResult, enabledSubagents, expandShortcuts, renderTurn, runAdvisor, steerMessage, systemAppend } from './extras'
 import * as orchestrator from './orchestrator'
 import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
-import * as notion from './integrations/notion'
 import { buildSystemPrompt } from '@shared/systemPrompt'
 import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, runningTasks } from './claudeOptions'
 
@@ -333,10 +332,6 @@ export async function send(
     const budget = budgetFor(chat, settings)
     const tasks = new Map<string, BackgroundTask>()
     const mcpServers: Record<string, unknown> = { ...(extra.mcpServers as Record<string, unknown> | undefined) }
-    if (store.get().settings.notionAgentTools) {
-      const server = await notion.agentServer()
-      if (server) mcpServers.notion = server
-    }
     const channel = inputChannel(sdkUserMessage(expandShortcuts(prompt, extras), images), turnDone)
     r.push = (t, imgs, mode) => channel.push(sdkUserMessage(expandShortcuts(t, extras), imgs, mode === 'steer' ? 'next' : 'later'))
     const q = query({

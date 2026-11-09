@@ -4,7 +4,7 @@
 |---|---|
 | Status | Notion shipped; Linear in progress |
 | Requested by | Ben, 2026-11-06 |
-| Last updated | 2026-11-06 |
+| Last updated | 2026-11-09 |
 
 ## Problem
 
@@ -20,16 +20,19 @@ Work starts and ends in other tools: Linear and GitHub issues, Notion specs, Sla
 
 - Pasted API tokens, for now (see [decision 0003](../decisions/0003-oauth-for-integrations.md)).
 - A Choo Choo server that brokers integrations.
+- A Choo Choo sign-in for a service Claude Code already connects to (see [decision 0008](../decisions/0008-notion-through-claude-code.md)).
 
 ## User experience
 
-Settings > Integrations lists available services with a Connect button. Connect opens the service's OAuth sign-in in the browser and returns to Choo Choo. Connected services show their account and a Disconnect button. The new-workspace composer can then pick a Linear issue as a source.
+Settings > Integrations lists available services. Notion has no sign-in in Choo Choo: its row shows whether Claude Code's own Notion connection is working, with a button that opens Claude Code's sign-in when it is not. In the new-workspace composer, the Notion tab takes a pasted page or task link; the workspace starts on a new branch and the agent fetches the page as its brief.
+
+Services Choo Choo signs in to itself get a Connect button. Connect opens the service's OAuth sign-in in the browser and returns to Choo Choo. Connected services show their account and a Disconnect button. The new-workspace composer can then pick a Linear issue as a source.
 
 ## Requirements
 
-1. Sign-in uses OAuth. No pasted-token fields.
+1. When Claude Code already connects to a service (Notion), agents use that connection and Choo Choo stores nothing. Otherwise sign-in uses OAuth. No pasted-token fields.
 2. Tokens are stored in the macOS Keychain, never in `state.json`, shares, transcripts or telemetry.
-3. Prefer each service's official remote MCP server where one exists, passed to agents through the SDK's `mcpServers` option.
+3. For services Choo Choo signs in to itself, prefer the service's official remote MCP server where one exists, passed to agents through the SDK's `mcpServers` option.
 4. Integrations are off until connected; nothing changes for people who don't use them.
 
 ## Design
@@ -38,9 +41,9 @@ Settings > Integrations lists available services with a Connect button. Connect 
 
 - `oauth.ts`: PKCE helpers and `startLoopback()`, a one-shot `127.0.0.1` listener for the OAuth redirect. Its redirect URI is known before the browser opens, so dynamic client registration can use it.
 - `tokens.ts`: per-service auth encrypted with `safeStorage` in `userData/data/integrations.json`.
-- `index.ts`: the `Provider` registry and the `integrations:*` IPC. Settings > Integrations renders one row per provider.
-- `mcpOAuth.ts` and `mcpClient.ts`: sign-in to a hosted MCP server (discovery, dynamic client registration, PKCE, refresh) and a small Streamable HTTP tool caller.
-- `notion.ts`: signs in to `mcp.notion.com`, so no Notion app or secret is needed. Adds a `notion` workspace source (search or paste a link; the page is the fenced first-prompt brief) and passes the server to agents as `mcpServers.notion` unless `notionAgentTools` is off.
+- `index.ts`: the `Provider` registry and the `integrations:*` IPC. Settings > Integrations renders one row per provider. The registry is empty until Linear lands.
+- `mcpOAuth.ts` and `mcpClient.ts`: sign-in to a hosted MCP server (discovery, dynamic client registration, PKCE, refresh) and a small Streamable HTTP tool caller. Not used by Notion any more; kept for providers that need them.
+- `notion.ts`: no sign-in and no token. Adds a `notion` workspace source from a pasted page link or id, and a first prompt that tells the agent to fetch the page with its Notion tools and treat the content as data. Agents get those tools from Claude Code's own Notion server (a claude.ai connector or `claude mcp add`), loaded through `settingSources`. `Integrations.tsx` finds that server in `mcpStatus` to show its status.
 
 ## Open questions
 

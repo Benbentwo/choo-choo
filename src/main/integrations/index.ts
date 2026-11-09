@@ -1,7 +1,6 @@
 import { ipcMain } from 'electron'
 import type { IntegrationId, IntegrationStatus } from '@shared/types'
-import { getAuth } from './tokens'
-import { notion } from './notion'
+import { clearAuth, getAuth } from './tokens'
 
 /**
  * A service you sign in to from Settings → Integrations. Each provider runs its own OAuth flow
@@ -18,7 +17,8 @@ export interface Provider {
   disconnect(): Promise<void>
 }
 
-const providers: Provider[] = [notion]
+/** Empty for now: Notion goes through Claude Code's own connection (decision 0008). */
+const providers: Provider[] = []
 
 export function status(p: Provider): IntegrationStatus {
   const auth = getAuth(p.id)
@@ -34,6 +34,8 @@ const find = (id: IntegrationId) => {
 export const isConnected = (id: IntegrationId) => !!getAuth(id)
 
 export function registerIntegrationsIpc(onChange: () => void) {
+  // Choo Choo no longer signs in to Notion itself, so drop any token an earlier version saved.
+  if (getAuth('notion')) clearAuth('notion')
   const pending = new Map<IntegrationId, Promise<void>>()
   ipcMain.handle('integrations:list', () => providers.map(status))
   ipcMain.handle('integrations:connect', async (_e, id: IntegrationId) => {

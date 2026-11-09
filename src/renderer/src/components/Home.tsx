@@ -25,7 +25,7 @@ export function Home() {
     { title: 'Plugins and skills', body: 'Install Claude Code plugins and turn skills on or off.', icon: <IconTool width={16} height={16} />, run: settings('plugins') },
     { title: 'Add-ons', body: 'Add views and tools to Choo Choo, from public sources or your team\'s private repo.', icon: <IconAddon width={16} height={16} />, run: settings('addons') },
     { title: 'MCP servers', body: 'See and manage the tools your agents can reach, per project.', icon: <IconGear width={16} height={16} />, run: settings('mcp') },
-    { title: 'Integrations', body: 'Connect Linear and Notion so agents can use them.', icon: <IconGlobe width={16} height={16} />, run: settings('integrations') },
+    { title: 'Integrations', body: 'See which services agents can use, like Notion.', icon: <IconGlobe width={16} height={16} />, run: settings('integrations') },
     { title: 'Themes', body: 'Colors, accent, font size and density.', icon: <IconEye width={16} height={16} />, run: settings('appearance') },
     { title: 'Import from Conductor', body: 'Bring over projects, workspaces and chats.', icon: <IconFolder width={16} height={16} />, run: () => s.set({ modal: 'conductor' }) }
   ]

@@ -39,7 +39,7 @@ export type WorkspaceSource =
   | { kind: 'pr'; number: number }
   | { kind: 'branch'; name: string }
   | { kind: 'issue'; number: number }
-  /** A Notion page (often a task in a database), by its id or URL. */
+  /** A Notion page (often a task in a database), by its URL. */
   | { kind: 'notion'; id: string }
 
 /** Services you sign in to from Settings > Integrations. */
@@ -396,8 +396,6 @@ export interface Settings extends AppearanceSettings {
   checkClaudeUpdates: boolean
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
   extras: Extras
-  /** Give agents Notion's MCP tools when Notion is connected. */
-  notionAgentTools: boolean
   /** Instructions for every Claude agent. A repo's own prompt adds to or replaces this. */
   systemPrompt?: PromptCustom
   /** OpenTelemetry export for Claude agents. Off by default. */
@@ -536,7 +534,6 @@ export const DEFAULT_SETTINGS: Settings = {
   checkAppUpdates: true,
   checkClaudeUpdates: true,
   extras: DEFAULT_EXTRAS,
-  notionAgentTools: true,
   telemetry: DEFAULT_TELEMETRY,
   archiveRetentionDays: 30,
   ...DEFAULT_APPEARANCE

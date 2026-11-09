@@ -1,6 +1,6 @@
 /**
  * A small client for a hosted MCP server over Streamable HTTP. Enough to call a tool from the main
- * process (for example, to search Notion when starting a workspace); agents use the SDK's own client.
+ * process (for a provider that needs to look something up itself); agents use the SDK's own client.
  */
 
 export class McpError extends Error {
