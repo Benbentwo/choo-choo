@@ -137,6 +137,9 @@ The client sets CSS variables on `<html>` and keeps them current: `--choo-bg`, `
 | `choo.workspaces.message(workspaceId, message)` | `workspaces:message` | Sends a follow-up. Fails while the agent is running. |
 | `choo.workspaces.stop(workspaceId)` | `workspaces:stop` | Stops the workspace's running agents. |
 | `choo.prs.status(workspaceId)` | `prs:read` | `{ pr: { number, url, state, isDraft, title, reviewDecision, mergeState } \| null, checks: { total, passed, pending, failed: [{ name, link }] } }` |
+| `choo.files.list(repoId, dir?)` | `files:read` | Text files in the project's `.choo-choo/` folder (main checkout), up to 500: `{ path, size, modified }`, with `path` relative to `.choo-choo/`. |
+| `choo.files.read(repoId, path)` | `files:read` | `{ content, modified }`, or `null` when there is no such file. |
+| `choo.files.write(repoId, path, content)` / `delete(repoId, path)` | `files:write` | Creates, replaces or deletes a file under `.choo-choo/`. Only `.md`, `.json`, `.txt`, `.yaml` and `.yml`, at most 1 MB, no dotfiles, and never through a symlink. The change is an ordinary uncommitted edit in the project. |
 | `choo.store.get(key)` / `set(key, value)` / `delete(key)` / `keys()` | `storage` | Your add-on's own JSON storage on this Mac, 1 MB in total. |
 | `choo.ui.openWorkspace(workspaceId)` | none | Shows the workspace in the app. |
 | `choo.ui.notify(title, body?, workspaceId?)` | `notify` | A system notification, prefixed with your add-on's name. Respects the person's notification setting. |
