@@ -35,6 +35,8 @@ const api: Api = {
   searchFiles: inv('ws:grep') as Api['searchFiles'],
   cleanupArchives: inv('archive:cleanup') as Api['cleanupArchives'],
   renameWorkspace: inv('ws:rename') as Api['renameWorkspace'],
+  regenerateWorkspaceName: inv('ws:regenerateName') as Api['regenerateWorkspaceName'],
+  reorderWorkspaces: inv('ws:reorder') as Api['reorderWorkspaces'],
   createChat: inv('chat:create') as Api['createChat'],
   closeChat: inv('chat:close') as Api['closeChat'],
   getChatItems: inv('chat:items') as Api['getChatItems'],

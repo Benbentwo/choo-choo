@@ -36,6 +36,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Managing projects, and PR status](prd/projects-and-pr-status.md) | In review |
 | [PRs page](prd/pr-inbox.md) | Shipped |
 | [Add-ons](prd/add-ons.md) | Shipped: views, background pages, orchestrator tools, project pins; Plan board next |
+| [Arranging and renaming workspaces](prd/sidebar-workspaces.md) | In review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

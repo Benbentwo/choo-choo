@@ -95,8 +95,10 @@ export interface Workspace {
   baseRef: string
   path: string
   title: string
-  /** Set once the first prompt has named the workspace. */
+  /** Set once the first prompt has named the workspace, or the person renamed it. */
   named?: boolean
+  /** Position when the sidebar is sorted by hand (lower first). Missing for workspaces never dragged. */
+  order?: number
   createdAt: number
   archived?: boolean
   archivedAt?: number
@@ -755,6 +757,10 @@ export interface Api {
   /** Deletes archived worktrees past the retention period now. Returns how many. */
   cleanupArchives(): Promise<number>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
+  /** Asks a small model for a new title from the workspace's chats so far. Returns the new title. */
+  regenerateWorkspaceName(workspaceId: string): Promise<string>
+  /** Saves a hand-sorted sidebar order: each id's position in the list. */
+  reorderWorkspaces(ids: string[]): Promise<void>
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>

@@ -42,7 +42,9 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ First prompt names the workspace and renames its unpushed branch
 - ✅ Restore archived workspaces (sidebar "Archived" list per repo)
 - ✅ After a PR merges: Continue / Archive / Archive and reflect. Reflect has an agent review the chats for friction and suggest CLAUDE.md, rules, skills and hook changes, shown as an editable diff; accepted ones go out as a PR from a new workspace (choo-choo addition)
-- ⬜ Drag to reorder repos
+- ✅ Drag to reorder repos
+- ✅ Drag to reorder workspaces (Sort by > Manual)
+- ✅ Right-click a workspace: Rename…, Regenerate name from the chat, Reveal in Finder, Copy branch name, Archive
 
 ### Chat
 - ✅ Chat tabs per workspace, ⌘T / ⌘W
