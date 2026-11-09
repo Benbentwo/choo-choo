@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { describePermission, missingGrants, type AddonInfo, type AddonManifest, type AddonSlot, type AddonSource, type AvailableAddon } from '@shared/addons'
-import { reportError, useStore } from '../store'
+import { describePermission, missingGrants, type AddonInfo, type AddonManifest, type AddonSlot, type AddonSource, type AvailableAddon, type PinStatus, type PinnedAddon } from '@shared/addons'
+import { pinsToSetUp, reportError, useStore } from '../store'
 
 const field = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
 const DOCS = 'https://github.com/Benbentwo/choo-choo/blob/main/docs/addon-api.md'
@@ -20,6 +20,18 @@ function Asks({ manifest, granted = [] }: { manifest: AddonManifest; granted?: s
       {manifest.views.length > 0 && (
         <div className="mb-2 text-muted">
           Adds {manifest.views.map((v, i) => `${i ? (i === manifest.views.length - 1 ? ' and ' : ', ') : ''}“${v.title}” ${WHERE[v.slot]}`).join('')}.
+        </div>
+      )}
+      {manifest.background && <div className="mb-2 text-muted">Keeps working in the background while it's on, with the same permissions.</div>}
+      {manifest.tools.length > 0 && (
+        <div className="mb-2">
+          <div className="mb-1 text-muted">Gives the orchestrator {manifest.tools.length === 1 ? 'a tool' : `${manifest.tools.length} tools`}:</div>
+          {manifest.tools.map((t) => (
+            <div key={t.name} className="flex gap-2 py-0.5">
+              <span className="w-56 shrink-0 truncate font-mono text-[11px]">{t.name}</span>
+              <span className="line-clamp-2 text-faint">{t.description}</span>
+            </div>
+          ))}
         </div>
       )}
       {manifest.permissions.length === 0 ? (
@@ -42,8 +54,55 @@ function Asks({ manifest, granted = [] }: { manifest: AddonManifest; granted?: s
         </>
       )}
       <div className="mt-2 text-faint">
-        Views run in a sandbox: they can't read files, run commands or reach the network beyond what is listed here. The add-on's Claude Code parts (skills, hooks, MCP servers) run with your own permissions, like any plugin.
+        Its pages run in a sandbox: they can't read files, run commands or reach the network beyond what is listed here. The add-on's Claude Code parts (skills, hooks, MCP servers) run with your own permissions, like any plugin.
       </div>
+    </div>
+  )
+}
+
+const PIN_STATE: Record<PinnedAddon['state'], string> = {
+  missing: 'Not installed',
+  off: 'Installed, not on',
+  review: 'Paused: it asks for new permissions',
+  'plugin-off': 'Its plugin is off',
+  invalid: "Installed, but Choo Choo can't load it as an add-on",
+  on: 'On'
+}
+
+/** The add-ons a project's choo-choo.json asks for that aren't on yet. Nothing here is installed without a click. */
+function PinnedSection(props: { pin: PinStatus; repoName: string; todo: PinnedAddon[]; busy: string | null; onInstall(id: string): void; onTurnOn(id: string): void; onNotNow(id: string): void }) {
+  const { pin, repoName, todo, busy } = props
+  return (
+    <div className="border-b border-amber-500/40 bg-amber-500/5 px-5 py-3 text-[12px]">
+      <div className="font-medium">{repoName} asks for {todo.length === 1 ? 'an add-on' : 'these add-ons'}</div>
+      <div className="mb-1.5 text-faint">
+        From the project's choo-choo.json. Add-ons run code on your Mac, so install only what you trust.
+        {pin.newSources.length > 0 && todo.some((a) => a.state === 'missing') && <> Installing also adds {pin.newSources.length === 1 ? 'the source' : 'the sources'} {pin.newSources.join(', ')}.</>}
+      </div>
+      {todo.map((a) => (
+        <div key={a.id} className="flex items-center gap-2 py-1">
+          <span className="font-medium">{a.name}</span>
+          <span className="truncate text-[11px] text-faint">{a.id}</span>
+          <span className={`rounded px-1.5 py-px text-[11px] ${a.required ? 'bg-amber-500/15 text-amber-400' : 'bg-raised text-muted'}`}>{a.required ? 'Required' : 'Recommended'}</span>
+          <span className="text-faint">{PIN_STATE[a.state]}</span>
+          <div className="flex-1" />
+          {busy === a.id && <span className="text-faint">Working…</span>}
+          {!a.required && (
+            <button className="text-muted hover:text-fg disabled:opacity-40" disabled={!!busy} onClick={() => props.onNotNow(a.id)}>
+              Not now
+            </button>
+          )}
+          {a.state === 'missing' ? (
+            <button className="rounded-md border border-line px-2 py-0.5 hover:bg-hover disabled:opacity-40" disabled={!!busy} onClick={() => props.onInstall(a.id)}>
+              Install
+            </button>
+          ) : a.state !== 'invalid' ? (
+            <button className="rounded-md border border-line px-2 py-0.5 hover:bg-hover disabled:opacity-40" disabled={!!busy} onClick={() => props.onTurnOn(a.id)}>
+              {a.state === 'review' ? 'Review' : 'Turn on'}
+            </button>
+          ) : null}
+        </div>
+      ))}
     </div>
   )
 }
@@ -51,6 +110,9 @@ function Asks({ manifest, granted = [] }: { manifest: AddonManifest; granted?: s
 /** Settings → Add-ons: sources, what they offer, and what is installed and turned on. */
 export function AddonSettings() {
   const addons = useStore((s) => s.addons)
+  const pins = useStore((s) => s.addonPins)
+  const repos = useStore((s) => s.repos)
+  const dismissed = useStore((s) => s.settings.addonPinsDismissed)
   const [loaded, setLoaded] = useState(false)
   const [available, setAvailable] = useState<AvailableAddon[] | null>(null)
   const [sources, setSources] = useState<AddonSource[] | null>(null)
@@ -59,11 +121,12 @@ export function AddonSettings() {
   /** The add-on whose permissions are on screen, waiting for Turn on. */
   const [asking, setAsking] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
-  const [confirm, setConfirm] = useState<{ id: string; command: string; sha256: string } | null>(null)
+  const [confirm, setConfirm] = useState<{ id: string; repoId?: string; command: string; sha256: string } | null>(null)
 
   const load = async () => {
     try {
       useStore.getState().set({ addons: await window.api.addonsList(true) })
+      useStore.getState().set({ addonPins: await window.api.addonPins() })
       const [a, s] = await Promise.all([window.api.addonsAvailable(), window.api.addonSources()])
       setAvailable(a)
       setSources(s)
@@ -103,6 +166,21 @@ export function AddonSettings() {
       // Installed is not on yet: show what it asks for next.
       setAsking(id)
     })
+  const installPinned = (repoId: string, id: string, acceptSha?: string) =>
+    run(id, async () => {
+      const r = await window.api.addonInstallPinned(repoId, id, acceptSha)
+      if (!r.ok) return setConfirm({ id, repoId, ...r.confirm })
+      setConfirm(null)
+      await load()
+      setAsking(id)
+    })
+  const notNow = (repoId: string, id: string) =>
+    run(id, async () => {
+      const s = useStore.getState()
+      const settings = await window.api.saveSettings({ addonPinsDismissed: { ...s.settings.addonPinsDismissed, [repoId]: [...new Set([...(s.settings.addonPinsDismissed?.[repoId] ?? []), id])] } })
+      s.set({ settings })
+    })
+  const pinned = pins.map((pin) => ({ pin, repo: repos.find((r) => r.id === pin.repoId), todo: pinsToSetUp(pin, addons, dismissed?.[pin.repoId]) })).filter((p) => p.repo && p.todo.length)
 
   return (
     <div>
@@ -117,6 +195,29 @@ export function AddonSettings() {
           {busy === 'refresh' ? 'Checking…' : 'Check again'}
         </button>
       </div>
+
+      {confirm && (
+        <div className="border-b border-amber-500/40 bg-amber-500/5 px-5 py-3 text-[12px]">
+          <div className="mb-1 font-medium text-amber-400">{confirm.id} installs by running this command</div>
+          <pre className="mb-2 max-h-32 overflow-auto rounded bg-bg p-2 font-mono text-[11px] whitespace-pre-wrap">{confirm.command}</pre>
+          <div className="flex gap-2">
+            <button
+              className="rounded-md bg-fg px-2.5 py-1 font-medium text-bg disabled:opacity-40"
+              disabled={!!busy}
+              onClick={() => void (confirm.repoId ? installPinned(confirm.repoId, confirm.id, confirm.sha256) : install(confirm.id, confirm.sha256))}
+            >
+              Run it and install
+            </button>
+            <button className="text-muted hover:text-fg" onClick={() => setConfirm(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {pinned.map(({ pin, repo, todo }) => (
+        <PinnedSection key={pin.repoId} pin={pin} repoName={repo!.name} todo={todo} busy={busy} onInstall={(id) => void installPinned(pin.repoId, id)} onTurnOn={setAsking} onNotNow={(id) => void notNow(pin.repoId, id)} />
+      ))}
 
       {!loaded && addons.length === 0 && <div className="px-5 py-4 text-[12px] text-faint">Looking for add-ons…</div>}
       {loaded && addons.length === 0 && <div className="px-5 py-4 text-[12px] text-faint">No add-ons installed. Add a source below, then install what it offers.</div>}
@@ -195,20 +296,6 @@ export function AddonSettings() {
       {available && available.length > 0 && (
         <>
           <div className="border-b border-line px-5 pt-3 pb-1.5 text-[11px] font-medium text-faint">From your sources</div>
-          {confirm && (
-            <div className="border-b border-amber-500/40 bg-amber-500/5 px-5 py-3 text-[12px]">
-              <div className="mb-1 font-medium text-amber-400">{confirm.id} installs by running this command</div>
-              <pre className="mb-2 max-h-32 overflow-auto rounded bg-bg p-2 font-mono text-[11px] whitespace-pre-wrap">{confirm.command}</pre>
-              <div className="flex gap-2">
-                <button className="rounded-md bg-fg px-2.5 py-1 font-medium text-bg disabled:opacity-40" disabled={!!busy} onClick={() => void install(confirm.id, confirm.sha256)}>
-                  Run it and install
-                </button>
-                <button className="text-muted hover:text-fg" onClick={() => setConfirm(null)}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
           {available.map((p) => (
             <div key={p.id} className="border-b border-line px-5 py-2.5">
               <div className="flex items-start gap-3">

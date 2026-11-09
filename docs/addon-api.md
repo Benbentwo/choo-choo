@@ -1,6 +1,6 @@
 # Writing an add-on
 
-An add-on is a [Claude Code plugin](https://code.claude.com/docs/en/plugins) with one extra file, `choo-choo.addon.json`. The plugin's skills, agents, hooks and MCP servers work as in any Claude Code plugin. The manifest adds views to the Choo Choo app and says what they may do. A working example is in [examples/addons](../examples/addons); the reasons behind the design are in [decision 0006](decisions/0006-add-ons-are-claude-code-plugins.md).
+An add-on is a [Claude Code plugin](https://code.claude.com/docs/en/plugins) with one extra file, `choo-choo.addon.json`. The plugin's skills, agents, hooks and MCP servers work as in any Claude Code plugin. The manifest adds views to the Choo Choo app, can give the orchestrator tools, and says what the add-on may do. A working example is in [examples/addons](../examples/addons); the reasons behind the design are in [decision 0006](decisions/0006-add-ons-are-claude-code-plugins.md).
 
 ## Layout
 
@@ -9,6 +9,7 @@ my-addon/
   .claude-plugin/plugin.json   Claude Code plugin manifest
   choo-choo.addon.json         Choo Choo manifest
   ui/index.html                a view (any path you like)
+  ui/background.html           optional: runs unseen while the add-on is on
 ```
 
 To ship add-ons, put them in a git repo with a `.claude-plugin/marketplace.json` listing them (a Claude Code plugin marketplace). People add that repo under Settings › Add-ons › Add source. A private repo works: Choo Choo fetches it with the person's own git and GitHub access. Add the keyword `choo-choo-addon` to the marketplace entry so the add-on is listed before it is installed even when its source is another repo.
@@ -35,6 +36,8 @@ To ship add-ons, put them in a git repo with a `.claude-plugin/marketplace.json`
 | `name`, `description` | Shown in Settings. Default to the plugin's. |
 | `permissions` | What your views may do. People see this list, in plain words, before they turn the add-on on. Ask for more in a later version and the add-on pauses until they review it. |
 | `views` | Up to 8. `id`: lowercase letters, digits, dashes. `title`: at most 40 characters. `entry`: an `.html` file inside the add-on. |
+| `background` | Optional. An `.html` file that runs, unseen, for as long as the add-on is on. See [The background page](#the-background-page). |
+| `tools` | Optional, up to 24. Tools for the orchestrator. See [Tools for the orchestrator](#tools-for-the-orchestrator). |
 
 Slots:
 
@@ -64,6 +67,60 @@ Load the client first:
 
 `choo.ready` resolves once the app has sent your context and theme. Every method returns a promise, and rejects with a readable message when the permission is missing, an argument is wrong, or the app refuses.
 
+## The background page
+
+Views only run while they're on screen. For work that should carry on regardless (move a plan forward when a pull request merges, notify when something finishes), name a page in `background`:
+
+```json
+{ "apiVersion": 1, "permissions": ["workspaces:read", "notify"], "background": "ui/background.html" }
+```
+
+It is a page like any view: same sandbox, same `window.choo`, same permissions. Nobody sees it. It starts with the app (or when the add-on is turned on) and stops when the add-on is turned off. Its `choo.context` is `{ viewId: "@background" }`. A new version of the add-on restarts it, so keep anything that must survive in `choo.store`.
+
+The background page and the views don't talk to each other directly. They share `choo.store`: one writes, the others hear `choo.on('store', (e) => …)` with the key that changed, and read it.
+
+## Tools for the orchestrator
+
+An add-on can give the [orchestrator](prd/orchestrator.md) tools. List them in the manifest and answer them in the background page:
+
+```json
+{
+  "apiVersion": 1,
+  "permissions": ["workspaces:read", "storage", "orchestrator:tools"],
+  "background": "ui/background.html",
+  "tools": [
+    { "name": "board_summary", "description": "List this project's workspaces with the note kept on each.", "readOnly": true },
+    {
+      "name": "set_note",
+      "description": "Write the note on a workspace.",
+      "input": { "type": "object", "properties": { "workspace_id": { "type": "string" }, "note": { "type": "string" } }, "required": ["workspace_id", "note"] }
+    }
+  ]
+}
+```
+
+```html
+<script src="/@choo/host.js"></script>
+<script>
+  choo.tools.handle('set_note', async ({ workspace_id, note }, ctx) => {
+    // ctx.repoIds: the projects of the orchestrator that is asking.
+    await choo.store.set(`notes:${workspace_id}`, note)
+    return 'Saved.'
+  })
+</script>
+```
+
+| Field | Meaning |
+|---|---|
+| `name` | Lowercase letters, digits and underscores, starting with a letter. The orchestrator sees it as `mcp__addon-<plugin name>__<name>`. |
+| `description` | What the orchestrator reads to decide when to call it. At most 1000 characters. |
+| `input` | A JSON Schema with `"type": "object"`, at most 8 KB. Arguments are checked against it before your handler runs. Leave it out for a tool with no arguments. |
+| `readOnly` | `true` if the tool changes nothing. Read-only tools run without asking the person; others follow the orchestrator chat's permission setting. |
+
+Tools need a `background` page and the `orchestrator:tools` permission. People see the tool names and descriptions before they turn the add-on on.
+
+A handler gets the arguments and `{ repoIds }`, and can use everything `window.choo` gives the add-on. What it returns is the tool's answer: a string as it is, anything else as JSON, cut at 100,000 characters. What it throws is shown to the orchestrator as the tool's error. It has five minutes to answer.
+
 ## Theme
 
 The client sets CSS variables on `<html>` and keeps them current: `--choo-bg`, `--choo-panel`, `--choo-sidebar`, `--choo-raised`, `--choo-hover`, `--choo-line`, `--choo-fg`, `--choo-muted`, `--choo-faint`, `--choo-add`, `--choo-del`, `--choo-code`, `--choo-accent`, `--choo-font-sans`, `--choo-font-mono`. It also sets `color-scheme` and `data-choo-theme="dark|light"`. The same values are in `choo.theme` and `choo.dark`; `choo.on('theme', cb)` fires when they change.
@@ -85,9 +142,34 @@ The client sets CSS variables on `<html>` and keeps them current: `--choo-bg`, `
 | `choo.ui.notify(title, body?, workspaceId?)` | `notify` | A system notification, prefixed with your add-on's name. Respects the person's notification setting. |
 | `net:<host>` | (a permission, not a method) | Lets views `fetch` and load images from `https://<host>`. `*.example.com` covers subdomains. |
 
-Events: `choo.on('workspaces', cb)` fires (with no data) when a workspace or a chat's status changes; call `list` again. `choo.on('theme', cb)` fires when colors change. Both return a function that stops listening.
+| `orchestrator:tools` | (a permission, not a method) | Lets the add-on list `tools` for the orchestrator. |
+
+Events, each returning a function that stops listening:
+
+| Event | Fires when | Data |
+|---|---|---|
+| `choo.on('workspaces', cb)` | A workspace or a chat's status changes. Call `list` again. | none |
+| `choo.on('prs', cb)` | A workspace's pull request or its checks changed. Needs `prs:read`. | `{ workspaceId }` |
+| `choo.on('store', cb)` | Your add-on's storage changed, from any of its pages or tools. | `{ key }` |
+| `choo.on('theme', cb)` | Colors or fonts changed. | `{ theme, dark }` |
 
 Archived workspaces and orchestrator chats are never visible to add-ons.
+
+## Asking a team to use your add-on
+
+A project can name the add-ons its team should have in the `choo-choo.json` at its root, next to its scripts:
+
+```json
+{
+  "addons": {
+    "sources": ["acme/choo-addons"],
+    "required": ["plan-board@acme-addons"],
+    "recommended": ["release-notes@acme-addons"]
+  }
+}
+```
+
+`sources` are `owner/repo` or git URLs (not folders). `required` and `recommended` are plugin ids, `name@source`, where the source's name is the `name` in its `marketplace.json`. Someone who has the project in Choo Choo sees "Set up Plan board" under it, and Settings › Add-ons lists what the project asks for with Install and Turn on buttons. Nothing is added or installed without a click, and turning an add-on on still shows its permissions. A recommended add-on can be turned down with "Not now"; a required one keeps its reminder.
 
 ## Trying yours
 

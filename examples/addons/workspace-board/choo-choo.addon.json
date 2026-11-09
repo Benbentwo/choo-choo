@@ -1,11 +1,40 @@
 {
   "apiVersion": 1,
   "name": "Workspace board",
-  "description": "Every workspace as a card, in columns by what it's doing. Start new ones from the board and keep notes per workspace.",
-  "permissions": ["repos:read", "workspaces:read", "workspaces:start", "storage"],
+  "description": "Every workspace as a card, in columns by what it's doing. Start new ones from the board, keep notes per workspace, and let the orchestrator read and write those notes.",
+  "permissions": ["repos:read", "workspaces:read", "workspaces:start", "storage", "orchestrator:tools"],
   "views": [
     { "id": "board", "slot": "app", "title": "Board", "entry": "ui/board.html" },
     { "id": "repo-board", "slot": "repo", "title": "Board", "entry": "ui/board.html" },
     { "id": "notes", "slot": "workspace", "title": "Notes", "entry": "ui/notes.html" }
+  ],
+  "background": "ui/background.html",
+  "tools": [
+    {
+      "name": "board_summary",
+      "description": "List this project's workspaces with their status and the note kept on each one.",
+      "readOnly": true
+    },
+    {
+      "name": "set_note",
+      "description": "Write the note on a workspace. The person sees it in the workspace's Notes tab. An empty note clears it.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "A workspace id from board_summary or list_workspaces."
+          },
+          "note": {
+            "type": "string",
+            "description": "The whole note; it replaces what was there."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "note"
+        ]
+      }
+    }
   ]
 }

@@ -20,6 +20,10 @@
         const box = document.getElementById('notes')
         const state = document.getElementById('state')
         box.value = (await choo.store.get(key)) || ''
+        // The orchestrator can change the note through the add-on's set_note tool: show it, unless the person is typing.
+        choo.on('store', async (e) => {
+          if (e.key === key && document.activeElement !== box) box.value = (await choo.store.get(key)) || ''
+        })
         let timer
         box.oninput = () => {
           state.textContent = ''

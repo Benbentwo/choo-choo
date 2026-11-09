@@ -98,3 +98,55 @@ describe('automatic updates', () => {
     expect(needsApproval('ask', [], 'mcp__choo__pr_status')).toBe(false)
   })
 })
+
+describe('tools from add-ons', () => {
+  // The two SDK functions queryOptions uses, recording what they were given.
+  const sdk = {
+    tool: (name: string, description: string, shape: object, handler: (a: unknown) => Promise<{ content: { text: string }[] }>) => ({ name, description, shape, handler }),
+    createSdkMcpServer: (o: { name: string; tools: { name: string }[] }) => o
+  } as never
+  const host = {} as never
+  const calls: unknown[][] = []
+  const board: import('../src/main/orchestrator').AddonToolset = {
+    server: 'addon-plan-board',
+    addon: 'Plan board',
+    description: 'Plans that run one workspace per task.',
+    tools: [
+      { name: 'plan_read', description: 'Read the plan.', readOnly: true, call: async (input, context) => (calls.push([input, context]), { tasks: 3 }) },
+      { name: 'plan_start', description: 'Start ready tasks.', input: { type: 'object', properties: { limit: { type: 'integer' } } }, call: async () => 'Started 2.' }
+    ]
+  }
+
+  it('adds a server per add-on beside the built-in tools', () => {
+    const o = orch.queryOptions(sdk, repo, host, [board]) as { mcpServers: Record<string, { tools: { name: string; shape: object }[] }> }
+    expect(Object.keys(o.mcpServers)).toEqual(['choo', 'addon-plan-board'])
+    expect(o.mcpServers['addon-plan-board'].tools.map((t) => t.name)).toEqual(['plan_read', 'plan_start'])
+    expect(Object.keys(o.mcpServers['addon-plan-board'].tools[1].shape)).toEqual(['limit'])
+    expect(Object.keys((orch.queryOptions(sdk, repo, host) as typeof o).mcpServers)).toEqual(['choo'])
+  })
+  it("passes the orchestrator's projects to the tool and returns what it answered as text", async () => {
+    const o = orch.queryOptions(sdk, repo, host, [board]) as { mcpServers: Record<string, { tools: { handler(a: unknown): Promise<{ content: { text: string }[] }> }[] }> }
+    const [read, start] = o.mcpServers['addon-plan-board'].tools
+    expect((await read.handler({ plan: 'q3' })).content[0].text).toBe(JSON.stringify({ tasks: 3 }, null, 2))
+    expect(calls).toEqual([[{ plan: 'q3' }, { repoIds: ['r1'] }]])
+    expect((await start.handler({})).content[0].text).toBe('Started 2.')
+  })
+  it('lets read-only add-on tools run without asking, and no others', () => {
+    const o = orch.queryOptions(sdk, repo, host, [board]) as { autoAllowTools: string[] }
+    expect(o.autoAllowTools).toEqual(['mcp__addon-plan-board__plan_read'])
+    expect(needsApproval('ask', [], 'mcp__addon-plan-board__plan_start')).toBe(true)
+  })
+  it('tells the orchestrator which add-ons it has, and only when it has some', () => {
+    const p = orch.systemPrompt(repo, '', [board])
+    expect(p).toContain('- Plan board (tools named mcp__addon-plan-board__*): Plans that run one workspace per task.')
+    expect(p).toContain('comes from the add-on, not from the person')
+    expect(orch.systemPrompt(repo, '')).not.toContain('Add-ons:')
+  })
+  it('cuts an answer that is too long to read', () => {
+    expect(orch.renderToolResult('ok')).toBe('ok')
+    expect(orch.renderToolResult(undefined)).toBe('null')
+    const long = orch.renderToolResult('x'.repeat(150_000))
+    expect(long.length).toBeLessThan(100_100)
+    expect(long).toMatch(/cut: the answer was 150000 characters/)
+  })
+})

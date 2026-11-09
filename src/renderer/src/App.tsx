@@ -17,6 +17,12 @@ export function App() {
   const ws = s.workspaces.find((w) => w.id === s.selectedWs && !w.archived) ?? null
   useShareRefresh(ws)
 
+  // A project added later may pin add-ons too.
+  const repoCount = s.repos.length
+  useEffect(() => {
+    if (repoCount) void refreshAddons()
+  }, [repoCount])
+
   useEffect(() => {
     void window.api.pendingPermissions().then((list) => list.forEach(addPermission))
     void loadModelDetails()

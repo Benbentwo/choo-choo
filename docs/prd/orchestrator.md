@@ -41,6 +41,7 @@ Project groups: "New project group…" in the sidebar's view menu (or ⌘K) asks
 7. `pr_status` shows the PR for a workspace's branch and its checks, failures first, and can wait (up to 30 minutes) until no check is pending. It never asks for approval.
 8. Automatic updates: finished workspaces are batched for 4 seconds, skipped if the orchestrator already read them since they finished, and held until the orchestrator's own turn ends. At most 8 automatic turns run between messages from the person; after that a note says updates are paused.
 9. A project group needs a name and at least one repo. Removing a repo drops it from its groups. Deleting a group hides its orchestrator; workspaces and memory stay.
+10. Add-ons that are on and hold `orchestrator:tools` add their tools, one MCP server per add-on (`addon-<plugin name>`), and a line each in the prompt. Their read-only tools run without asking. See [Add-ons](add-ons.md).
 
 ## Design
 

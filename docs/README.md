@@ -34,7 +34,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [MCP servers](prd/mcp-servers.md) | Shipped (PR #50) |
 | [Plugins and skills](prd/plugins.md) | In review |
 | [Managing projects, and PR status](prd/projects-and-pr-status.md) | In review |
-| [Add-ons](prd/add-ons.md) | In review: views, permissions and host API; Plan board next |
+| [Add-ons](prd/add-ons.md) | Shipped: views, background pages, orchestrator tools, project pins; Plan board next |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 
@@ -48,6 +48,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0004](decisions/0004-no-server-git-for-sharing.md) | No Choo Choo server: sharing and sync go through the repo's own git remote |
 | [0005](decisions/0005-stack.md) | Electron, React and JSON files on disk |
 | [0006](decisions/0006-add-ons-are-claude-code-plugins.md) | Add-ons are Claude Code plugins plus a Choo Choo manifest, sandboxed behind a permission-checked host API |
+| [0007](decisions/0007-add-on-tools-run-in-a-background-page.md) | Add-on tools and background work run in a sandboxed background page, not in an MCP server |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 

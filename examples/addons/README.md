@@ -9,6 +9,7 @@ In Choo Choo, open Settings › Add-ons, paste the full path to this folder into
 - **Board** in the sidebar: every workspace as a card, in columns by what it's doing.
 - **Board** under each project: the same for one project, with a box to start a new workspace.
 - **Notes** as a tab beside each workspace.
+- Two tools for the orchestrator, `board_summary` and `set_note`, so you can ask it "leave a note on each workspace saying what's left".
 
 ## What's in an add-on
 
@@ -18,6 +19,7 @@ workspace-board/
   choo-choo.addon.json         what it adds to Choo Choo, and the permissions it needs
   ui/board.html                a view; loads /@choo/host.js to get window.choo
   ui/notes.html
+  ui/background.html           runs unseen while the add-on is on; answers the orchestrator's tools
   ui/base.css                  uses the --choo-* theme variables
 ```
 

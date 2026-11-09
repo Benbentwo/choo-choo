@@ -6,7 +6,8 @@
  */
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { extname, join, sep } from 'node:path'
-import { ADDON_KEYWORD, ADDON_MANIFEST, addonKey, addonState, parseManifest, type AddonGrant, type AddonInfo, type AddonManifest, type AvailableAddon } from '@shared/addons'
+import { z } from 'zod'
+import { ADDON_KEYWORD, ADDON_MANIFEST, addonKey, addonState, parseManifest, parsePins, sourceKey, type AddonGrant, type AddonInfo, type AddonManifest, type AddonPins, type AddonState, type AvailableAddon, type PinStatus } from '@shared/addons'
 import { lastJson, runClaude } from './claudeCli'
 
 /** One row of `claude plugin list --json`, as far as add-ons care. */
@@ -64,10 +65,58 @@ export async function listSources(cwd: string, env: Record<string, string>): Pro
 export function readManifest(dir: string): { manifest?: AddonManifest; errors: string[] } | undefined {
   const file = join(dir, ADDON_MANIFEST)
   if (!existsSync(file)) return undefined
+  let raw: unknown
   try {
-    return parseManifest(JSON.parse(readFileSync(file, 'utf8')))
+    raw = JSON.parse(readFileSync(file, 'utf8'))
   } catch (e) {
     return { errors: [`${ADDON_MANIFEST} isn't valid JSON: ${(e as Error).message}`] }
+  }
+  const read = parseManifest(raw)
+  // A tool whose arguments can't be understood would reach the orchestrator broken: refuse the add-on instead.
+  const errors = (read.manifest?.tools ?? []).flatMap((t) => {
+    try {
+      toolShape(t.input)
+      return []
+    } catch (e) {
+      return [`Tool ${t.name}: input isn't a JSON Schema Choo Choo can read (${(e as Error).message})`]
+    }
+  })
+  return errors.length ? { errors } : read
+}
+
+/** A tool's arguments as the Agent SDK wants them: one zod type per argument. Throws on a schema zod can't read. */
+export function toolShape(input: Record<string, unknown> | undefined): Record<string, z.ZodType> {
+  if (!input) return {}
+  const schema = z.fromJSONSchema(input as Parameters<typeof z.fromJSONSchema>[0])
+  if (!(schema instanceof z.ZodObject)) throw new Error('not an object schema')
+  return schema.shape as Record<string, z.ZodType>
+}
+
+const PIN_FILE = 'choo-choo.json'
+
+/** The add-ons a project's `choo-choo.json` asks for. Empty when the file is missing or broken. */
+export function readPins(repoPath: string): AddonPins {
+  try {
+    return parsePins(JSON.parse(readFileSync(join(repoPath, PIN_FILE), 'utf8')))
+  } catch {
+    return parsePins(null)
+  }
+}
+
+/** A project's pins checked against what is installed and which sources are added. */
+export function pinStatus(repoId: string, pins: AddonPins, addons: Pick<AddonInfo, 'id' | 'name' | 'state'>[], pluginIds: string[], sources: Pick<SourceEntry, 'source'>[]): PinStatus {
+  const known = new Set(sources.map((s) => sourceKey(s.source)))
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+  const one = (id: string, required: boolean) => {
+    const addon = addons.find((a) => same(a.id, id))
+    // Installed as a plain plugin: there is nothing for Choo Choo to turn on.
+    const state: AddonState | 'missing' = addon?.state ?? (pluginIds.some((p) => same(p, id)) ? 'invalid' : 'missing')
+    return { id, name: addon?.name ?? id.split('@')[0], required, state }
+  }
+  return {
+    repoId,
+    newSources: pins.sources.filter((s) => !known.has(sourceKey(s))),
+    addons: [...pins.required.map((id) => one(id, true)), ...pins.recommended.map((id) => one(id, false))]
   }
 }
 

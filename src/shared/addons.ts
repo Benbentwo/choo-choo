@@ -24,6 +24,16 @@ export interface AddonView {
   entry: string
 }
 
+/** A tool the add-on gives the orchestrator. Its background page answers the calls. */
+export interface AddonTool {
+  name: string
+  description: string
+  /** JSON Schema for the arguments: an object schema. No arguments when missing. */
+  input?: Record<string, unknown>
+  /** Only reads, so the orchestrator may call it without asking the person. */
+  readOnly?: boolean
+}
+
 export interface AddonManifest {
   apiVersion: number
   /** Display name; the plugin's name when missing. */
@@ -31,7 +41,13 @@ export interface AddonManifest {
   description?: string
   permissions: string[]
   views: AddonView[]
+  /** HTML file that runs, unseen, for as long as the add-on is on. */
+  background?: string
+  tools: AddonTool[]
 }
+
+/** The view id a background page gets in its context. */
+export const BACKGROUND_VIEW = '@background'
 
 /** What the person agreed to for one add-on, kept in Settings. */
 export interface AddonGrant {
@@ -103,8 +119,12 @@ const PERMISSIONS: Record<string, PermissionText> = {
   'workspaces:stop': { label: 'Stop agents', detail: "Stop a workspace's running agent." },
   'prs:read': { label: 'See pull requests and checks', detail: "Each workspace's pull request, its state and its CI checks." },
   storage: { label: 'Keep its own data on this Mac', detail: 'Up to 1 MB, only readable by this add-on.' },
-  notify: { label: 'Show notifications', detail: 'System notifications with a title and a line of text.' }
+  notify: { label: 'Show notifications', detail: 'System notifications with a title and a line of text.' },
+  'orchestrator:tools': { label: 'Give the orchestrator tools', detail: 'The orchestrator can call the tools this add-on lists, and acts on what they answer.' }
 }
+
+/** Needed by an add-on that lists tools. No host API method asks for it. */
+export const TOOLS_PERMISSION = 'orchestrator:tools'
 
 const HOST = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
 
@@ -192,8 +212,101 @@ export function parseManifest(raw: unknown): { manifest?: AddonManifest; errors:
     else views.push({ id, slot: o.slot as AddonSlot, title, entry })
   }
 
+  let background: string | undefined
+  if (m.background !== undefined) {
+    const entry = str(m.background, 300)
+    if (!entry || !safeRelativePath(entry) || !/\.html?$/.test(entry)) errors.push('background must be an .html file inside the add-on, like ui/background.html')
+    else background = entry
+  }
+
+  const tools: AddonTool[] = []
+  if (m.tools !== undefined && !Array.isArray(m.tools)) errors.push('tools must be a list')
+  const rawTools = Array.isArray(m.tools) ? m.tools : []
+  if (rawTools.length > MAX_TOOLS) errors.push(`An add-on can have at most ${MAX_TOOLS} tools`)
+  for (const t of rawTools.slice(0, MAX_TOOLS)) {
+    const o = (t && typeof t === 'object' ? t : {}) as Record<string, unknown>
+    const name = str(o.name, 48)
+    const description = str(o.description, 1000)
+    const input = o.input
+    if (!name || !/^[a-z][a-z0-9_]*$/.test(name)) errors.push(`A tool's name must be lowercase letters, digits and underscores, starting with a letter (got ${JSON.stringify(o.name)})`)
+    else if (tools.some((x) => x.name === name)) errors.push(`Two tools are both called ${name}`)
+    else if (!description) errors.push(`Tool ${name} needs a description of at most 1000 characters`)
+    else if (input !== undefined && !isObjectSchema(input)) errors.push(`Tool ${name}: input must be a JSON Schema with "type": "object", at most 8 KB`)
+    else tools.push({ name, description, ...(input ? { input: input as Record<string, unknown> } : {}), ...(o.readOnly === true ? { readOnly: true } : {}) })
+  }
+  if (rawTools.length && !background) errors.push('tools need a background page to answer them: set background to an .html file')
+  if (rawTools.length && !permissions.includes(TOOLS_PERMISSION)) errors.push(`tools need the "${TOOLS_PERMISSION}" permission`)
+
   if (errors.length) return { errors }
-  return { manifest: { apiVersion: m.apiVersion as number, name: str(m.name, 60) ?? undefined, description: str(m.description, 300) ?? undefined, permissions, views }, errors }
+  return {
+    manifest: { apiVersion: m.apiVersion as number, name: str(m.name, 60) ?? undefined, description: str(m.description, 300) ?? undefined, permissions, views, ...(background ? { background } : {}), tools },
+    errors
+  }
+}
+
+const MAX_TOOLS = 24
+
+function isObjectSchema(v: unknown): boolean {
+  if (!v || typeof v !== 'object' || Array.isArray(v) || (v as { type?: unknown }).type !== 'object') return false
+  const props = (v as { properties?: unknown }).properties
+  if (props !== undefined && (!props || typeof props !== 'object' || Array.isArray(props))) return false
+  return JSON.stringify(v).length <= 8192
+}
+
+/** The orchestrator's name for an add-on's tool server: the plugin's name, tidied. */
+export function toolServerName(key: string): string {
+  return `addon-${key.split('.')[0]}`
+}
+
+/** What a project's `choo-choo.json` says about add-ons its team should have. */
+export interface AddonPins {
+  /** Sources to add: `owner/repo` or a git URL. */
+  sources: string[]
+  /** Plugin ids, `name@source`. */
+  required: string[]
+  recommended: string[]
+}
+
+const PLUGIN_ID = /^[a-z0-9][a-z0-9._-]{0,63}@[a-z0-9][a-z0-9._-]{0,63}$/i
+const SOURCE = /^(?:[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*|https:\/\/[a-z0-9][\w.-]*(?::\d+)?\/[\w./~-]+|(?:ssh:\/\/)?git@[a-z0-9][\w.-]*[:/][\w./~-]+)$/i
+
+/** True for `owner/repo` or a git URL. A folder path is refused: a repo must not point the app at local files. */
+export const isPinSource = (v: string) => v.length <= 300 && SOURCE.test(v) && !v.includes('..')
+
+/** Reads the `addons` part of a parsed `choo-choo.json`. Anything malformed is dropped, never guessed at. */
+export function parsePins(raw: unknown): AddonPins {
+  const a = (raw && typeof raw === 'object' ? (raw as { addons?: unknown }).addons : undefined) as Record<string, unknown> | undefined
+  const list = (v: unknown, ok: (s: string) => boolean) => [...new Set((Array.isArray(v) ? v : []).filter((x): x is string => typeof x === 'string' && ok(x)))].slice(0, 20)
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return { sources: [], required: [], recommended: [] }
+  const required = list(a.required, (x) => PLUGIN_ID.test(x))
+  return { sources: list(a.sources, isPinSource), required, recommended: list(a.recommended, (x) => PLUGIN_ID.test(x)).filter((x) => !required.includes(x)) }
+}
+
+/** One pinned add-on as it stands on this Mac. */
+export interface PinnedAddon {
+  id: string
+  name: string
+  required: boolean
+  /** `missing` when it isn't installed. */
+  state: AddonState | 'missing'
+}
+
+/** A project's pins checked against what is installed. */
+export interface PinStatus {
+  repoId: string
+  /** Sources the file names that aren't added yet. */
+  newSources: string[]
+  addons: PinnedAddon[]
+}
+
+/** Two ways of writing the same source compare equal: `Acme/Addons`, `https://github.com/acme/addons.git`. */
+export function sourceKey(source: string): string {
+  return source
+    .trim()
+    .toLowerCase()
+    .replace(/^(?:https:\/\/|ssh:\/\/)?(?:git@)?github\.com[:/]/, '')
+    .replace(/\.git$/, '')
+    .replace(/\/+$/, '')
 }
 
 /** A host-safe key for a plugin id: `Plan-Board@acme` becomes `plan-board.acme`. */
@@ -245,12 +358,23 @@ export function viewCsp(key: string, granted: string[]): string {
 export type AddonCallResult = { ok: true; result: unknown } | { ok: false; error: string }
 
 /** Messages between a view and the app window. `choo` marks them so other postMessage traffic is ignored. */
-export type AddonRequest = { choo: 1; type: 'hello' } | { choo: 1; type: 'call'; id: number; method: string; args: unknown }
+export type AddonRequest =
+  | { choo: 1; type: 'hello' }
+  | { choo: 1; type: 'call'; id: number; method: string; args: unknown }
+  | { choo: 1; type: 'tool-result'; id: string; ok: boolean; result?: unknown; error?: string }
+/** What a tool's handler is told about who is asking. */
+export interface AddonToolContext {
+  /** The projects the calling orchestrator directs. */
+  repoIds: string[]
+}
 export type AddonReply =
   | { choo: 1; type: 'init'; context: AddonContext; theme: Record<string, string>; dark: boolean; apiVersion: number }
   | { choo: 1; type: 'result'; id: number; ok: true; result: unknown }
   | { choo: 1; type: 'result'; id: number; ok: false; error: string }
   | { choo: 1; type: 'event'; name: 'workspaces' }
+  | { choo: 1; type: 'event'; name: 'prs'; workspaceId: string }
+  | { choo: 1; type: 'event'; name: 'store'; key: string }
+  | { choo: 1; type: 'tool'; id: string; name: string; input: unknown; context: AddonToolContext }
   | { choo: 1; type: 'event'; name: 'theme'; theme: Record<string, string>; dark: boolean }
 
 export function isAddonRequest(v: unknown): v is AddonRequest {
@@ -258,6 +382,7 @@ export function isAddonRequest(v: unknown): v is AddonRequest {
   const o = v as Record<string, unknown>
   if (o.choo !== 1) return false
   if (o.type === 'hello') return true
+  if (o.type === 'tool-result') return typeof o.id === 'string' && typeof o.ok === 'boolean'
   return o.type === 'call' && typeof o.id === 'number' && typeof o.method === 'string'
 }
 
@@ -275,4 +400,17 @@ export interface AddonWorkspace {
   startedBy?: string
   createdAt: number
   lastMessage: string
+}
+
+/** Something the app tells add-on frames about. `addon` limits it to one add-on's frames. */
+export type AddonAppEvent = { name: 'workspaces' } | { name: 'prs'; workspaceId: string } | { name: 'store'; addon: string; key: string }
+
+/** A tool call on its way to an add-on's background page. */
+export interface AddonToolCall {
+  callId: string
+  /** The add-on's key. */
+  addon: string
+  name: string
+  input: unknown
+  context: AddonToolContext
 }

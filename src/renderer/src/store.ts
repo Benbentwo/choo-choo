@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
-import type { AddonInfo } from '@shared/addons'
+import type { AddonInfo, PinStatus, PinnedAddon } from '@shared/addons'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover } from '@shared/types'
 
 export interface Doc {
@@ -37,6 +37,8 @@ interface UI {
   selectedWs: string | null
   /** Installed add-ons; the ones that are on add views to the sidebar and the right panel. */
   addons: AddonInfo[]
+  /** What each project's choo-choo.json asks for. */
+  addonPins: PinStatus[]
   /** The add-on view shown in the center instead of a workspace or Home. */
   addonPage: AddonPage | null
   activeChat: Record<string, string>
@@ -99,6 +101,7 @@ export const useStore = create<UI>((set, get) => ({
   tasks: {},
   selectedWs: null,
   addons: [],
+  addonPins: [],
   addonPage: null,
   activeChat: {},
   openDoc: {},
@@ -195,9 +198,20 @@ export function openAddonPage(page: AddonPage) {
 export async function refreshAddons(fresh = false) {
   try {
     useStore.getState().set({ addons: await window.api.addonsList(fresh) })
+    useStore.getState().set({ addonPins: await window.api.addonPins() })
   } catch {
     /* Claude Code isn't available; Settings > Add-ons shows why */
   }
+}
+
+/**
+ * The add-ons a project pins that still need the person: not on, and not a recommendation they
+ * turned down. Pins are checked now and then; the add-on list is live, so its state wins.
+ */
+export function pinsToSetUp(pin: PinStatus | undefined, addons: AddonInfo[], dismissed: string[] = []): PinnedAddon[] {
+  return (pin?.addons ?? [])
+    .map((a) => ({ ...a, state: addons.find((x) => x.id.toLowerCase() === a.id.toLowerCase())?.state ?? a.state }))
+    .filter((a) => a.state !== 'on' && (a.required || !dismissed.includes(a.id)))
 }
 
 export interface DraftContext {

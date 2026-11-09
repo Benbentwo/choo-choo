@@ -26,6 +26,8 @@ export interface AddonHost {
   openWorkspace(workspaceId: string): void
   /** Persist state changed by a call and tell the window. */
   saved(): void
+  /** An add-on changed its own data: tell its other pages. */
+  storeChanged?(addonKey: string, key: string): void
   appVersion(): string
   /** Folder for add-ons' own data, one JSON file each. */
   storageDir(): string
@@ -246,12 +248,14 @@ export async function call(host: AddonHost, caller: Caller, method: string, args
     case 'store.set': {
       if (a.value === undefined) throw new Error('store.set: value is missing')
       writeStorage(host, caller, { ...readStorage(host, caller), [a.key]: a.value })
+      host.storeChanged?.(caller.key, a.key)
       return null
     }
     case 'store.delete': {
       const data = readStorage(host, caller)
       delete data[a.key]
       writeStorage(host, caller, data)
+      host.storeChanged?.(caller.key, a.key)
       return null
     }
 
