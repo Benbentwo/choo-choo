@@ -4,7 +4,7 @@
  * from the app comes in through `AddonHost`, so it can be tested on its own.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, relative } from 'node:path'
 import { z } from 'zod'
 import type { Chat, ChatItem, CheckRun, PrInfo, Repo, Workspace } from '@shared/types'
@@ -291,11 +291,28 @@ export async function call(host: AddonHost, caller: Caller, method: string, args
     }
     case 'files.read': {
       const file = projectPath(host, a.repoId, a.path, 'file')
-      if (!existsSync(file)) return null
-      const st = lstatSync(file)
-      if (!st.isFile()) throw new Error(`${a.path} isn't a file`)
-      if (st.size > FILE_LIMIT) throw new Error(`${a.path} is over 1 MB`)
-      return { content: readFileSync(file, 'utf8'), modified: Math.round(st.mtimeMs) }
+      // Open first, then check what was opened: a file checked by name could be swapped before it is read.
+      // Never through a link, and never waiting on a pipe someone left under that name.
+      let fd: number
+      try {
+        fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code
+        if (code === 'ENOENT' || code === 'ENOTDIR') return null
+        if (code === 'ELOOP') throw new Error(`${PROJECT_DIR}/${a.path} leads outside the project through a link`)
+        throw e
+      }
+      try {
+        const st = fstatSync(fd)
+        if (!st.isFile()) throw new Error(`${a.path} isn't a file`)
+        if (st.size > FILE_LIMIT) throw new Error(`${a.path} is over 1 MB`)
+        // The folders above it, checked again now that the file is open: what was opened is what is at that path.
+        const there = lstatSync(projectPath(host, a.repoId, a.path, 'file'))
+        if (there.ino !== st.ino || there.dev !== st.dev) throw new Error(`${a.path} changed while it was being read. Try again.`)
+        return { content: readFileSync(fd, 'utf8'), modified: Math.round(st.mtimeMs) }
+      } finally {
+        closeSync(fd)
+      }
     }
     case 'files.write': {
       if (Buffer.byteLength(a.content) > FILE_LIMIT) throw new Error(`${a.path} would be over 1 MB`)
@@ -305,7 +322,18 @@ export async function call(host: AddonHost, caller: Caller, method: string, args
       // A fresh name, created exclusively: a link someone left at a guessable temp path is never written through.
       const tmp = `${file}.${randomUUID()}.tmp`
       writeFileSync(tmp, a.content, { flag: 'wx' })
-      renameSync(tmp, file)
+      try {
+        // The folders are checked once more before the file takes its name, in case one was swapped for a link meanwhile.
+        projectPath(host, a.repoId, a.path, 'file')
+        renameSync(tmp, file)
+      } catch (e) {
+        try {
+          unlinkSync(tmp)
+        } catch {
+          // Already gone.
+        }
+        throw e
+      }
       return { modified: Math.round(lstatSync(file).mtimeMs) }
     }
     case 'files.delete': {

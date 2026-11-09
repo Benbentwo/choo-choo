@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -553,6 +554,13 @@ describe('host API', () => {
     await expect(call(host, c, 'files.delete', { repoId: 'r1', path: 'link.md' })).rejects.toThrow(/through a link/)
     expect(readFileSync(join(outside, 'secret.md'), 'utf8')).toBe('secret')
     expect(readdirSync(outside)).toEqual(['secret.md'])
+    // A pipe left under a text file's name is refused, not waited on.
+    try {
+      execFileSync('mkfifo', [join(dir, '.choo-choo', 'pipe.md')])
+      await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'pipe.md' })).rejects.toThrow(/isn't a file/)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+    }
     // The whole .choo-choo folder as a link.
     const linked = mkdtempSync(join(tmpdir(), 'choo-project-'))
     symlinkSync(outside, join(linked, '.choo-choo'))
