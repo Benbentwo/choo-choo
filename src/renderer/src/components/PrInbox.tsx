@@ -97,7 +97,12 @@ export function PrInboxPage() {
             {s.prInboxLoading ? 'Loading…' : 'Refresh'}
           </button>
         </div>
-        {s.prInboxError && <div className="selectable mb-3 rounded-lg border border-del/40 px-3 py-2 text-[12px] text-muted">{s.prInboxError}</div>}
+        {s.prInboxError && (
+          <div className="selectable mb-3 rounded-lg border border-del/40 px-3 py-2 text-[12px] text-muted">
+            {s.prInboxError}
+            {s.prInbox && <div className="mt-0.5 text-faint">Showing the list from {new Date(s.prInbox.fetchedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.</div>}
+          </div>
+        )}
         <div className="-mx-2 min-h-0 flex-1 overflow-y-auto px-2 pb-8 outline-none" tabIndex={0} onKeyDown={onKey}>
           {!s.prInbox && s.prInboxLoading && <div className="py-10 text-center text-muted">Loading pull requests…</div>}
           {s.prInbox && groups.length === 0 && (
