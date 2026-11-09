@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 vi.mock('../src/main/claudeBinary', () => ({ claudeExecutable: () => '/nonexistent/claude' }))
@@ -503,6 +504,69 @@ describe('host API', () => {
     await call(host, caller(), 'store.get', { key: 'plan' })
     await call(host, caller(), 'store.delete', { key: 'plan' })
     expect(changes).toEqual(['board.acme:plan', 'board.acme:plan'])
+  })
+  it("reads and writes text files in a project's .choo-choo folder", async () => {
+    const { host } = fakeHost()
+    const dir = mkdtempSync(join(tmpdir(), 'choo-project-'))
+    host.repos()[0].path = dir
+    const c = caller()
+    expect(await call(host, c, 'files.list', { repoId: 'r1' })).toEqual([])
+    expect(await call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md' })).toBeNull()
+    await call(host, c, 'files.write', { repoId: 'r1', path: 'plans/q3.plan.md', content: '# Q3\n' })
+    expect(readFileSync(join(dir, '.choo-choo', 'plans', 'q3.plan.md'), 'utf8')).toBe('# Q3\n')
+    expect(((await call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md' })) as { content: string }).content).toBe('# Q3\n')
+    await call(host, c, 'files.write', { repoId: 'r1', path: 'notes.json', content: '{}' })
+    writeFileSync(join(dir, '.choo-choo', 'plans', '.hidden.md'), 'x')
+    writeFileSync(join(dir, '.choo-choo', 'plans', 'run.sh'), 'x')
+    expect(((await call(host, c, 'files.list', { repoId: 'r1' })) as { path: string }[]).map((f) => f.path)).toEqual(['notes.json', 'plans/q3.plan.md'])
+    expect(((await call(host, c, 'files.list', { repoId: 'r1', dir: 'plans' })) as { path: string }[]).map((f) => f.path)).toEqual(['plans/q3.plan.md'])
+    await call(host, c, 'files.delete', { repoId: 'r1', path: 'plans/q3.plan.md' })
+    expect(await call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md' })).toBeNull()
+    // Leaves no temp files behind.
+    expect(readdirSync(join(dir, '.choo-choo', 'plans')).sort()).toEqual(['.hidden.md', 'run.sh'])
+  })
+  it('keeps add-on files inside .choo-choo, as text, and never follows a link out', async () => {
+    const { host } = fakeHost()
+    const dir = mkdtempSync(join(tmpdir(), 'choo-project-'))
+    const outside = mkdtempSync(join(tmpdir(), 'choo-outside-'))
+    writeFileSync(join(outside, 'secret.md'), 'secret')
+    host.repos()[0].path = dir
+    const c = caller()
+    const write = (path: string) => call(host, c, 'files.write', { repoId: 'r1', path, content: 'x' })
+    for (const path of ['../x.md', '/etc/x.md', 'a/../../x.md', '.git/config.md', 'plans/.env.md']) await expect(write(path), path).rejects.toThrow(/isn't a path inside/)
+    for (const path of ['run.sh', 'plans/hook', 'plans/a.js', 'x.md.exe']) await expect(write(path), path).rejects.toThrow(/can only keep/)
+    await expect(call(host, c, 'files.write', { repoId: 'r1', path: 'big.md', content: 'x'.repeat(1024 * 1024 + 1) })).rejects.toThrow(/over 1 MB/)
+    await expect(call(host, c, 'files.read', { repoId: 'r2', path: 'a.md' })).rejects.toThrow(/No project/)
+    await expect(call(host, caller(['storage']), 'files.read', { repoId: 'r1', path: 'a.md' })).rejects.toThrow(/"files:read" permission/)
+    await expect(call(host, caller(['files:read']), 'files.write', { repoId: 'r1', path: 'a.md', content: 'x' })).rejects.toThrow(/"files:write" permission/)
+
+    // A folder that is a link to somewhere else.
+    mkdirSync(join(dir, '.choo-choo'))
+    symlinkSync(outside, join(dir, '.choo-choo', 'plans'))
+    await expect(write('plans/new.md')).rejects.toThrow(/outside the project through a link/)
+    await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'plans/secret.md' })).rejects.toThrow(/through a link/)
+    await expect(call(host, c, 'files.list', { repoId: 'r1', dir: 'plans' })).rejects.toThrow(/through a link/)
+    expect(await call(host, c, 'files.list', { repoId: 'r1' })).toEqual([])
+    // A file that is a link to somewhere else.
+    symlinkSync(join(outside, 'secret.md'), join(dir, '.choo-choo', 'link.md'))
+    await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'link.md' })).rejects.toThrow(/through a link/)
+    await expect(write('link.md')).rejects.toThrow(/through a link/)
+    await expect(call(host, c, 'files.delete', { repoId: 'r1', path: 'link.md' })).rejects.toThrow(/through a link/)
+    expect(readFileSync(join(outside, 'secret.md'), 'utf8')).toBe('secret')
+    expect(readdirSync(outside)).toEqual(['secret.md'])
+    // A pipe left under a text file's name is refused, not waited on.
+    try {
+      execFileSync('mkfifo', [join(dir, '.choo-choo', 'pipe.md')])
+      await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'pipe.md' })).rejects.toThrow(/isn't a file/)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+    }
+    // The whole .choo-choo folder as a link.
+    const linked = mkdtempSync(join(tmpdir(), 'choo-project-'))
+    symlinkSync(outside, join(linked, '.choo-choo'))
+    host.repos()[0].path = linked
+    await expect(write('new.md')).rejects.toThrow(/through a link/)
+    expect(readdirSync(outside)).toEqual(['secret.md'])
   })
   it('opens workspaces and notifies under its own name', async () => {
     const { host, state } = fakeHost()

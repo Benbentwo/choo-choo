@@ -107,6 +107,12 @@ export const HOST_SCRIPT = String.raw`(() => {
       stop: (workspaceId) => call('workspaces.stop', { workspaceId })
     },
     prs: { status: (workspaceId) => call('prs.status', { workspaceId }) },
+    files: {
+      list: (repoId, dir) => call('files.list', { repoId, dir }),
+      read: (repoId, path) => call('files.read', { repoId, path }),
+      write: (repoId, path, content) => call('files.write', { repoId, path, content }),
+      delete: (repoId, path) => call('files.delete', { repoId, path })
+    },
     store: {
       get: (key) => call('store.get', { key }),
       set: (key, value) => call('store.set', { key, value }),

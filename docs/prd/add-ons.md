@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Shipped: views, permissions and the host API (PR #55); background pages, orchestrator tools and project pins (PR #56). The Plan board, the first real add-on, follows in a private repo |
+| Status | Shipped: views, permissions and the host API (PR #55); background pages, orchestrator tools and project pins (PR #56); project files for add-ons (PR #58). The Plan board, the first real add-on, is in a private repo and uses all three |
 | Owner | Claude (project thread) |
 | Requested by | Ben, 2026-11-09 ("How do we support add-ons that expand functionality? Organizations can have a private add-on … so that the main project can stay open-sourced.") |
 | Last updated | 2026-11-09 |
@@ -59,6 +59,7 @@ People want Choo Choo to do things that don't belong in the core app for everyon
 13. An add-on's tools are fixed by its manifest, need a background page and the `orchestrator:tools` permission, and are shown by name before it is turned on. A manifest whose tool schema can't be read is not loaded.
 14. A tool call reaches only the background page of the add-on that listed the tool, and only an answer to a call that page was given is accepted. A tool that doesn't answer in five minutes fails; so do pending calls when the page restarts.
 15. Pins never act on their own. Only `owner/repo` and git URLs are accepted as pinned sources (never folders), only ids the project's file names can be installed through it, and installing still ends at the permissions panel.
+16. The only project files an add-on can touch are text files (`.md`, `.json`, `.txt`, `.yaml`, `.yml`, at most 1 MB) under `.choo-choo/` in a project's main checkout, with separate permissions to read and to write. Dotfiles, other paths and anything reached through a symlink are refused.
 
 ## Design
 
@@ -80,7 +81,7 @@ Add-ons are read from the home folder, so they are user-scope plugins. Sources a
 - Claude access: add-ons can't run Claude or see tokens. They ask the host to start or message workspaces, which use the Agent SDK and the person's own sign-in ([0001](../decisions/0001-official-claude-access-only.md)).
 - Third-party sign-in: none in this version. A host method for OAuth comes with the first add-on that needs one ([0003](../decisions/0003-oauth-for-integrations.md)).
 - What leaves the machine: nothing, unless an add-on holds a `net:<host>` permission, which the person sees before turning it on. Then its views can send what their other permissions let them read to that host.
-- What add-ons can't reach: files, shell, other add-ons' files and storage, the app window, Claude tokens, integration tokens, settings. A view's frame can only move between its own add-on's pages.
+- What add-ons can't reach: files outside each project's `.choo-choo/` folder (and those only with a files permission), shell, other add-ons' files and storage, the app window, Claude tokens, integration tokens, settings. A view's frame can only move between its own add-on's pages.
 - An add-on's hooks and MCP servers are Claude Code plugin parts and run with the person's permissions, as in the terminal. The permissions panel says so.
 - Tools: what a tool returns goes into the orchestrator's context, so an add-on with `orchestrator:tools` can influence what the orchestrator does next. The permission says so, the tools are listed before the add-on is turned on, and the orchestrator's prompt says tool answers come from the add-on, not the person. The handler itself can do only what the add-on's permissions allow.
 - Pins come from a repository's files, which anyone with push access can change. They only ever produce an offer: the source and the add-on are named, installing takes a click, and the add-on's permissions are shown before it runs.
@@ -100,5 +101,5 @@ Off until an add-on is installed and turned on. `Settings.addons` and `Workspace
 
 ## Future work
 
-1. Plan board: a visual plan of tasks that runs one worktree workspace per task. It lives in a private repo, which also tests private sources end to end. Needs host methods for files under `.choo-choo/` in a repo.
+1. Plan board, which lives in a private repo and keeps plans as files under `.choo-choo/plans/` through `choo.files`: editing dependencies by dragging, a kanban view, review findings on cards, a spend cap.
 2. Workspace sources ("New plan from…"), an OAuth host method, a template repo for private add-ons, managed settings for fleets.
