@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useStore, addRepository, openOrchestrator } from '../store'
-import { IconEye, IconFolder, IconFolderPlus, IconGear, IconGlobe, IconOrchestrator, IconSidebar, IconTool } from '../icons'
+import { IconEye, IconFolder, IconFolderPlus, IconGear, IconGlobe, IconOrchestrator, IconSidebar, IconTool, IconX } from '../icons'
 import { BrandMark } from './BrandMark'
 
 export function Home() {
@@ -64,7 +64,8 @@ export function Home() {
             <div className="mb-2 flex items-center text-[12px] font-medium text-faint">
               <span className="flex-1">Explore</span>
               <button
-                className="font-normal hover:text-fg"
+                className="flex items-center gap-1 rounded-md border border-line px-2 py-0.5 font-normal text-muted hover:bg-hover hover:text-fg"
+                title="Hide Explore. A Show Explore link brings it back."
                 onClick={() => {
                   setHideExplore(true)
                   try {
@@ -74,7 +75,7 @@ export function Home() {
                   }
                 }}
               >
-                Hide
+                <IconX width={10} height={10} /> Hide
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -89,6 +90,21 @@ export function Home() {
               ))}
             </div>
           </div>
+        )}
+        {hideExplore && (
+          <button
+            className="mt-10 text-[12px] text-faint hover:text-fg"
+            onClick={() => {
+              setHideExplore(false)
+              try {
+                localStorage.removeItem('home-explore-hidden')
+              } catch {
+                /* storage unavailable */
+              }
+            }}
+          >
+            Show Explore
+          </button>
         )}
       </div>
     </div>
