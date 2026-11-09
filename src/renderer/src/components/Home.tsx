@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useStore, addRepository, openOrchestrator } from '../store'
-import { IconEye, IconFolder, IconFolderPlus, IconGear, IconGlobe, IconOrchestrator, IconSidebar, IconTool, IconX } from '../icons'
+import { IconEye, IconFolder, IconFolderPlus, IconGear, IconGlobe, IconOrchestrator, IconSidebar, IconTool } from '../icons'
 import { BrandMark } from './BrandMark'
 
 export function Home() {
@@ -64,7 +64,7 @@ export function Home() {
             <div className="mb-2 flex items-center text-[12px] font-medium text-faint">
               <span className="flex-1">Explore</span>
               <button
-                className="flex items-center gap-1 rounded-md border border-line px-2 py-0.5 font-normal text-muted hover:bg-hover hover:text-fg"
+                className="rounded-md border border-line px-2 py-0.5 font-normal text-muted hover:bg-hover hover:text-fg"
                 title="Hide Explore. A Show Explore link brings it back."
                 onClick={() => {
                   setHideExplore(true)
@@ -75,7 +75,7 @@ export function Home() {
                   }
                 }}
               >
-                <IconX width={10} height={10} /> Hide
+                Hide
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
