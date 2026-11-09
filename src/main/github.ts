@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { CheckRun, GithubRepo, PrComment, PrInfo, SourceOption } from '@shared/types'
 import { parsePrFeedback, PR_FEEDBACK_QUERY } from '@shared/prComments'
+import { parsePrInbox, PR_INBOX_QUERY, type InboxPr } from '@shared/prInbox'
 
 const exec = promisify(execFile)
 
@@ -61,6 +62,19 @@ export async function listMyRepos(): Promise<GithubRepo[]> {
   )
   const repos = stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l) as GithubRepo)
   return repos.sort((a, b) => (b.pushedAt ?? '').localeCompare(a.pushedAt ?? ''))
+}
+
+/** Open PRs that ask for the person's review, plus the ones they opened, across every repo gh can see. */
+export async function prInbox(): Promise<InboxPr[]> {
+  try {
+    const { stdout } = await exec('gh', ['api', 'graphql', '-f', `query=${PR_INBOX_QUERY}`], { maxBuffer: 16 * 1024 * 1024, timeout: 30_000 })
+    return parsePrInbox(JSON.parse(stdout))
+  } catch (e) {
+    const err = e as { code?: string; stderr?: string; message?: string }
+    if (err.code === 'ENOENT') throw new Error('The GitHub CLI (gh) isn\'t installed. Install it with `brew install gh`, then run `gh auth login`.')
+    if (/auth login|not logged|authentication/i.test(err.stderr ?? '')) throw new Error('Sign in to GitHub first: run `gh auth login` in a terminal.')
+    throw new Error((err.stderr || err.message || 'Could not load pull requests').trim())
+  }
 }
 
 export async function cloneRepo(nameWithOwner: string, dest: string) {

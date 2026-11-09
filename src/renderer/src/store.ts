@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
 import type { AddonInfo, PinStatus, PinnedAddon } from '@shared/addons'
+import type { InboxPr, PrInbox } from '@shared/prInbox'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover } from '@shared/types'
 
 export interface Doc {
@@ -41,6 +42,12 @@ interface UI {
   addonPins: PinStatus[]
   /** The add-on view shown in the center instead of a workspace or Home. */
   addonPage: AddonPage | null
+  /** The PRs page is open in the center. */
+  prsPage: boolean
+  /** Last load of the PRs page's list, and its error. */
+  prInbox: PrInbox | null
+  prInboxError: string | null
+  prInboxLoading: boolean
   activeChat: Record<string, string>
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
@@ -103,6 +110,10 @@ export const useStore = create<UI>((set, get) => ({
   addons: [],
   addonPins: [],
   addonPage: null,
+  prsPage: false,
+  prInbox: null,
+  prInboxError: null,
+  prInboxLoading: false,
   activeChat: {},
   openDoc: {},
   codeComments: {},
@@ -131,18 +142,18 @@ export const useStore = create<UI>((set, get) => ({
 
   hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [] }),
   selectWorkspace: (id, fromHistory) => {
-    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null, addonPage: null })
+    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null, addonPage: null, prsPage: false })
     const { history, historyIndex } = get()
     const h = [...history.slice(0, historyIndex + 1), id].slice(-50)
-    set({ selectedWs: id, draftRepo: null, addonPage: null, history: h, historyIndex: h.length - 1 })
+    set({ selectedWs: id, draftRepo: null, addonPage: null, prsPage: false, history: h, historyIndex: h.length - 1 })
   },
   back: () => {
     const { history, historyIndex } = get()
-    if (historyIndex > 0) set({ historyIndex: historyIndex - 1, selectedWs: history[historyIndex - 1], addonPage: null })
+    if (historyIndex > 0) set({ historyIndex: historyIndex - 1, selectedWs: history[historyIndex - 1], addonPage: null, prsPage: false })
   },
   forward: () => {
     const { history, historyIndex } = get()
-    if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, selectedWs: history[historyIndex + 1], addonPage: null })
+    if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, selectedWs: history[historyIndex + 1], addonPage: null, prsPage: false })
   },
   setActiveChat: (wsId, chatId) =>
     set((s) => ({ activeChat: { ...s.activeChat, [wsId]: chatId }, openDoc: { ...s.openDoc, [wsId]: null } })),
@@ -187,12 +198,58 @@ export function reportError(e: unknown) {
 
 /** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
 export function newWorkspace(repoId: string) {
-  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null })
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false })
 }
 
 /** Shows an add-on's view in the center. */
 export function openAddonPage(page: AddonPage) {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: page })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: page, prsPage: false })
+}
+
+/** Shows the PRs page in the center and reloads its list. */
+export function openPrsPage() {
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true })
+  void refreshPrInbox()
+}
+
+let inboxLoad: Promise<void> | null = null
+
+/** Reloads the PRs list. Calls made while a load is running share it. */
+export function refreshPrInbox(): Promise<void> {
+  inboxLoad ??= (async () => {
+    useStore.getState().set({ prInboxLoading: true })
+    try {
+      useStore.getState().set({ prInbox: await window.api.prInbox(), prInboxError: null })
+    } catch (e) {
+      useStore.getState().set({ prInboxError: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e) })
+    } finally {
+      useStore.getState().set({ prInboxLoading: false })
+      inboxLoad = null
+    }
+  })()
+  return inboxLoad
+}
+
+/**
+ * Opens a workspace checked out on a PR's branch, on the Review tab. Reuses one that's already open,
+ * and clones the repo first when it isn't a project yet.
+ */
+export async function openPrWorkspace(pr: InboxPr) {
+  const st = useStore.getState()
+  if (pr.workspaceId && st.workspaces.some((w) => w.id === pr.workspaceId && !w.archived)) {
+    st.set({ rightOpen: true, rightTab: 'review' })
+    st.selectWorkspace(pr.workspaceId)
+    return
+  }
+  let repoId = pr.repoId
+  if (!repoId || !st.repos.some((r) => r.id === repoId)) repoId = (await window.api.cloneRepo(pr.repo)).id
+  const { workspace, chat } = await window.api.createWorkspace(repoId, { kind: 'pr', number: pr.number })
+  await refreshState()
+  const now = useStore.getState()
+  now.setActiveChat(workspace.id, chat.id)
+  now.set({ rightOpen: true, rightTab: 'review' })
+  now.selectWorkspace(workspace.id)
+  void refreshPrInbox()
 }
 
 export async function refreshAddons(fresh = false) {

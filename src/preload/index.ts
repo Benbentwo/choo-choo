@@ -116,6 +116,7 @@ const api: Api = {
   previewConductorImport: inv('conductor:preview') as Api['previewConductorImport'],
   importFromConductor: inv('conductor:import') as Api['importFromConductor'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
+  prInbox: inv('prs:inbox') as Api['prInbox'],
   quickStart: inv('repo:quickstart') as Api['quickStart'],
   listSources: inv('ws:sources') as Api['listSources'],
   listIntegrations: inv('integrations:list') as Api['listIntegrations'],
