@@ -5,6 +5,7 @@ import type { Chat, ChatItem } from '@shared/types'
 import { useStore, reportError, removePermission } from '../store'
 import { setDraft } from './Composer'
 import { tidyMarkdown } from '../markdown'
+import { MARKDOWN_COMPONENTS } from './CodeBlock'
 import { API_PRICE_NOTE } from './UsageGraphs'
 import { IconDown, IconRight, IconTool } from '../icons'
 
@@ -137,7 +138,7 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
     case 'assistant':
       return (
         <div className="prose-chat my-3 leading-relaxed">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{tidyMarkdown(item.text)}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{tidyMarkdown(item.text)}</ReactMarkdown>
         </div>
       )
     case 'tool':
@@ -230,7 +231,7 @@ function SubagentItem({ item, calls }: { item: Extract<ChatItem, { kind: 'tool' 
           ))}
           {item.result !== undefined && (
             <div className={`prose-chat mt-2 text-[13px] ${item.isError ? 'text-del' : ''}`}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{tidyMarkdown(item.result)}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{tidyMarkdown(item.result)}</ReactMarkdown>
             </div>
           )}
         </div>
@@ -371,7 +372,7 @@ function PlanItem({ item, chat }: { item: Extract<ChatItem, { kind: 'tool' }>; c
     <div className="my-3 rounded-xl border border-amber-500/40 bg-amber-500/5">
       <div className="border-b border-amber-500/20 px-4 py-2 text-[12px] font-medium text-amber-400">Plan</div>
       <div className="prose-chat px-4 py-1">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{tidyMarkdown(plan)}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{tidyMarkdown(plan)}</ReactMarkdown>
       </div>
       {chat.planMode && chat.status !== 'running' && (
         <div className="flex gap-2 px-4 pb-3">

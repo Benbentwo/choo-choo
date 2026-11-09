@@ -54,6 +54,12 @@ export const IconPlay = (p: SVGProps<SVGSVGElement>) => (
 export const IconX = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M6 6l12 12M18 6 6 18" /></svg>
 )
+export const IconCopy = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+)
+export const IconCheck = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M5 12.5l4.5 4.5L19 7" /></svg>
+)
 export const IconDots = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><circle cx="5" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="19" cy="12" r="1" fill="currentColor" /></svg>
 )
