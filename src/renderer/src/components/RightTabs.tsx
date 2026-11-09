@@ -236,22 +236,22 @@ export function ReviewTab({ ws }: { ws: Workspace }) {
     <div>
       {header}
       {findings?.length === 0 && !running && <Empty>No issues found</Empty>}
-      {findings?.map((f, i) => (
-        <div key={i} className="group border-t border-line px-4 py-2">
-          <button className="flex w-full items-center gap-2 text-left" onClick={() => openDoc(ws.id, { kind: 'diff', path: f.file })}>
-            <span className={`text-[11px] font-medium uppercase ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span>
-            {f.source === 'security' && <span className="rounded bg-del/10 px-1 text-[10px] text-del">security</span>}
-            <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">
-              {f.file}
-              {f.line ? `:${f.line}` : ''}
-            </span>
-          </button>
-          <div className="selectable mt-1">{f.message}</div>
-          <button className="mt-1 hidden text-[12px] text-muted group-hover:block hover:text-fg" onClick={() => void sendFix(ws, f)}>
-            Ask the agent to fix this
-          </button>
+      {/* The findings themselves show as cards in the review chat, and inline in the diff. */}
+      {findings && findings.length > 0 && (
+        <div className="border-t border-line px-4 py-3 text-[12px]">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            {(['high', 'medium', 'low'] as const).map((sev) => {
+              const n = findings.filter((f) => f.severity === sev).length
+              return n ? (
+                <span key={sev}>
+                  <span className={`font-medium uppercase ${SEVERITY_STYLE[sev]}`}>{n} {sev}</span>
+                </span>
+              ) : null
+            })}
+          </div>
+          <div className="mt-1 text-faint">Each one is in the review chat with a Fix button, and inline in the diff.</div>
         </div>
-      ))}
+      )}
     </div>
   )
 }

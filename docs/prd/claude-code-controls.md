@@ -31,7 +31,7 @@ Claude Code has session features that Choo Choo chats couldn't reach: auto mode,
 - **Spend cap per message.** A number in the model menu, with a default in Settings > General. A run that hits it stops with a message saying so.
 - **Compact conversation.** Sends `/compact`.
 - **Output style.** The model menu lists Default, Explanatory, Learning, and the styles in `~/.claude/output-styles` and the repo's `.claude/output-styles`.
-- **Claude Code /code-review.** A button in the Review tab runs Claude Code's built-in review skill. Findings it reports with its ReportFindings tool show in the Review list and inline in diffs. CONFIRMED findings count as high and PLAUSIBLE ones as medium.
+- **Claude Code /code-review.** A button in the Review tab runs Claude Code's built-in review skill. Findings it reports with its ReportFindings tool show as cards in the review chat and inline in diffs. CONFIRMED findings count as high and PLAUSIBLE ones as medium.
 - **Background tasks.** While a turn runs, background shells, subagents and workflows are listed above the composer with their latest progress and a Stop button.
 
 ## Requirements

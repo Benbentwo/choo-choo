@@ -6,6 +6,8 @@ import { useStore, reportError, removePermission } from '../store'
 import { setDraft } from './Composer'
 import { tidyMarkdown } from '../markdown'
 import { MARKDOWN_COMPONENTS } from './CodeBlock'
+import { FindingCards } from './FindingCards'
+import { reportedFindings, splitFindings } from '../review'
 import { API_PRICE_NOTE } from './UsageGraphs'
 import { IconDown, IconRight, IconTool } from '../icons'
 
@@ -135,14 +137,23 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
       )
     case 'note':
       return <div className="my-3 text-center text-[11px] text-faint">{item.text}</div>
-    case 'assistant':
+    case 'assistant': {
+      // A review reply ends with its findings as JSON; show those as cards instead.
+      const split = item.streaming ? null : splitFindings(item.text)
       return (
         <div className="prose-chat my-3 leading-relaxed">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{tidyMarkdown(item.text)}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{tidyMarkdown(split ? split.prose : item.text)}</ReactMarkdown>
+          {split && <FindingCards chat={chat} findings={split.findings} />}
         </div>
       )
+    }
     case 'tool':
       if (item.name === 'ExitPlanMode') return <PlanItem item={item} chat={chat} />
+      if (item.name === 'ReportFindings') {
+        // Claude Code's /code-review reports its findings with this tool.
+        const reported = reportedFindings(item.input)
+        if (reported) return <FindingCards chat={chat} findings={reported} />
+      }
       if (item.name === 'Agent' || item.name === 'Task') return <SubagentItem item={item} calls={children ?? []} />
       if (item.name === 'Advisor') return <BuiltinAdvisorItem item={item} />
       return <ToolItem item={item} />

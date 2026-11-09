@@ -28,6 +28,19 @@ export function parseFindings(text: string): ReviewFinding[] | null {
   }
 }
 
+/**
+ * A review reply split into its prose and its findings, so the chat can show the findings as
+ * cards instead of the raw ```json block. Null when the reply has no findings block.
+ */
+export function splitFindings(text: string): { prose: string; findings: ReviewFinding[] } | null {
+  const blocks = [...text.matchAll(/```json\s*([\s\S]*?)```/g)]
+  const last = blocks[blocks.length - 1]
+  if (!last || last.index === undefined) return null
+  const findings = parseFindings(last[0])
+  if (!findings) return null
+  return { prose: (text.slice(0, last.index) + text.slice(last.index + last[0].length)).trim(), findings }
+}
+
 export function findingsFromItems(items: ChatItem[]): ReviewFinding[] | null {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i]

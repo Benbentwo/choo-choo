@@ -30,3 +30,16 @@ describe('review prompts', () => {
     expect(SECURITY_REVIEW_PROMPT('main')).toContain('```json')
   })
 })
+
+describe('splitFindings', () => {
+  it('separates the prose from the findings block', async () => {
+    const { splitFindings } = await import('../src/renderer/src/review')
+    const text = 'Two problems.\n\n```json\n[{"file":"a.ts","line":3,"severity":"high","message":"Bad","fix":"Good"}]\n```'
+    expect(splitFindings(text)).toEqual({ prose: 'Two problems.', findings: [{ file: 'a.ts', line: 3, severity: 'high', message: 'Bad', fix: 'Good' }] })
+  })
+
+  it('leaves replies without a findings block alone', async () => {
+    const { splitFindings } = await import('../src/renderer/src/review')
+    expect(splitFindings('No JSON here.\n\n```ts\nconst x = 1\n```')).toBeNull()
+  })
+})
