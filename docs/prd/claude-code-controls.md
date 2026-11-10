@@ -5,7 +5,7 @@
 | Status | Shipped (PR #49) |
 | Owner | Claude (project thread) |
 | Requested by | Ben, 2026-11-06 ("Quick wins, then managers" from the Claude Code docs survey) |
-| Last updated | 2026-11-06 |
+| Last updated | 2026-11-10 |
 
 ## Problem
 
@@ -25,6 +25,7 @@ Claude Code has session features that Choo Choo chats couldn't reach: auto mode,
 ## User experience
 
 - **Auto mode.** The model menu's Permissions list (and the Settings default) gets "Auto (Claude Code decides)". Claude Code's classifier approves safe tool calls and blocks risky ones. Anything it sends back for a decision shows the usual permission card. The model button shows "· auto".
+- **Questions from Claude.** When Claude calls `AskUserQuestion`, the chat shows a question card under every permission setting, Full access included: each question with its options as buttons (checkboxes when several can be picked) and an "Other" box. One single-choice question answers on a click; otherwise Submit sends them all. The picks go back to Claude as the tool's `answers`. Skip, or sending a chat message instead, tells Claude the question went unanswered.
 - **Goal.** A Goal button next to Plan opens a "Keep going until…" field. Start sends `/goal <condition>`, and Claude keeps taking turns until a separate model judges the condition met. While a goal is active, a "◎ Goal" row above the composer shows the condition, the number of checks, and the latest reason on hover, with a Clear button when idle. Typing `/goal …` yourself works the same way.
 - **Effort.** Low, Medium, High, Extra high and Max. Codex gets xhigh for Max.
 - **Fast mode.** A toggle in the model menu's Session section. The model button shows "· fast".
@@ -44,7 +45,7 @@ Claude Code has session features that Choo Choo chats couldn't reach: auto mode,
 
 ## Design
 
-- `src/main/claudeOptions.ts`: `permissionMode`, `chatSettings`, `budgetFor`, `goalCommand`, `goalFrom`, `applyTaskEvent`, `listOutputStyles`.
+- `src/main/claudeOptions.ts`: `permissionMode`, `questionReply`, `chatSettings`, `budgetFor`, `goalCommand`, `goalFrom`, `applyTaskEvent`, `listOutputStyles`.
 - `src/main/agent.ts`: passes `permissionMode`, `settings`, `maxBudgetUsd`, handles `active_goal` and `task_*` messages, and emits `tasks` with chat events. `stopTask` calls the query's `stopTask`.
 - `Chat` adds `fast`, `budgetUsd`, `outputStyle` and `goal`. `Settings` adds `defaultBudgetUsd`. `Effort` adds `xhigh` and `max`. `Permission` adds `auto`.
 - IPC: `listOutputStyles(wsId)` and `stopTask(chatId, taskId)`.

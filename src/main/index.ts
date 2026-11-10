@@ -648,7 +648,7 @@ function notifyDone(chat: Chat) {
 function notifyAsk(chat: Chat, req: { toolName: string }) {
   if (!store.get().settings.notifications || win?.isFocused() || !Notification.isSupported()) return
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
-  const n = new Notification({ title: ws?.title ?? 'Choo Choo', body: `The agent wants to use ${req.toolName}` })
+  const n = new Notification({ title: ws?.title ?? 'Choo Choo', body: req.toolName === 'AskUserQuestion' ? 'The agent has a question for you' : `The agent wants to use ${req.toolName}` })
   n.on('click', () => {
     win?.show()
     win?.focus()
@@ -1161,7 +1161,7 @@ function registerIpc() {
     const chat = findChat(id)
     return remote.bringBack(chat, findWs(chat.workspaceId), emitChat)
   })
-  ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny') => agent.respondPermission(id, d))
+  ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny', answers?: Record<string, string>) => agent.respondPermission(id, d, answers))
   h('permission:pending', () => agent.pendingPermissions())
   h('git:changes', (wsId: string) => {
     const ws = findWs(wsId)

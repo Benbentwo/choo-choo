@@ -60,6 +60,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Revert to here: restores files and forks the conversation
 - ✅ Codex agent (via the `codex` CLI)
 - ✅ Per-tool permission prompts (Full access, Auto, Ask for commands, Ask for edits and commands)
+- ✅ Clickable question cards when Claude asks the user something (`AskUserQuestion`), in every permission mode
 
 ### Right panel
 - ✅ Changes: committed, uncommitted and untracked vs merge base, with diff view

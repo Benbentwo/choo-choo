@@ -881,7 +881,8 @@ export interface Api {
   addonToolResult(callId: string, result: { ok: boolean; result?: unknown; error?: string }): Promise<void>
   /** Shows a file or folder in Finder. */
   revealPath(path: string): Promise<void>
-  respondPermission(requestId: string, decision: PermissionDecision): void
+  /** `answers` (question text -> answer) settles an AskUserQuestion card. */
+  respondPermission(requestId: string, decision: PermissionDecision, answers?: Record<string, string>): void
   pendingPermissions(): Promise<PermissionRequest[]>
   addChatFolder(chatId: string): Promise<Chat>
   removeChatFolder(chatId: string, dir: string): Promise<Chat>
