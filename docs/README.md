@@ -38,6 +38,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Add-ons](prd/add-ons.md) | Shipped: views, background pages, orchestrator tools, project pins; Plan board next |
 | [Arranging and renaming workspaces](prd/sidebar-workspaces.md) | In review |
 | [Stacked PRs](prd/stacked-prs.md) | In review |
+| [Split panels](prd/split-panels.md) | In review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

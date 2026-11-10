@@ -5,7 +5,8 @@ import { moveId, sortWorkspaces, type WorkspaceSort } from '@shared/sidebarOrder
 import { orchestratorRowKey, parseRowKey, viewRowKey } from '@shared/sidebarHidden'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
-import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
+import * as L from '@shared/layout'
+import { useStore, showView, viewFor, openAddonPage, type DragItem, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
 import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconPR, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
 import { StackRows } from './Stack'
@@ -166,7 +167,7 @@ export function Sidebar() {
       </div>
 
       <nav className="px-2 pb-3">
-        <NavItem icon={<IconHome />} label="Home" active={!s.selectedWs && !s.addonPage && !s.draftRepo && !s.prsPage} onClick={() => s.selectWorkspace(null)} />
+        <NavItem icon={<IconHome />} label="Home" active={!s.panesShown && !s.draftRepo && !s.prsPage} onClick={() => s.selectWorkspace(null)} />
         <NavItem icon={<IconPlus />} label="Create" onClick={() => s.set({ modal: 'create' })} />
         <NavItem icon={<IconSearch />} label="Search" onClick={() => openPalette()} hint="⌘K" />
         <NavItem
@@ -184,9 +185,10 @@ export function Sidebar() {
             label={view.title}
             title={`From the ${addon.name} add-on`}
             active={s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && !s.addonPage.repoId}
-            onClick={() => openAddonPage({ key: addon.key, viewId: view.id })}
+            onClick={(e) => openAddonPage({ key: addon.key, viewId: view.id }, e?.metaKey ? 'right' : undefined)}
             onContextMenu={hideMenu(viewRowKey(addon.key, view.id))}
-            actions={<AddonActions place="view-row" view={{ key: addon.key, viewId: view.id }} />}
+            drag={{ kind: 'addon', key: addon.key, viewId: view.id }}
+            actions={<><AddonActions place="view-row" view={{ key: addon.key, viewId: view.id }} /><PageSlot page={{ key: addon.key, viewId: view.id }} /></>}
           />
         ))}
       </nav>
@@ -330,13 +332,15 @@ export function Sidebar() {
                       <button
                         key={`${addon.key}/${view.id}`}
                         title={`From the ${addon.name} add-on`}
-                        onClick={() => openAddonPage({ key: addon.key, viewId: view.id, repoId: repo.id })}
+                        onClick={(e) => openAddonPage({ key: addon.key, viewId: view.id, repoId: repo.id }, e.metaKey ? 'right' : undefined)}
                         onContextMenu={hideMenu(key)}
+                        {...paneDragProps({ kind: 'addon', key: addon.key, viewId: view.id, repoId: repo.id })}
                         className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 pl-5 text-left ${on ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
                       >
                         <IconAddon className="shrink-0" />
                         <span className="flex-1 truncate">{view.title}</span>
                         <AddonActions place="view-row" repoId={repo.id} view={{ key: addon.key, viewId: view.id }} />
+                        <PageSlot page={{ key: addon.key, viewId: view.id, repoId: repo.id }} />
                       </button>
                     )
                   })}
@@ -390,15 +394,69 @@ export function Sidebar() {
   )
 }
 
-function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; badge?: number; actions?: React.ReactNode; onClick: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
+function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; badge?: number; actions?: React.ReactNode; onClick: (e?: React.MouseEvent) => void; onContextMenu?: (e: React.MouseEvent) => void; drag?: DragItem }) {
   return (
-    <button onClick={p.onClick} onContextMenu={p.onContextMenu} title={p.title} className={`flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left ${p.active ? 'bg-raised' : 'hover:bg-hover'}`}>
+    <button onClick={(e) => p.onClick(e)} onContextMenu={p.onContextMenu} title={p.title} {...(p.drag ? paneDragProps(p.drag) : {})} className={`flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left ${p.active ? 'bg-raised' : 'hover:bg-hover'}`}>
       <span className="text-muted">{p.icon}</span>
       <span className="flex-1">{p.label}</span>
       {p.hint && <span className="text-[11px] text-faint">{p.hint}</span>}
       {!!p.badge && <span className="rounded-full bg-accent/20 px-1.5 text-[11px] font-medium text-accent">{p.badge}</span>}
       {p.actions}
     </button>
+  )
+}
+
+/** Lets a sidebar row be dragged onto the panes to open it there (Panes.tsx draws the drop targets). */
+function paneDragProps(item: DragItem) {
+  return {
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', item.kind)
+      useStore.getState().set({ drag: item })
+    },
+    onDragEnd: () => useStore.getState().set({ drag: null })
+  }
+}
+
+type PageRef = { key: string; viewId: string; repoId?: string }
+/** Where a workspace or add-on page is open when the center is split: which pane, and whether it's the focused one. */
+function usePaneSlot(target: string | PageRef): { focused: boolean; side: 'left' | 'right' | 'mid' } | null {
+  const wsId = typeof target === 'string' ? target : `${target.key}/${target.viewId}/${target.repoId ?? ''}`
+  return useStore((s) => {
+    if (!s.panesShown || !s.layout) return null
+    const all = L.leaves(s.layout)
+    if (all.length < 2) return null
+    const leaf = typeof target === 'string' ? L.leafOfWorkspace(s.layout, target) : L.leafOfAddon(s.layout, target.key, target.viewId, target.repoId)
+    if (!leaf) return null
+    const b = L.boxes(s.layout.root).leaves.get(leaf.id)
+    if (!b) return null
+    const cx = b.x + b.w / 2
+    const side = cx < 0.4 ? 'left' : cx > 0.6 ? 'right' : 'mid'
+    const focused = s.layout.focus === leaf.id
+    return paneSlotCache(wsId, focused, side)
+  })
+}
+const slotCache = new Map<string, { focused: boolean; side: 'left' | 'right' | 'mid' }>()
+function paneSlotCache(wsId: string, focused: boolean, side: 'left' | 'right' | 'mid') {
+  const k = `${wsId}:${focused}:${side}`
+  let v = slotCache.get(k)
+  if (!v) slotCache.set(k, (v = { focused, side }))
+  return v
+}
+
+function PageSlot({ page }: { page: PageRef }) {
+  const slot = usePaneSlot(page)
+  return slot ? <PaneSlotIcon slot={slot} /> : null
+}
+
+function PaneSlotIcon({ slot }: { slot: { focused: boolean; side: 'left' | 'right' | 'mid' } }) {
+  const fill = slot.focused ? 'bg-accent' : 'bg-muted'
+  const pos = slot.side === 'left' ? 'left-px' : slot.side === 'right' ? 'right-px' : 'left-[5px]'
+  return (
+    <span className="relative h-[13px] w-[18px] shrink-0 rounded-[3px] border-[1.4px] border-faint" title={slot.focused ? 'Open in the focused pane' : `Open in the ${slot.side === 'mid' ? 'middle' : slot.side} pane`}>
+      <span className={`absolute top-px bottom-px w-[6px] rounded-[1px] ${pos} ${fill}`} />
+    </span>
   )
 }
 
@@ -433,6 +491,8 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
   const menuItems: MenuItem[] = w.orchestrator
     ? [{ label: 'Hide from sidebar', onClick: () => setSidebarRowHidden(orchestratorRowKey(w.repoId), true) }]
     : [
+        { label: 'Open to the side', hint: '⌘-click', onClick: () => showView(viewFor(w.id), 'right') },
+        { kind: 'sep' },
         { label: 'Rename…', onClick: () => setEditing(true) },
         { label: 'Regenerate name', hint: 'from the chat', onClick: () => void regenerate() },
         { kind: 'sep' },
@@ -446,17 +506,19 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
   const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
   const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
   const blocker = s.chats.some((c) => c.workspaceId === w.id && c.advisorBlocker)
+  const slot = usePaneSlot(w.id)
   return (
     <div
       role="button"
       tabIndex={0}
       {...hover.rowProps}
-      draggable={!!dnd && !editing}
+      draggable={!editing}
       onDragStart={(e) => {
-        if (!dnd) return
         hover.close()
         e.dataTransfer.effectAllowed = 'move'
-        dnd.start()
+        e.dataTransfer.setData('text/plain', w.id)
+        useStore.getState().set({ drag: { kind: 'ws', wsId: w.id } })
+        dnd?.start()
       }}
       onDragOver={(e) => {
         if (!dnd?.drag) return
@@ -473,19 +535,23 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
         dnd.drop()
         dnd.end()
       }}
-      onDragEnd={() => dnd?.end()}
+      onDragEnd={() => {
+        useStore.getState().set({ drag: null })
+        dnd?.end()
+      }}
       onContextMenu={(e) => {
         e.preventDefault()
         hover.close()
         setMenuAt({ x: e.clientX, y: e.clientY })
       }}
-      onClick={() => {
+      onClick={(e) => {
         if (editing) return
         hover.close()
+        if (e.metaKey) return showView(viewFor(w.id), 'right')
         s.selectWorkspace(w.id)
       }}
       onKeyDown={(e) => !editing && e.key === 'Enter' && s.selectWorkspace(w.id)}
-      className={`group flex h-9 w-full cursor-default items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'} ${dropLine} ${dnd?.drag?.id === w.id ? 'opacity-50' : ''}`}
+      className={`group flex h-9 w-full cursor-default items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id && s.panesShown ? 'bg-raised text-fg' : slot ? 'bg-hover/70 text-fg' : 'text-muted hover:bg-hover hover:text-fg'} ${dropLine} ${dnd?.drag?.id === w.id ? 'opacity-50' : ''}`}
     >
       {running || naming ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : w.stack ? <IconStack className="shrink-0 text-accent" /> : <IconBranch className="shrink-0" />}
       {editing ? (
@@ -510,6 +576,7 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
         </span>
       )}
       {repoName && <span className="shrink-0 truncate text-[11px] text-faint">{repoName}</span>}
+      {slot && <PaneSlotIcon slot={slot} />}
       {asking ? (
         <span className="anim-glow shrink-0 rounded bg-accent/20 px-1 text-[10px] text-accent">needs you</span>
       ) : blocker ? (

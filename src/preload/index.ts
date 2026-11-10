@@ -137,7 +137,7 @@ const api: Api = {
   listIntegrations: inv('integrations:list') as Api['listIntegrations'],
   connectIntegration: inv('integrations:connect') as Api['connectIntegration'],
   disconnectIntegration: inv('integrations:disconnect') as Api['disconnectIntegration'],
-  onNavigate: (cb) => on<[string, string]>('navigate', cb),
+  onNavigate: (cb) => on<[string, string, { key: string; viewId: string; repoId?: string } | undefined]>('navigate', cb),
   onChatEvent: (cb) => on<[ChatEvent]>('chat:event', cb),
   getChanges: inv('git:changes') as Api['getChanges'],
   getDiffStats: inv('git:stats') as Api['getDiffStats'],

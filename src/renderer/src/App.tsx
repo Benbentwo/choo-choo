@@ -1,10 +1,9 @@
 import { useEffect } from 'react'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons, refreshPrInbox, loadStack } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons, refreshPrInbox, loadStack, splitPane, closePane, toggleMaximize, focusDir, openWorkspaceBeside } from './store'
 import { Sidebar } from './components/Sidebar'
-import { Center } from './components/Center'
+import { Panes } from './components/Panes'
 import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
-import { AddonPage } from './components/Addons'
 import { PrInboxPage } from './components/PrInbox'
 import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
@@ -16,6 +15,8 @@ export function App() {
   const s = useStore()
   useAppearance()
   const ws = s.workspaces.find((w) => w.id === s.selectedWs && !w.archived) ?? null
+  // While an add-on page or empty pane has focus, the right panel keeps showing the last workspace, so the panes don't jump.
+  const rightWs = s.workspaces.find((w) => w.id === s.rightWs && !w.archived) ?? null
   useShareRefresh(ws)
 
   // A project added later may pin add-ons too.
@@ -86,6 +87,19 @@ export function App() {
           return st.set({ rightOpen: !st.rightOpen })
         case 'toggle-terminal':
           return st.set({ bottomOpen: !st.bottomOpen, rightOpen: true })
+        case 'split-right':
+          return st.panesShown && splitPane('right')
+        case 'split-down':
+          return st.panesShown && splitPane('bottom')
+        case 'close-pane':
+          return st.panesShown && closePane()
+        case 'maximize-pane':
+          return st.panesShown && toggleMaximize()
+        case 'focus-left':
+        case 'focus-right':
+        case 'focus-top':
+        case 'focus-bottom':
+          return st.panesShown && focusDir(action.slice(6) as 'left' | 'right' | 'top' | 'bottom')
       }
     })
     const offState = window.api.onStateChanged(() => void refreshState())
@@ -95,7 +109,8 @@ export function App() {
     })
     const offStack = window.api.onStackChanged((wsId) => void loadStack(wsId))
     const offLink = window.api.onOpenShareLink((link) => useStore.getState().set({ modal: 'open-share', shareLinkDraft: link }))
-    const offNav = window.api.onNavigate((wsId, chatId) => {
+    const offNav = window.api.onNavigate((wsId, chatId, beside) => {
+      if (beside) return openWorkspaceBeside(wsId, chatId, beside)
       useStore.getState().setActiveChat(wsId, chatId)
       useStore.getState().selectWorkspace(wsId)
     })
@@ -116,15 +131,13 @@ export function App() {
     <div className="flex h-full">
       {s.sidebarOpen && <Sidebar />}
       <div className="flex min-w-0 flex-1">
-        {ws ? (
+        {s.panesShown && s.layout ? (
           <>
-            <Center ws={ws} />
-            {s.rightOpen && !ws.orchestrator && <RightPanel ws={ws} />}
+            <Panes />
+            {s.rightOpen && rightWs && !rightWs.orchestrator && <RightPanel ws={rightWs} />}
           </>
         ) : s.prsPage ? (
           <PrInboxPage />
-        ) : s.addonPage ? (
-          <AddonPage page={s.addonPage} />
         ) : s.draftRepo ? (
           <NewWorkspace repoId={s.draftRepo} />
         ) : (
