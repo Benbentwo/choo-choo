@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GrepHit, Workspace } from '@shared/types'
-import { useStore, ago, archiveWorkspace, goToNextUnread, newChatTab, newWorkspace, openDoc, openOrchestrator, openGroupOrchestrator, editGroup, openPalette, restoreWorkspace, reportError, type PaletteMode } from '../store'
+import { addonActions } from '@shared/addons'
+import { ACTION_ICON } from './Addons'
+import { useStore, runAddonAction, ago, archiveWorkspace, goToNextUnread, newChatTab, newWorkspace, openDoc, openOrchestrator, openGroupOrchestrator, editGroup, openPalette, restoreWorkspace, reportError, type PaletteMode } from '../store'
 import { rank } from '../autocomplete'
 import { IconArchive, IconFile, IconFileDiff, IconFileSearch, IconFolder, IconGear, IconHome, IconOrchestrator, IconPlus, IconRepo, IconSearch, IconTerminal } from '../icons'
 
@@ -109,6 +111,13 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     out.push({ id: 'new-group', tab: 'projects', section: 'Projects', label: 'New project group', keywords: 'orchestrator repos group', icon: <IconOrchestrator />, run: () => editGroup(null) })
     out.push({ id: 'add', tab: 'projects', section: 'Projects', label: 'Add project', keywords: 'repository clone open folder', icon: <IconPlus />, hint: '⌘O', run: () => useStore.getState().set({ modal: 'create' }) })
 
+    // Buttons add-ons put in the palette. One that opens a view under a project or beside a workspace only shows where there is one.
+    const here = cur && !cur.orchestrator ? { repoId: cur.repoId, workspaceId: cur.id } : s.addonPage?.repoId ? { repoId: s.addonPage.repoId } : {}
+    for (const { addon, action } of addonActions(s.addons, 'palette', here)) {
+      const Icon = ACTION_ICON[action.icon]
+      out.push({ id: `addon:${addon.key}/${action.id}`, tab: 'actions', section: 'Add-ons', label: action.title, keywords: `${addon.name} add-on`, icon: <Icon />, hint: addon.name, run: () => runAddonAction(addon, action, here) })
+    }
+
     const a = 'Actions'
     out.push({ id: 'home', tab: 'actions', section: a, label: 'Go home', icon: <IconHome />, run: () => s.selectWorkspace(null) })
     out.push({ id: 'unread', tab: 'actions', section: a, label: 'Next unread', icon: <IconSearch />, hint: '⌘⇧U', run: goToNextUnread })
@@ -154,7 +163,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       run: () => useStore.getState().set({ modal: 'settings', settingsTab: 'general' })
     })
     return out
-  }, [s.workspaces, s.repos, s.settings, cur?.id, activity])
+  }, [s.workspaces, s.repos, s.settings, s.addons, s.addonPage?.repoId, cur?.id, activity])
 
   const shown = useMemo(() => {
     let list = tab === 'all' ? entries : entries.filter((e) => e.tab === tab)

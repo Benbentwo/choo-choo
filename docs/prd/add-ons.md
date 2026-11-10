@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | Shipped: views, permissions and the host API (PR #55); background pages, orchestrator tools and project pins (PR #56); project files for add-ons (PR #58). The Plan board, the first real add-on, is in a private repo and uses all three |
+| Status | Shipped: views, permissions and the host API (PR #55); background pages, orchestrator tools and project pins (PR #56); project files for add-ons (PR #58); buttons in the app (PR #64). The Plan board, the first real add-on, is in its own repo and uses the first three |
 | Owner | Claude (project thread) |
 | Requested by | Ben, 2026-11-09 ("How do we support add-ons that expand functionality? Organizations can have a private add-on … so that the main project can stay open-sourced.") |
-| Last updated | 2026-11-09 |
+| Last updated | 2026-11-10 |
 
 ## Problem
 
@@ -36,6 +36,10 @@ People want Choo Choo to do things that don't belong in the core app for everyon
 
 ![The example add-on's board in the sidebar and under a project](../media/add-ons-board.png)
 
+**Buttons in the app.** An add-on can also put buttons in the app's own interface: at the top of a workspace beside Review and the pull request button, on a workspace's or a project's row in the sidebar, on its own view's row, and in the ⌘K palette. Each button's tooltip says which add-on it comes from. Pressing one opens one of the add-on's views, or has the add-on do something in the background. The panel that turns the add-on on lists every button and where it goes.
+
+![The example add-on's buttons: a tick beside Create PR, a note button on a workspace's row, and a + on its own Board row](../media/add-ons-buttons.png)
+
 **In the background and for the orchestrator.** An add-on can keep working while its views are closed, and can give the orchestrator tools ("leave a note on each workspace saying what's left"). The panel that turns it on says so and lists the tools by name. Tools that only read run without asking; the others follow the orchestrator chat's permission setting.
 
 **A project's add-ons.** A project can list the add-ons its team should have in its `choo-choo.json` (`addons.sources`, `addons.required`, `addons.recommended`). The project then shows "Set up Plan board" in the sidebar, and Settings › Add-ons opens with "acme-web asks for these add-ons": each with Install or Turn on, and "Not now" for recommended ones. Nothing is added or installed without a click.
@@ -61,6 +65,9 @@ People want Choo Choo to do things that don't belong in the core app for everyon
 15. Pins never act on their own. Only `owner/repo` and git URLs are accepted as pinned sources (never folders), only ids the project's file names can be installed through it, and installing still ends at the permissions panel.
 16. The only project files an add-on can touch are text files (`.md`, `.json`, `.txt`, `.yaml`, `.yml`, at most 1 MB) under `.choo-choo/` in a project's main checkout, with separate permissions to read and to write. Dotfiles, other paths and anything reached through a symlink are refused.
 
+17. An add-on's buttons are fixed by its manifest (`actions`), need the `ui:buttons` permission, and are listed with their places before it is turned on. The app draws them from the manifest's words and its own icons; no add-on code, markup or image runs or shows in the app's interface. One add-on gets at most 2 buttons per place and 8 in the palette.
+18. A press reaches only the add-on that listed the button: the view the button names, opened first, or the add-on's background page. A press for the background page is checked in the main process (the add-on is on, the button is its own, the project and workspace exist) before it is passed on. Buttons never show on orchestrator chats.
+
 ## Design
 
 - [src/shared/addons.ts](../../src/shared/addons.ts): manifest type and `parseManifest`, the permission catalog, which permission each method needs (`METHOD_PERMISSION`), add-on states, the view CSP, and the message types between a view and the app.
@@ -71,6 +78,7 @@ People want Choo Choo to do things that don't belong in the core app for everyon
 - Background pages and tools ([decision 0007](../decisions/0007-add-on-tools-run-in-a-background-page.md)): `addonHost.ts` opens the unseen window, which loads the same renderer bundle with `#addon-background` and renders only `AddonBackgrounds`. `toolsets()` hands each running add-on's tools to `orchestrator.queryOptions`, which builds one in-process MCP server per add-on (`addon-<plugin name>`). A call goes main → background window (`addons:tool`) → the add-on's frame → its handler, and back through `addons:toolResult`.
 - App events for frames (`addons:event`): pull request changes and an add-on's own storage changes go to its pages in both windows; workspace changes go to the background window, which has no app state of its own.
 - Pins: `parsePins` and `pinStatus` (shared and `addons.ts`), `addons:pins` and `addons:installPinned`; turned-down recommendations live in `Settings.addonPinsDismissed`.
+- Buttons ([decision 0009](../decisions/0009-add-ons-declare-buttons-the-app-draws-them.md)): `parseManifest` checks `actions`; `actionTarget` says where a press goes and `addonActions` which buttons a place shows. `AddonActions` in Addons.tsx draws them in Sidebar, RightPanel and the palette, and `runAddonAction` in the store opens the view and leaves the press in `addonPress` for that view's frame, or calls `addons:action`, which checks the press (`backgroundPress` in addonApi.ts) and sends it to the background window.
 - Renderer: `AddonFrame` (the frame and its message bridge) and `AddonPage` in [Addons.tsx](../../src/renderer/src/components/Addons.tsx), [AddonSettings.tsx](../../src/renderer/src/components/AddonSettings.tsx), and slots in Sidebar and RightPanel.
 - Authors: [docs/addon-api.md](../addon-api.md) and the example in [examples/addons](../../examples/addons).
 
@@ -88,7 +96,7 @@ Add-ons are read from the home folder, so they are user-scope plugins. Sources a
 
 ## Testing
 
-`test/addons.test.ts` covers manifest validation (views, background page, tools), permissions and states, the CSP, finding installed and available add-ons, pins, file serving (traversal, symlinks, dotfiles), the client script including tool handlers and events, and every host API method against a fake host. `test/orchestrator.test.ts` covers add-on tools reaching the orchestrator. The example add-on was run in the real app under Playwright: install from a local source, turn on, all three slots, and probes from inside a view confirming it has no `require`, no `window.api`, no access to the parent window, no outside network, no other add-on's files, no calls beyond its permissions, and no way to send its frame to a web page or another add-on's pages. Background pages, tools and pins were run the same way: a project pinning the example showed its sidebar row and Settings section, Install and Turn on led to the permissions panel, the unseen window came up (and again after a restart, before any view was opened), both tools were called through the same function the orchestrator's tools call, a note written by a tool appeared in the open Notes view, and turning the add-on off closed the window. Not run: a real orchestrator turn calling an add-on tool, which needs a Claude sign-in the test machine doesn't have.
+`test/addons.test.ts` covers manifest validation (views, background page, tools), permissions and states, the CSP, finding installed and available add-ons, pins, file serving (traversal, symlinks, dotfiles), the client script including tool handlers, button presses and events, buttons (manifest rules, where a press goes, which buttons a place shows, what the background page is told), and every host API method against a fake host. `test/orchestrator.test.ts` covers add-on tools reaching the orchestrator. Its buttons were pressed in the built app in all five places, with the press reaching the right view or the background page, and gone again once the add-on was turned off. The example add-on was run in the real app under Playwright: install from a local source, turn on, all three slots, and probes from inside a view confirming it has no `require`, no `window.api`, no access to the parent window, no outside network, no other add-on's files, no calls beyond its permissions, and no way to send its frame to a web page or another add-on's pages. Background pages, tools and pins were run the same way: a project pinning the example showed its sidebar row and Settings section, Install and Turn on led to the permissions panel, the unseen window came up (and again after a restart, before any view was opened), both tools were called through the same function the orchestrator's tools call, a note written by a tool appeared in the open Notes view, and turning the add-on off closed the window. Not run: a real orchestrator turn calling an add-on tool, which needs a Claude sign-in the test machine doesn't have.
 
 ## Rollout
 
@@ -97,9 +105,11 @@ Off until an add-on is installed and turned on. `Settings.addons` and `Workspace
 ## Open questions
 
 - Per-repo add-ons: should an add-on be on for chosen projects only? Today it is on for all.
+- Should a button be able to change while the app runs (hidden where it doesn't apply, disabled, a count)? Today it is fixed by the manifest.
 - Should turning an add-on off also disable its Claude Code plugin parts? Today Settings › Plugins controls those separately.
 
 ## Future work
 
-1. Plan board, which lives in a private repo and keeps plans as files under `.choo-choo/plans/` through `choo.files`: editing dependencies by dragging, a kanban view, review findings on cards, a spend cap.
-2. Workspace sources ("New plan from…"), an OAuth host method, a template repo for private add-ons, managed settings for fleets.
+1. Plan board, which lives in its own repo and keeps plans as files under `.choo-choo/plans/` through `choo.files`: editing dependencies by dragging, a kanban view, review findings on cards, a spend cap.
+2. More places for add-ons: a tab in the bottom panel beside the terminal, a strip above the composer, badges on sidebar rows.
+3. Workspace sources ("New plan from…"), an OAuth host method, a template repo for private add-ons, managed settings for fleets.

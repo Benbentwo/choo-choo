@@ -98,6 +98,8 @@
             $('go').disabled = false
           }
         }
+        // The + button on this view's row in the sidebar, and the board buttons elsewhere, all open this page.
+        choo.actions.handle('new-task', () => $('task').focus())
         choo.on('workspaces', () => draw().catch(show))
         draw().catch(show)
       })

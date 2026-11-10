@@ -2,7 +2,7 @@ import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
 import type { PrInbox } from './prInbox'
-import type { AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
+import type { AddonActionContext, AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
 export interface Repo {
   id: string
   name: string
@@ -805,6 +805,8 @@ export interface Api {
   addonPins(): Promise<PinStatus[]>
   /** Adds the sources a project's choo-choo.json names and installs one add-on it pins. */
   addonInstallPinned(repoId: string, id: string, acceptSha?: string): Promise<PluginInstallResult>
+  /** A button an add-on put in the app was pressed, and the press is for its background page. */
+  addonAction(key: string, actionId: string, context: AddonActionContext): Promise<void>
   /** Pings for add-on frames: a pull request changed, an add-on's data changed. */
   onAddonEvent(cb: (e: AddonAppEvent) => void): () => void
   /** Background window only: the orchestrator is calling an add-on's tool. */

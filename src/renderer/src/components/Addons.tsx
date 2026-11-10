@@ -1,13 +1,71 @@
 import { useEffect, useRef, useState } from 'react'
-import { ADDON_API_VERSION, ADDON_SCHEME, BACKGROUND_VIEW, isAddonRequest, type AddonContext, type AddonInfo, type AddonReply, type AddonSlot, type AddonToolCall, type AddonView } from '@shared/addons'
+import { ADDON_API_VERSION, ADDON_SCHEME, BACKGROUND_VIEW, addonActions, isAddonRequest, type AddonActionContext, type AddonActionIcon, type AddonActionPlace, type AddonActionPress, type AddonContext, type AddonInfo, type AddonReply, type AddonSlot, type AddonToolCall, type AddonView } from '@shared/addons'
 import { monoFontStack, uiFontStack, type AppearanceSettings } from '@shared/themes'
-import { useStore, type AddonPage as Page } from '../store'
+import { runAddonAction, useStore, type AddonPage as Page } from '../store'
 import { APPEARANCE_EVENT, resolved } from '../appearance'
-import { IconAddon, IconRight, IconSidebar } from '../icons'
+import { IconAddon, IconBranch, IconChart, IconCheck, IconComment, IconEye, IconFile, IconFolder, IconImport, IconPlay, IconPlus, IconPR, IconRefresh, IconRight, IconSearch, IconSidebar, IconTool } from '../icons'
 
 /** The views running add-ons contribute to a slot. */
 export function addonViews(addons: AddonInfo[], slot: AddonSlot): { addon: AddonInfo; view: AddonView }[] {
   return addons.filter((a) => a.state === 'on').flatMap((a) => (a.manifest?.views ?? []).filter((v) => v.slot === slot).map((view) => ({ addon: a, view })))
+}
+
+export const ACTION_ICON: Record<AddonActionIcon, typeof IconPlus> = {
+  plus: IconPlus,
+  import: IconImport,
+  refresh: IconRefresh,
+  search: IconSearch,
+  play: IconPlay,
+  check: IconCheck,
+  branch: IconBranch,
+  pr: IconPR,
+  file: IconFile,
+  folder: IconFolder,
+  chart: IconChart,
+  comment: IconComment,
+  eye: IconEye,
+  tool: IconTool
+}
+
+/**
+ * The buttons add-ons asked for in one place of the app. The app draws them from the manifest's
+ * words and its own icons: nothing of the add-on's runs here. `view` narrows it to the buttons on
+ * that view's own row.
+ */
+export function AddonActions({ place, repoId, workspaceId, view, className = 'p-1 text-muted hover:bg-raised', before }: AddonActionContext & { place: AddonActionPlace; view?: { key: string; viewId: string }; className?: string; before?: () => void }) {
+  const addons = useStore((s) => s.addons)
+  const ctx = { ...(repoId ? { repoId } : {}), ...(workspaceId ? { workspaceId } : {}) }
+  const list = addonActions(addons, place, ctx, view)
+  if (!list.length) return null
+  return (
+    <>
+      {list.map(({ addon, action }) => {
+        const Icon = ACTION_ICON[action.icon]
+        const press = (e: { stopPropagation(): void; preventDefault(): void }) => {
+          e.stopPropagation()
+          e.preventDefault()
+          before?.()
+          runAddonAction(addon, action, ctx)
+        }
+        return (
+          // Not a <button>: some of these sit on rows that are buttons themselves.
+          <span
+            key={`${addon.key}/${action.id}`}
+            role="button"
+            tabIndex={0}
+            title={`${action.title} (${addon.name} add-on)`}
+            aria-label={action.title}
+            data-addon-action={`${addon.key}/${action.id}`}
+            className={`no-drag shrink-0 cursor-default rounded hover:text-fg ${className}`}
+            onClick={press}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && press(e)}
+          >
+            <Icon width={15} height={15} />
+          </span>
+        )
+      })}
+    </>
+  )
 }
 
 export const addonTabId = (addon: AddonInfo, view: AddonView) => `addon:${addon.key}/${view.id}` as const
@@ -17,6 +75,9 @@ function viewTheme(a: AppearanceSettings): { theme: Record<string, string>; dark
   const { theme, accent } = resolved(a)
   return { theme: { ...theme.tokens, accent, 'font-sans': uiFontStack(a.uiFont), 'font-mono': monoFontStack(a.monoFont) }, dark: theme.dark }
 }
+
+/** How long a button press waits for the view it opened to come up. */
+const PRESS_KEPT_MS = 15_000
 
 /** How long a tool call waits for its add-on's background page to come up. */
 const TOOL_START_MS = 20_000
@@ -31,6 +92,20 @@ const TOOL_START_MS = 20_000
  */
 export function AddonFrame({ addon, view, repoId, workspaceId, background }: { addon: AddonInfo; view: Pick<AddonView, 'id' | 'entry' | 'title'>; repoId?: string; workspaceId?: string; background?: boolean }) {
   const ref = useRef<HTMLIFrameElement>(null)
+  // A button press meant for this frame. It is handed over once the page is up, then forgotten.
+  const waiting = useStore((s) => (!background && s.addonPress && s.addonPress.key === addon.key && s.addonPress.viewId === view.id && s.addonPress.repoId === repoId && s.addonPress.workspaceId === workspaceId ? s.addonPress : null))
+  const liveRef = useRef(false)
+  const sayPress = (press: AddonActionPress) => ref.current?.contentWindow?.postMessage({ choo: 1, type: 'event', name: 'action', ...press } satisfies AddonReply, '*')
+  const handOver = () => {
+    const p = useStore.getState().addonPress
+    if (!p || !liveRef.current || p.key !== addon.key || p.viewId !== view.id || p.repoId !== repoId || p.workspaceId !== workspaceId) return
+    useStore.getState().set({ addonPress: null })
+    // A press nobody could take in time is dropped: it must not fire when the view is opened later.
+    if (Date.now() - p.at < PRESS_KEPT_MS) sayPress(p.press)
+  }
+  useEffect(() => {
+    if (!background) handOver()
+  }, [waiting?.n])
   const prs = !!addon.manifest?.permissions.includes('prs:read')
 
   useEffect(() => {
@@ -43,6 +118,8 @@ export function AddonFrame({ addon, view, repoId, workspaceId, background }: { a
     // Tool calls this frame was given and hasn't answered, and ones waiting for it to say hello.
     const open = new Set<string>()
     let early: AddonToolCall[] = []
+    // Presses for a background page that came before it said hello.
+    let earlyPresses: AddonActionPress[] = []
     const giveTool = (c: AddonToolCall) => {
       open.add(c.callId)
       post({ choo: 1, type: 'tool', id: c.callId, name: c.name, input: c.input, context: c.context })
@@ -53,7 +130,11 @@ export function AddonFrame({ addon, view, repoId, workspaceId, background }: { a
       const m = e.data
       if (m.type === 'hello') {
         live = true
+        liveRef.current = true
         post({ choo: 1, type: 'init', context, apiVersion: ADDON_API_VERSION, ...viewTheme(useStore.getState().settings) })
+        earlyPresses.forEach(sayPress)
+        earlyPresses = []
+        if (!background) handOver()
         early.forEach(giveTool)
         early = []
         return
@@ -88,6 +169,14 @@ export function AddonFrame({ addon, view, repoId, workspaceId, background }: { a
       else if (e.name === 'prs') prs && post({ choo: 1, type: 'event', name: 'prs', workspaceId: e.workspaceId })
       else if (e.name === 'store' && e.addon === addon.key) post({ choo: 1, type: 'event', name: 'store', key: e.key })
     })
+    // Not behind `live`: a press must not be lost because the background page was still starting.
+    const offPresses = background
+      ? window.api.onAddonEvent((e) => {
+          if (e.name !== 'action' || e.addon !== addon.key) return
+          if (live) sayPress(e.press)
+          else earlyPresses = [...earlyPresses, e.press].slice(-20)
+        })
+      : () => {}
     const offTools = background
       ? window.api.onAddonTool((c) => {
           if (c.addon !== addon.key) return
@@ -104,6 +193,8 @@ export function AddonFrame({ addon, view, repoId, workspaceId, background }: { a
     window.addEventListener(APPEARANCE_EVENT, onTheme)
 
     return () => {
+      liveRef.current = false
+      offPresses()
       window.removeEventListener('message', onMessage)
       window.removeEventListener(APPEARANCE_EVENT, onTheme)
       window.clearTimeout(timer)

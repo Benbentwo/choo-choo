@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react'
-import { describePermission, missingGrants, type AddonInfo, type AddonManifest, type AddonSlot, type AddonSource, type AvailableAddon, type PinStatus, type PinnedAddon } from '@shared/addons'
+import { describePermission, missingGrants, type AddonActionPlace, type AddonInfo, type AddonManifest, type AddonSlot, type AddonSource, type AvailableAddon, type PinStatus, type PinnedAddon } from '@shared/addons'
 import { pinsToSetUp, reportError, useStore } from '../store'
 
 const field = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
 const DOCS = 'https://github.com/Benbentwo/choo-choo/blob/main/docs/addon-api.md'
 const WHERE: Record<AddonSlot, string> = { app: 'in the sidebar', repo: 'under each project', workspace: 'as a tab beside each workspace' }
+
+const BUTTON_WHERE: Record<AddonActionPlace, string> = {
+  'workspace-header': 'at the top of a workspace',
+  'workspace-row': "on each workspace's row",
+  'project-row': "on each project's row",
+  'view-row': 'on its own row in the sidebar',
+  palette: 'in the ⌘K palette'
+}
 
 const STATE_NOTE: Partial<Record<AddonInfo['state'], string>> = {
   review: 'Paused: it asks for new permissions',
@@ -30,6 +38,17 @@ function Asks({ manifest, granted = [] }: { manifest: AddonManifest; granted?: s
             <div key={t.name} className="flex gap-2 py-0.5">
               <span className="w-56 shrink-0 truncate font-mono text-[11px]">{t.name}</span>
               <span className="line-clamp-2 text-faint">{t.description}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {!!manifest.actions?.length && (
+        <div className="mb-2">
+          <div className="mb-1 text-muted">Adds {manifest.actions.length === 1 ? 'a button' : `${manifest.actions.length} buttons`} to the app:</div>
+          {manifest.actions.map((a) => (
+            <div key={a.id} className="flex gap-2 py-0.5">
+              <span className="w-56 shrink-0 truncate">{a.title}</span>
+              <span className="text-faint">{BUTTON_WHERE[a.place]}</span>
             </div>
           ))}
         </div>

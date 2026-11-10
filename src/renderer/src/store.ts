@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
-import type { AddonInfo, PinStatus, PinnedAddon } from '@shared/addons'
+import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover } from '@shared/types'
 
@@ -25,6 +25,18 @@ export interface AddonPage {
   repoId?: string
 }
 
+/** A button press on its way to one of an add-on's views: which frame it is for, and what to tell it. */
+export interface AddonPress {
+  /** Tells two presses of the same button apart. */
+  n: number
+  at: number
+  key: string
+  viewId: string
+  repoId?: string
+  workspaceId?: string
+  press: AddonActionPress
+}
+
 interface UI {
   repos: Repo[]
   workspaces: Workspace[]
@@ -42,6 +54,7 @@ interface UI {
   addonPins: PinStatus[]
   /** The add-on view shown in the center instead of a workspace or Home. */
   addonPage: AddonPage | null
+  addonPress: AddonPress | null
   /** The PRs page is open in the center. */
   prsPage: boolean
   /** Last load of the PRs page's list, and its error. */
@@ -110,6 +123,7 @@ export const useStore = create<UI>((set, get) => ({
   addons: [],
   addonPins: [],
   addonPage: null,
+  addonPress: null,
   prsPage: false,
   prInbox: readInboxCache(),
   prInboxError: null,
@@ -204,6 +218,23 @@ export function newWorkspace(repoId: string) {
 /** Shows an add-on's view in the center. */
 export function openAddonPage(page: AddonPage) {
   useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: page, prsPage: false })
+}
+
+let presses = 0
+
+/**
+ * A button an add-on put in the app was pressed. Opens the view the button names and hands it the
+ * press, or passes the press to the add-on's background page when the button names no view.
+ */
+export function runAddonAction(addon: AddonInfo, action: AddonAction, ctx: AddonActionContext) {
+  const target = addon.manifest && actionTarget(addon.manifest, action, ctx)
+  if (!target) return
+  if (target.to === 'background') return void window.api.addonAction(addon.key, action.id, ctx).catch(reportError)
+  const st = useStore.getState()
+  const addonPress: AddonPress = { n: ++presses, at: Date.now(), key: addon.key, viewId: target.viewId, repoId: target.repoId, press: { id: action.id, place: action.place, ...ctx } }
+  if (target.to === 'page') return st.set({ selectedWs: null, draftRepo: null, addonPage: { key: addon.key, viewId: target.viewId, repoId: target.repoId }, prsPage: false, addonPress })
+  if (st.selectedWs !== target.workspaceId) st.selectWorkspace(target.workspaceId)
+  st.set({ rightOpen: true, rightTab: `addon:${addon.key}/${target.viewId}`, addonPress: { ...addonPress, workspaceId: target.workspaceId } })
 }
 
 /** Shows the PRs page in the center and reloads its list. */

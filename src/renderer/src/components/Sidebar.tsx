@@ -10,7 +10,7 @@ import { IconAddon, IconArchive, IconBranch, IconDots, IconGear, IconHome, IconL
 import { Stats } from './Stats'
 import { BrandMark } from './BrandMark'
 import { UpdateBanners } from './Updates'
-import { addonViews } from './Addons'
+import { AddonActions, addonViews } from './Addons'
 
 export function Sidebar() {
   const s = useStore()
@@ -146,6 +146,7 @@ export function Sidebar() {
             title={`From the ${addon.name} add-on`}
             active={s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && !s.addonPage.repoId}
             onClick={() => openAddonPage({ key: addon.key, viewId: view.id })}
+            actions={<AddonActions place="view-row" view={{ key: addon.key, viewId: view.id }} />}
           />
         ))}
       </nav>
@@ -248,6 +249,7 @@ export function Sidebar() {
                 >
                   <IconDots />
                 </button>
+                <AddonActions place="project-row" repoId={repo.id} className="invisible p-1 text-muted group-hover:visible hover:bg-raised focus-visible:visible" />
                 <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="Orchestrator: tell it what you want and it runs workspaces for you" onClick={() => void openOrchestrator(repo.id)}>
                   <IconOrchestrator />
                 </button>
@@ -267,6 +269,7 @@ export function Sidebar() {
                   >
                     <IconAddon className="shrink-0" />
                     <span className="flex-1 truncate">{view.title}</span>
+                    <AddonActions place="view-row" repoId={repo.id} view={{ key: addon.key, viewId: view.id }} />
                   </button>
                 )
               })}
@@ -315,13 +318,14 @@ export function Sidebar() {
   )
 }
 
-function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; badge?: number; onClick: () => void }) {
+function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; badge?: number; actions?: React.ReactNode; onClick: () => void }) {
   return (
     <button onClick={p.onClick} title={p.title} className={`flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left ${p.active ? 'bg-raised' : 'hover:bg-hover'}`}>
       <span className="text-muted">{p.icon}</span>
       <span className="flex-1">{p.label}</span>
       {p.hint && <span className="text-[11px] text-faint">{p.hint}</span>}
       {!!p.badge && <span className="rounded-full bg-accent/20 px-1.5 text-[11px] font-medium text-accent">{p.badge}</span>}
+      {p.actions}
     </button>
   )
 }
@@ -444,6 +448,7 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
           <span className="group-hover:hidden">
             <Stats stats={s.stats[w.id]} />
           </span>
+          <AddonActions place="workspace-row" repoId={w.repoId} workspaceId={w.id} className="hidden p-0.5 text-faint group-hover:block hover:bg-raised" before={hover.close} />
           <button
             className="hidden shrink-0 rounded p-0.5 text-faint group-hover:block hover:bg-raised hover:text-fg"
             title="Archive workspace"

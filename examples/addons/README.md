@@ -9,6 +9,7 @@ In Choo Choo, open Settings › Add-ons, paste the full path to this folder into
 - **Board** in the sidebar: every workspace as a card, in columns by what it's doing.
 - **Board** under each project: the same for one project, with a box to start a new workspace.
 - **Notes** as a tab beside each workspace.
+- Buttons in the app: a + on the project's Board row, a tick at the top of a workspace that adds "Looked at this" to its note, a note button on each workspace's row, a board button on each project's row, and "Open the workspace board" in the ⌘K palette.
 - Two tools for the orchestrator, `board_summary` and `set_note`, so you can ask it "leave a note on each workspace saying what's left".
 
 ## What's in an add-on
