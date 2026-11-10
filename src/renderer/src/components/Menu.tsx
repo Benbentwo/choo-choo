@@ -10,8 +10,21 @@ export type MenuItem =
 /**
  * Popover menu with hover submenus, rendered in a portal so scroll containers don't clip it.
  * `anchor` is the element it drops down from; the menu's right edge lines up with the anchor's.
+ * `at` opens it at a point instead, for right-click menus.
  */
-export function Menu({ items, onClose, anchor, align = 'right' }: { items: MenuItem[]; onClose: () => void; anchor: HTMLElement | null; align?: 'left' | 'right' }) {
+export function Menu({
+  items,
+  onClose,
+  anchor,
+  at,
+  align = 'right'
+}: {
+  items: MenuItem[]
+  onClose: () => void
+  anchor: HTMLElement | null
+  at?: { x: number; y: number }
+  align?: 'left' | 'right'
+}) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const down = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && onClose()
@@ -24,9 +37,10 @@ export function Menu({ items, onClose, anchor, align = 'right' }: { items: MenuI
     }
   }, [onClose])
   const r = anchor?.getBoundingClientRect()
-  if (!r) return null
+  const pos = at ? { top: Math.max(8, Math.min(at.y, window.innerHeight - 8 - 34 * items.length)), left: Math.min(at.x, window.innerWidth - 228) } : r ? { top: r.bottom + 4, left: align === 'left' ? r.left : Math.max(8, r.right - 220) } : null
+  if (!pos) return null
   return createPortal(
-    <div ref={ref} className="fixed z-50 text-[13px]" style={{ top: r.bottom + 4, left: align === 'left' ? r.left : Math.max(8, r.right - 220) }}>
+    <div ref={ref} className="fixed z-50 text-[13px]" style={pos}>
       <MenuList items={items} onClose={onClose} />
     </div>,
     document.body

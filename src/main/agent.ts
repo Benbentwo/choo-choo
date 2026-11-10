@@ -16,6 +16,8 @@ type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission
 interface Running {
   abort: AbortController
   query?: { interrupt(): Promise<unknown>; stopTask?(taskId: string): Promise<void> }
+  /** Sends another message into the running turn; false once the turn is ending. */
+  push?: (text: string, images: string[], mode: 'steer' | 'queue') => boolean
 }
 
 const running = new Map<string, Running>()
@@ -159,14 +161,53 @@ function dataUrlToBlock(url: string) {
   return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } }
 }
 
-/**
- * Streaming input for one turn. It stays open until the turn ends, because permission answers
- * travel over the same channel.
- */
-async function* userMessage(text: string, images: string[], done: Promise<void>) {
+function sdkUserMessage(text: string, images: string[], priority?: 'next' | 'later') {
   const content = images.length ? [...images.map(dataUrlToBlock).filter(Boolean), { type: 'text', text }] : text
-  yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null }
-  await done
+  return { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, ...(priority ? { priority } : {}) }
+}
+
+/**
+ * Streaming input for one turn: the first message, then any the person sends while it runs.
+ * It stays open until the turn ends, because permission answers travel over the same channel.
+ * `push` returns false once the turn is ending, when a new message has to wait for the next turn.
+ */
+function inputChannel(first: object, done: Promise<void>) {
+  const queue: object[] = [first]
+  let wake: (() => void) | null = null
+  let closed = false
+  void done.then(() => {
+    closed = true
+    wake?.()
+  })
+  async function* gen() {
+    for (;;) {
+      while (queue.length) yield queue.shift()!
+      if (closed) return
+      await new Promise<void>((r) => (wake = r))
+      wake = null
+    }
+  }
+  const push = (msg: object) => {
+    if (closed) return false
+    queue.push(msg)
+    wake?.()
+    return true
+  }
+  return { input: gen(), push }
+}
+
+/**
+ * Sends a message into a running Claude turn. "steer" folds it in at the next tool step, as
+ * Claude Code does when you type while it works; "queue" runs it after the current turn.
+ * Returns false when there is no turn that can take it (not running, Codex, or just ending).
+ */
+export function pushMessage(chat: Chat, text: string, images: string[], mode: 'steer' | 'queue', emit: Emit): boolean {
+  const r = running.get(chat.id)
+  if (!r?.push || !r.push(text, images, mode)) return false
+  const item: ChatItem = { id: randomUUID(), kind: 'user', text, images: images.length ? images : undefined, ts: Date.now(), sentWhileRunning: mode }
+  store.upsertItem(chat.id, item)
+  emit(chat.id, { item })
+  return true
 }
 
 export async function send(
@@ -262,12 +303,15 @@ export async function send(
     const { settings, repos } = store.get()
     const extras = settings.extras
     const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, systemAppend(extras, !!chat.planMode))
+    // `autoAllowTools` is ours, not the SDK's: tools the caller vouches for as read-only.
+    const { autoAllowTools, ...extra } = (extraOptions?.(sdkMod) ?? {}) as Record<string, unknown> & { autoAllowTools?: string[] }
+    const autoAllow = new Set(autoAllowTools ?? [])
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
       if (toolName === 'ExitPlanMode' && chat.planMode) {
         // The plan card asks the user; the agent must not start building on its own.
         return { behavior: 'deny', message: 'The plan is shown to the user for approval. Stop here and wait for their reply.' }
       }
-      if (!needsApproval(chat.permission, chat.alwaysAllow, toolName)) return { behavior: 'allow', updatedInput: input }
+      if (autoAllow.has(toolName) || !needsApproval(chat.permission, chat.alwaysAllow, toolName)) return { behavior: 'allow', updatedInput: input }
       const req: PermissionRequest = { id: randomUUID(), chatId: chat.id, toolName, input }
       const decision = await new Promise<PermissionDecision>((resolve) => {
         pending.set(req.id, { req, resolve })
@@ -288,14 +332,15 @@ export async function send(
     const session = chatSettings(chat, extras)
     const budget = budgetFor(chat, settings)
     const tasks = new Map<string, BackgroundTask>()
-    const extra = extraOptions?.(sdkMod) ?? {}
     const mcpServers: Record<string, unknown> = { ...(extra.mcpServers as Record<string, unknown> | undefined) }
     if (store.get().settings.notionAgentTools) {
       const server = await notion.agentServer()
       if (server) mcpServers.notion = server
     }
+    const channel = inputChannel(sdkUserMessage(expandShortcuts(prompt, extras), images), turnDone)
+    r.push = (t, imgs, mode) => channel.push(sdkUserMessage(expandShortcuts(t, extras), imgs, mode === 'steer' ? 'next' : 'later'))
     const q = query({
-      prompt: userMessage(expandShortcuts(prompt, extras), images, turnDone) as never,
+      prompt: channel.input as never,
       options: {
         pathToClaudeCodeExecutable: claudeExecutable(),
         cwd: ws.path,
@@ -417,7 +462,8 @@ export async function send(
           break
         }
         case 'result':
-          endTurn()
+          // A message queued while this turn ran gets its own turn and result; keep the input open for it.
+          if (!((msg.queued_turn_count ?? 0) > 0)) endTurn()
           turnOk = msg.subtype === 'success' && !msg.is_error
           // Claude Code only ends a turn under an active /goal once the goal is met or cleared.
           if (turnOk && chat.goal) chat.goal = undefined

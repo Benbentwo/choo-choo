@@ -41,8 +41,30 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
   const modelBtn = useRef<HTMLButtonElement>(null)
   const sourceBtn = useRef<HTMLButtonElement>(null)
 
+  const [branches, setBranches] = useState<string[]>([])
   useEffect(() => setSource(null), [repoId])
+  useEffect(() => {
+    setBranches([])
+    let live = true
+    window.api.listSources(repoId, 'branch', '').then(
+      (opts) => live && setBranches(opts.map((o) => o.title)),
+      () => {}
+    )
+    return () => {
+      live = false
+    }
+  }, [repoId])
   if (!repo) return null
+
+  /** Remembers the base branch per repo, so the next workspace starts from it too. */
+  const setBase = async (branch: string) => {
+    try {
+      await window.api.setRepoBaseBranch(repoId, branch)
+      useStore.getState().set({ repos: useStore.getState().repos.map((r) => (r.id === repoId ? { ...r, defaultBranch: branch } : r)) })
+    } catch (e) {
+      reportError(e)
+    }
+  }
 
   const create = async () => {
     if (busy) return
@@ -93,7 +115,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
     <div className="flex flex-1 flex-col">
       <div className="drag flex h-11 items-center px-3">
         {!s.sidebarOpen && (
-          <button className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
+          <button title="Show sidebar" className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
             <IconSidebar width={16} height={16} />
           </button>
         )}
@@ -143,7 +165,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
               {extra.images.map((src, i) => (
                 <span key={i} className="relative">
                   <img src={src} alt="" className="h-10 w-10 rounded border border-line object-cover" />
-                  <button className="absolute -top-1.5 -right-1.5 rounded-full bg-raised p-0.5 text-faint hover:text-fg" onClick={() => setExtra((x) => ({ ...x, images: x.images.filter((_, j) => j !== i) }))}>
+                  <button title="Remove image" className="absolute -top-1.5 -right-1.5 rounded-full bg-raised p-0.5 text-faint hover:text-fg" onClick={() => setExtra((x) => ({ ...x, images: x.images.filter((_, j) => j !== i) }))}>
                     <IconX width={10} height={10} />
                   </button>
                 </span>
@@ -152,7 +174,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
                 <span key={c.key} className="flex max-w-[220px] items-center gap-1 rounded bg-raised px-2 py-0.5 text-[12px] text-muted">
                   {c.icon}
                   <span className="truncate">{c.label}</span>
-                  <button className="text-faint hover:text-fg" onClick={c.remove}>
+                  <button title="Remove" className="text-faint hover:text-fg" onClick={c.remove}>
                     <IconX width={11} height={11} />
                   </button>
                 </span>
@@ -175,10 +197,26 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
             </button>
           </div>
         </div>
-        <div className="mt-2 px-1 text-[12px] text-faint">
-          {source
-            ? `Starts the workspace on ${source.source.kind === 'issue' || source.source.kind === 'notion' ? 'a new branch for' : ''} ${source.title}.`
-            : `Starts a new branch from ${repo.defaultBranch}.`}
+        <div className="mt-2 flex items-center gap-1.5 px-1 text-[12px] text-faint">
+          {source ? (
+            `Starts the workspace on ${source.source.kind === 'issue' || source.source.kind === 'notion' ? 'a new branch for' : ''} ${source.title}.`
+          ) : (
+            <>
+              Starts a new branch from
+              <select
+                className="rounded-md border border-line bg-bg px-1.5 py-0.5 text-fg outline-none"
+                value={repo.defaultBranch}
+                onChange={(e) => void setBase(e.target.value)}
+                title="Remembered for this repo. PRs from its workspaces target this branch too."
+              >
+                {[repo.defaultBranch, ...branches.filter((b) => b !== repo.defaultBranch)].map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
       </div>
       {menu === 'repo' && <Menu anchor={repoBtn.current} align="left" items={repoItems} onClose={() => setMenu(null)} />}

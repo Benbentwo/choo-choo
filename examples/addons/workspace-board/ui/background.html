@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Workspace board: background</title>
+  </head>
+  <body>
+    <!--
+      The background page. Nobody sees it; it runs for as long as the add-on is on, with the same
+      window.choo and the same permissions as the views. Here it answers the two tools the manifest
+      gives the orchestrator.
+    -->
+    <script src="/@choo/host.js"></script>
+    <script>
+      const noteKey = (workspaceId) => `notes:${workspaceId}`
+
+      // ctx.repoIds: the projects of the orchestrator that is asking.
+      choo.tools.handle('board_summary', async (_input, ctx) => {
+        const mine = (await choo.workspaces.list()).filter((w) => ctx.repoIds.includes(w.repoId))
+        return Promise.all(mine.map(async (w) => ({ id: w.id, title: w.title, branch: w.branch, status: w.status, note: (await choo.store.get(noteKey(w.id))) || '' })))
+      })
+
+      choo.tools.handle('set_note', async ({ workspace_id, note }, ctx) => {
+        const w = (await choo.workspaces.list()).find((x) => x.id === workspace_id && ctx.repoIds.includes(x.repoId))
+        // What a handler throws is shown to the orchestrator as the tool's error.
+        if (!w) throw new Error(`No workspace ${workspace_id} in this project. Call board_summary for ids.`)
+        if (note.trim()) await choo.store.set(noteKey(w.id), note)
+        else await choo.store.delete(noteKey(w.id))
+        return `Saved the note on ${w.title}.`
+      })
+    </script>
+  </body>
+</html>

@@ -16,7 +16,8 @@ import { pickCityName } from './names'
 import { readScripts } from './scripts'
 import { listCommands } from './commands'
 import * as gh from './github'
-import { suggestName } from './naming'
+import { startPrWatch } from './prWatch'
+import { suggestName, suggestTitleFromChats } from './naming'
 import * as updates from './updater'
 import { registerDevFeedback } from './devFeedback'
 import * as conductor from './conductorImport'
@@ -34,6 +35,9 @@ import * as remote from './remote'
 import * as cloud from './cloud'
 import { registerIntegrationsIpc } from './integrations'
 import * as notion from './integrations/notion'
+import * as addonHost from './addonHost'
+import { originUrl, githubSlug } from './share'
+import { prBranch, type PrInbox } from '@shared/prInbox'
 
 let win: BrowserWindow | null = null
 
@@ -42,6 +46,7 @@ const REPOS_ROOT = join(homedir(), 'choo-choo', 'repos')
 
 function send(channel: string, ...args: unknown[]) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
+  addonHost.appEvent(channel, args[0])
 }
 
 function findWs(id: string): Workspace {
@@ -182,6 +187,28 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
   return { workspace, chat, context }
 }
 
+/** The PRs page's list, with each PR tied to its local project and any workspace already on its branch. */
+async function loadPrInbox(): Promise<PrInbox> {
+  const prs = await gh.prInbox()
+  const s = store.get()
+  const bySlug = new Map<string, string>()
+  await Promise.all(
+    s.repos.map(async (r) => {
+      if (r.githubOwner === '' || !existsSync(r.path)) return
+      const slug = githubSlug(await originUrl(r.path).catch(() => ''))
+      if (slug && !bySlug.has(slug)) bySlug.set(slug, r.id)
+    })
+  )
+  for (const p of prs) {
+    const repoId = bySlug.get(p.repo.toLowerCase())
+    if (!repoId) continue
+    p.repoId = repoId
+    const branch = prBranch(p)
+    p.workspaceId = s.workspaces.find((w) => w.repoId === repoId && !w.archived && !w.orchestrator && w.branch === branch)?.id
+  }
+  return { prs, fetchedAt: Date.now() }
+}
+
 async function previewConductor() {
   if (!existsSync(conductor.CONDUCTOR_DB)) return { found: false, repos: [], workspaces: [], archivedSkipped: 0, settings: [] }
   const s = store.get()
@@ -287,6 +314,20 @@ async function nameWorkspace(ws: Workspace, prompt: string) {
 
 const emitChat = (chatId: string, payload: object) => send('chat:event', { chatId, ...payload })
 
+/** Messages the person sent while a turn couldn't take them (Codex, or the turn was ending), per chat. */
+const afterTurn = new Map<string, { text: string; images: string[] }[]>()
+
+/**
+ * A message the person typed. While Claude is working it goes into the running turn, steered
+ * or queued per Settings; when the turn can't take it, it waits and is sent when the turn ends.
+ */
+function sendFromPerson(chat: Chat, text: string, images: string[]) {
+  if (!agent.isRunning(chat.id)) return sendToChat(chat, text, images)
+  if (agent.pushMessage(chat, text, images.slice(0, 10), store.get().settings.whileRunning ?? 'steer', emitChat)) return
+  afterTurn.set(chat.id, [...(afterTurn.get(chat.id) ?? []), { text, images }])
+  emitChat(chat.id, { item: { id: randomUUID(), kind: 'note', text: 'Your message will be sent when Claude finishes.', ts: Date.now() } })
+}
+
 /** Starts a turn. Fire and forget; progress arrives through chat:event. */
 function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fromAdvisor?: boolean } = {}) {
   if (agent.isRunning(chat.id)) throw new Error('Agent is already running in this chat')
@@ -299,7 +340,7 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
     const scope = scopeFor(ws, repo)
     // The orchestrator's tools only exist on Claude.
     if (chat.model === 'codex') chat.model = 'opus'
-    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost)
+    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets())
   }
   void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
 }
@@ -339,6 +380,44 @@ const orchestratorHost: orchestrator.Host = {
     const pr = await gh.prForBranch(ws.path, ws.branch)
     return { pr, checks: pr ? await gh.checks(ws.path, ws.branch).catch(() => []) : [] }
   }
+}
+
+/** What add-on views may ask the app to do; see addonApi.ts for the permission checks in front of it. */
+const addonDeps: addonHost.Deps = {
+  host: {
+    repos: () => store.get().repos,
+    workspaces: () => store.get().workspaces,
+    chats: () => store.get().chats,
+    chatItems: (id) => store.chatItems(id),
+    pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId)),
+    createWorkspace: (repoId) => createWorkspace(repoId),
+    sendToChat: (chat, text) => sendToChat(chat, text),
+    stopChat: (id) => agent.stop(id),
+    prStatus: orchestratorHost.prStatus,
+    notify: (title, body, workspaceId) => {
+      if (!store.get().settings.notifications || !Notification.isSupported()) return
+      const n = new Notification({ title, body })
+      n.on('click', () => {
+        win?.show()
+        win?.focus()
+        if (workspaceId) addonDeps.host.openWorkspace(workspaceId)
+      })
+      n.show()
+    },
+    openWorkspace: (workspaceId) => {
+      const chat = store.get().chats.find((c) => c.workspaceId === workspaceId && !c.review) ?? store.get().chats.find((c) => c.workspaceId === workspaceId)
+      if (chat) send('navigate', workspaceId, chat.id)
+    },
+    saved: () => {
+      store.save()
+      send('state:changed')
+    }
+  },
+  env: () => {
+    const key = store.get().settings.anthropicApiKey.trim()
+    return key ? { ANTHROPIC_API_KEY: key } : ({} as Record<string, string>)
+  },
+  send
 }
 
 function orchestratorChat(ws: Workspace, title: string): Chat {
@@ -509,6 +588,17 @@ function wakeOrchestrator(orchChatId: string) {
 }
 
 function onChatDone(chat: Chat) {
+  const next = afterTurn.get(chat.id)?.shift()
+  if (next) {
+    // Let the finished turn wind down (the advisor may still run) before sending what waited.
+    setTimeout(() => {
+      try {
+        sendFromPerson(chat, next.text, next.images)
+      } catch (e) {
+        emitChat(chat.id, { item: { id: randomUUID(), kind: 'error', text: (e as Error).message, ts: Date.now() } })
+      }
+    }, 0)
+  }
   notifyDone(chat)
   noteForOrchestrator(chat)
   if (finished.has(chat.id)) scheduleWake(chat.id)
@@ -710,6 +800,11 @@ function registerIpc() {
     if (r) r.systemPrompt = prompt?.text.trim() ? prompt : undefined
     store.save()
   })
+  h('repo:base', (id: string, branch: string) => {
+    const r = store.get().repos.find((x) => x.id === id)
+    if (r && branch.trim()) r.defaultBranch = branch.trim()
+    store.save()
+  })
   h('ws:create', (repoId: string, source?: WorkspaceSource, folders?: string[]) => createWorkspace(repoId, source, folders))
   h('files:pick', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'], message: 'Give the agent these files' })
@@ -744,7 +839,32 @@ function registerIpc() {
   h('ws:grep', (id: string, q: string) => git.grep(findWs(id).path, q))
   h('archive:cleanup', () => archive.cleanupArchives())
   h('ws:rename', (id: string, title: string) => {
-    findWs(id).title = title
+    const t = title.replace(/\s+/g, ' ').trim().slice(0, 80)
+    if (!t) return
+    const ws = findWs(id)
+    ws.title = t
+    // A name the person chose isn't replaced by the first-prompt naming.
+    ws.named = true
+    store.save()
+    send('state:changed')
+  })
+  h('ws:regenerateName', async (id: string) => {
+    const ws = findWs(id)
+    const chats = store.get().chats.filter((c) => c.workspaceId === id).map((c) => store.chatItems(c.id))
+    const title = await suggestTitleFromChats(chats)
+    if (!title) throw new Error('Nothing to name this workspace from yet. Send a message first, or rename it yourself.')
+    ws.title = title
+    ws.named = true
+    store.save()
+    send('state:changed')
+    return title
+  })
+  h('ws:reorder', (ids: string[]) => {
+    const all = store.get().workspaces
+    ids.forEach((id, i) => {
+      const ws = all.find((w) => w.id === id)
+      if (ws) ws.order = i
+    })
     store.save()
   })
   h('chat:create', (wsId: string) => newChat(wsId))
@@ -854,6 +974,7 @@ function registerIpc() {
     return addRepo(dest)
   })
   h('gh:repos', () => gh.listMyRepos())
+  h('prs:inbox', () => loadPrInbox())
   h('models:details', () => modelDetails())
   h('conductor:preview', () => previewConductor())
   h('conductor:import', (opts: { useWorkspacesRoot: boolean }) => importConductor(opts))
@@ -872,10 +993,16 @@ function registerIpc() {
     if (!pr) throw new Error('No pull request for this branch')
     await gh.mergePr(ws.path, pr.number)
   })
+  h('pr:ready', async (id: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, ws.branch)
+    if (!pr) throw new Error('No pull request for this branch')
+    await gh.markPrReady(ws.path, pr.number)
+  })
   h('chat:send', (id: string, text: string, images: string[] = []) => {
     // The person wrote, so the orchestrator may wake itself again.
     autoWakes.delete(id)
-    return sendToChat(findChat(id), text, images)
+    return sendFromPerson(findChat(id), text, images)
   })
   h('reflect:run', (wsId: string, feedback = '') => {
     const ws = findWs(wsId)
@@ -1103,6 +1230,24 @@ function windowBackground(settings: Settings) {
   return resolveTheme(settings.theme, nativeTheme.shouldUseDarkColors).tokens.bg
 }
 
+/**
+ * Web links open in the default browser, never inside the app: new-window links (target=_blank)
+ * and plain links that would navigate the window away from the app alike.
+ */
+app.on('web-contents-created', (_e, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  contents.on('will-navigate', (e, url) => {
+    const appUrl = process.env.ELECTRON_RENDERER_URL
+    if (appUrl && url.startsWith(appUrl)) return // dev-server reloads
+    if (url.startsWith('file://')) return
+    e.preventDefault()
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+  })
+})
+
 function createWindow() {
   applyNativeTheme(store.get().settings)
   win = new BrowserWindow({
@@ -1121,13 +1266,13 @@ function createWindow() {
     }
   })
   win.once('ready-to-show', () => win?.show())
+  // window-all-closed never fires while add-ons' unseen background window is open, so quit from here.
+  win.on('closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
   win.webContents.on('did-finish-load', () => {
     if (pendingLink) send('share:link', pendingLink)
     pendingLink = null
-  })
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
-    return { action: 'deny' }
   })
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
@@ -1163,6 +1308,8 @@ if (process.defaultApp) {
   if (process.argv[1]) app.setAsDefaultProtocolClient('choo-choo', process.execPath, [resolve(process.argv[1])])
 } else app.setAsDefaultProtocolClient('choo-choo')
 
+addonHost.registerScheme()
+
 // Name the app explicitly so the menu bar and About panel say Choo Choo, not Electron, in dev too.
 app.setName('Choo Choo')
 app.setAboutPanelOptions({ applicationName: 'Choo Choo', applicationVersion: app.getVersion() })
@@ -1178,6 +1325,7 @@ app.whenReady().then(async () => {
     send('state:changed')
   })
   registerIpc()
+  addonHost.start(addonDeps)
   cloud.recoverAfterRestart()
   void remote.recoverAfterRestart((id) => store.get().workspaces.find((w) => w.id === id), emitChat)
   archive.startArchiveCleanup()
@@ -1194,8 +1342,24 @@ app.whenReady().then(async () => {
   buildMenu()
   createWindow()
   updates.startUpdater(send)
+  // PR and check changes: cheap ETag probes, and the UI refetches only when one reports a change.
+  const prWatch = startPrWatch({
+    targets: () => {
+      const s = store.get()
+      return s.workspaces
+        .filter((w) => !w.archived && !w.orchestrator)
+        .flatMap((w) => {
+          const repo = s.repos.find((r) => r.id === w.repoId)
+          return repo?.githubOwner && w.branch !== repo.defaultBranch ? [{ id: w.id, path: w.path, branch: w.branch }] : []
+        })
+    },
+    focused: () => !!win?.isFocused(),
+    onChange: (wsId) => send('pr:changed', wsId)
+  })
+  app.on('browser-window-focus', () => prWatch.poke())
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // The unseen window that hosts add-ons' background pages doesn't count as the app being open.
+    if (!win || win.isDestroyed()) createWindow()
   })
 })
 

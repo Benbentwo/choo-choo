@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { CheckRun, GithubRepo, PrComment, PrInfo, SourceOption } from '@shared/types'
 import { parsePrFeedback, PR_FEEDBACK_QUERY } from '@shared/prComments'
+import { parsePrInbox, prInboxQuery, type InboxPr, type PrRole } from '@shared/prInbox'
 
 const exec = promisify(execFile)
 
@@ -16,6 +17,11 @@ export async function prForBranch(cwd: string, branch: string): Promise<PrInfo |
 
 export async function mergePr(cwd: string, number: number) {
   await exec('gh', ['pr', 'merge', String(number), '--squash', '--delete-branch=false'], { cwd })
+}
+
+/** Takes a draft PR out of draft so reviewers are asked for. */
+export async function markPrReady(cwd: string, number: number) {
+  await exec('gh', ['pr', 'ready', String(number)], { cwd })
 }
 
 /** Unresolved review threads, reviews and conversation comments on a PR. */
@@ -56,6 +62,32 @@ export async function listMyRepos(): Promise<GithubRepo[]> {
   )
   const repos = stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l) as GithubRepo)
   return repos.sort((a, b) => (b.pushedAt ?? '').localeCompare(a.pushedAt ?? ''))
+}
+
+/** Open PRs that ask for the person's review, plus the ones they opened, across every repo gh can see. */
+export async function prInbox(): Promise<InboxPr[]> {
+  try {
+    const search = async (role: PrRole) => {
+      const run = async (first: number) => {
+        const { stdout } = await exec('gh', ['api', 'graphql', '-f', `query=${prInboxQuery(role, first)}`], { maxBuffer: 16 * 1024 * 1024, timeout: 30_000 })
+        return JSON.parse(stdout).data?.[role]
+      }
+      try {
+        return await run(50)
+      } catch (e) {
+        // GitHub answers 502 or 504 when the search takes too long; a smaller page usually gets through.
+        if (!/HTTP 50[24]/.test((e as { stderr?: string }).stderr ?? '')) throw e
+        return run(20)
+      }
+    }
+    const [review, mine] = await Promise.all([search('review'), search('mine')])
+    return parsePrInbox({ data: { review, mine } })
+  } catch (e) {
+    const err = e as { code?: string; stderr?: string; message?: string }
+    if (err.code === 'ENOENT') throw new Error('The GitHub CLI (gh) isn\'t installed. Install it with `brew install gh`, then run `gh auth login`.')
+    if (/auth login|not logged|authentication/i.test(err.stderr ?? '')) throw new Error('Sign in to GitHub first: run `gh auth login` in a terminal.')
+    throw new Error((err.stderr || err.message || 'Could not load pull requests').trim())
+  }
 }
 
 export async function cloneRepo(nameWithOwner: string, dest: string) {

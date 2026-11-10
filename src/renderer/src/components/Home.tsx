@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useStore, addRepository, openOrchestrator } from '../store'
-import { IconEye, IconFolder, IconFolderPlus, IconGear, IconGlobe, IconOrchestrator, IconSidebar, IconTool } from '../icons'
+import { IconAddon, IconEye, IconFolder, IconFolderPlus, IconGear, IconGlobe, IconOrchestrator, IconSidebar, IconTool } from '../icons'
 import { BrandMark } from './BrandMark'
 
 export function Home() {
@@ -12,7 +12,7 @@ export function Home() {
       return false
     }
   })
-  const settings = (tab: 'agents' | 'plugins' | 'mcp' | 'integrations' | 'appearance') => () => s.set({ modal: 'settings', settingsTab: tab })
+  const settings = (tab: 'agents' | 'plugins' | 'addons' | 'mcp' | 'integrations' | 'appearance') => () => s.set({ modal: 'settings', settingsTab: tab })
   const firstRepo = s.repos.find((r) => !r.hidden)
   const explore: { title: string; body: string; icon: React.ReactNode; run: () => void }[] = [
     { title: 'Helper agents', body: 'Scout, reviewer, security reviewer and an advisor that checks each turn (from oh-my-pi).', icon: <IconEye width={16} height={16} />, run: settings('agents') },
@@ -23,6 +23,7 @@ export function Home() {
       run: firstRepo ? () => void openOrchestrator(firstRepo.id) : () => s.set({ modal: 'create' })
     },
     { title: 'Plugins and skills', body: 'Install Claude Code plugins and turn skills on or off.', icon: <IconTool width={16} height={16} />, run: settings('plugins') },
+    { title: 'Add-ons', body: 'Add views and tools to Choo Choo, from public sources or your team\'s private repo.', icon: <IconAddon width={16} height={16} />, run: settings('addons') },
     { title: 'MCP servers', body: 'See and manage the tools your agents can reach, per project.', icon: <IconGear width={16} height={16} />, run: settings('mcp') },
     { title: 'Integrations', body: 'Connect Linear and Notion so agents can use them.', icon: <IconGlobe width={16} height={16} />, run: settings('integrations') },
     { title: 'Themes', body: 'Colors, accent, font size and density.', icon: <IconEye width={16} height={16} />, run: settings('appearance') },
@@ -37,7 +38,7 @@ export function Home() {
     <div className="flex flex-1 flex-col">
       <div className="drag flex h-11 items-center px-3">
         {!s.sidebarOpen && (
-          <button className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
+          <button title="Show sidebar" className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
             <IconSidebar width={16} height={16} />
           </button>
         )}
@@ -64,7 +65,8 @@ export function Home() {
             <div className="mb-2 flex items-center text-[12px] font-medium text-faint">
               <span className="flex-1">Explore</span>
               <button
-                className="font-normal hover:text-fg"
+                className="rounded-md border border-line px-2 py-0.5 font-normal text-muted hover:bg-hover hover:text-fg"
+                title="Hide Explore. A Show Explore link brings it back."
                 onClick={() => {
                   setHideExplore(true)
                   try {
@@ -89,6 +91,21 @@ export function Home() {
               ))}
             </div>
           </div>
+        )}
+        {hideExplore && (
+          <button
+            className="mt-10 text-[12px] text-faint hover:text-fg"
+            onClick={() => {
+              setHideExplore(false)
+              try {
+                localStorage.removeItem('home-explore-hidden')
+              } catch {
+                /* storage unavailable */
+              }
+            }}
+          >
+            Show Explore
+          </button>
         )}
       </div>
     </div>

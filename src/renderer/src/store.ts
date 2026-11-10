@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
+import type { AddonInfo, PinStatus, PinnedAddon } from '@shared/addons'
+import type { InboxPr, PrInbox } from '@shared/prInbox'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover } from '@shared/types'
 
 export interface Doc {
-  kind: 'diff' | 'file'
+  /** reflect: the workspace's Reflect tab (see `reflects`). */
+  kind: 'diff' | 'file' | 'reflect'
   path: string
   /** Line to scroll to in a file. */
   line?: number
@@ -12,7 +15,15 @@ export interface Doc {
 /** Which list the ⌘K palette opens on. */
 export type PaletteMode = 'all' | 'files' | 'grep'
 
-export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'graphs' | 'review'
+/** `addon:<key>/<viewId>` is a tab an add-on adds beside a workspace. */
+export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'graphs' | 'review' | `addon:${string}`
+
+/** An add-on view open in the center: one from the sidebar's top list, or one under a project. */
+export interface AddonPage {
+  key: string
+  viewId: string
+  repoId?: string
+}
 
 interface UI {
   repos: Repo[]
@@ -25,9 +36,27 @@ interface UI {
   /** Background tasks of each chat's running turn. */
   tasks: Record<string, BackgroundTask[]>
   selectedWs: string | null
+  /** Installed add-ons; the ones that are on add views to the sidebar and the right panel. */
+  addons: AddonInfo[]
+  /** What each project's choo-choo.json asks for. */
+  addonPins: PinStatus[]
+  /** The add-on view shown in the center instead of a workspace or Home. */
+  addonPage: AddonPage | null
+  /** The PRs page is open in the center. */
+  prsPage: boolean
+  /** Last load of the PRs page's list, and its error. */
+  prInbox: PrInbox | null
+  prInboxError: string | null
+  prInboxLoading: boolean
   activeChat: Record<string, string>
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
+  /** Comments on diff lines waiting to be sent to the agent as one message, per workspace. */
+  codeComments: Record<string, CodeComment[]>
+  /** Bumped when GitHub reports a change to a workspace's PR or checks; PR views reload on it. */
+  prVersion: Record<string, number>
+  /** A Reflect tab open in the workspace: the person's feedback, and whether to archive after. */
+  reflects: Record<string, { feedback: string; archiveAfter: boolean } | undefined>
   settings: Settings
   modal: 'settings' | 'palette' | 'create' | 'quickstart' | 'conductor' | 'share' | 'open-share' | 'usage' | 'group' | 'remove-repo' | null
   /** Project the Remove project dialog is for. */
@@ -41,7 +70,7 @@ interface UI {
   usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'projects' | 'agents' | 'mcp' | 'plugins' | 'integrations' | 'updates' | 'telemetry' | 'appearance'
+  settingsTab: 'general' | 'projects' | 'agents' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance'
   recentPaths: string[]
   modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */
@@ -78,8 +107,18 @@ export const useStore = create<UI>((set, get) => ({
   permissions: {},
   tasks: {},
   selectedWs: null,
+  addons: [],
+  addonPins: [],
+  addonPage: null,
+  prsPage: false,
+  prInbox: readInboxCache(),
+  prInboxError: null,
+  prInboxLoading: false,
   activeChat: {},
   openDoc: {},
+  codeComments: {},
+  prVersion: {},
+  reflects: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
   groups: [],
@@ -103,18 +142,18 @@ export const useStore = create<UI>((set, get) => ({
 
   hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [] }),
   selectWorkspace: (id, fromHistory) => {
-    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null })
+    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null, addonPage: null, prsPage: false })
     const { history, historyIndex } = get()
     const h = [...history.slice(0, historyIndex + 1), id].slice(-50)
-    set({ selectedWs: id, draftRepo: null, history: h, historyIndex: h.length - 1 })
+    set({ selectedWs: id, draftRepo: null, addonPage: null, prsPage: false, history: h, historyIndex: h.length - 1 })
   },
   back: () => {
     const { history, historyIndex } = get()
-    if (historyIndex > 0) set({ historyIndex: historyIndex - 1, selectedWs: history[historyIndex - 1] })
+    if (historyIndex > 0) set({ historyIndex: historyIndex - 1, selectedWs: history[historyIndex - 1], addonPage: null, prsPage: false })
   },
   forward: () => {
     const { history, historyIndex } = get()
-    if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, selectedWs: history[historyIndex + 1] })
+    if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, selectedWs: history[historyIndex + 1], addonPage: null, prsPage: false })
   },
   setActiveChat: (wsId, chatId) =>
     set((s) => ({ activeChat: { ...s.activeChat, [wsId]: chatId }, openDoc: { ...s.openDoc, [wsId]: null } })),
@@ -159,7 +198,99 @@ export function reportError(e: unknown) {
 
 /** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
 export function newWorkspace(repoId: string) {
-  useStore.getState().set({ selectedWs: null, draftRepo: repoId })
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false })
+}
+
+/** Shows an add-on's view in the center. */
+export function openAddonPage(page: AddonPage) {
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: page, prsPage: false })
+}
+
+/** Shows the PRs page in the center and reloads its list. */
+export function openPrsPage() {
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true })
+  void refreshPrInbox()
+}
+
+let inboxLoad: Promise<void> | null = null
+
+const INBOX_CACHE_KEY = 'choo.prInbox'
+
+/** The PR list from the last successful load, so the page has something to show at once and when GitHub is down. */
+function readInboxCache(): PrInbox | null {
+  try {
+    const raw = localStorage.getItem(INBOX_CACHE_KEY)
+    return raw ? (JSON.parse(raw) as PrInbox) : null
+  } catch {
+    return null
+  }
+}
+
+function writeInboxCache(inbox: PrInbox) {
+  try {
+    localStorage.setItem(INBOX_CACHE_KEY, JSON.stringify(inbox))
+  } catch {
+    // Storage full or unavailable: the list just loads from GitHub next time.
+  }
+}
+
+/** Reloads the PRs list. Calls made while a load is running share it. */
+export function refreshPrInbox(): Promise<void> {
+  inboxLoad ??= (async () => {
+    useStore.getState().set({ prInboxLoading: true })
+    try {
+      const inbox = await window.api.prInbox()
+      writeInboxCache(inbox)
+      useStore.getState().set({ prInbox: inbox, prInboxError: null })
+    } catch (e) {
+      useStore.getState().set({ prInboxError: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e) })
+    } finally {
+      useStore.getState().set({ prInboxLoading: false })
+      inboxLoad = null
+    }
+  })()
+  return inboxLoad
+}
+
+/**
+ * Opens a workspace checked out on a PR's branch, on the Review tab. Reuses one that's already open,
+ * and clones the repo first when it isn't a project yet.
+ */
+export async function openPrWorkspace(pr: InboxPr) {
+  const st = useStore.getState()
+  if (pr.workspaceId && st.workspaces.some((w) => w.id === pr.workspaceId && !w.archived)) {
+    st.set({ rightOpen: true, rightTab: 'review' })
+    st.selectWorkspace(pr.workspaceId)
+    return
+  }
+  let repoId = pr.repoId
+  if (!repoId || !st.repos.some((r) => r.id === repoId)) repoId = (await window.api.cloneRepo(pr.repo)).id
+  const { workspace, chat } = await window.api.createWorkspace(repoId, { kind: 'pr', number: pr.number })
+  await refreshState()
+  const now = useStore.getState()
+  now.setActiveChat(workspace.id, chat.id)
+  now.set({ rightOpen: true, rightTab: 'review' })
+  now.selectWorkspace(workspace.id)
+  void refreshPrInbox()
+}
+
+export async function refreshAddons(fresh = false) {
+  try {
+    useStore.getState().set({ addons: await window.api.addonsList(fresh) })
+    useStore.getState().set({ addonPins: await window.api.addonPins() })
+  } catch {
+    /* Claude Code isn't available; Settings > Add-ons shows why */
+  }
+}
+
+/**
+ * The add-ons a project pins that still need the person: not on, and not a recommendation they
+ * turned down. Pins are checked now and then; the add-on list is live, so its state wins.
+ */
+export function pinsToSetUp(pin: PinStatus | undefined, addons: AddonInfo[], dismissed: string[] = []): PinnedAddon[] {
+  return (pin?.addons ?? [])
+    .map((a) => ({ ...a, state: addons.find((x) => x.id.toLowerCase() === a.id.toLowerCase())?.state ?? a.state }))
+    .filter((a) => a.state !== 'on' && (a.required || !dismissed.includes(a.id)))
 }
 
 export interface DraftContext {
@@ -262,6 +393,48 @@ export function goToNextUnread() {
   const s = useStore.getState()
   s.setActiveChat(n.wsId, n.chatId)
   s.selectWorkspace(n.wsId)
+}
+
+/** A comment on a range of lines in the diff, queued in the composer until sent. */
+export interface CodeComment {
+  id: string
+  file: string
+  /** Line numbers in the new file, or in the old file for removed lines. */
+  start: number
+  end: number
+  side: 'new' | 'old'
+  /** The commented lines, as shown in the diff. */
+  code: string
+  text: string
+}
+
+export function setCodeComments(wsId: string, fn: (list: CodeComment[]) => CodeComment[]) {
+  const st = useStore.getState()
+  st.set({ codeComments: { ...st.codeComments, [wsId]: fn(st.codeComments[wsId] ?? []) } })
+}
+
+/** The message that sends queued code comments, followed by anything typed in the composer. */
+export function codeCommentsMessage(list: CodeComment[], text: string): string {
+  const parts = list.map((c) => {
+    const where = `${c.file}:${c.start === c.end ? c.start : `${c.start}-${c.end}`}${c.side === 'old' ? ' (removed lines)' : ''}`
+    const code = c.code.split('\n').map((l) => `    ${l}`).join('\n')
+    return `${where}\n${code}\n${c.text}`
+  })
+  return [`Comments on the code (${list.length}):`, ...parts, ...(text ? [text] : [])].join('\n\n')
+}
+
+/** Opens the workspace's Reflect tab, which runs the reflect agent with this feedback. */
+export function startReflect(wsId: string, feedback: string, archiveAfter: boolean) {
+  const s = useStore.getState()
+  s.set({ reflects: { ...s.reflects, [wsId]: { feedback, archiveAfter } }, openDoc: { ...s.openDoc, [wsId]: { kind: 'reflect', path: 'Reflect' } } })
+}
+
+/** Closes the Reflect tab, stopping the agent if it's still reading. */
+export function closeReflect(wsId: string) {
+  const s = useStore.getState()
+  void window.api.cancelReflect(wsId)
+  const open = s.openDoc[wsId]
+  s.set({ reflects: { ...s.reflects, [wsId]: undefined }, openDoc: { ...s.openDoc, [wsId]: open?.kind === 'reflect' ? null : (open ?? null) } })
 }
 
 export function openDoc(wsId: string, doc: Doc | null) {

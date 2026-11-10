@@ -7,7 +7,7 @@ import { prPrompt } from './RightPanel'
 import { fmt } from './Stats'
 
 // PR lookups go through gh, so keep them for a minute per workspace.
-const prCache = new Map<string, { at: number; pr: PrInfo | null }>()
+const prCache = new Map<string, { version: number; pr: PrInfo | null }>()
 
 /**
  * Hover state for a sidebar row: shows the card after a short delay and keeps it open
@@ -51,6 +51,7 @@ export function useHoverCard(delay = 350) {
 /** The card Conductor shows when you hover a workspace: branch, diff size, status, title, latest message, Create PR and last activity. */
 export function WorkspacePreviewCard({ ws, rect, cardProps, onClose }: { ws: Workspace; rect: DOMRect; cardProps: React.HTMLAttributes<HTMLDivElement>; onClose: () => void }) {
   const s = useStore()
+  const prVersion = s.prVersion[ws.id] ?? 0
   const [preview, setPreview] = useState<Preview | null>(null)
   const [pr, setPr] = useState<PrInfo | null | undefined>(prCache.get(ws.id)?.pr)
   const [menu, setMenu] = useState(false)
@@ -63,10 +64,10 @@ export function WorkspacePreviewCard({ ws, rect, cardProps, onClose }: { ws: Wor
     let live = true
     void window.api.workspacePreview(ws.id).then((p) => live && setPreview(p), () => {})
     const cached = prCache.get(ws.id)
-    if (!cached || Date.now() - cached.at > 60_000) {
+    if (!cached || cached.version !== prVersion) {
       void window.api.getPr(ws.id).then(
         (p) => {
-          prCache.set(ws.id, { at: Date.now(), pr: p })
+          prCache.set(ws.id, { version: prVersion, pr: p })
           if (live) setPr(p)
         },
         () => live && setPr(null)
@@ -75,7 +76,7 @@ export function WorkspacePreviewCard({ ws, rect, cardProps, onClose }: { ws: Wor
     return () => {
       live = false
     }
-  }, [ws.id])
+  }, [ws.id, prVersion])
 
   const createPr = async (draft: boolean) => {
     setMenu(false)
@@ -133,7 +134,7 @@ export function WorkspacePreviewCard({ ws, rect, cardProps, onClose }: { ws: Wor
             >
               <IconPR /> Create PR
             </button>
-            <button className="border-l border-line px-1.5 py-1 hover:bg-hover disabled:opacity-40" disabled={running || pr === undefined} onClick={() => setMenu(!menu)}>
+            <button title="More PR actions" className="border-l border-line px-1.5 py-1 hover:bg-hover disabled:opacity-40" disabled={running || pr === undefined} onClick={() => setMenu(!menu)}>
               <IconDown />
             </button>
             {menu && (

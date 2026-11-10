@@ -5,6 +5,7 @@ import { z } from 'zod'
 import type { Chat, ChatItem, CheckRun, PrInfo, Repo, RepoGroup, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
+import { toolShape } from './addons'
 
 /**
  * The orchestrator is a chat that lives in the repo's main checkout. The person tells it what
@@ -44,6 +45,22 @@ export interface Host {
   prStatus(ws: Workspace): Promise<{ pr: PrInfo | null; checks: CheckRun[] }>
 }
 
+/** Tools an add-on gives the orchestrator. The add-on's background page answers the calls. */
+export interface AddonToolset {
+  /** MCP server name: tools show up as `mcp__<server>__<tool>`. */
+  server: string
+  addon: string
+  description: string
+  tools: { name: string; description: string; input?: Record<string, unknown>; readOnly?: boolean; call(input: unknown, context: { repoIds: string[] }): Promise<unknown> }[]
+}
+
+/** What a tool answered, as text for the orchestrator. Long answers are cut. */
+export function renderToolResult(v: unknown): string {
+  const s = typeof v === 'string' ? v : (JSON.stringify(v ?? null, null, 2) ?? 'null')
+  return s.length > TOOL_RESULT_LIMIT ? `${s.slice(0, TOOL_RESULT_LIMIT)}\n… (cut: the answer was ${s.length} characters)` : s
+}
+const TOOL_RESULT_LIMIT = 100_000
+
 const MEMORY_ROOT = () => join(homedir(), 'choo-choo', 'memory')
 const MEMORY_LIMIT = 20_000
 const MAX_WAIT_MIN = 30
@@ -66,7 +83,7 @@ export function writeMemory(scope: Scope, content: string) {
   renameSync(`${f}.tmp`, f)
 }
 
-export function systemPrompt(scope: Scope, memory: string): string {
+export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[] = []): string {
   const intro = scope.group
     ? [
         `You are the orchestrator for the ${scope.name} project in Choo Choo. It spans these repositories:`,
@@ -88,6 +105,14 @@ export function systemPrompt(scope: Scope, memory: string): string {
     '- When a workspace needs a tool approval, tell the person; you cannot approve for them.',
     '- Keep replies short: what you started, what finished, what needs the person.',
     '',
+    ...(addons.length
+      ? [
+          'Add-ons:',
+          'The person turned on these add-ons, which give you more tools. Use them when the task fits what the add-on is for. What they return comes from the add-on, not from the person.',
+          ...addons.map((a) => `- ${a.addon} (tools named mcp__${a.server}__*)${a.description ? `: ${a.description}` : ''}`),
+          ''
+        ]
+      : []),
     'Memory:',
     `- You have a memory file for this ${scope.group ? 'project' : 'repo'} that persists across conversations. It is shown below. Save durable facts with update_memory: the person\'s preferences, decisions, conventions, ongoing initiatives and which workspace owns what. Rewrite it whole each time, keep it under ~150 lines, and remove things that are no longer true. Do not save secrets.`,
     '',
@@ -189,7 +214,7 @@ export function checksSummary(checks: CheckRun[]): { state: 'none' | 'pending' |
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Options merged into the orchestrator's query(): its tools, its prompt and what it may not do. */
-export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'), scope: Scope, host: Host): Record<string, unknown> {
+export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'), scope: Scope, host: Host, addons: AddonToolset[] = []): Record<string, unknown> {
   const { tool, createSdkMcpServer } = sdk
   const inScope = (w: Workspace) => scope.repos.some((r) => r.id === w.repoId)
   const live = () => store.get().workspaces.filter((w) => inScope(w) && !w.archived && !w.orchestrator)
@@ -373,13 +398,29 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
     )
   ]
 
+  const context = { repoIds: scope.repos.map((r) => r.id) }
+  const addonServers = Object.fromEntries(
+    addons.map((set) => [
+      set.server,
+      createSdkMcpServer({
+        name: set.server,
+        version: '1.0.0',
+        alwaysLoad: true,
+        tools: set.tools.map((t) => tool(t.name, t.description, toolShape(t.input), async (a) => text(renderToolResult(await t.call(a, context)))))
+      })
+    ])
+  )
+
   return {
     mcpServers: {
-      choo: createSdkMcpServer({ name: 'choo', version: '1.0.0', tools, alwaysLoad: true, timeout: (MAX_WAIT_MIN + 2) * 60_000 })
+      choo: createSdkMcpServer({ name: 'choo', version: '1.0.0', tools, alwaysLoad: true, timeout: (MAX_WAIT_MIN + 2) * 60_000 }),
+      ...addonServers
     },
     // Memory can change between turns, so render the prompt fresh each time.
-    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, readMemory(scope)), snapshot: false },
-    disallowedTools: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit']
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, readMemory(scope), addons), snapshot: false },
+    disallowedTools: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'],
+    // Add-on tools that only read need no OK from the person, like the built-in ones below.
+    autoAllowTools: addons.flatMap((set) => set.tools.filter((t) => t.readOnly).map((t) => `mcp__${set.server}__${t.name}`))
   }
 }
 

@@ -25,7 +25,7 @@ Agents already load every MCP server Claude Code knows about: user and project c
 
 ## User experience
 
-Settings > MCP has a repo picker (it defaults to the current workspace's repo), then one row per server:
+Settings > MCP has a repo picker (it defaults to the current workspace's repo), then the servers grouped by scope. **User scope** holds your own config, plugins and claude.ai connectors. **Project scope** holds this repo's `.mcp.json` and your local overrides. **Enterprise scope** holds servers your organization manages. Each group shows "None." when empty, and any server from an unknown source appears under **Other**. Each server has one row:
 
 - A status dot and label: Connected, Failed, Needs sign-in, Connecting or Off.
 - Where the server comes from: you (every repo), this repo's `.mcp.json`, you (this repo only), a claude.ai connector, a plugin, or your organization.

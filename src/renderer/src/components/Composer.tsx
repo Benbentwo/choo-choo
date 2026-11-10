@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Chat, Effort, ExtraAgentId, ModelId, OutputStyleInfo, Permission, SlashCommandInfo, Workspace } from '@shared/types'
-import { useStore, reportError, modelLabel } from '../store'
+import { useStore, reportError, modelLabel, setCodeComments, codeCommentsMessage, openDoc } from '../store'
 import { IconDown, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
 
@@ -44,6 +44,8 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const [files, setFiles] = useState<string[] | null>(null)
   const [commands, setCommands] = useState<SlashCommandInfo[] | null>(null)
   const [images, setImages] = useState<string[]>([])
+  const codeComments = useStore((s) => s.codeComments[ws.id]) ?? []
+  const hasContent = !!text.trim() || images.length > 0 || codeComments.length > 0
   const [dragging, setDragging] = useState(false)
   const [goalOpen, setGoalOpen] = useState(false)
   const [goalText, setGoalText] = useState('')
@@ -51,6 +53,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const tasks = useStore((s) => s.tasks[chat.id]) ?? []
   const ta = useRef<HTMLTextAreaElement>(null)
   const running = chat.status === 'running'
+  const whileRunning = useStore((s) => s.settings.whileRunning ?? 'steer')
   const extras = useStore((s) => s.settings.extras)
   const claude = chat.model !== 'codex'
   const advisorOn = extras.advisor && chat.advisor !== false
@@ -139,12 +142,14 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   }
 
   const submit = async () => {
-    const t = text.trim() || (images.length ? 'See the attached image.' : '')
-    if (!t || running) return
+    const typed = text.trim() || (images.length && !codeComments.length ? 'See the attached image.' : '')
+    const t = codeComments.length ? codeCommentsMessage(codeComments, typed) : typed
+    if (!t) return
     const imgs = images
     setText('')
     setImages([])
     setTrigger(null)
+    if (codeComments.length) setCodeComments(ws.id, () => [])
     try {
       await window.api.sendMessage(chat.id, t, imgs)
     } catch (e) {
@@ -266,7 +271,25 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
             {chat.additionalDirectories!.map((d) => (
               <span key={d} className="flex items-center gap-1 rounded-md bg-raised px-2 py-0.5 font-mono text-[11px] text-muted" title={d}>
                 {d.split('/').pop()}
-                <button className="hover:text-fg" onClick={() => void removeFolder(d)}>
+                <button title="Remove folder" className="hover:text-fg" onClick={() => void removeFolder(d)}>
+                  <IconX width={10} height={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {codeComments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+            {codeComments.map((c) => (
+              <span key={c.id} className="flex max-w-[260px] items-center gap-1.5 rounded-md border border-accent/40 bg-raised px-2 py-0.5 text-[11px]" title={`${c.code}\n\n${c.text}`}>
+                <button
+                  className="shrink-0 font-mono text-muted hover:text-fg"
+                  onClick={() => openDoc(ws.id, { kind: 'diff', path: c.file })}
+                >
+                  {c.file.split('/').pop()}:{c.start === c.end ? c.start : `${c.start}-${c.end}`}
+                </button>
+                <span className="truncate text-fg/80">{c.text}</span>
+                <button title="Remove comment" className="shrink-0 text-faint hover:text-fg" onClick={() => setCodeComments(ws.id, (list) => list.filter((x) => x.id !== c.id))}>
                   <IconX width={10} height={10} />
                 </button>
               </span>
@@ -278,7 +301,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
             {images.map((src, i) => (
               <div key={i} className="group relative">
                 <img src={src} className="h-14 w-14 rounded-md border border-line object-cover" />
-                <button
+                <button title="Remove image"
                   className="absolute -top-1.5 -right-1.5 hidden rounded-full bg-raised p-0.5 text-muted group-hover:block hover:text-fg"
                   onClick={() => setImages(images.filter((_, j) => j !== i))}
                 >
@@ -428,7 +451,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
           )}
           {extras.advisor && (
             <button
-              className={`rounded px-1.5 py-1 ${advisorOn ? 'bg-violet-500/15 text-violet-300' : 'text-faint hover:bg-hover hover:text-fg'}`}
+              className={`rounded px-1.5 py-1 ${advisorOn ? 'bg-advisor/15 text-advisor' : 'text-faint hover:bg-hover hover:text-fg'}`}
               title={advisorOn ? 'Advisor on: a second model reviews each turn. Click to turn off for this chat.' : 'Advisor off for this chat. Click to turn on.'}
               onClick={() => void update({ advisor: !advisorOn })}
             >
@@ -443,12 +466,13 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
           <button className="rounded p-1.5 text-muted hover:bg-hover hover:text-fg" title="Add folder" onClick={() => void addFolder()}>
             <IconPlus />
           </button>
-          {running ? (
-            <button className="rounded-md bg-fg p-1.5 text-bg hover:opacity-90" title="Stop (Esc)" onClick={() => void window.api.stopChat(chat.id)}>
+          {running && (
+            <button className={`rounded-md p-1.5 hover:opacity-90 ${hasContent ? 'border border-line text-muted hover:text-fg' : 'bg-fg text-bg'}`} title="Stop (Esc)" onClick={() => void window.api.stopChat(chat.id)}>
               <IconStop />
             </button>
-          ) : (
-            <button className="rounded-md bg-fg p-1.5 text-bg hover:opacity-90 disabled:opacity-30" disabled={!text.trim() && images.length === 0} title="Send (Enter)" onClick={() => void submit()}>
+          )}
+          {(!running || hasContent) && (
+            <button className="rounded-md bg-fg p-1.5 text-bg hover:opacity-90 disabled:opacity-30" disabled={!hasContent} title={running ? (whileRunning === 'queue' ? 'Queue: send when Claude finishes (Enter)' : 'Steer: send now, Claude reads it at its next step (Enter)') : 'Send (Enter)'} onClick={() => void submit()}>
               <IconUp />
             </button>
           )}

@@ -1,6 +1,8 @@
 import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
+import type { PrInbox } from './prInbox'
+import type { AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
 export interface Repo {
   id: string
   name: string
@@ -93,8 +95,10 @@ export interface Workspace {
   baseRef: string
   path: string
   title: string
-  /** Set once the first prompt has named the workspace. */
+  /** Set once the first prompt has named the workspace, or the person renamed it. */
   named?: boolean
+  /** Position when the sidebar is sorted by hand (lower first). Missing for workspaces never dragged. */
+  order?: number
   createdAt: number
   archived?: boolean
   archivedAt?: number
@@ -108,6 +112,8 @@ export interface Workspace {
   orchestratorId?: string
   /** Set on a project group's orchestrator. It runs in the first repo's checkout. */
   groupId?: string
+  /** The add-on that started this workspace, by plugin id. */
+  addonId?: string
   /** Set while this workspace is shared with coworkers. */
   share?: { id: string; link: string; sharedAt: number; autoSync: boolean }
   /** Set when this workspace was opened from a coworker's share. */
@@ -296,6 +302,8 @@ export type ChatItem =
       resumeAt?: string
       /** Sent automatically to pass on the advisor's feedback. */
       fromAdvisor?: boolean
+      /** Sent while Claude was working: folded into that turn (steer) or run after it (queue). */
+      sentWhileRunning?: 'steer' | 'queue'
     }
   | { id: string; kind: 'note'; text: string; ts: number }
   | { id: string; kind: 'assistant'; text: string; streaming?: boolean; ts: number }
@@ -369,6 +377,10 @@ export interface Settings extends AppearanceSettings {
   defaultModel: ModelId
   defaultEffort: Effort
   defaultPermission: Permission
+  /** A message sent while Claude is working: steer folds it into the running turn, queue sends it after. */
+  whileRunning?: 'steer' | 'queue'
+  /** Orgs ("owner") or repos ("owner/repo") left off the PRs page on this machine. */
+  prsHidden?: string[]
   /** Spend cap per message for new chats, in dollars. 0 means no cap. */
   defaultBudgetUsd?: number
   /** Branch prefix; empty uses the GitHub user or git user.name. */
@@ -396,6 +408,10 @@ export interface Settings extends AppearanceSettings {
   telemetry: Telemetry
   /** Wake an idle orchestrator when a workspace it started finishes, so it checks and reports back. */
   orchestratorAutoUpdates: boolean
+  /** Add-ons turned on in Choo Choo and the permissions agreed to, by plugin id. */
+  addons?: Record<string, AddonGrant>
+  /** Recommended add-ons the person said "not now" to, by project id. */
+  addonPinsDismissed?: Record<string, string[]>
 }
 
 export type ExtraAgentId = 'scout' | 'reviewer' | 'securityReviewer' | 'quickWorker'
@@ -405,7 +421,7 @@ export interface Extras {
   agents: Record<ExtraAgentId, boolean>
   /** A second model reviews each finished turn and gives advice. */
   advisor: boolean
-  advisorModel: 'opus' | 'sonnet' | 'haiku'
+  advisorModel: 'fable' | 'opus' | 'sonnet' | 'haiku'
   /** Send blocker-level advice back to the agent automatically. */
   advisorSteer: boolean
   /** Have the reviewer check the changes when you click Create PR. Needs the reviewer agent. */
@@ -515,6 +531,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultModel: 'opus',
   defaultEffort: 'high',
   defaultPermission: 'full',
+  whileRunning: 'steer',
   branchPrefix: '',
   anthropicApiKey: '',
   notifications: true,
@@ -594,6 +611,8 @@ export interface UsagePoint {
   subagent?: boolean
   /** The person's message this response answers, shortened. */
   prompt?: string
+  /** The first response after the person sent a message. */
+  afterMessage?: boolean
   /** What the response did: the start of its text, or the tools it called. */
   did?: string
 }
@@ -707,6 +726,8 @@ export interface Api {
   removeRepo(repoId: string): Promise<void>
   setRepoHidden(repoId: string, hidden: boolean): Promise<void>
   setRepoPrompt(repoId: string, prompt: PromptCustom | undefined): Promise<void>
+  /** The branch new workspaces start from (and PRs target) in this repo. */
+  setRepoBaseBranch(repoId: string, branch: string): Promise<void>
   /** `folders` are extra directories the first chat may read and edit (linked workspaces, added folders). */
   createWorkspace(repoId: string, source?: WorkspaceSource, folders?: string[]): Promise<{ workspace: Workspace; chat: Chat; context?: string }>
   listSources(repoId: string, kind: WorkspaceSource['kind'], query: string): Promise<SourceOption[]>
@@ -736,6 +757,10 @@ export interface Api {
   /** Deletes archived worktrees past the retention period now. Returns how many. */
   cleanupArchives(): Promise<number>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
+  /** Asks a small model for a new title from the workspace's chats so far. Returns the new title. */
+  regenerateWorkspaceName(workspaceId: string): Promise<string>
+  /** Saves a hand-sorted sidebar order: each id's position in the list. */
+  reorderWorkspaces(ids: string[]): Promise<void>
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
@@ -762,6 +787,29 @@ export interface Api {
   pluginSetEnabled(repoId: string, id: string, enabled: boolean, scope: string): Promise<void>
   pluginDetails(repoId: string, id: string): Promise<string>
   localSkills(repoId: string): Promise<LocalSkill[]>
+  /** Installed add-ons. `fresh` asks Claude Code again instead of using what the app last read. */
+  addonsList(fresh?: boolean): Promise<AddonInfo[]>
+  /** Add-ons the sources offer that aren't installed. */
+  addonsAvailable(): Promise<AvailableAddon[]>
+  addonSources(): Promise<AddonSource[]>
+  addonAddSource(source: string): Promise<void>
+  addonRemoveSource(name: string): Promise<void>
+  addonInstall(id: string, acceptSha?: string): Promise<PluginInstallResult>
+  addonUninstall(id: string): Promise<void>
+  /** Turns an add-on on or off. Turning on needs the permissions the person was shown; it fails if the add-on now asks for others. */
+  addonSetEnabled(id: string, enabled: boolean, permissions?: string[]): Promise<AddonInfo[]>
+  /** One host API call from an add-on's view. The main process checks the add-on's permissions. */
+  addonCall(key: string, method: string, args: unknown, context: AddonContext): Promise<AddonCallResult>
+  onAddonsChanged(cb: () => void): () => void
+  /** What each project's choo-choo.json asks for, checked against what is installed. Projects that pin nothing are left out. */
+  addonPins(): Promise<PinStatus[]>
+  /** Adds the sources a project's choo-choo.json names and installs one add-on it pins. */
+  addonInstallPinned(repoId: string, id: string, acceptSha?: string): Promise<PluginInstallResult>
+  /** Pings for add-on frames: a pull request changed, an add-on's data changed. */
+  onAddonEvent(cb: (e: AddonAppEvent) => void): () => void
+  /** Background window only: the orchestrator is calling an add-on's tool. */
+  onAddonTool(cb: (call: AddonToolCall) => void): () => void
+  addonToolResult(callId: string, result: { ok: boolean; result?: unknown; error?: string }): Promise<void>
   /** Shows a file or folder in Finder. */
   revealPath(path: string): Promise<void>
   respondPermission(requestId: string, decision: PermissionDecision): void
@@ -776,6 +824,8 @@ export interface Api {
   isScriptRunning(workspaceId: string, kind: ScriptKind): Promise<boolean>
   getPr(workspaceId: string): Promise<PrInfo | null>
   mergePr(workspaceId: string): Promise<void>
+  /** Takes the workspace's draft PR out of draft. */
+  markPrReady(workspaceId: string): Promise<void>
   /** Unresolved review threads, reviews and comments on the workspace's PR. */
   getPrComments(workspaceId: string): Promise<PrComment[]>
   getChecks(workspaceId: string): Promise<CheckRun[]>
@@ -802,6 +852,8 @@ export interface Api {
   previewConductorImport(): Promise<ImportPreview>
   importFromConductor(opts: { useWorkspacesRoot: boolean }): Promise<ImportResult>
   listGithubRepos(): Promise<GithubRepo[]>
+  /** Open PRs across GitHub that wait on the person's review, or that they opened. */
+  prInbox(): Promise<PrInbox>
   quickStart(name: string): Promise<Repo>
   onNavigate(cb: (workspaceId: string, chatId: string) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
@@ -838,6 +890,8 @@ export interface Api {
   revealInFinder(path: string): Promise<void>
   onMenu(cb: (action: string) => void): () => void
   onStateChanged(cb: () => void): () => void
+  /** A workspace's PR or its checks changed on GitHub (or a periodic full refresh is due). */
+  onPrChanged(cb: (workspaceId: string) => void): () => void
   updateStatus(): Promise<UpdateStatus>
   /** Checks now, whatever the Settings toggles say. */
   checkForUpdates(which?: 'app' | 'claude' | 'all'): Promise<UpdateStatus>

@@ -10,6 +10,7 @@ import { AppearanceSettings } from './Appearance'
 import { IntegrationsSettings } from './Integrations'
 import { McpSettings } from './McpSettings'
 import { PluginSettings } from './PluginSettings'
+import { AddonSettings } from './AddonSettings'
 import { OpenShareModal, ShareModal } from './ShareModals'
 import { CommandPalette } from './CommandPalette'
 import { UpdatesSettings } from './Updates'
@@ -184,21 +185,21 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'integrations' | 'updates' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   return (
-    <Shell onClose={onClose} width="w-[780px]">
+    <Shell onClose={onClose} width="w-[940px]">
       <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
         <div className="pb-3 font-medium">Settings</div>
         <div className="ml-auto flex gap-1">
-          {(['general', 'projects', 'agents', 'prompts', 'mcp', 'plugins', 'integrations', 'updates', 'telemetry', 'appearance'] as const).map((t) => (
+          {(['general', 'projects', 'agents', 'prompts', 'mcp', 'plugins', 'addons', 'integrations', 'updates', 'telemetry', 'appearance'] as const).map((t) => (
             <button
               key={t}
               role="tab"
               onClick={() => setTab(t)}
-              className={`-mb-px border-b-2 px-2.5 pb-2.5 capitalize ${tab === t ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}
+              className={`-mb-px border-b-2 px-2.5 pb-2.5 ${t === 'addons' ? '' : 'capitalize'} ${tab === t ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}
             >
-              {t === 'mcp' ? 'MCP' : t}
+              {t === 'mcp' ? 'MCP' : t === 'addons' ? 'Add-ons' : t}
             </button>
           ))}
         </div>
@@ -216,6 +217,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <McpSettings />
         ) : tab === 'plugins' ? (
           <PluginSettings />
+        ) : tab === 'addons' ? (
+          <AddonSettings />
         ) : tab === 'prompts' ? (
           <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
         ) : tab === 'telemetry' ? (
@@ -249,6 +252,12 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                     {p.label}
                   </option>
                 ))}
+              </select>
+            </Row>
+            <Row label="Messages sent while Claude works" hint="Steer gives Claude your message at its next step, so it can change course mid-task. Queue holds it until Claude finishes, then sends it as the next message.">
+              <select className={select} value={settings.whileRunning ?? 'steer'} onChange={(e) => void save({ whileRunning: e.target.value as 'steer' | 'queue' })}>
+                <option value="steer">Steer (send now)</option>
+                <option value="queue">Queue (send after)</option>
               </select>
             </Row>
             <Row label="Spend cap per message" hint="Claude chats stop a message's run once it has cost this many dollars. Change it per chat in the model menu. Empty means no cap.">
@@ -476,6 +485,7 @@ function ExtrasSection({ extras, save }: { extras: Extras; save: (patch: Partial
         <>
           <Row label="Advisor model">
             <select className={select} value={extras.advisorModel} onChange={(e) => save({ advisorModel: e.target.value as Extras['advisorModel'] })}>
+              <option value="fable">Fable</option>
               <option value="opus">Opus</option>
               <option value="sonnet">Sonnet</option>
               <option value="haiku">Haiku</option>
@@ -514,6 +524,26 @@ export const RETENTION: [number, string][] = [
   [0, 'Never']
 ]
 
+const REPO_CACHE_KEY = 'choo.githubRepos'
+
+/** The GitHub repo list from the last time the Create dialog loaded it, so reopening it is instant. */
+function readRepoCache(): GithubRepo[] | null {
+  try {
+    const raw = localStorage.getItem(REPO_CACHE_KEY)
+    return raw ? (JSON.parse(raw) as GithubRepo[]) : null
+  } catch {
+    return null
+  }
+}
+
+function writeRepoCache(list: GithubRepo[]) {
+  try {
+    localStorage.setItem(REPO_CACHE_KEY, JSON.stringify(list))
+  } catch {
+    // Storage full or unavailable: the list just loads from GitHub next time.
+  }
+}
+
 function CreateModal({ onClose }: { onClose: () => void }) {
   const [url, setUrl] = useState('')
   const [q, setQ] = useState('')
@@ -526,11 +556,18 @@ function CreateModal({ onClose }: { onClose: () => void }) {
     }
   })
   const [busy, setBusy] = useState(false)
-  const [repos, setRepos] = useState<GithubRepo[] | null>(null)
+  const [repos, setRepos] = useState<GithubRepo[] | null>(readRepoCache)
   const [ghError, setGhError] = useState<string | null>(null)
 
+  // Show the cached list at once, then refresh it from GitHub in the background.
   useEffect(() => {
-    window.api.listGithubRepos().then(setRepos, (e) => setGhError(String(e?.message ?? e)))
+    window.api.listGithubRepos().then(
+      (list) => {
+        setRepos(list)
+        writeRepoCache(list)
+      },
+      (e) => setGhError(String(e?.message ?? e))
+    )
   }, [])
 
   const shown = useMemo(() => {
@@ -579,7 +616,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search repositories…" className={`${field} mb-2`} />
         <div className="mb-4 h-56 overflow-y-auto rounded-md border border-line">
           {repos === null && !ghError && <div className="px-3 py-3 text-[12px] text-faint">Loading your repositories…</div>}
-          {ghError && <div className="px-3 py-3 text-[12px] text-faint">Couldn't list GitHub repositories. Run <code>gh auth login</code>, or paste a URL above.</div>}
+          {ghError && !repos && <div className="px-3 py-3 text-[12px] text-faint">Couldn't list GitHub repositories. Run <code>gh auth login</code>, or paste a URL above.</div>}
           {repos && shown.length === 0 && <div className="px-3 py-3 text-[12px] text-faint">No matching repositories.</div>}
           {shown.map((r) => {
             const [owner, name] = r.nameWithOwner.split('/')

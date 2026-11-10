@@ -1,0 +1,7 @@
+{
+  "name": "workspace-board",
+  "version": "0.2.0",
+  "description": "Every workspace as a card, in columns by what it's doing. Start new ones from the board, keep notes per workspace, and let the orchestrator read and write those notes.",
+  "license": "MIT",
+  "keywords": ["choo-choo-addon"]
+}

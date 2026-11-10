@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { Api, ChatEvent } from '@shared/types'
 import type { UpdateStatus } from '@shared/updates'
+import type { AddonAppEvent, AddonToolCall } from '@shared/addons'
 
 const inv = (ch: string) => (...a: unknown[]) => ipcRenderer.invoke(ch, ...a)
 function on<T extends unknown[]>(ch: string, cb: (...a: T) => void) {
@@ -18,6 +19,7 @@ const api: Api = {
   removeRepo: inv('repo:remove') as Api['removeRepo'],
   setRepoHidden: inv('repo:hidden') as Api['setRepoHidden'],
   setRepoPrompt: inv('repo:prompt') as Api['setRepoPrompt'],
+  setRepoBaseBranch: inv('repo:base') as Api['setRepoBaseBranch'],
   createWorkspace: inv('ws:create') as Api['createWorkspace'],
   openOrchestrator: inv('ws:orchestrator') as Api['openOrchestrator'],
   openGroupOrchestrator: inv('group:orchestrator') as Api['openGroupOrchestrator'],
@@ -33,6 +35,8 @@ const api: Api = {
   searchFiles: inv('ws:grep') as Api['searchFiles'],
   cleanupArchives: inv('archive:cleanup') as Api['cleanupArchives'],
   renameWorkspace: inv('ws:rename') as Api['renameWorkspace'],
+  regenerateWorkspaceName: inv('ws:regenerateName') as Api['regenerateWorkspaceName'],
+  reorderWorkspaces: inv('ws:reorder') as Api['reorderWorkspaces'],
   createChat: inv('chat:create') as Api['createChat'],
   closeChat: inv('chat:close') as Api['closeChat'],
   getChatItems: inv('chat:items') as Api['getChatItems'],
@@ -58,6 +62,21 @@ const api: Api = {
   pluginSetEnabled: inv('plugins:setEnabled') as Api['pluginSetEnabled'],
   pluginDetails: inv('plugins:details') as Api['pluginDetails'],
   localSkills: inv('plugins:localSkills') as Api['localSkills'],
+  addonsList: inv('addons:list') as Api['addonsList'],
+  addonsAvailable: inv('addons:available') as Api['addonsAvailable'],
+  addonSources: inv('addons:sources') as Api['addonSources'],
+  addonAddSource: inv('addons:addSource') as Api['addonAddSource'],
+  addonRemoveSource: inv('addons:removeSource') as Api['addonRemoveSource'],
+  addonInstall: inv('addons:install') as Api['addonInstall'],
+  addonUninstall: inv('addons:uninstall') as Api['addonUninstall'],
+  addonSetEnabled: inv('addons:setEnabled') as Api['addonSetEnabled'],
+  addonCall: inv('addons:call') as Api['addonCall'],
+  onAddonsChanged: (cb) => on<[]>('addons:changed', cb),
+  addonPins: inv('addons:pins') as Api['addonPins'],
+  addonInstallPinned: inv('addons:installPinned') as Api['addonInstallPinned'],
+  onAddonEvent: (cb) => on<[AddonAppEvent]>('addons:event', cb),
+  onAddonTool: (cb) => on<[AddonToolCall]>('addons:tool', cb),
+  addonToolResult: inv('addons:toolResult') as Api['addonToolResult'],
   revealPath: inv('shell:reveal') as Api['revealPath'],
   continueOnPhone: inv('chat:phone') as Api['continueOnPhone'],
   bringBackFromPhone: inv('chat:phoneBack') as Api['bringBackFromPhone'],
@@ -79,6 +98,7 @@ const api: Api = {
   isScriptRunning: inv('scripts:running') as Api['isScriptRunning'],
   getPr: inv('pr:get') as Api['getPr'],
   mergePr: inv('pr:merge') as Api['mergePr'],
+  markPrReady: inv('pr:ready') as Api['markPrReady'],
   getPrComments: inv('pr:comments') as Api['getPrComments'],
   getChecks: inv('checks:get') as Api['getChecks'],
   rerunCheck: inv('checks:rerun') as Api['rerunCheck'],
@@ -98,6 +118,7 @@ const api: Api = {
   previewConductorImport: inv('conductor:preview') as Api['previewConductorImport'],
   importFromConductor: inv('conductor:import') as Api['importFromConductor'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
+  prInbox: inv('prs:inbox') as Api['prInbox'],
   quickStart: inv('repo:quickstart') as Api['quickStart'],
   listSources: inv('ws:sources') as Api['listSources'],
   listIntegrations: inv('integrations:list') as Api['listIntegrations'],
@@ -120,6 +141,7 @@ const api: Api = {
   revealInFinder: inv('shell:reveal') as Api['revealInFinder'],
   onMenu: (cb) => on<[string]>('menu', cb),
   onStateChanged: (cb) => on<[]>('state:changed', cb),
+  onPrChanged: (cb) => on<[string]>('pr:changed', cb),
   updateStatus: inv('updates:status') as Api['updateStatus'],
   checkForUpdates: inv('updates:check') as Api['checkForUpdates'],
   installAppUpdate: inv('updates:install-app') as Api['installAppUpdate'],
