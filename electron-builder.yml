@@ -27,6 +27,8 @@ protocols:
     schemes: [choo-choo]
 dmg:
   title: Choo Choo
+  # Sign the disk image too, with the same Developer ID as the app (skipped for unsigned builds).
+  sign: true
   # Fixed, space-free names with the arch always present, so the Homebrew cask can build the URL.
   artifactName: ChooChoo-${version}-${arch}.${ext}
 publish:

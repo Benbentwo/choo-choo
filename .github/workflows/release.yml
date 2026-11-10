@@ -108,8 +108,13 @@ jobs:
             xcrun stapler validate "$app"
             spctl -a -vv -t exec "$app"
           done
+          # The bundled Claude binary must still start under the hardened runtime.
+          claude="dist/mac-arm64/Choo Choo.app/Contents/Resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude"
+          codesign -d --entitlements - "$claude"
+          "$claude" --version
           for dmg in dist/*.dmg; do
             echo "== $dmg"
+            codesign --verify --verbose=2 "$dmg"
             spctl -a -vv -t open --context context:primary-signature "$dmg" || echo "::warning::$dmg is not notarized itself (the app inside is)."
           done
       - name: Publish the release
