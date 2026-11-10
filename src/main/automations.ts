@@ -6,14 +6,18 @@ import {
   LEDGER_LIMIT,
   RUNS_LIMIT,
   diffInbox,
+  diffRepoItems,
+  isRepoEvent,
   isSchedule,
+  labelMatches,
   nextRun,
   runPrompt,
   type Automation,
   type AutomationRun,
   type AutomationTarget,
   type AutomationTrigger,
-  type PrEvent
+  type PrEvent,
+  type RepoItem
 } from '@shared/automations'
 import * as store from './store'
 import type { AutomationHooks } from './orchestrator'
@@ -32,6 +36,8 @@ export interface Deps {
   isRunning(chatId: string): boolean
   /** The PR inbox, with each PR tied to its local repo where there is one. */
   loadPrs(): Promise<InboxPr[]>
+  /** A repo's newest open issues and PRs, and its owner/repo on GitHub. */
+  loadRepoItems(repoId: string): Promise<{ slug: string; items: RepoItem[] }>
   /** Saves state and tells the window. */
   changed(): void
 }
@@ -67,8 +73,8 @@ function cleanTrigger(t: AutomationTrigger): AutomationTrigger {
     case 'weekly':
       return { kind: 'weekly', day: Math.max(0, Math.min(6, Math.round(Number(t.day)) || 0)), at: /^\d{1,2}:\d{2}$/.test(t.at) ? t.at : '09:00' }
     case 'github':
-      if (!['review_requested', 'checks_failed', 'reviewed'].includes(t.event)) throw new Error('Pick a GitHub event')
-      return { kind: 'github', event: t.event }
+      if (!['review_requested', 'checks_failed', 'reviewed', 'issue_opened', 'pr_opened'].includes(t.event)) throw new Error('Pick a GitHub event')
+      return { kind: 'github', event: t.event, ...(isRepoEvent(t.event) && t.label?.trim() ? { label: t.label.trim() } : {}) }
     default:
       return { kind: 'manual' }
   }
@@ -108,6 +114,12 @@ export function save(input: Partial<Automation> & { name: string; prompt: string
   // The first GitHub automation starts from where things stand now, not from an old look.
   if (!wasGithub && a.enabled && a.trigger.kind === 'github') {
     delete store.get().githubWatch
+    lastGithubPoll = 0
+  }
+  // Same for new issues and PRs in the repos this one watches.
+  if (a.enabled && a.trigger.kind === 'github' && isRepoEvent(a.trigger.event)) {
+    const latest = store.get().githubWatch?.latest
+    if (latest) for (const id of targetRepoIds(a)) delete latest[id]
     lastGithubPoll = 0
   }
   deps?.changed()
@@ -248,27 +260,56 @@ async function tick() {
   if (now - lastGithubPoll >= GITHUB_POLL_MS) await pollGithub()
 }
 
-/** Looks at the PR inbox and starts the GitHub-event automations that match what changed. */
+/** Looks at GitHub and starts the GitHub-event automations that match what changed. */
 export async function pollGithub() {
   const watching = list().filter((a) => a.enabled && a.trigger.kind === 'github')
   if (!deps || polling || !watching.length) return
   polling = true
   lastGithubPoll = Date.now()
   try {
-    const prs = await deps.loadPrs()
-    const s = store.get()
-    const { events, next } = diffInbox(s.githubWatch, prs)
-    s.githubWatch = next
+    const event = (a: Automation) => (a.trigger.kind === 'github' ? a.trigger : undefined)
+    const fromInbox = watching.filter((a) => !isRepoEvent(event(a)!.event))
+    const fromRepos = watching.filter((a) => isRepoEvent(event(a)!.event))
+    const found: { a: Automation; events: PrEvent[] }[] = []
+
+    if (fromInbox.length) {
+      const prs = await deps.loadPrs()
+      const s = store.get()
+      const { events, next } = diffInbox(s.githubWatch, prs)
+      s.githubWatch = next
+      const repoOf = new Map(prs.map((p) => [`${p.repo}#${p.number}`, p.repoId]))
+      for (const a of fromInbox) {
+        const repos = targetRepoIds(a)
+        found.push({ a, events: events.filter((e) => e.event === event(a)!.event && repos.includes(repoOf.get(`${e.repo}#${e.number}`) ?? '')) })
+      }
+    }
+
+    if (fromRepos.length) {
+      const s = store.get()
+      const watch = (s.githubWatch ??= { review: [], checks: {}, decision: {} })
+      const latest = (watch.latest ??= {})
+      const byRepo = new Map<string, PrEvent[]>()
+      for (const repoId of new Set(fromRepos.flatMap(targetRepoIds))) {
+        try {
+          const { slug, items } = await deps.loadRepoItems(repoId)
+          const d = diffRepoItems(slug, latest[repoId], items)
+          if (d.latest !== undefined) latest[repoId] = d.latest
+          byRepo.set(repoId, d.events)
+        } catch {
+          // Not on GitHub, or gh can't see it: skip this repo.
+        }
+      }
+      for (const a of fromRepos) {
+        const t = event(a)!
+        found.push({ a, events: targetRepoIds(a).flatMap((id) => byRepo.get(id) ?? []).filter((e) => e.event === t.event && labelMatches(e, t.label)) })
+      }
+    }
     store.save()
-    const repoOf = new Map(prs.map((p) => [`${p.repo}#${p.number}`, p.repoId]))
-    for (const a of watching) {
-      if (a.trigger.kind !== 'github') continue
-      const event = a.trigger.event
-      const repos = targetRepoIds(a)
-      const mine = events.filter((e) => e.event === event && repos.includes(repoOf.get(`${e.repo}#${e.number}`) ?? ''))
-      if (!mine.length) continue
-      const reason = mine.length === 1 ? `${mine[0].repo}#${mine[0].number} ${mine[0].detail}` : `${mine.length} GitHub events`
-      await fire(a, reason, mine)
+
+    for (const { a, events } of found) {
+      if (!events.length) continue
+      const reason = events.length === 1 ? `${events[0].repo}#${events[0].number} ${events[0].detail}` : `${events.length} GitHub events`
+      await fire(a, reason, events)
     }
   } catch {
     // gh missing or offline: try again next poll.

@@ -32,6 +32,7 @@ describe('schedules', () => {
     expect(describeTrigger({ kind: 'hourly', hours: 1 })).toBe('Every hour')
     expect(describeTrigger({ kind: 'weekly', day: 1, at: '08:00' })).toBe('Mondays 08:00')
     expect(describeTrigger({ kind: 'github', event: 'review_requested' })).toBe('A PR asks for my review')
+    expect(describeTrigger({ kind: 'github', event: 'issue_opened', label: 'bug' })).toBe('A new issue is opened (bug)')
   })
 })
 
@@ -95,6 +96,7 @@ describe('runner', () => {
   const chats: Chat[] = []
   const sent: [string, string][] = []
   let prs: InboxPr[] = []
+  let items: Record<string, import('../src/shared/automations').RepoItem[]> = {}
   automations.init({
     chatFor: async (a) => {
       let c = chats.find((x) => x.automationId === a.id)
@@ -110,6 +112,7 @@ describe('runner', () => {
     },
     isRunning: (id) => chats.find((c) => c.id === id)?.status === 'running',
     loadPrs: async () => prs,
+    loadRepoItems: async (repoId) => ({ slug: repoId === 'r1' ? 'acme/web' : 'acme/api', items: items[repoId] ?? [] }),
     changed: () => {}
   })
 
@@ -164,6 +167,23 @@ describe('runner', () => {
     expect(sent.length).toBe(before + 1)
     expect(sent.at(-1)![1]).toContain('acme/web#2')
     expect(sent.at(-1)![1]).not.toContain('acme/api#5')
+    automations.remove(a.id)
+  })
+
+  it('fires on new issues in the target repos, only with the label', async () => {
+    const item = (number: number, labels: string[], isPr = false) => ({ number, title: `Item ${number}`, url: `https://github.com/acme/web/issues/${number}`, author: 'sam', labels, isPr })
+    const a = automations.save({ name: 'New bugs', prompt: 'Fix it', trigger: { kind: 'github', event: 'issue_opened', label: 'Bug' }, target: { kind: 'repo', repoId: 'r1' } })
+    items = { r1: [item(10, ['bug'])] }
+    await automations.pollGithub()
+    const before = sent.length
+    // 11 is a PR, 12 has no label, 13 is a new bug.
+    items = { r1: [item(13, ['bug', 'ui']), item(12, []), item(11, ['bug'], true), item(10, ['bug'])] }
+    await automations.pollGithub()
+    expect(sent.length).toBe(before + 1)
+    expect(sent.at(-1)![1]).toContain('acme/web#13')
+    expect(sent.at(-1)![1]).not.toContain('acme/web#12')
+    expect(sent.at(-1)![1]).not.toContain('acme/web#11')
+    expect(store.get().githubWatch!.latest!.r1).toBe(13)
     automations.remove(a.id)
   })
 })

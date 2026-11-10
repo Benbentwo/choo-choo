@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review, behind Settings › Experimental › Projects |
+| Status | Shipped behind Settings › Experimental › Projects (PR #80); new issue and new PR triggers in review |
 | Requested by | Ben, 2026-11-10 |
 | Last updated | 2026-11-10 |
 
@@ -34,7 +34,7 @@ Some work starts the same way every time: a new bug lands in the tracker, CI goe
 ![Editor](../media/automations/editor.png)
 
 - **When**: every few hours, every day, weekdays, once a week (at a time), on a GitHub event, or only by hand.
-- **GitHub events**: a PR asks for my review, CI fails on my PR, my PR gets a review (approved or changes requested). Checked every two minutes while the app is open, only for PRs in the target's repos.
+- **GitHub events**: a PR asks for my review, CI fails on my PR, my PR gets a review (approved or changes requested), a new issue is opened, a new PR is opened. The last two take an optional label, so only items with that label count. Checked every two minutes while the app is open, only in the target's repos.
 - **Results go to**:
   - a project: runs post in a thread named after the automation (it shows in the Threads panel), and their workspaces list under the project;
   - a repo: runs post in a chat on that repo's orchestrator, and their workspaces list under the repo.
@@ -55,7 +55,7 @@ Some work starts the same way every time: a new bug lands in the tracker, CI goe
 ## Design
 
 - Data in `state.json` (`src/shared/types.ts` `AppState`): `automations`, `automationRuns` (last 300), `automationLedger` (finding ids per automation, last 1000), `githubWatch` (where the PR inbox stood at the last poll). Types and pure helpers in `src/shared/automations.ts`: `nextRun`, `diffInbox`, `runPrompt`, `describeTrigger`.
-- `src/main/automations.ts` runs them: a 30 second tick for schedules, a two minute GitHub poll that reuses the PRs page query (`loadPrInbox`), and `runNow`. A run is a turn in the automation's chat on an orchestrator, started with `runPrompt`.
+- `src/main/automations.ts` runs them: a 30 second tick for schedules, a two minute GitHub poll, and `runNow`. Events about the person's PRs reuse the PRs page query (`loadPrInbox`, `diffInbox`). New issues and PRs come from each target repo's newest 30 open issues (`gh.recentIssues`, `diffRepoItems`), remembering the highest number seen per repo in `githubWatch.latest`. A run is a turn in the automation's chat on an orchestrator, started with `runPrompt`.
 - The chat: for a project, a thread on the project's orchestrator (`Chat.thread`, `Chat.automationId`); for a repo, a chat on the repo's orchestrator. The orchestrator is opened first so its own chat stays first.
 - `orchestrator.queryOptions` takes `AutomationHooks` for turns in an automation's chat. `start_workspace` then requires `finding_id`, and `claim` (synchronous, so parallel calls can't both take the last slot) checks the ledger and the cap before the workspace is made. `start_workspace` is auto-allowed in these chats; the cap stands in for the person's OK.
 - Workspaces a run opens get `automationId` and `threadId` (the run's chat), so automatic updates go back to that chat.
@@ -70,7 +70,7 @@ Some work starts the same way every time: a new bug lands in the tracker, CI goe
 
 ## Testing
 
-`test/automations.test.ts`: schedules, GitHub event diffing, the run prompt, the cap and ledger, skip while running, repo filtering, and `start_workspace` with a finding id. Screenshots above are from the built app with seeded state.
+`test/automations.test.ts`: schedules, GitHub event diffing, the run prompt, the cap and ledger, skip while running, repo filtering, new issues by label, and `start_workspace` with a finding id. Screenshots above are from the built app with seeded state.
 
 ## Rollout
 
@@ -82,6 +82,5 @@ Behind Settings › Experimental › Projects. With it off, the page is hidden a
 
 ## Future work
 
-- New issues or PRs in a repo, optionally with a label, as a GitHub trigger (one cheap ETag check per repo).
 - Cloud runs and webhooks, so automations run with the app closed and fire instantly.
 - A mark on sidebar rows opened by an automation.

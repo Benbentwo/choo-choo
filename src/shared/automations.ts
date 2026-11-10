@@ -7,7 +7,7 @@ import type { InboxPr } from './prInbox'
  */
 
 /** GitHub events the app can notice by polling, without a server. */
-export type GithubEvent = 'review_requested' | 'checks_failed' | 'reviewed'
+export type GithubEvent = 'review_requested' | 'checks_failed' | 'reviewed' | 'issue_opened' | 'pr_opened'
 
 export type AutomationTrigger =
   /** Every `hours` hours. */
@@ -16,7 +16,8 @@ export type AutomationTrigger =
   | { kind: 'daily'; at: string; weekdaysOnly?: boolean }
   /** Once a week on `day` (0 Sunday to 6 Saturday) at `at`. */
   | { kind: 'weekly'; day: number; at: string }
-  | { kind: 'github'; event: GithubEvent }
+  /** `label` only applies to issue_opened and pr_opened: only items with that label count. */
+  | { kind: 'github'; event: GithubEvent; label?: string }
   /** Only when the person presses Run now. */
   | { kind: 'manual' }
 
@@ -66,8 +67,13 @@ export const RUNS_LIMIT = 300
 export const GITHUB_EVENTS: { id: GithubEvent; label: string; hint: string }[] = [
   { id: 'review_requested', label: 'A PR asks for my review', hint: 'Someone requests your review on an open PR.' },
   { id: 'checks_failed', label: 'CI fails on my PR', hint: 'Checks go red on a PR you opened.' },
-  { id: 'reviewed', label: 'My PR gets a review', hint: 'Someone approves or requests changes on a PR you opened.' }
+  { id: 'reviewed', label: 'My PR gets a review', hint: 'Someone approves or requests changes on a PR you opened.' },
+  { id: 'issue_opened', label: 'A new issue is opened', hint: 'Anyone opens an issue in the repo, optionally only ones with a label.' },
+  { id: 'pr_opened', label: 'A new PR is opened', hint: 'Anyone opens a pull request in the repo, optionally only ones with a label.' }
 ]
+
+/** Events read from a repo's issue list rather than from the person's PR inbox. */
+export const isRepoEvent = (e: GithubEvent) => e === 'issue_opened' || e === 'pr_opened'
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -106,8 +112,10 @@ export function describeTrigger(t: AutomationTrigger): string {
       return `${t.weekdaysOnly ? 'Weekdays' : 'Every day'} ${t.at}`
     case 'weekly':
       return `${DAYS[t.day] ?? 'Monday'}s ${t.at}`
-    case 'github':
-      return GITHUB_EVENTS.find((e) => e.id === t.event)?.label ?? 'GitHub event'
+    case 'github': {
+      const base = GITHUB_EVENTS.find((e) => e.id === t.event)?.label ?? 'GitHub event'
+      return t.label && isRepoEvent(t.event) ? `${base} (${t.label})` : base
+    }
     case 'manual':
       return 'Only when run by hand'
   }
@@ -125,6 +133,8 @@ export interface PrEvent {
   detail: string
   /** Stable id: the same event never fires twice. */
   key: string
+  /** Labels on the issue or PR, for new-issue and new-PR events. */
+  labels?: string[]
 }
 
 /** What the poller remembers between polls, kept in state.json so a restart doesn't refire. */
@@ -135,7 +145,45 @@ export interface GithubWatchState {
   checks: Record<string, string | null>
   /** PR -> review decision, for PRs the person opened. */
   decision: Record<string, string | null>
+  /** Highest issue or PR number seen per repo id, for new-issue and new-PR events. */
+  latest?: Record<string, number>
 }
+
+/** An issue or PR from a repo's issue list, newest first. */
+export interface RepoItem {
+  number: number
+  title: string
+  url: string
+  author: string
+  labels: string[]
+  isPr: boolean
+}
+
+/**
+ * Items opened since the last look at a repo. With no last look, it only records the newest
+ * number, so a new automation doesn't fire for everything already open.
+ */
+export function diffRepoItems(repo: string, prevLatest: number | undefined, items: RepoItem[]): { events: PrEvent[]; latest: number | undefined } {
+  const top = items.reduce((m, i) => Math.max(m, i.number), prevLatest ?? 0)
+  if (prevLatest === undefined) return { events: [], latest: items.length ? top : undefined }
+  const events = items
+    .filter((i) => i.number > prevLatest)
+    .sort((a, b) => a.number - b.number)
+    .map((i) => ({
+      event: (i.isPr ? 'pr_opened' : 'issue_opened') as GithubEvent,
+      repo,
+      number: i.number,
+      title: i.title,
+      url: i.url,
+      detail: `${i.isPr ? 'PR' : 'issue'} opened by ${i.author}${i.labels.length ? ` [${i.labels.join(', ')}]` : ''}`,
+      key: `${i.isPr ? 'pr' : 'issue'}:${repo}#${i.number}`,
+      labels: i.labels
+    }))
+  return { events, latest: top }
+}
+
+/** Whether an event matches an automation's label filter (case-insensitive). */
+export const labelMatches = (e: PrEvent, label?: string) => !label?.trim() || !!e.labels?.some((l) => l.toLowerCase() === label.trim().toLowerCase())
 
 const prKey = (p: InboxPr) => `${p.repo}#${p.number}`
 
@@ -144,7 +192,7 @@ const prKey = (p: InboxPr) => `${p.repo}#${p.number}`
  * things stand, so turning on an automation doesn't fire for every PR already open.
  */
 export function diffInbox(prev: GithubWatchState | undefined, prs: InboxPr[]): { events: PrEvent[]; next: GithubWatchState } {
-  const next: GithubWatchState = { review: [], checks: {}, decision: {} }
+  const next: GithubWatchState = { review: [], checks: {}, decision: {}, ...(prev?.latest ? { latest: prev.latest } : {}) }
   const events: PrEvent[] = []
   for (const p of prs) {
     const k = prKey(p)

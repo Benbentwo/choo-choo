@@ -1487,6 +1487,13 @@ app.whenReady().then(async () => {
     send: (chat, text) => sendToChat(chat, text),
     isRunning: (id) => agent.isRunning(id),
     loadPrs: async () => (await loadPrInbox()).prs,
+    loadRepoItems: async (repoId) => {
+      const repo = store.get().repos.find((r) => r.id === repoId)
+      if (!repo || !existsSync(repo.path)) throw new Error('Repo not found')
+      const slug = githubSlug(await originUrl(repo.path).catch(() => ''))
+      if (!slug) throw new Error('Not a GitHub repo')
+      return { slug, items: await gh.recentIssues(repo.path) }
+    },
     changed: () => {
       store.save()
       send('state:changed')
