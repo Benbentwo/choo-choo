@@ -17,7 +17,7 @@ import { readScripts } from './scripts'
 import { listCommands } from './commands'
 import * as gh from './github'
 import { startPrWatch } from './prWatch'
-import { suggestName } from './naming'
+import { suggestName, suggestTitleFromChats } from './naming'
 import * as updates from './updater'
 import { registerDevFeedback } from './devFeedback'
 import * as conductor from './conductorImport'
@@ -839,7 +839,32 @@ function registerIpc() {
   h('ws:grep', (id: string, q: string) => git.grep(findWs(id).path, q))
   h('archive:cleanup', () => archive.cleanupArchives())
   h('ws:rename', (id: string, title: string) => {
-    findWs(id).title = title
+    const t = title.replace(/\s+/g, ' ').trim().slice(0, 80)
+    if (!t) return
+    const ws = findWs(id)
+    ws.title = t
+    // A name the person chose isn't replaced by the first-prompt naming.
+    ws.named = true
+    store.save()
+    send('state:changed')
+  })
+  h('ws:regenerateName', async (id: string) => {
+    const ws = findWs(id)
+    const chats = store.get().chats.filter((c) => c.workspaceId === id).map((c) => store.chatItems(c.id))
+    const title = await suggestTitleFromChats(chats)
+    if (!title) throw new Error('Nothing to name this workspace from yet. Send a message first, or rename it yourself.')
+    ws.title = title
+    ws.named = true
+    store.save()
+    send('state:changed')
+    return title
+  })
+  h('ws:reorder', (ids: string[]) => {
+    const all = store.get().workspaces
+    ids.forEach((id, i) => {
+      const ws = all.find((w) => w.id === id)
+      if (ws) ws.order = i
+    })
     store.save()
   })
   h('chat:create', (wsId: string) => newChat(wsId))

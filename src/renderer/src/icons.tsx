@@ -21,6 +21,12 @@ export const IconOrchestrator = (p: SVGProps<SVGSVGElement>) => (
 export const IconPlus = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M12 5v14M5 12h14" /></svg>
 )
+export const IconImport = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14" /></svg>
+)
+export const IconRefresh = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M19 12a7 7 0 1 1-2.05-4.95M19 5v4h-4" /></svg>
+)
 export const IconSearch = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
 )
@@ -53,6 +59,12 @@ export const IconPlay = (p: SVGProps<SVGSVGElement>) => (
 )
 export const IconX = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M6 6l12 12M18 6 6 18" /></svg>
+)
+export const IconCopy = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+)
+export const IconCheck = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M5 12.5l4.5 4.5L19 7" /></svg>
 )
 export const IconDots = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><circle cx="5" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="19" cy="12" r="1" fill="currentColor" /></svg>

@@ -38,6 +38,7 @@ To ship add-ons, put them in a git repo with a `.claude-plugin/marketplace.json`
 | `views` | Up to 8. `id`: lowercase letters, digits, dashes. `title`: at most 40 characters. `entry`: an `.html` file inside the add-on. |
 | `background` | Optional. An `.html` file that runs, unseen, for as long as the add-on is on. See [The background page](#the-background-page). |
 | `tools` | Optional, up to 24. Tools for the orchestrator. See [Tools for the orchestrator](#tools-for-the-orchestrator). |
+| `actions` | Optional, up to 16. Buttons in the app. See [Buttons in the app](#buttons-in-the-app). |
 
 Slots:
 
@@ -121,6 +122,71 @@ Tools need a `background` page and the `orchestrator:tools` permission. People s
 
 A handler gets the arguments and `{ repoIds }`, and can use everything `window.choo` gives the add-on. What it returns is the tool's answer: a string as it is, anything else as JSON, cut at 100,000 characters. What it throws is shown to the orchestrator as the tool's error. It has five minutes to answer.
 
+## Buttons in the app
+
+An add-on can put buttons in the app's own interface: at the top of a workspace beside its pull request button, on rows in the sidebar, and in the ⌘K palette. You list them in the manifest; the app draws them. Your code never runs in the app's interface, so a button is a title, one of the app's icons, and a place:
+
+```json
+{
+  "apiVersion": 1,
+  "permissions": ["workspaces:read", "storage", "ui:buttons"],
+  "views": [
+    { "id": "plans", "slot": "repo", "title": "Plans", "entry": "ui/board.html" },
+    { "id": "notes", "slot": "workspace", "title": "Notes", "entry": "ui/notes.html" }
+  ],
+  "background": "ui/background.html",
+  "actions": [
+    { "id": "import", "title": "Import a plan", "icon": "import", "place": "view-row", "view": "plans" },
+    { "id": "note", "title": "Write a note", "icon": "comment", "place": "workspace-row", "view": "notes" },
+    { "id": "looked", "title": "Note that you looked at this", "icon": "check", "place": "workspace-header" }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | Lowercase letters, digits, dashes. Unique in the add-on. |
+| `title` | The tooltip, and the button's name in the palette. At most 40 characters. The app adds "(your add-on's name add-on)". |
+| `icon` | One of `plus`, `import`, `refresh`, `search`, `play`, `check`, `branch`, `pr`, `file`, `folder`, `chart`, `comment`, `eye`, `tool`. |
+| `place` | Where it shows. See below. |
+| `view` | Optional. The id of one of your views. A press opens that view, then tells it. Without `view`, the press goes to your background page. |
+
+| `place` | Where it shows | A press comes with |
+|---|---|---|
+| `workspace-header` | At the top of a workspace's right panel, beside Review and the pull request button. | `repoId`, `workspaceId` |
+| `workspace-row` | On each workspace's row in the sidebar, when the pointer is over it. | `repoId`, `workspaceId` |
+| `project-row` | On each project's row in the sidebar, when the pointer is over it. | `repoId` |
+| `view-row` | On the sidebar row of the view named in `view`, always visible. The view must be in the `app` or `repo` slot. | `repoId` for a `repo` view |
+| `palette` | In the ⌘K palette, under Add-ons. | `repoId` and `workspaceId` of the open workspace, when there is one |
+
+Answer a press with `choo.actions.handle`, in the view the button opens or in the background page:
+
+```html
+<script src="/@choo/host.js"></script>
+<script>
+  // In ui/board.html. A press that opened the view is passed on too, even if it came before this line ran.
+  choo.actions.handle('import', ({ place, repoId }) => showImportForm())
+</script>
+```
+
+```html
+<script>
+  // In ui/background.html: a button with no view. Nothing is shown unless you show it.
+  choo.actions.handle('looked', async ({ workspaceId }) => {
+    await choo.store.set(`looked:${workspaceId}`, Date.now())
+  })
+</script>
+```
+
+Rules the app keeps:
+
+- Buttons need the `ui:buttons` permission. People see each button's title and place before they turn the add-on on.
+- At most 2 buttons per place, 8 in the palette. Other add-ons share the same places.
+- A button that opens a `repo` view only shows where there is a project, and one that opens a `workspace` view only where there is a workspace. A `project-row` button can't open a `workspace` view.
+- A button without `view` needs a `background` page.
+- Buttons never show on orchestrator chats or archived workspaces.
+- A button can't be hidden, disabled or renamed while the app runs, and it can't carry a count. If a press makes no sense where it happened, say so with `choo.ui.notify` or in the view you open.
+
 ## Theme
 
 The client sets CSS variables on `<html>` and keeps them current: `--choo-bg`, `--choo-panel`, `--choo-sidebar`, `--choo-raised`, `--choo-hover`, `--choo-line`, `--choo-fg`, `--choo-muted`, `--choo-faint`, `--choo-add`, `--choo-del`, `--choo-code`, `--choo-accent`, `--choo-font-sans`, `--choo-font-mono`. It also sets `color-scheme` and `data-choo-theme="dark|light"`. The same values are in `choo.theme` and `choo.dark`; `choo.on('theme', cb)` fires when they change.
@@ -137,12 +203,17 @@ The client sets CSS variables on `<html>` and keeps them current: `--choo-bg`, `
 | `choo.workspaces.message(workspaceId, message)` | `workspaces:message` | Sends a follow-up. Fails while the agent is running. |
 | `choo.workspaces.stop(workspaceId)` | `workspaces:stop` | Stops the workspace's running agents. |
 | `choo.prs.status(workspaceId)` | `prs:read` | `{ pr: { number, url, state, isDraft, title, reviewDecision, mergeState } \| null, checks: { total, passed, pending, failed: [{ name, link }] } }` |
+| `choo.files.list(repoId, dir?)` | `files:read` | Text files in the project's `.choo-choo/` folder (main checkout), up to 500: `{ path, size, modified }`, with `path` relative to `.choo-choo/`. |
+| `choo.files.read(repoId, path)` | `files:read` | `{ content, modified }`, or `null` when there is no such file. |
+| `choo.files.write(repoId, path, content)` / `delete(repoId, path)` | `files:write` | Creates, replaces or deletes a file under `.choo-choo/`. Only `.md`, `.json`, `.txt`, `.yaml` and `.yml`, at most 1 MB, no dotfiles, and never through a symlink. The change is an ordinary uncommitted edit in the project. |
 | `choo.store.get(key)` / `set(key, value)` / `delete(key)` / `keys()` | `storage` | Your add-on's own JSON storage on this Mac, 1 MB in total. |
+| `choo.actions.handle(id, fn)` | none | Answers presses of the button `id` from the manifest's `actions`: `fn({ place, repoId?, workspaceId? })`. See [Buttons in the app](#buttons-in-the-app). |
 | `choo.ui.openWorkspace(workspaceId)` | none | Shows the workspace in the app. |
 | `choo.ui.notify(title, body?, workspaceId?)` | `notify` | A system notification, prefixed with your add-on's name. Respects the person's notification setting. |
 | `net:<host>` | (a permission, not a method) | Lets views `fetch` and load images from `https://<host>`. `*.example.com` covers subdomains. |
 
 | `orchestrator:tools` | (a permission, not a method) | Lets the add-on list `tools` for the orchestrator. |
+| `ui:buttons` | (a permission, not a method) | Lets the add-on list `actions`: buttons in the app. |
 
 Events, each returning a function that stops listening:
 

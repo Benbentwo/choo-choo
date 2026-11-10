@@ -1,11 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 vi.mock('../src/main/claudeBinary', () => ({ claudeExecutable: () => '/nonexistent/claude' }))
-import { ADDON_API_VERSION, addonKey, addonState, checkCall, describePermission, isAddonRequest, isPinSource, missingGrants, netHost, parseManifest, parsePins, safeRelativePath, sourceKey, toolServerName, viewCsp, METHOD_PERMISSION } from '../src/shared/addons'
+import { ADDON_API_VERSION, actionTarget, addonActions, addonKey, addonState, checkCall, describePermission, isAddonRequest, isPinSource, missingGrants, netHost, parseManifest, parsePins, safeRelativePath, sourceKey, toolServerName, viewCsp, METHOD_PERMISSION, type AddonInfo } from '../src/shared/addons'
 import { availableFrom, contentType, describeAddons, pinStatus, readManifest, readPins, resolveFile, toolShape } from '../src/main/addons'
-import { call, MAX_RUNNING_PER_ADDON, transcriptEntries, type AddonHost, type Caller } from '../src/main/addonApi'
+import { backgroundPress, call, MAX_RUNNING_PER_ADDON, transcriptEntries, type AddonHost, type Caller } from '../src/main/addonApi'
 import { HOST_SCRIPT } from '../src/main/addonClient'
 import type { Chat, ChatItem, Repo, Workspace } from '../src/shared/types'
 
@@ -107,6 +108,116 @@ describe('background pages and orchestrator tools', () => {
   })
   it('names the tool server after the plugin', () => {
     expect(toolServerName('plan-board.acme-corp')).toBe('addon-plan-board')
+  })
+})
+
+describe('buttons an add-on puts in the app', () => {
+  const base = {
+    apiVersion: 1,
+    permissions: ['ui:buttons'],
+    views: [
+      { id: 'home', slot: 'app', title: 'Home', entry: 'ui/home.html' },
+      { id: 'plans', slot: 'repo', title: 'Plans', entry: 'ui/board.html' },
+      { id: 'task', slot: 'workspace', title: 'Plan', entry: 'ui/task.html' }
+    ],
+    background: 'ui/background.html'
+  }
+  const act = (o: object) => ({ id: 'a', title: 'A', icon: 'plus', place: 'workspace-header', ...o })
+  const errorsOf = (actions: unknown, more: object = {}) => parseManifest({ ...base, ...more, actions }).errors
+
+  it('accepts a button in every place', () => {
+    const actions = [
+      { id: 'import', title: 'Import a plan', icon: 'import', place: 'view-row', view: 'plans' },
+      { id: 'add', title: 'Add to a plan', icon: 'plus', place: 'workspace-header' },
+      { id: 'show', title: 'Show in its plan', icon: 'eye', place: 'workspace-row', view: 'task' },
+      { id: 'new', title: 'New plan', icon: 'plus', place: 'project-row', view: 'plans' },
+      { id: 'check', title: 'Check pull requests now', icon: 'refresh', place: 'palette' }
+    ]
+    const r = parseManifest({ ...base, actions })
+    expect(r.errors).toEqual([])
+    expect(r.manifest!.actions).toEqual(actions)
+    // No actions key at all when there are none, so older manifests read back as they were.
+    expect('actions' in parseManifest({ ...base, actions: [] }).manifest!).toBe(false)
+    expect(describePermission('ui:buttons').label).toBe('Add buttons to the app')
+  })
+  it('tells the author what is wrong with a button', () => {
+    expect(errorsOf('import')[0]).toMatch(/actions must be a list/)
+    expect(errorsOf([act({ id: 'Bad Id' })])[0]).toMatch(/lowercase letters/)
+    expect(errorsOf([act({}), act({})])[0]).toMatch(/both called a/)
+    expect(errorsOf([act({ title: '' })])[0]).toMatch(/needs a title/)
+    expect(errorsOf([act({ place: 'title-bar' })])[0]).toMatch(/place must be one of workspace-header/)
+    expect(errorsOf([act({ view: 'nope' })])[0]).toMatch(/one of this add-on's views/)
+    // A row button belongs to a view that has a row; a project's row has no workspace to show a tab beside.
+    expect(errorsOf([act({ place: 'view-row' })])[0]).toMatch(/needs the view of an app or repo view/)
+    expect(errorsOf([act({ place: 'view-row', view: 'task' })])[0]).toMatch(/needs the view of an app or repo view/)
+    expect(errorsOf([act({ place: 'project-row', view: 'task' })])[0]).toMatch(/has no workspace/)
+    // Someone has to hear about the press, and the person has to have been told about the buttons.
+    expect(errorsOf([act({})], { background: undefined })[0]).toMatch(/needs a background page/)
+    expect(errorsOf([act({ view: 'home' })], { background: undefined })).toEqual([])
+    expect(errorsOf([act({})], { permissions: [] })[0]).toMatch(/"ui:buttons" permission/)
+  })
+  it("never draws an add-on's own picture or markup, and keeps one add-on from crowding a place", () => {
+    expect(errorsOf([act({ icon: '<svg onload=alert(1)>' })])[0]).toMatch(/needs an icon, one of plus, import/)
+    expect(errorsOf([act({ icon: undefined })])[0]).toMatch(/needs an icon/)
+    const many = (n: number, place: string) => Array.from({ length: n }, (_, i) => act({ id: `a${i}`, place }))
+    expect(errorsOf(many(2, 'workspace-header'))).toEqual([])
+    expect(errorsOf(many(3, 'workspace-header'))[0]).toMatch(/At most 2 actions can go in workspace-header/)
+    expect(errorsOf(many(8, 'palette'))).toEqual([])
+    expect(errorsOf(many(9, 'palette'))[0]).toMatch(/At most 8 actions can go in palette/)
+    expect(errorsOf([...many(8, 'palette'), ...many(9, 'workspace-row').map((a, i) => ({ ...a, id: `b${i}` }))])[0]).toMatch(/at most 16 actions/)
+  })
+
+  const manifest = parseManifest({
+    ...base,
+    actions: [
+      act({ id: 'bg' }),
+      act({ id: 'app', view: 'home' }),
+      act({ id: 'repo', view: 'plans', place: 'project-row' }),
+      act({ id: 'tab', view: 'task', place: 'workspace-row' }),
+      act({ id: 'pal', view: 'task', place: 'palette' }),
+      act({ id: 'row', view: 'plans', place: 'view-row' })
+    ]
+  }).manifest!
+  const action = (id: string) => manifest.actions!.find((a) => a.id === id)!
+
+  it('sends a press to the view the button names, or to the background page', () => {
+    const at = { repoId: 'r1', workspaceId: 'w1' }
+    expect(actionTarget(manifest, action('bg'), at)).toEqual({ to: 'background' })
+    expect(actionTarget(manifest, action('app'), at)).toEqual({ to: 'page', viewId: 'home' })
+    expect(actionTarget(manifest, action('repo'), at)).toEqual({ to: 'page', viewId: 'plans', repoId: 'r1' })
+    expect(actionTarget(manifest, action('tab'), at)).toEqual({ to: 'tab', viewId: 'task', repoId: 'r1', workspaceId: 'w1' })
+    // Nowhere to open the view from here, so the button isn't offered.
+    expect(actionTarget(manifest, action('repo'), {})).toBeNull()
+    expect(actionTarget(manifest, action('tab'), { repoId: 'r1' })).toBeNull()
+    expect(actionTarget({ ...manifest, background: undefined }, action('bg'), at)).toBeNull()
+  })
+  it('lists the buttons for a place, only from add-ons that are on and were allowed buttons', () => {
+    const info = (key: string, more: Partial<AddonInfo> = {}): AddonInfo => ({ id: `${key}@acme`, key, name: key, description: '', version: '1', marketplace: 'acme', state: 'on', manifest, errors: [], granted: manifest.permissions, ...more })
+    const addons = [info('one'), info('off', { state: 'off' }), info('review', { state: 'review' }), info('plain', { manifest: { ...manifest, permissions: [] } }), info('none', { manifest: { ...manifest, actions: undefined } })]
+    const ids = (place: any, ctx: object, view?: { key: string; viewId: string }) => addonActions(addons, place, ctx, view).map((x) => `${x.addon.key}/${x.action.id}`)
+    expect(ids('workspace-header', { repoId: 'r1', workspaceId: 'w1' })).toEqual(['one/bg', 'one/app'])
+    expect(ids('project-row', { repoId: 'r1' })).toEqual(['one/repo'])
+    expect(ids('workspace-row', { repoId: 'r1', workspaceId: 'w1' })).toEqual(['one/tab'])
+    // The palette, with no workspace open: the button that needs one is left out.
+    expect(ids('palette', { repoId: 'r1', workspaceId: 'w1' })).toEqual(['one/pal'])
+    expect(ids('palette', {})).toEqual([])
+    // A view's row shows only its own buttons.
+    expect(ids('view-row', { repoId: 'r1' }, { key: 'one', viewId: 'plans' })).toEqual(['one/row'])
+    expect(ids('view-row', { repoId: 'r1' }, { key: 'one', viewId: 'home' })).toEqual([])
+    expect(ids('view-row', { repoId: 'r1' }, { key: 'other', viewId: 'plans' })).toEqual([])
+  })
+  it('tells the background page only about real presses of its own buttons, in places that exist', () => {
+    const { host } = fakeHost()
+    const addon = { manifest }
+    expect(backgroundPress(addon, 'bg', { repoId: 'r1', workspaceId: 'a' }, host)).toEqual({ id: 'bg', place: 'workspace-header', repoId: 'r1', workspaceId: 'a' })
+    // The project is filled in from the workspace.
+    expect(backgroundPress(addon, 'bg', { workspaceId: 'a' }, host)).toEqual({ id: 'bg', place: 'workspace-header', repoId: 'r1', workspaceId: 'a' })
+    for (const ctx of [{}, { repoId: 'r1' }, { workspaceId: 'nope' }, { workspaceId: 'old' }, { workspaceId: 'orch' }, { repoId: 'r2', workspaceId: 'a' }, { repoId: 'nope', workspaceId: 'a' }]) expect(backgroundPress(addon, 'bg', ctx, host)).toBeNull()
+    // Not a button of this add-on, one that opens a view, or an add-on that was never allowed buttons.
+    expect(backgroundPress(addon, 'nope', { workspaceId: 'a' }, host)).toBeNull()
+    expect(backgroundPress(addon, 'repo', { repoId: 'r1', workspaceId: 'a' }, host)).toBeNull()
+    expect(backgroundPress({ manifest: { ...manifest, permissions: [] } }, 'bg', { workspaceId: 'a' }, host)).toBeNull()
+    expect(backgroundPress({ manifest: undefined }, 'bg', { workspaceId: 'a' }, host)).toBeNull()
   })
 })
 
@@ -356,6 +467,40 @@ describe('serving view files', () => {
     expect(heard).toEqual(['plan', 'w1'])
     vi.useRealTimers()
   })
+  it('the client script keeps a button press until the page says who answers it', async () => {
+    const listeners: ((e: any) => void)[] = []
+    const parent = { postMessage: () => {} }
+    const win: any = { parent, addEventListener: (_: string, cb: (e: any) => void) => listeners.push(cb) }
+    const doc = { documentElement: { style: { setProperty: () => {}, colorScheme: '' }, dataset: {} } }
+    new Function('window', 'document', HOST_SCRIPT)(win, doc)
+    const say = (data: object) => listeners[0]({ source: parent, data: { choo: 1, ...data } })
+    const tick = () => new Promise((r) => setTimeout(r))
+
+    // The press that opened the view arrives before the page's own script has run.
+    say({ type: 'event', name: 'action', id: 'import', place: 'view-row', repoId: 'r1' })
+    const heard: unknown[] = []
+    win.choo.actions.handle('import', (ctx: unknown) => heard.push(['import', ctx]))
+    win.choo.actions.handle('add', (ctx: unknown) => heard.push(['add', ctx]))
+    await tick()
+    expect(heard).toEqual([['import', { place: 'view-row', repoId: 'r1', workspaceId: undefined }]])
+    say({ type: 'event', name: 'action', id: 'add', place: 'workspace-header', repoId: 'r1', workspaceId: 'w1' })
+    // Not from anything but the app window.
+    listeners[0]({ source: {}, data: { choo: 1, type: 'event', name: 'action', id: 'add', place: 'palette' } })
+    await tick()
+    expect(heard).toHaveLength(2)
+    expect(heard[1]).toEqual(['add', { place: 'workspace-header', repoId: 'r1', workspaceId: 'w1' }])
+    // A handler that throws doesn't take the page down, and the next press still arrives.
+    win.choo.actions.handle('boom', () => {
+      throw new Error('no')
+    })
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    say({ type: 'event', name: 'action', id: 'boom', place: 'palette' })
+    say({ type: 'event', name: 'action', id: 'add', place: 'palette' })
+    await tick()
+    expect(quiet).toHaveBeenCalledTimes(1)
+    quiet.mockRestore()
+    expect(heard).toHaveLength(3)
+  })
 })
 
 function fakeHost() {
@@ -503,6 +648,69 @@ describe('host API', () => {
     await call(host, caller(), 'store.get', { key: 'plan' })
     await call(host, caller(), 'store.delete', { key: 'plan' })
     expect(changes).toEqual(['board.acme:plan', 'board.acme:plan'])
+  })
+  it("reads and writes text files in a project's .choo-choo folder", async () => {
+    const { host } = fakeHost()
+    const dir = mkdtempSync(join(tmpdir(), 'choo-project-'))
+    host.repos()[0].path = dir
+    const c = caller()
+    expect(await call(host, c, 'files.list', { repoId: 'r1' })).toEqual([])
+    expect(await call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md' })).toBeNull()
+    await call(host, c, 'files.write', { repoId: 'r1', path: 'plans/q3.plan.md', content: '# Q3\n' })
+    expect(readFileSync(join(dir, '.choo-choo', 'plans', 'q3.plan.md'), 'utf8')).toBe('# Q3\n')
+    expect(((await call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md' })) as { content: string }).content).toBe('# Q3\n')
+    await call(host, c, 'files.write', { repoId: 'r1', path: 'notes.json', content: '{}' })
+    writeFileSync(join(dir, '.choo-choo', 'plans', '.hidden.md'), 'x')
+    writeFileSync(join(dir, '.choo-choo', 'plans', 'run.sh'), 'x')
+    expect(((await call(host, c, 'files.list', { repoId: 'r1' })) as { path: string }[]).map((f) => f.path)).toEqual(['notes.json', 'plans/q3.plan.md'])
+    expect(((await call(host, c, 'files.list', { repoId: 'r1', dir: 'plans' })) as { path: string }[]).map((f) => f.path)).toEqual(['plans/q3.plan.md'])
+    await call(host, c, 'files.delete', { repoId: 'r1', path: 'plans/q3.plan.md' })
+    expect(await call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md' })).toBeNull()
+    // Leaves no temp files behind.
+    expect(readdirSync(join(dir, '.choo-choo', 'plans')).sort()).toEqual(['.hidden.md', 'run.sh'])
+  })
+  it('keeps add-on files inside .choo-choo, as text, and never follows a link out', async () => {
+    const { host } = fakeHost()
+    const dir = mkdtempSync(join(tmpdir(), 'choo-project-'))
+    const outside = mkdtempSync(join(tmpdir(), 'choo-outside-'))
+    writeFileSync(join(outside, 'secret.md'), 'secret')
+    host.repos()[0].path = dir
+    const c = caller()
+    const write = (path: string) => call(host, c, 'files.write', { repoId: 'r1', path, content: 'x' })
+    for (const path of ['../x.md', '/etc/x.md', 'a/../../x.md', '.git/config.md', 'plans/.env.md']) await expect(write(path), path).rejects.toThrow(/isn't a path inside/)
+    for (const path of ['run.sh', 'plans/hook', 'plans/a.js', 'x.md.exe']) await expect(write(path), path).rejects.toThrow(/can only keep/)
+    await expect(call(host, c, 'files.write', { repoId: 'r1', path: 'big.md', content: 'x'.repeat(1024 * 1024 + 1) })).rejects.toThrow(/over 1 MB/)
+    await expect(call(host, c, 'files.read', { repoId: 'r2', path: 'a.md' })).rejects.toThrow(/No project/)
+    await expect(call(host, caller(['storage']), 'files.read', { repoId: 'r1', path: 'a.md' })).rejects.toThrow(/"files:read" permission/)
+    await expect(call(host, caller(['files:read']), 'files.write', { repoId: 'r1', path: 'a.md', content: 'x' })).rejects.toThrow(/"files:write" permission/)
+
+    // A folder that is a link to somewhere else.
+    mkdirSync(join(dir, '.choo-choo'))
+    symlinkSync(outside, join(dir, '.choo-choo', 'plans'))
+    await expect(write('plans/new.md')).rejects.toThrow(/outside the project through a link/)
+    await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'plans/secret.md' })).rejects.toThrow(/through a link/)
+    await expect(call(host, c, 'files.list', { repoId: 'r1', dir: 'plans' })).rejects.toThrow(/through a link/)
+    expect(await call(host, c, 'files.list', { repoId: 'r1' })).toEqual([])
+    // A file that is a link to somewhere else.
+    symlinkSync(join(outside, 'secret.md'), join(dir, '.choo-choo', 'link.md'))
+    await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'link.md' })).rejects.toThrow(/through a link/)
+    await expect(write('link.md')).rejects.toThrow(/through a link/)
+    await expect(call(host, c, 'files.delete', { repoId: 'r1', path: 'link.md' })).rejects.toThrow(/through a link/)
+    expect(readFileSync(join(outside, 'secret.md'), 'utf8')).toBe('secret')
+    expect(readdirSync(outside)).toEqual(['secret.md'])
+    // A pipe left under a text file's name is refused, not waited on.
+    try {
+      execFileSync('mkfifo', [join(dir, '.choo-choo', 'pipe.md')])
+      await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'pipe.md' })).rejects.toThrow(/isn't a file/)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+    }
+    // The whole .choo-choo folder as a link.
+    const linked = mkdtempSync(join(tmpdir(), 'choo-project-'))
+    symlinkSync(outside, join(linked, '.choo-choo'))
+    host.repos()[0].path = linked
+    await expect(write('new.md')).rejects.toThrow(/through a link/)
+    expect(readdirSync(outside)).toEqual(['secret.md'])
   })
   it('opens workspaces and notifies under its own name', async () => {
     const { host, state } = fakeHost()

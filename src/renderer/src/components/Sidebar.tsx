@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Repo, Workspace } from '@shared/types'
+import { visiblePrs } from '@shared/prInbox'
+import { moveId, sortWorkspaces, type WorkspaceSort } from '@shared/sidebarOrder'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
-import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage } from '../store'
+import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, reportError } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
 import { IconAddon, IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconPR, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
 import { Stats } from './Stats'
 import { BrandMark } from './BrandMark'
 import { UpdateBanners } from './Updates'
-import { addonViews } from './Addons'
+import { AddonActions, addonViews } from './Addons'
 
 export function Sidebar() {
   const s = useStore()
@@ -46,8 +48,32 @@ export function Sidebar() {
     }
   }
   const visible = s.repos.filter((r) => (showHidden || !r.hidden) && !view.filteredOut.includes(r.id))
-  const sortWs = (list: Workspace[]) =>
-    [...list].sort((a, b) => (view.sort === 'name' ? a.title.localeCompare(b.title) : view.sort === 'oldest' ? a.createdAt - b.createdAt : b.createdAt - a.createdAt))
+  const sortWs = (list: Workspace[]) => sortWorkspaces(list, view.sort)
+  // Dragging a workspace sorts by hand from then on. `list` is the ids shown in the same group, in order.
+  const [wsDrag, setWsDrag] = useState<WsDrag | null>(null)
+  const dropWorkspace = (list: string[]) => {
+    if (!wsDrag?.over) return
+    const ids = moveId(list, wsDrag.id, wsDrag.over, wsDrag.after)
+    if (ids === list) return
+    const pos = new Map(ids.map((id, i) => [id, i]))
+    useStore.getState().set({ workspaces: useStore.getState().workspaces.map((w) => (pos.has(w.id) ? { ...w, order: pos.get(w.id) } : w)) })
+    if (view.sort !== 'manual') updateView({ sort: 'manual' })
+    void window.api.reorderWorkspaces(ids).catch(reportError)
+  }
+  const wsDragProps = (w: Workspace, list: string[]): WsDragProps | undefined =>
+    w.orchestrator
+      ? undefined
+      : {
+          drag: wsDrag,
+          start: () => setWsDrag({ id: w.id, list: list.join(), over: null, after: false }),
+          over: (after) => {
+            if (!wsDrag || wsDrag.list !== list.join() || wsDrag.id === w.id) return false
+            if (wsDrag.over !== w.id || wsDrag.after !== after) setWsDrag({ ...wsDrag, over: w.id, after })
+            return true
+          },
+          drop: () => dropWorkspace(list),
+          end: () => setWsDrag(null)
+        }
   const viewItems: MenuItem[] = [
     {
       label: 'Group by',
@@ -72,7 +98,8 @@ export function Sidebar() {
       submenu: [
         { label: 'Newest first', checked: view.sort === 'newest', onClick: () => updateView({ sort: 'newest' }) },
         { label: 'Oldest first', checked: view.sort === 'oldest', onClick: () => updateView({ sort: 'oldest' }) },
-        { label: 'Name', checked: view.sort === 'name', onClick: () => updateView({ sort: 'name' }) }
+        { label: 'Name', checked: view.sort === 'name', onClick: () => updateView({ sort: 'name' }) },
+        { label: 'Manual (drag to sort)', checked: view.sort === 'manual', onClick: () => updateView({ sort: 'manual' }) }
       ]
     },
     { kind: 'sep' },
@@ -80,7 +107,7 @@ export function Sidebar() {
     { label: 'New project group…', icon: <IconOrchestrator />, onClick: () => editGroup(null) }
   ]
   const hiddenCount = s.repos.filter((r) => r.hidden).length
-  const toReview = s.prInbox?.prs.filter((p) => p.roles.includes('review')).length ?? 0
+  const toReview = visiblePrs(s.prInbox?.prs ?? [], s.settings.prsHidden).filter((p) => p.roles.includes('review')).length
   const appViews = addonViews(s.addons, 'app')
   const repoViews = addonViews(s.addons, 'repo')
 
@@ -119,6 +146,7 @@ export function Sidebar() {
             title={`From the ${addon.name} add-on`}
             active={s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && !s.addonPage.repoId}
             onClick={() => openAddonPage({ key: addon.key, viewId: view.id })}
+            actions={<AddonActions place="view-row" view={{ key: addon.key, viewId: view.id }} />}
           />
         ))}
       </nav>
@@ -175,13 +203,16 @@ export function Sidebar() {
           </button>
         )}
         {view.group === 'none' &&
-          sortWs(s.workspaces.filter((w) => !w.archived && !w.orchestrator && visible.some((r) => r.id === w.repoId))).map((w) => (
-            <WsRow key={w.id} w={w} repoName={s.repos.find((r) => r.id === w.repoId)?.name} />
-          ))}
+          (() => {
+            const list = sortWs(s.workspaces.filter((w) => !w.archived && !w.orchestrator && visible.some((r) => r.id === w.repoId)))
+            const ids = list.map((w) => w.id)
+            return list.map((w) => <WsRow key={w.id} w={w} repoName={s.repos.find((r) => r.id === w.repoId)?.name} dnd={wsDragProps(w, ids)} />)
+          })()}
         {view.group === 'project' && visible.map((repo) => {
           // The orchestrator, if open, sits at the top of its repo.
           const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId)).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
           const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived && !w.orchestrator).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
+          const wsIds = wss.filter((w) => !w.orchestrator).map((w) => w.id)
           return (
             <div
               key={repo.id}
@@ -218,6 +249,7 @@ export function Sidebar() {
                 >
                   <IconDots />
                 </button>
+                <AddonActions place="project-row" repoId={repo.id} className="invisible p-1 text-muted group-hover:visible hover:bg-raised focus-visible:visible" />
                 <button className="rounded p-1 text-muted hover:bg-raised hover:text-fg" title="Orchestrator: tell it what you want and it runs workspaces for you" onClick={() => void openOrchestrator(repo.id)}>
                   <IconOrchestrator />
                 </button>
@@ -237,11 +269,12 @@ export function Sidebar() {
                   >
                     <IconAddon className="shrink-0" />
                     <span className="flex-1 truncate">{view.title}</span>
+                    <AddonActions place="view-row" repoId={repo.id} view={{ key: addon.key, viewId: view.id }} />
                   </button>
                 )
               })}
               {wss.map((w) => (
-                <WsRow key={w.id} w={w} />
+                <WsRow key={w.id} w={w} dnd={wsDragProps(w, wsIds)} />
               ))}
               {archived.length > 0 && (
                 <button
@@ -285,20 +318,55 @@ export function Sidebar() {
   )
 }
 
-function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; badge?: number; onClick: () => void }) {
+function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; badge?: number; actions?: React.ReactNode; onClick: () => void }) {
   return (
     <button onClick={p.onClick} title={p.title} className={`flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left ${p.active ? 'bg-raised' : 'hover:bg-hover'}`}>
       <span className="text-muted">{p.icon}</span>
       <span className="flex-1">{p.label}</span>
       {p.hint && <span className="text-[11px] text-faint">{p.hint}</span>}
       {!!p.badge && <span className="rounded-full bg-accent/20 px-1.5 text-[11px] font-medium text-accent">{p.badge}</span>}
+      {p.actions}
     </button>
   )
 }
 
-function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
+type WsDrag = { id: string; list: string; over: string | null; after: boolean }
+type WsDragProps = { drag: WsDrag | null; start: () => void; over: (after: boolean) => boolean; drop: () => void; end: () => void }
+
+function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: WsDragProps }) {
   const s = useStore()
   const hover = useHoverCard()
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [naming, setNaming] = useState(false)
+  const rename = (title: string) => {
+    setEditing(false)
+    const t = title.replace(/\s+/g, ' ').trim()
+    if (!t || t === w.title) return
+    useStore.getState().set({ workspaces: useStore.getState().workspaces.map((x) => (x.id === w.id ? { ...x, title: t, named: true } : x)) })
+    void window.api.renameWorkspace(w.id, t).catch(reportError)
+  }
+  const regenerate = async () => {
+    setNaming(true)
+    try {
+      const title = await window.api.regenerateWorkspaceName(w.id)
+      useStore.getState().set({ workspaces: useStore.getState().workspaces.map((x) => (x.id === w.id ? { ...x, title, named: true } : x)) })
+    } catch (e) {
+      reportError(e)
+    } finally {
+      setNaming(false)
+    }
+  }
+  const menuItems: MenuItem[] = [
+    { label: 'Rename…', onClick: () => setEditing(true) },
+    { label: 'Regenerate name', hint: 'from the chat', onClick: () => void regenerate() },
+    { kind: 'sep' },
+    { label: 'Reveal in Finder', onClick: () => void window.api.revealInFinder(w.path) },
+    { label: 'Copy branch name', onClick: () => void navigator.clipboard.writeText(w.branch) },
+    { kind: 'sep' },
+    { label: 'Archive workspace', onClick: () => void archiveWorkspace(w.id) }
+  ]
+  const dropLine = dnd?.drag?.over === w.id ? (dnd.drag.after ? 'shadow-[0_2px_0_var(--color-accent)]' : 'shadow-[0_-2px_0_var(--color-accent)]') : ''
   const running = s.chats.some((c) => c.workspaceId === w.id && c.status === 'running')
   const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
   const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
@@ -308,15 +376,65 @@ function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
       role="button"
       tabIndex={0}
       {...hover.rowProps}
+      draggable={!!dnd && !editing}
+      onDragStart={(e) => {
+        if (!dnd) return
+        hover.close()
+        e.dataTransfer.effectAllowed = 'move'
+        dnd.start()
+      }}
+      onDragOver={(e) => {
+        if (!dnd?.drag) return
+        const r = e.currentTarget.getBoundingClientRect()
+        if (dnd.over(e.clientY > r.top + r.height / 2)) {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      }}
+      onDrop={(e) => {
+        if (!dnd?.drag) return
+        e.preventDefault()
+        e.stopPropagation()
+        dnd.drop()
+        dnd.end()
+      }}
+      onDragEnd={() => dnd?.end()}
+      onContextMenu={(e) => {
+        if (w.orchestrator) return
+        e.preventDefault()
+        hover.close()
+        setMenuAt({ x: e.clientX, y: e.clientY })
+      }}
       onClick={() => {
+        if (editing) return
         hover.close()
         s.selectWorkspace(w.id)
       }}
-      onKeyDown={(e) => e.key === 'Enter' && s.selectWorkspace(w.id)}
-      className={`group flex h-9 w-full cursor-default items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+      onKeyDown={(e) => !editing && e.key === 'Enter' && s.selectWorkspace(w.id)}
+      className={`group flex h-9 w-full cursor-default items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'} ${dropLine} ${dnd?.drag?.id === w.id ? 'opacity-50' : ''}`}
     >
-      {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : <IconBranch className="shrink-0" />}
-      <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''}`}>{w.title}</span>
+      {running || naming ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : <IconBranch className="shrink-0" />}
+      {editing ? (
+        <input
+          autoFocus
+          defaultValue={w.title}
+          maxLength={80}
+          aria-label="Workspace name"
+          onFocus={(e) => e.currentTarget.select()}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') rename(e.currentTarget.value)
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          onBlur={(e) => rename(e.currentTarget.value)}
+          className="min-w-0 flex-1 rounded border border-line bg-bg px-1 text-fg outline-none focus:border-accent"
+        />
+      ) : (
+        <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''} ${naming ? 'text-faint' : ''}`} onDoubleClick={() => !w.orchestrator && setEditing(true)}>
+          {w.title}
+        </span>
+      )}
       {repoName && <span className="shrink-0 truncate text-[11px] text-faint">{repoName}</span>}
       {asking ? (
         <span className="anim-glow shrink-0 rounded bg-accent/20 px-1 text-[10px] text-accent">needs you</span>
@@ -330,6 +448,7 @@ function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
           <span className="group-hover:hidden">
             <Stats stats={s.stats[w.id]} />
           </span>
+          <AddonActions place="workspace-row" repoId={w.repoId} workspaceId={w.id} className="hidden p-0.5 text-faint group-hover:block hover:bg-raised" before={hover.close} />
           <button
             className="hidden shrink-0 rounded p-0.5 text-faint group-hover:block hover:bg-raised hover:text-fg"
             title="Archive workspace"
@@ -343,12 +462,18 @@ function WsRow({ w, repoName }: { w: Workspace; repoName?: string }) {
           </button>
         </>
       )}
-      {hover.rect && !w.orchestrator && <WorkspacePreviewCard ws={w} rect={hover.rect} cardProps={hover.cardProps} onClose={hover.close} />}
+      {hover.rect && !w.orchestrator && !editing && !menuAt && !dnd?.drag && <WorkspacePreviewCard ws={w} rect={hover.rect} cardProps={hover.cardProps} onClose={hover.close} />}
+      {/* React events bubble out of the portal; keep menu clicks from also selecting the row. */}
+      {menuAt && (
+        <span onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+          <Menu anchor={null} at={menuAt} items={menuItems} onClose={() => setMenuAt(null)} />
+        </span>
+      )}
     </div>
   )
 }
 
-type View = { group: 'project' | 'none'; sort: 'newest' | 'oldest' | 'name'; filteredOut: string[] }
+type View = { group: 'project' | 'none'; sort: WorkspaceSort; filteredOut: string[] }
 const VIEW_KEY = 'sidebar-view'
 function loadView(): View {
   const d: View = { group: 'project', sort: 'newest', filteredOut: [] }

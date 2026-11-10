@@ -9,7 +9,7 @@ import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
 import { fmt } from './Stats'
 import { MergedActions } from './Reflect'
 import { UsageGraphs } from './UsageGraphs'
-import { AddonFrame, addonTabId, addonViews } from './Addons'
+import { AddonActions, AddonFrame, addonTabId, addonViews } from './Addons'
 
 const TABS: { id: RightTab; label: string }[] = [
   { id: 'artifacts', label: 'Artifacts' },
@@ -46,6 +46,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
         >
           <IconEye /> Review
         </button>
+        {!ws.orchestrator && <AddonActions place="workspace-header" repoId={ws.repoId} workspaceId={ws.id} className="rounded-md border border-line p-[7px] text-muted hover:bg-hover" />}
         <PrButton ws={ws} hasChanges={changes.length > 0} />
         <MergedActions ws={ws} />
       </div>

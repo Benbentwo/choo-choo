@@ -2,13 +2,20 @@
   "apiVersion": 1,
   "name": "Workspace board",
   "description": "Every workspace as a card, in columns by what it's doing. Start new ones from the board, keep notes per workspace, and let the orchestrator read and write those notes.",
-  "permissions": ["repos:read", "workspaces:read", "workspaces:start", "storage", "orchestrator:tools"],
+  "permissions": ["repos:read", "workspaces:read", "workspaces:start", "storage", "orchestrator:tools", "ui:buttons"],
   "views": [
     { "id": "board", "slot": "app", "title": "Board", "entry": "ui/board.html" },
     { "id": "repo-board", "slot": "repo", "title": "Board", "entry": "ui/board.html" },
     { "id": "notes", "slot": "workspace", "title": "Notes", "entry": "ui/notes.html" }
   ],
   "background": "ui/background.html",
+  "actions": [
+    { "id": "new-task", "title": "Start a workspace from the board", "icon": "plus", "place": "view-row", "view": "repo-board" },
+    { "id": "looked", "title": "Note that you looked at this", "icon": "check", "place": "workspace-header" },
+    { "id": "note", "title": "Write a note", "icon": "comment", "place": "workspace-row", "view": "notes" },
+    { "id": "project-board", "title": "Show this project's board", "icon": "chart", "place": "project-row", "view": "repo-board" },
+    { "id": "open-board", "title": "Open the workspace board", "icon": "chart", "place": "palette", "view": "board" }
+  ],
   "tools": [
     {
       "name": "board_summary",

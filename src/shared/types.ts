@@ -2,7 +2,7 @@ import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
 import type { PrInbox } from './prInbox'
-import type { AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
+import type { AddonActionContext, AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
 export interface Repo {
   id: string
   name: string
@@ -95,8 +95,10 @@ export interface Workspace {
   baseRef: string
   path: string
   title: string
-  /** Set once the first prompt has named the workspace. */
+  /** Set once the first prompt has named the workspace, or the person renamed it. */
   named?: boolean
+  /** Position when the sidebar is sorted by hand (lower first). Missing for workspaces never dragged. */
+  order?: number
   createdAt: number
   archived?: boolean
   archivedAt?: number
@@ -377,6 +379,8 @@ export interface Settings extends AppearanceSettings {
   defaultPermission: Permission
   /** A message sent while Claude is working: steer folds it into the running turn, queue sends it after. */
   whileRunning?: 'steer' | 'queue'
+  /** Orgs ("owner") or repos ("owner/repo") left off the PRs page on this machine. */
+  prsHidden?: string[]
   /** Spend cap per message for new chats, in dollars. 0 means no cap. */
   defaultBudgetUsd?: number
   /** Branch prefix; empty uses the GitHub user or git user.name. */
@@ -415,7 +419,7 @@ export interface Extras {
   agents: Record<ExtraAgentId, boolean>
   /** A second model reviews each finished turn and gives advice. */
   advisor: boolean
-  advisorModel: 'opus' | 'sonnet' | 'haiku'
+  advisorModel: 'fable' | 'opus' | 'sonnet' | 'haiku'
   /** Send blocker-level advice back to the agent automatically. */
   advisorSteer: boolean
   /** Have the reviewer check the changes when you click Create PR. Needs the reviewer agent. */
@@ -750,6 +754,10 @@ export interface Api {
   /** Deletes archived worktrees past the retention period now. Returns how many. */
   cleanupArchives(): Promise<number>
   renameWorkspace(workspaceId: string, title: string): Promise<void>
+  /** Asks a small model for a new title from the workspace's chats so far. Returns the new title. */
+  regenerateWorkspaceName(workspaceId: string): Promise<string>
+  /** Saves a hand-sorted sidebar order: each id's position in the list. */
+  reorderWorkspaces(ids: string[]): Promise<void>
   createChat(workspaceId: string): Promise<Chat>
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
@@ -794,6 +802,8 @@ export interface Api {
   addonPins(): Promise<PinStatus[]>
   /** Adds the sources a project's choo-choo.json names and installs one add-on it pins. */
   addonInstallPinned(repoId: string, id: string, acceptSha?: string): Promise<PluginInstallResult>
+  /** A button an add-on put in the app was pressed, and the press is for its background page. */
+  addonAction(key: string, actionId: string, context: AddonActionContext): Promise<void>
   /** Pings for add-on frames: a pull request changed, an add-on's data changed. */
   onAddonEvent(cb: (e: AddonAppEvent) => void): () => void
   /** Background window only: the orchestrator is calling an add-on's tool. */

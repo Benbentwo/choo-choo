@@ -451,7 +451,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
           )}
           {extras.advisor && (
             <button
-              className={`rounded px-1.5 py-1 ${advisorOn ? 'bg-violet-500/15 text-violet-300' : 'text-faint hover:bg-hover hover:text-fg'}`}
+              className={`rounded px-1.5 py-1 ${advisorOn ? 'bg-advisor/15 text-advisor' : 'text-faint hover:bg-hover hover:text-fg'}`}
               title={advisorOn ? 'Advisor on: a second model reviews each turn. Click to turn off for this chat.' : 'Advisor off for this chat. Click to turn on.'}
               onClick={() => void update({ advisor: !advisorOn })}
             >

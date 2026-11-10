@@ -24,6 +24,35 @@ export interface AddonView {
   entry: string
 }
 
+/** Icons a button can use. The app draws them, so an add-on's button looks like the app's own. */
+export const ACTION_ICONS = ['plus', 'import', 'refresh', 'search', 'play', 'check', 'branch', 'pr', 'file', 'folder', 'chart', 'comment', 'eye', 'tool'] as const
+export type AddonActionIcon = (typeof ACTION_ICONS)[number]
+
+/**
+ * Where a button shows: the top of a workspace beside its pull request button, a workspace's row
+ * or a project's row in the sidebar, the row of one of the add-on's own views, or the ⌘K palette.
+ */
+export const ACTION_PLACES = ['workspace-header', 'workspace-row', 'project-row', 'view-row', 'palette'] as const
+export type AddonActionPlace = (typeof ACTION_PLACES)[number]
+
+/** How many buttons one add-on may put in one place, so no add-on can crowd the app. */
+export const maxActions = (place: AddonActionPlace) => (place === 'palette' ? 8 : 2)
+
+/**
+ * A button the add-on asks the app to show. The app draws it from these words and its own icons;
+ * nothing of the add-on's runs in the app's interface. A press goes to `view` when there is one
+ * (the app opens it first), otherwise to the add-on's background page.
+ */
+export interface AddonAction {
+  id: string
+  /** The button's tooltip, and its name in the palette. */
+  title: string
+  icon: AddonActionIcon
+  place: AddonActionPlace
+  /** The id of one of the add-on's views to open. */
+  view?: string
+}
+
 /** A tool the add-on gives the orchestrator. Its background page answers the calls. */
 export interface AddonTool {
   name: string
@@ -44,6 +73,8 @@ export interface AddonManifest {
   /** HTML file that runs, unseen, for as long as the add-on is on. */
   background?: string
   tools: AddonTool[]
+  /** Buttons in the app. Left out when there are none. */
+  actions?: AddonAction[]
 }
 
 /** The view id a background page gets in its context. */
@@ -118,13 +149,18 @@ const PERMISSIONS: Record<string, PermissionText> = {
   'workspaces:message': { label: 'Message agents', detail: 'Send a follow-up to the agent in an existing workspace.' },
   'workspaces:stop': { label: 'Stop agents', detail: "Stop a workspace's running agent." },
   'prs:read': { label: 'See pull requests and checks', detail: "Each workspace's pull request, its state and its CI checks." },
+  'files:read': { label: "Read your projects' .choo-choo folders", detail: "Text files in the .choo-choo folder of each project's main checkout, such as plans. Nothing else in the project." },
+  'files:write': { label: "Change your projects' .choo-choo folders", detail: "Create, change and delete text files in the .choo-choo folder of each project's main checkout. They show up in git like any other change." },
   storage: { label: 'Keep its own data on this Mac', detail: 'Up to 1 MB, only readable by this add-on.' },
   notify: { label: 'Show notifications', detail: 'System notifications with a title and a line of text.' },
-  'orchestrator:tools': { label: 'Give the orchestrator tools', detail: 'The orchestrator can call the tools this add-on lists, and acts on what they answer.' }
+  'orchestrator:tools': { label: 'Give the orchestrator tools', detail: 'The orchestrator can call the tools this add-on lists, and acts on what they answer.' },
+  'ui:buttons': { label: 'Add buttons to the app', detail: 'Buttons on workspaces, projects and in the command palette. Each one says in its tooltip that it comes from this add-on, and pressing it tells the add-on which workspace or project you were on.' }
 }
 
 /** Needed by an add-on that lists tools. No host API method asks for it. */
 export const TOOLS_PERMISSION = 'orchestrator:tools'
+/** Needed by an add-on that lists actions. No host API method asks for it. */
+export const ACTIONS_PERMISSION = 'ui:buttons'
 
 const HOST = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
 
@@ -156,6 +192,10 @@ export const METHOD_PERMISSION: Record<string, string | null> = {
   'workspaces.message': 'workspaces:message',
   'workspaces.stop': 'workspaces:stop',
   'prs.status': 'prs:read',
+  'files.list': 'files:read',
+  'files.read': 'files:read',
+  'files.write': 'files:write',
+  'files.delete': 'files:write',
   'store.get': 'storage',
   'store.set': 'storage',
   'store.delete': 'storage',
@@ -237,14 +277,90 @@ export function parseManifest(raw: unknown): { manifest?: AddonManifest; errors:
   if (rawTools.length && !background) errors.push('tools need a background page to answer them: set background to an .html file')
   if (rawTools.length && !permissions.includes(TOOLS_PERMISSION)) errors.push(`tools need the "${TOOLS_PERMISSION}" permission`)
 
+  const actions = parseActions(m.actions, views, !!background, errors)
+  if (actions.length && !permissions.includes(ACTIONS_PERMISSION)) errors.push(`actions need the "${ACTIONS_PERMISSION}" permission`)
+
   if (errors.length) return { errors }
   return {
-    manifest: { apiVersion: m.apiVersion as number, name: str(m.name, 60) ?? undefined, description: str(m.description, 300) ?? undefined, permissions, views, ...(background ? { background } : {}), tools },
+    manifest: { apiVersion: m.apiVersion as number, name: str(m.name, 60) ?? undefined, description: str(m.description, 300) ?? undefined, permissions, views, ...(background ? { background } : {}), tools, ...(actions.length ? { actions } : {}) },
     errors
   }
 }
 
 const MAX_TOOLS = 24
+
+const MAX_ACTIONS = 16
+
+/** The manifest's buttons. Problems go to `errors`, worded for the add-on's author. */
+function parseActions(raw: unknown, views: AddonView[], hasBackground: boolean, errors: string[]): AddonAction[] {
+  if (raw === undefined) return []
+  if (!Array.isArray(raw)) {
+    errors.push('actions must be a list')
+    return []
+  }
+  if (raw.length > MAX_ACTIONS) errors.push(`An add-on can have at most ${MAX_ACTIONS} actions`)
+  const actions: AddonAction[] = []
+  for (const a of raw.slice(0, MAX_ACTIONS)) {
+    const o = (a && typeof a === 'object' ? a : {}) as Record<string, unknown>
+    const id = str(o.id, 40)
+    const title = str(o.title, 40)
+    const place = o.place as AddonActionPlace
+    const view = o.view === undefined ? undefined : views.find((v) => v.id === o.view)
+    if (!id || !/^[a-z0-9][a-z0-9-]*$/.test(id)) errors.push(`An action's id must be lowercase letters, digits and dashes (got ${JSON.stringify(o.id)})`)
+    else if (actions.some((x) => x.id === id)) errors.push(`Two actions are both called ${id}`)
+    else if (!title) errors.push(`Action ${id} needs a title of at most 40 characters`)
+    else if (!ACTION_ICONS.includes(o.icon as AddonActionIcon)) errors.push(`Action ${id} needs an icon, one of ${ACTION_ICONS.join(', ')}`)
+    else if (!ACTION_PLACES.includes(place)) errors.push(`Action ${id}: place must be one of ${ACTION_PLACES.join(', ')}`)
+    else if (o.view !== undefined && !view) errors.push(`Action ${id}: view must be the id of one of this add-on's views (got ${JSON.stringify(o.view)})`)
+    else if (place === 'view-row' && (!view || view.slot === 'workspace')) errors.push(`Action ${id}: a view-row button sits on a sidebar row, so it needs the view of an app or repo view`)
+    else if (place === 'project-row' && view?.slot === 'workspace') errors.push(`Action ${id}: a project's row has no workspace, so it can't open the workspace view ${view.id}`)
+    else if (!view && !hasBackground) errors.push(`Action ${id} opens no view, so it needs a background page to hear about the press: set background or view`)
+    else if (actions.filter((x) => x.place === place).length >= maxActions(place)) errors.push(`At most ${maxActions(place)} actions can go in ${place}`)
+    else actions.push({ id, title, icon: o.icon as AddonActionIcon, place, ...(view ? { view: view.id } : {}) })
+  }
+  return actions
+}
+
+/** Where a button was pressed. */
+export interface AddonActionContext {
+  repoId?: string
+  workspaceId?: string
+}
+
+/** What an add-on's page is told when one of its buttons is pressed. */
+export interface AddonActionPress extends AddonActionContext {
+  id: string
+  place: AddonActionPlace
+}
+
+/** Where a press goes: the background page, a view in the center, or a tab beside a workspace. */
+export type AddonActionTarget = { to: 'background' } | { to: 'page'; viewId: string; repoId?: string } | { to: 'tab'; viewId: string; repoId: string; workspaceId: string }
+
+/**
+ * Where pressing `action` from `ctx` leads, or null when it can't be pressed there: its view
+ * belongs under a project or beside a workspace and `ctx` has none. A button that leads nowhere
+ * isn't shown.
+ */
+export function actionTarget(manifest: AddonManifest, action: AddonAction, ctx: AddonActionContext): AddonActionTarget | null {
+  if (!action.view) return manifest.background ? { to: 'background' } : null
+  const view = manifest.views.find((v) => v.id === action.view)
+  if (!view) return null
+  if (view.slot === 'app') return { to: 'page', viewId: view.id }
+  if (!ctx.repoId) return null
+  if (view.slot === 'repo') return { to: 'page', viewId: view.id, repoId: ctx.repoId }
+  return ctx.workspaceId ? { to: 'tab', viewId: view.id, repoId: ctx.repoId, workspaceId: ctx.workspaceId } : null
+}
+
+/** The buttons running add-ons put in `place` that can be pressed from `ctx`. With `viewId`, only that view's own row buttons. */
+export function addonActions(addons: AddonInfo[], place: AddonActionPlace, ctx: AddonActionContext, viewOf?: { key: string; viewId: string }): { addon: AddonInfo; action: AddonAction }[] {
+  return addons
+    .filter((a) => a.state === 'on' && a.manifest?.permissions.includes(ACTIONS_PERMISSION) && (!viewOf || a.key === viewOf.key))
+    .flatMap((addon) =>
+      (addon.manifest!.actions ?? [])
+        .filter((action) => action.place === place && (!viewOf || action.view === viewOf.viewId) && actionTarget(addon.manifest!, action, ctx))
+        .map((action) => ({ addon, action }))
+    )
+}
 
 function isObjectSchema(v: unknown): boolean {
   if (!v || typeof v !== 'object' || Array.isArray(v) || (v as { type?: unknown }).type !== 'object') return false
@@ -374,6 +490,7 @@ export type AddonReply =
   | { choo: 1; type: 'event'; name: 'workspaces' }
   | { choo: 1; type: 'event'; name: 'prs'; workspaceId: string }
   | { choo: 1; type: 'event'; name: 'store'; key: string }
+  | ({ choo: 1; type: 'event'; name: 'action' } & AddonActionPress)
   | { choo: 1; type: 'tool'; id: string; name: string; input: unknown; context: AddonToolContext }
   | { choo: 1; type: 'event'; name: 'theme'; theme: Record<string, string>; dark: boolean }
 
@@ -403,7 +520,12 @@ export interface AddonWorkspace {
 }
 
 /** Something the app tells add-on frames about. `addon` limits it to one add-on's frames. */
-export type AddonAppEvent = { name: 'workspaces' } | { name: 'prs'; workspaceId: string } | { name: 'store'; addon: string; key: string }
+export type AddonAppEvent =
+  | { name: 'workspaces' }
+  | { name: 'prs'; workspaceId: string }
+  | { name: 'store'; addon: string; key: string }
+  /** A button press for an add-on's background page. */
+  | { name: 'action'; addon: string; press: AddonActionPress }
 
 /** A tool call on its way to an add-on's background page. */
 export interface AddonToolCall {

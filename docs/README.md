@@ -36,6 +36,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Managing projects, and PR status](prd/projects-and-pr-status.md) | In review |
 | [PRs page](prd/pr-inbox.md) | Shipped |
 | [Add-ons](prd/add-ons.md) | Shipped: views, background pages, orchestrator tools, project pins; Plan board next |
+| [Arranging and renaming workspaces](prd/sidebar-workspaces.md) | In review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 
@@ -51,6 +52,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0006](decisions/0006-add-ons-are-claude-code-plugins.md) | Add-ons are Claude Code plugins plus a Choo Choo manifest, sandboxed behind a permission-checked host API |
 | [0007](decisions/0007-add-on-tools-run-in-a-background-page.md) | Add-on tools and background work run in a sandboxed background page, not in an MCP server |
 | [0008](decisions/0008-notion-through-claude-code.md) | Notion goes through the connection Claude Code already has; Choo Choo does not sign in to Notion |
+| [0009](decisions/0009-add-ons-declare-buttons-the-app-draws-them.md) | Add-ons change the app's own interface only by declaring buttons in named places; the app draws them |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 

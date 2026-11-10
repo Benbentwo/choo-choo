@@ -42,7 +42,9 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ First prompt names the workspace and renames its unpushed branch
 - ✅ Restore archived workspaces (sidebar "Archived" list per repo)
 - ✅ After a PR merges: Continue / Archive / Archive and reflect. Reflect has an agent review the chats for friction and suggest CLAUDE.md, rules, skills and hook changes, shown as an editable diff; accepted ones go out as a PR from a new workspace (choo-choo addition)
-- ⬜ Drag to reorder repos
+- ✅ Drag to reorder repos
+- ✅ Drag to reorder workspaces (Sort by > Manual)
+- ✅ Right-click a workspace: Rename…, Regenerate name from the chat, Reveal in Finder, Copy branch name, Archive
 
 ### Chat
 - ✅ Chat tabs per workspace, ⌘T / ⌘W
@@ -50,6 +52,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Streaming replies with markdown, collapsible tool calls, cost and duration
 - ✅ Stop (button or Esc)
 - ✅ Send while Claude works: Steer (default, folded in at the next step) or Queue (sent after), set in Settings > General
+- ✅ `/clear` folds the messages before it behind a "Context cleared" divider, with Show earlier messages
 - ✅ @mention file autocomplete, /command autocomplete (built-ins, project and user commands, skills)
 - ✅ Attach images (paste, drop or pick); add folders for the agent
 - ✅ Plan mode (⇧Tab) with "Approve and build"
@@ -107,7 +110,7 @@ Features Conductor doesn't have. Each one is off until you turn it on in Setting
 - ✅ **Claude Code session controls** ([PRD](prd/claude-code-controls.md)): auto mode, a Goal button for `/goal`, fast mode, a spend cap per message, Compact, output styles, Claude Code's own `/code-review` in the Review tab, and a list of running background tasks with Stop.
 - ✅ **MCP servers** ([PRD](prd/mcp-servers.md)): Settings › MCP lists every server Claude Code loads for a repo, with status, tools and errors. You can add (HTTP, SSE or stdio; every repo or the repo's .mcp.json), remove, turn off per repo, retry, and sign in through Claude Code's /mcp.
 - ✅ **Plugins and skills** ([PRD](prd/plugins.md)): Settings › Plugins lets you browse marketplaces (Anthropic's is one click away), install for every repo or one repo, turn plugins on or off, uninstall, and see what each one adds and costs. It also lists your own skills, commands and agents.
-- ✅ **Add-ons** ([PRD](prd/add-ons.md), [author guide](addon-api.md)): Claude Code plugins that also add views to Choo Choo: in the sidebar, under a project, or as a tab beside a workspace. Settings › Add-ons adds sources (git repos, private ones included), installs, and turns add-ons on after showing their permissions in plain words. Views run in a sandbox and reach the app only through a permission-checked API (list, start, message and stop workspaces, PR status, own storage, notifications). An add-on can also keep working in the background and give the orchestrator tools, and a project's `choo-choo.json` can name the add-ons its team should have. An example lives in `examples/addons`.
+- ✅ **Add-ons** ([PRD](prd/add-ons.md), [author guide](addon-api.md)): Claude Code plugins that also add views to Choo Choo: in the sidebar, under a project, or as a tab beside a workspace. Settings › Add-ons adds sources (git repos, private ones included), installs, and turns add-ons on after showing their permissions in plain words. Views run in a sandbox and reach the app only through a permission-checked API (list, start, message and stop workspaces, PR status, own storage, notifications). An add-on can also keep working in the background, give the orchestrator tools, keep text files in a project's `.choo-choo` folder, and put buttons in the app (at the top of a workspace, on sidebar rows, in the ⌘K palette), and a project's `choo-choo.json` can name the add-ons its team should have. An example lives in `examples/addons`.
 - ✅ **PRs page** ([PRD](prd/pr-inbox.md)): a PRs item under Search lists open PRs waiting on your review and the ones you opened, across all repos, grouped by repo, like Arc's GitHub live folder. Open → starts (or goes to) a workspace on the PR's branch with the Review tab open, cloning the repo first if needed.
 - ✅ Subagent calls show as one collapsible card per agent, with the steps it took inside.
 - ✅ Settings › Claude Code: run the bundled binary or your installed `claude`. When Claude Code isn't signed in, the chat says to run `claude` and `/login`.

@@ -42,11 +42,21 @@ const FIELDS = `... on PullRequest {
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       }`
 
-/** Both searches in one call. `archived:false` keeps PRs in archived repos out. */
-export const PR_INBOX_QUERY = `query {
-  review: search(query: "is:open is:pr archived:false review-requested:@me", type: ISSUE, first: 100) { nodes { ${FIELDS} } }
-  mine: search(query: "is:open is:pr archived:false author:@me", type: ISSUE, first: 100) { nodes { ${FIELDS} } }
+const SEARCH: Record<PrRole, string> = {
+  review: 'is:open is:pr archived:false review-requested:@me',
+  mine: 'is:open is:pr archived:false author:@me'
+}
+
+/**
+ * One search per call, newest first. Both lists of 100 with CI status in one query made GitHub
+ * time out (HTTP 502 after about 10 s), so they go as two smaller requests. `archived:false`
+ * keeps PRs in archived repos out.
+ */
+export function prInboxQuery(role: PrRole, first: number): string {
+  return `query {
+  ${role}: search(query: "${SEARCH[role]} sort:updated-desc", type: ISSUE, first: ${first}) { nodes { ${FIELDS} } }
 }`
+}
 
 interface RawPr {
   number?: number
@@ -102,6 +112,30 @@ export function parsePrInbox(raw: Raw): InboxPr[] {
 }
 
 export type PrFilter = 'review' | 'mine' | 'all'
+
+/** PRs not hidden by the PRs page filter: an entry is an org ("owner") or a repo ("owner/repo"), any case. */
+export function visiblePrs(prs: InboxPr[], hidden: string[] | undefined): InboxPr[] {
+  if (!hidden?.length) return prs
+  const h = new Set(hidden.map((x) => x.toLowerCase()))
+  return prs.filter((p) => {
+    const repo = p.repo.toLowerCase()
+    return !h.has(repo) && !h.has(repo.split('/')[0])
+  })
+}
+
+/** Orgs and their repos among these PRs, with counts, for the filter menu. Sorted by name. */
+export function orgsAndRepos(prs: InboxPr[]): { org: string; count: number; repos: { repo: string; count: number }[] }[] {
+  const orgs = new Map<string, Map<string, number>>()
+  for (const p of prs) {
+    const org = p.repo.split('/')[0]
+    const repos = orgs.get(org) ?? new Map<string, number>()
+    repos.set(p.repo, (repos.get(p.repo) ?? 0) + 1)
+    orgs.set(org, repos)
+  }
+  return [...orgs]
+    .map(([org, repos]) => ({ org, count: [...repos.values()].reduce((a, b) => a + b, 0), repos: [...repos].map(([repo, count]) => ({ repo, count })).sort((a, b) => a.repo.localeCompare(b.repo)) }))
+    .sort((a, b) => a.org.localeCompare(b.org))
+}
 
 /** Groups by repo. Repos are ordered by their most recently updated PR; PRs keep their order. */
 export function groupByRepo(prs: InboxPr[], filter: PrFilter): { repo: string; prs: InboxPr[] }[] {
