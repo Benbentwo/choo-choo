@@ -92,7 +92,7 @@ jobs:
             echo "::warning::No signing secrets; building an unsigned app."
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             # Ad-hoc sign like the preview build, so Apple silicon will run it.
-            sign=(-c.mac.identity=- -c.mac.hardenedRuntime=false)
+            sign=(-c.mac.identity=- -c.mac.hardenedRuntime=false -c.dmg.sign=false)
             echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
           npx electron-vite build

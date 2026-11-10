@@ -20,7 +20,7 @@ jobs:
       - run: node scripts/install-mac-binaries.cjs
       # Ad-hoc signature ("-") so Apple silicon will launch it. Hardened runtime is off because
       # ad-hoc signing can't satisfy its library validation.
-      - run: npx electron-builder --mac dmg --arm64 --x64 -c.mac.identity=- -c.mac.hardenedRuntime=false --publish never
+      - run: npx electron-builder --mac dmg --arm64 --x64 -c.mac.identity=- -c.mac.hardenedRuntime=false -c.dmg.sign=false --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: choo-choo-apple-silicon
