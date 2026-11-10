@@ -11,7 +11,7 @@ Each agent gets its own git worktree. You review the diffs and ship the PRs from
 An open-source, MIT-licensed alternative to [Conductor](https://conductor.build).
 
 [![CI](https://github.com/Benbentwo/choo-choo/actions/workflows/ci.yml/badge.svg)](https://github.com/Benbentwo/choo-choo/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/Benbentwo/choo-choo?include_prereleases&label=download)](https://github.com/Benbentwo/choo-choo/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/Benbentwo/choo-choo?label=download)](https://github.com/Benbentwo/choo-choo/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS](https://img.shields.io/badge/macOS-Apple%20silicon%20%7C%20Intel-lightgrey)
 
@@ -157,6 +157,8 @@ In a release build, ⌘⇧K (Help > Comment on Choo Choo…) works the same way,
 [Release Drafter](.github/release-drafter.yml) keeps a draft release up to date as PRs merge, with notes grouped by label (`feature`, `bug`, `docs`, `chore`...) and the next version picked from them: `breaking` bumps major, `feature` or `enhancement` bumps minor, anything else bumps patch. PRs get area labels from the files they touch ([labeler.yml](.github/labeler.yml)), and the label set lives in [labels.yml](.github/labels.yml).
 
 To ship, open **Actions > Release > Run workflow** (optionally type a version). It builds the app for Apple silicon and Intel, attaches the `.dmg`, `.zip` and update files to the draft, and publishes it. Publishing the draft by hand on the Releases page works too; the workflow then attaches the files. The app's version comes from the release tag.
+
+Every merge to `main` also ships a **beta**: the [Beta workflow](.github/workflows/beta.yml) builds, signs and notarizes the app and publishes it as a prerelease named after the draft's next version, like `v0.2.0-beta.57`. People who pick Settings > Updates > Update channel > **Beta** update to these; everyone else stays on **Stable** (published releases). Prereleases are never marked Latest, so the Homebrew cask and the download link skip them. Merges that only change docs don't build, a newer merge cancels an older build, and only the 10 newest betas are kept. Beta builds need the signing secrets below.
 
 Add a `HOMEBREW_TAP_TOKEN` secret (a token that can push to `Benbentwo/homebrew-tap`) and each release also updates the Homebrew cask, written by `scripts/homebrew-cask.sh`. Add `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` repository secrets to sign and notarize builds (Actions > Release > Run workflow with **Test build only** checked signs, notarizes and checks a build without touching any release); without them the app is unsigned and can't update itself on macOS, so it offers `brew upgrade` (when Homebrew installed it) or the release page instead.
 

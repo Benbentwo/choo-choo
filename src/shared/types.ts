@@ -509,6 +509,8 @@ export interface Settings extends AppearanceSettings {
   claudeBinary: 'bundled' | 'installed'
   /** Check GitHub Releases for new Choo Choo versions. Checking by hand still works when off. */
   checkAppUpdates: boolean
+  /** stable: published releases. beta: also the signed prerelease built from every merge to main. */
+  updateChannel: 'stable' | 'beta'
   /** Check npm for new Claude Code versions. Checking by hand still works when off. */
   checkClaudeUpdates: boolean
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
@@ -653,6 +655,7 @@ export const DEFAULT_SETTINGS: Settings = {
   orchestratorAutoUpdates: true,
   claudeBinary: 'bundled',
   checkAppUpdates: true,
+  updateChannel: 'stable',
   checkClaudeUpdates: true,
   extras: DEFAULT_EXTRAS,
   notionAgentTools: true,

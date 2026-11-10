@@ -89,6 +89,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ macOS menus and shortcuts, desktop notifications
 - ✅ dmg/zip builds for Apple silicon and Intel, release workflow (signs and notarizes when secrets are set)
 - ✅ Auto-update from GitHub releases (signed builds install in place; unsigned ones offer brew upgrade or the download page)
+- ✅ Update channels: Stable (published releases) or Beta (a signed prerelease from every merge to main), in Settings > Updates. See [decision 0015](decisions/0015-beta-channel-uses-prereleases.md).
 - ✅ Claude Code version and update check (Settings > Updates; runs `claude update` for an installed copy)
 
 ### Beyond Conductor
