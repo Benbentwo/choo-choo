@@ -6,7 +6,6 @@ name: Beta
 # Prereleases are never marked Latest, so stable users and the Homebrew cask never see them.
 on:
   push:
-    branches: [claude/project-thread-yeejr2] # TEMP: dry-run test, remove before merge
   workflow_run:
     workflows: [Release Drafter]
     types: [completed]
