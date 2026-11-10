@@ -12,7 +12,7 @@ Goal: a Mac desktop app that replaces Conductor 1:1. Run many Claude Code agents
 | Terminal | xterm.js + node-pty | Real shells for Setup/Run/Terminal tabs |
 | Git | `git` CLI (worktrees) + `gh` CLI | Matches what users already have authed |
 | Storage | JSON in `~/Library/Application Support/Choo Choo` | No native DB dependency |
-| Packaging | electron-builder (dmg, arm64 + x64) | Signed/notarized later |
+| Packaging | electron-builder (dmg, arm64 + x64) | Signed and notarized (Developer ID) |
 
 Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's `~/conductor/workspaces/<repo>/<city>`.
 
