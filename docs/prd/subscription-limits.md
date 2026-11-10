@@ -14,7 +14,7 @@
 ## Goals
 
 - See at a glance how much of each plan's usage windows (5-hour, weekly, per-model weekly) is used, and when each resets.
-- One subscription shows all the time. Two (Claude and Codex) fade between each other every 5 seconds.
+- One subscription shows all the time. Two (Claude and Codex) fade between each other every 12 seconds.
 
 ## Non-goals
 

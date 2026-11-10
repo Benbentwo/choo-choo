@@ -4,8 +4,8 @@ import { pace, paceText } from '@shared/limitPace'
 import { LimitsChart } from './LimitsChart'
 import { useStore } from '../store'
 
-const ROTATE_MS = 5000
-const FADE_MS = 300
+const ROTATE_MS = 12000
+const FADE_MS = 600
 
 function resetsIn(ts?: number): string {
   if (!ts) return ''
