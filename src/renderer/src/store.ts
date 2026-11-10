@@ -4,7 +4,8 @@ import { readCachedAppearance } from './appearanceCache'
 import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
 import type { Automation, AutomationRun } from '@shared/automations'
-import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
+import { isTheirs, type CommentDest, type PrReviewInfo } from '@shared/prReview'
+import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type PrInfo, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
 
 export interface Doc {
   /** reflect: the workspace's Reflect tab (see `reflects`). */
@@ -70,8 +71,10 @@ interface UI {
   activeChat: Record<string, string>
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
-  /** Comments on diff lines waiting to be sent to the agent as one message, per workspace. */
+  /** Comments on diff lines, per workspace: queued for the agent, or drafts in the person's GitHub review. */
   codeComments: Record<string, CodeComment[]>
+  /** The workspace's PR with its author, the signed-in gh user and open feedback; loaded by the PR button. */
+  prReview: Record<string, { pr: PrInfo; info: PrReviewInfo } | null | undefined>
   /** Bumped when GitHub reports a change to a workspace's PR or checks; PR views reload on it. */
   prVersion: Record<string, number>
   /** Last stack status per stacked workspace, for the Stack tab, the header switcher and the sidebar. */
@@ -141,7 +144,8 @@ export const useStore = create<UI>((set, get) => ({
   prInboxLoading: false,
   activeChat: {},
   openDoc: {},
-  codeComments: {},
+  codeComments: loadCodeComments(),
+  prReview: {},
   prVersion: {},
   stacks: {},
   reflects: {},
@@ -475,21 +479,55 @@ export interface CodeComment {
   /** The commented lines, as shown in the diff. */
   code: string
   text: string
+  /** agent: sent with the next chat message. github: a draft in the person's review, posted on submit. Missing means agent. */
+  dest?: CommentDest
+  /** Copied from a reviewer-agent finding. */
+  fromFinding?: boolean
+}
+
+export const destOf = (c: CodeComment): CommentDest => c.dest ?? 'agent'
+
+
+/** Drafts survive a restart: a half-written review is too much to lose. */
+function loadCodeComments(): Record<string, CodeComment[]> {
+  try {
+    return JSON.parse(localStorage.getItem('codeComments') ?? '{}') as Record<string, CodeComment[]>
+  } catch {
+    return {}
+  }
 }
 
 export function setCodeComments(wsId: string, fn: (list: CodeComment[]) => CodeComment[]) {
   const st = useStore.getState()
-  st.set({ codeComments: { ...st.codeComments, [wsId]: fn(st.codeComments[wsId] ?? []) } })
+  const all = { ...st.codeComments, [wsId]: fn(st.codeComments[wsId] ?? []) }
+  if (!all[wsId].length) delete all[wsId]
+  st.set({ codeComments: all })
+  try {
+    localStorage.setItem('codeComments', JSON.stringify(all))
+  } catch {
+    /* storage unavailable */
+  }
 }
 
-/** The message that sends queued code comments, followed by anything typed in the composer. */
-export function codeCommentsMessage(list: CodeComment[], text: string): string {
+/** Set when the workspace's open PR is someone else's: agent comments then ask for advice, not commits. */
+export function reviewTarget(r: { pr: PrInfo; info: PrReviewInfo } | null | undefined): { number: number; author: string } | undefined {
+  return r && r.pr.state === 'OPEN' && isTheirs(r.info) ? { number: r.pr.number, author: r.info.author } : undefined
+}
+
+/**
+ * The message that sends queued code comments, followed by anything typed in the composer. On someone
+ * else's PR the agent is told to advise only, since the branch isn't the person's to push to.
+ */
+export function codeCommentsMessage(list: CodeComment[], text: string, review?: { number: number; author: string }): string {
   const parts = list.map((c) => {
     const where = `${c.file}:${c.start === c.end ? c.start : `${c.start}-${c.end}`}${c.side === 'old' ? ' (removed lines)' : ''}`
     const code = c.code.split('\n').map((l) => `    ${l}`).join('\n')
     return `${where}\n${code}\n${c.text}`
   })
-  return [`Comments on the code (${list.length}):`, ...parts, ...(text ? [text] : [])].join('\n\n')
+  const head = review
+    ? `I'm reviewing @${review.author}'s PR #${review.number}, so don't commit or push. Answer each comment on the code (${list.length}); where a change is warranted, write it as a GitHub \`\`\`suggestion block I can post in my review.`
+    : `Comments on the code (${list.length}):`
+  return [head, ...parts, ...(text ? [text] : [])].join('\n\n')
 }
 
 /** Opens the workspace's Reflect tab, which runs the reflect agent with this feedback. */

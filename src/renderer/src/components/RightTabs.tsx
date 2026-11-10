@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Artifact, CheckRun, ReviewFinding, Workspace } from '@shared/types'
-import { useStore, openDoc, newChatTab, reportError } from '../store'
+import { useStore, openDoc, newChatTab, reportError, reviewTarget } from '../store'
+import { ReviewDrafts } from './ReviewDrafts'
 import { IconDown, IconRight } from '../icons'
 import { CLAUDE_CODE_REVIEW_PROMPT, REVIEW_PROMPT, SECURITY_REVIEW_PROMPT, useReview } from '../review'
 
@@ -172,6 +173,16 @@ export async function sendFix(ws: Workspace, f: ReviewFinding) {
 }
 
 export function ReviewTab({ ws }: { ws: Workspace }) {
+  return (
+    <div>
+      <ReviewDrafts ws={ws} />
+      <AgentReview ws={ws} />
+    </div>
+  )
+}
+
+function AgentReview({ ws }: { ws: Workspace }) {
+  const theirs = useStore((s) => !!reviewTarget(s.prReview[ws.id]))
   const repo = useStore((s) => s.repos.find((r) => r.id === ws.repoId))
   const extras = useStore((s) => s.settings.extras)
   const { chat, code, security, findings, running } = useReview(ws.id)
@@ -247,9 +258,15 @@ export function ReviewTab({ ws }: { ws: Workspace }) {
             </span>
           </button>
           <div className="selectable mt-1">{f.message}</div>
-          <button className="mt-1 hidden text-[12px] text-muted group-hover:block hover:text-fg" onClick={() => void sendFix(ws, f)}>
-            Ask the agent to fix this
-          </button>
+          {theirs ? (
+            <button className="mt-1 hidden text-[12px] text-muted group-hover:block hover:text-fg" onClick={() => openDoc(ws.id, { kind: 'diff', path: f.file })}>
+              Open in the diff to add it to your review
+            </button>
+          ) : (
+            <button className="mt-1 hidden text-[12px] text-muted group-hover:block hover:text-fg" onClick={() => void sendFix(ws, f)}>
+              Ask the agent to fix this
+            </button>
+          )}
         </div>
       ))}
     </div>

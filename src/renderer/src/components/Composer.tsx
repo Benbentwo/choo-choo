@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { inOpenFence } from '../markdown'
 import type { Chat, Effort, ExtraAgentId, ModelId, OutputStyleInfo, Permission, SlashCommandInfo, Workspace } from '@shared/types'
-import { useStore, reportError, modelLabel, setCodeComments, codeCommentsMessage, openDoc } from '../store'
+import { useStore, reportError, modelLabel, setCodeComments, codeCommentsMessage, destOf, reviewTarget, openDoc } from '../store'
 import { IconDown, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
 
@@ -45,7 +45,10 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const [files, setFiles] = useState<string[] | null>(null)
   const [commands, setCommands] = useState<SlashCommandInfo[] | null>(null)
   const [images, setImages] = useState<string[]>([])
-  const codeComments = useStore((s) => s.codeComments[ws.id]) ?? []
+  const allComments = useStore((s) => s.codeComments[ws.id]) ?? []
+  // GitHub review drafts wait in the Review tab; only agent comments go with a chat message.
+  const codeComments = allComments.filter((c) => destOf(c) === 'agent')
+  const prReview = useStore((s) => s.prReview[ws.id])
   const hasContent = !!text.trim() || images.length > 0 || codeComments.length > 0
   const [dragging, setDragging] = useState(false)
   const [goalOpen, setGoalOpen] = useState(false)
@@ -146,13 +149,13 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
 
   const submit = async () => {
     const typed = text.trim() || (images.length && !codeComments.length ? 'See the attached image.' : '')
-    const t = codeComments.length ? codeCommentsMessage(codeComments, typed) : typed
+    const t = codeComments.length ? codeCommentsMessage(codeComments, typed, reviewTarget(prReview)) : typed
     if (!t) return
     const imgs = images
     setText('')
     setImages([])
     setTrigger(null)
-    if (codeComments.length) setCodeComments(ws.id, () => [])
+    if (codeComments.length) setCodeComments(ws.id, (list) => list.filter((c) => destOf(c) !== 'agent'))
     try {
       await window.api.sendMessage(chat.id, t, imgs)
     } catch (e) {

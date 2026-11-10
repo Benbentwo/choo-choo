@@ -12,6 +12,9 @@ import { CloudPanel, RunInCloudDialog } from './CloudPanel'
 import { StackSwitcher } from './Stack'
 import { ThreadsPanel } from './Projects'
 import { routerChat } from '@shared/projects'
+import { isTheirs, prOwnerLabel } from '@shared/prReview'
+import { usePrReview } from '../prReview'
+import { IconPR } from '../icons'
 
 export function Center({ ws }: { ws: Workspace }) {
   const s = useStore()
@@ -128,6 +131,7 @@ export function Center({ ws }: { ws: Workspace }) {
             </div>
           )}
         </div>
+        {!ws.orchestrator && <PrOwnerPill ws={ws} />}
         {ws.importedShare && <span className="text-[12px] text-faint">Shared by {ws.importedShare.sharedBy}</span>}
         {ws.share && (
           <button className="no-drag rounded px-1.5 py-0.5 text-[12px] text-add hover:bg-hover" onClick={() => s.set({ modal: 'share' })} title="Shared with coworkers">
@@ -264,6 +268,22 @@ function MenuItem(p: { label: string; title?: string; danger?: boolean; onClick:
   return (
     <button onClick={p.onClick} title={p.title} className={`block w-full rounded px-2 py-1.5 text-left hover:bg-hover ${p.danger ? 'text-del' : ''}`}>
       {p.label}
+    </button>
+  )
+}
+
+/** Says whose PR this workspace is on, so someone else's code never looks like yours. */
+function PrOwnerPill({ ws }: { ws: Workspace }) {
+  const review = usePrReview(ws)
+  if (!review) return null
+  const theirs = isTheirs(review.info)
+  return (
+    <button
+      className={`no-drag flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[12px] ${theirs ? 'border-sky-400/40 bg-sky-400/10 text-sky-400 hover:bg-sky-400/20' : 'border-line text-muted hover:bg-hover hover:text-fg'}`}
+      title={theirs ? `${review.info.author}'s PR. Line comments go to your GitHub review by default.` : 'Your PR. Line comments go to the agent by default.'}
+      onClick={() => useStore.getState().set({ rightTab: 'review' })}
+    >
+      <IconPR width={12} height={12} /> {prOwnerLabel(review.pr, review.info)}
     </button>
   )
 }

@@ -1,8 +1,9 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { CheckRun, GithubRepo, PrComment, PrInfo, SourceOption } from '@shared/types'
-import { parsePrFeedback, PR_FEEDBACK_QUERY } from '@shared/prComments'
+import { parsePrReviewInfo, PR_FEEDBACK_QUERY } from '@shared/prComments'
 import { comparePath } from '@shared/prStatus'
+import { patchLines, reviewPayload, type PrDiffLines, type PrReviewInfo, type ReviewDraft, type ReviewEvent } from '@shared/prReview'
 import { parsePrInbox, prInboxQuery, type InboxPr, type PrRole } from '@shared/prInbox'
 import type { RepoItem } from '@shared/automations'
 
@@ -11,7 +12,7 @@ const exec = promisify(execFile)
 /** The pull request of a branch, or the one with that number: `gh pr view` takes either. */
 export async function prForBranch(cwd: string, branch: string): Promise<PrInfo | null> {
   try {
-    const { stdout } = await exec('gh', ['pr', 'view', branch, '--json', 'number,url,state,isDraft,title,mergeable,reviewDecision,mergeStateStatus,headRefName,baseRefName,isCrossRepository,headRepositoryOwner'], { cwd })
+    const { stdout } = await exec('gh', ['pr', 'view', branch, '--json', 'number,url,state,isDraft,title,mergeable,reviewDecision,mergeStateStatus,headRefName,baseRefName,isCrossRepository,headRepositoryOwner,headRefOid'], { cwd })
     return JSON.parse(stdout) as PrInfo
   } catch {
     return null
@@ -52,12 +53,77 @@ export async function updatePrBranch(cwd: string, number: number) {
 
 /** Unresolved review threads, reviews and conversation comments on a PR. */
 export async function prComments(cwd: string, number: number): Promise<PrComment[]> {
+  return (await prReview(cwd, number)).feedback
+}
+
+/** The PR's feedback plus its author, the signed-in gh user and that user's last review. */
+export async function prReview(cwd: string, number: number): Promise<PrReviewInfo> {
   const { stdout } = await exec(
     'gh',
     ['api', 'graphql', '-F', 'owner={owner}', '-F', 'name={repo}', '-F', `number=${number}`, '-f', `query=${PR_FEEDBACK_QUERY}`],
     { cwd, maxBuffer: 16 * 1024 * 1024 }
   )
-  return parsePrFeedback(JSON.parse(stdout))
+  return parsePrReviewInfo(JSON.parse(stdout))
+}
+
+/** The lines of each file in the PR that can take a review comment. */
+export async function prDiffLines(cwd: string, number: number): Promise<PrDiffLines> {
+  const { stdout } = await exec('gh', ['api', '--paginate', `repos/{owner}/{repo}/pulls/${number}/files?per_page=100`, '--jq', '.[] | {filename, patch}'], {
+    cwd,
+    maxBuffer: 64 * 1024 * 1024
+  })
+  const out: PrDiffLines = {}
+  for (const line of stdout.split('\n').filter(Boolean)) {
+    const f = JSON.parse(line) as { filename: string; patch?: string }
+    out[f.filename] = patchLines(f.patch)
+  }
+  return out
+}
+
+/** Runs gh with `input` on stdin and returns stdout. */
+function ghWithInput(cwd: string, args: string[], input: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const p = spawn('gh', args, { cwd })
+    let out = ''
+    let err = ''
+    p.stdout.on('data', (d) => (out += d))
+    p.stderr.on('data', (d) => (err += d))
+    p.on('error', reject)
+    p.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(ghError(err || out) || `gh exited with ${code}`))))
+    p.stdin.end(input)
+  })
+}
+
+/** GitHub's own message from a failed `gh api` call, when there is one. */
+function ghError(text: string): string {
+  try {
+    const j = JSON.parse(text.slice(text.indexOf('{'))) as { message?: string; errors?: (string | { message?: string })[] }
+    const more = (j.errors ?? []).map((e) => (typeof e === 'string' ? e : e.message)).filter(Boolean)
+    return [j.message, ...more].filter(Boolean).join(': ')
+  } catch {
+    return text.trim()
+  }
+}
+
+/** Submits a review with line comments in one call, so nothing is posted until the person submits. */
+export async function submitReview(cwd: string, number: number, drafts: ReviewDraft[], body: string, event: ReviewEvent, commitId?: string): Promise<{ url: string }> {
+  const out = await ghWithInput(cwd, ['api', '--method', 'POST', `repos/{owner}/{repo}/pulls/${number}/reviews`, '--input', '-'], JSON.stringify(reviewPayload(drafts, body, event, commitId)))
+  const res = JSON.parse(out || '{}') as { html_url?: string }
+  return { url: res.html_url ?? '' }
+}
+
+async function graphql(cwd: string, query: string, vars: Record<string, string>) {
+  const args = ['api', 'graphql', '-f', `query=${query}`]
+  for (const [k, v] of Object.entries(vars)) args.push('-f', `${k}=${v}`)
+  await exec('gh', args, { cwd })
+}
+
+export async function replyToThread(cwd: string, threadId: string, body: string) {
+  await graphql(cwd, 'mutation($id: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $id, body: $body}) { comment { id } } }', { id: threadId, body })
+}
+
+export async function resolveThread(cwd: string, threadId: string) {
+  await graphql(cwd, 'mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }', { id: threadId })
 }
 
 export async function checks(cwd: string, branch: string): Promise<CheckRun[]> {
