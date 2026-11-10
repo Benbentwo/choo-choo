@@ -71,6 +71,7 @@ const api: Api = {
   addonUninstall: inv('addons:uninstall') as Api['addonUninstall'],
   addonSetEnabled: inv('addons:setEnabled') as Api['addonSetEnabled'],
   addonCall: inv('addons:call') as Api['addonCall'],
+  addonAction: inv('addons:action') as Api['addonAction'],
   onAddonsChanged: (cb) => on<[]>('addons:changed', cb),
   addonPins: inv('addons:pins') as Api['addonPins'],
   addonInstallPinned: inv('addons:installPinned') as Api['addonInstallPinned'],

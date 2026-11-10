@@ -8,7 +8,7 @@ import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, open
 import { dirname, extname, join, relative } from 'node:path'
 import { z } from 'zod'
 import type { Chat, ChatItem, CheckRun, PrInfo, Repo, Workspace } from '@shared/types'
-import { ADDON_API_VERSION, checkCall, safeRelativePath, type AddonContext, type AddonWorkspace } from '@shared/addons'
+import { ACTIONS_PERMISSION, ADDON_API_VERSION, actionTarget, checkCall, safeRelativePath, type AddonActionContext, type AddonActionPress, type AddonContext, type AddonManifest, type AddonWorkspace } from '@shared/addons'
 import { summarizeChecks } from '@shared/prStatus'
 
 export interface AddonHost {
@@ -97,6 +97,23 @@ function lastAssistantText(items: ChatItem[]): string {
     if (it.kind === 'assistant' && it.text) return it.text
   }
   return ''
+}
+
+/**
+ * What to tell an add-on's background page about a press, or null when there is nothing to tell:
+ * the add-on has no such button, the button opens a view, or the place it names doesn't exist.
+ * Only ids of a live project and a workspace of it are passed on.
+ */
+export function backgroundPress(addon: { manifest?: AddonManifest }, actionId: string, ctx: AddonActionContext, host: Pick<AddonHost, 'repos' | 'workspaces'>): AddonActionPress | null {
+  const m = addon.manifest
+  const action = m?.permissions.includes(ACTIONS_PERMISSION) ? m.actions?.find((a) => a.id === actionId) : undefined
+  if (!m || !action || actionTarget(m, action, ctx)?.to !== 'background') return null
+  const ws = ctx.workspaceId ? host.workspaces().find((w) => w.id === ctx.workspaceId && !w.archived && !w.orchestrator) : undefined
+  const repo = host.repos().find((r) => r.id === (ws?.repoId ?? ctx.repoId))
+  if ((ctx.workspaceId && !ws) || (ctx.repoId && !repo) || (ws && ctx.repoId && ws.repoId !== ctx.repoId)) return null
+  const needsWorkspace = action.place === 'workspace-header' || action.place === 'workspace-row'
+  if ((needsWorkspace && !ws) || (action.place === 'project-row' && !repo)) return null
+  return { id: action.id, place: action.place, ...(repo ? { repoId: repo.id } : {}), ...(ws ? { workspaceId: ws.id } : {}) }
 }
 
 /** A workspace an add-on may see or act on: live, and not an orchestrator's own chat. */

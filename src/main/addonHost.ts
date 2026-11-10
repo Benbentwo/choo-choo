@@ -18,6 +18,7 @@ import {
   sourceKey,
   toolServerName,
   viewCsp,
+  type AddonActionContext,
   type AddonAppEvent,
   type AddonCallResult,
   type AddonContext,
@@ -32,7 +33,7 @@ import {
 import * as store from './store'
 import * as plugins from './plugins'
 import { availableFrom, contentType, describeAddons, listPlugins, listSources, pinStatus, readPins, resolveFile, type LoadedAddon } from './addons'
-import { call, type AddonHost } from './addonApi'
+import { backgroundPress, call, type AddonHost } from './addonApi'
 import { HOST_SCRIPT, HOST_SCRIPT_PATH } from './addonClient'
 
 /** Must run before the app is ready: makes choo-addon:// a normal, secure origin with fetch support. */
@@ -348,6 +349,17 @@ export function start(deps: Deps) {
     changed()
     deps.send('state:changed')
     return strip(cache)
+  })
+
+  // A press of a button whose add-on answers it in the background. Presses that open a view never leave the window.
+  h('addons:action', async (key: string, actionId: string, context: AddonActionContext) => {
+    if (!loaded) await refresh(deps)
+    const addon = cache.find((a) => a.key === key && a.state === 'on')
+    const press = addon && backgroundPress(addon, String(actionId), context ?? {}, host)
+    if (!press) throw new Error("This button's add-on is turned off or no longer has it")
+    syncBackground()
+    await backgroundLoaded
+    toBackground('addons:event', { name: 'action', addon: addon.key, press } satisfies AddonAppEvent)
   })
 
   // Answers with a result or an error instead of throwing: a view being told "no" is routine, not a fault to log.

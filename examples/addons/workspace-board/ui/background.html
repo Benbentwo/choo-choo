@@ -8,7 +8,7 @@
     <!--
       The background page. Nobody sees it; it runs for as long as the add-on is on, with the same
       window.choo and the same permissions as the views. Here it answers the two tools the manifest
-      gives the orchestrator.
+      gives the orchestrator, and the one button that needs no view.
     -->
     <script src="/@choo/host.js"></script>
     <script>
@@ -18,6 +18,13 @@
       choo.tools.handle('board_summary', async (_input, ctx) => {
         const mine = (await choo.workspaces.list()).filter((w) => ctx.repoIds.includes(w.repoId))
         return Promise.all(mine.map(async (w) => ({ id: w.id, title: w.title, branch: w.branch, status: w.status, note: (await choo.store.get(noteKey(w.id))) || '' })))
+      })
+
+      // A button with no "view" in the manifest is answered here. ctx says where it was pressed.
+      choo.actions.handle('looked', async ({ workspaceId }) => {
+        const was = (await choo.store.get(noteKey(workspaceId))) || ''
+        const line = `Looked at this on ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`
+        await choo.store.set(noteKey(workspaceId), was ? `${was.trimEnd()}\n${line}` : line)
       })
 
       choo.tools.handle('set_note', async ({ workspace_id, note }, ctx) => {

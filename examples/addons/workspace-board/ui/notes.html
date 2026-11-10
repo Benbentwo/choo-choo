@@ -24,6 +24,8 @@
         choo.on('store', async (e) => {
           if (e.key === key && document.activeElement !== box) box.value = (await choo.store.get(key)) || ''
         })
+        // The "Write a note" button on this workspace's row opened the tab: put the cursor in the box.
+        choo.actions.handle('note', () => box.focus())
         let timer
         box.oninput = () => {
           state.textContent = ''

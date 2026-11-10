@@ -11,6 +11,14 @@ export const HOST_SCRIPT = String.raw`(() => {
   const pending = new Map()
   const listeners = { workspaces: new Set(), theme: new Set(), prs: new Set(), store: new Set() }
   const tools = new Map()
+  // Button presses: who answers each one, and presses that came before the page said who.
+  const actions = new Map()
+  let pressed = []
+  function runAction(m) {
+    Promise.resolve()
+      .then(() => actions.get(m.id)({ place: m.place, repoId: m.repoId, workspaceId: m.workspaceId }))
+      .catch((err) => console.error(err))
+  }
   // Calls that arrived before the page registered a handler for them.
   const waiting = []
   let resolveReady
@@ -67,6 +75,9 @@ export const HOST_SCRIPT = String.raw`(() => {
         waiting.splice(i, 1)
         post({ choo: 1, type: 'tool-result', id: m.id, ok: false, error: 'The add-on has no handler for ' + m.name })
       }, 10000)
+    } else if (m.type === 'event' && m.name === 'action') {
+      if (actions.has(m.id)) runAction(m)
+      else pressed = pressed.concat(m).slice(-20)
     } else if (m.type === 'event') {
       if (m.name === 'theme') {
         choo.theme = m.theme
@@ -127,6 +138,15 @@ export const HOST_SCRIPT = String.raw`(() => {
           waiting.splice(waiting.indexOf(m), 1)
           runTool(m)
         }
+      }
+    },
+    actions: {
+      /** Answer presses of a button listed in the manifest: fn({ place, repoId, workspaceId }). A press that opened this view is passed on too. */
+      handle(id, fn) {
+        actions.set(id, fn)
+        const mine = pressed.filter((m) => m.id === id)
+        pressed = pressed.filter((m) => m.id !== id)
+        mine.forEach(runAction)
       }
     },
     ui: {

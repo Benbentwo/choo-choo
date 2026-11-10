@@ -51,6 +51,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0005](decisions/0005-stack.md) | Electron, React and JSON files on disk |
 | [0006](decisions/0006-add-ons-are-claude-code-plugins.md) | Add-ons are Claude Code plugins plus a Choo Choo manifest, sandboxed behind a permission-checked host API |
 | [0007](decisions/0007-add-on-tools-run-in-a-background-page.md) | Add-on tools and background work run in a sandboxed background page, not in an MCP server |
+| [0009](decisions/0009-add-ons-declare-buttons-the-app-draws-them.md) | Add-ons change the app's own interface only by declaring buttons in named places; the app draws them |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 
