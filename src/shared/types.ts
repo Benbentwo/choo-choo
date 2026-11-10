@@ -117,6 +117,8 @@ export interface Workspace {
   orchestratorId?: string
   /** Set on a project group's orchestrator. It runs in the first repo's checkout. */
   groupId?: string
+  /** The project thread (a chat on the project's orchestrator) that started this workspace. Its updates go there. */
+  threadId?: string
   /** The add-on that started this workspace, by plugin id. */
   addonId?: string
   /** Set while this workspace is shared with coworkers. */
@@ -301,6 +303,8 @@ export interface Chat {
   handoff?: string
   /** The sharer's chat id, so refreshing a share updates the right tab. */
   sharedChatId?: string
+  /** A thread in a project: one topic's conversation with the project's orchestrator. See docs/prd/projects.md. */
+  thread?: boolean
   /** Context window of the model, as Claude Code last reported it. */
   contextWindow?: number
   /** Fast mode: faster output on models that support it, at a higher price. */
@@ -506,6 +510,8 @@ export interface Settings extends AppearanceSettings {
   telemetry: Telemetry
   /** Wake an idle orchestrator when a workspace it started finishes, so it checks and reports back. */
   orchestratorAutoUpdates: boolean
+  /** Experimental: project groups become projects, with threads and a repo › PR tree in the sidebar. */
+  experimentalProjects?: boolean
   /** Add-ons turned on in Choo Choo and the permissions agreed to, by plugin id. */
   addons?: Record<string, AddonGrant>
   /** Recommended add-ons the person said "not now" to, by project id. */

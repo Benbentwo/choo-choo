@@ -66,6 +66,8 @@ function GroupModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState(existing?.name ?? '')
   const [picked, setPicked] = useState<string[]>(existing?.repoIds ?? [])
   const [busy, setBusy] = useState(false)
+  const projects = useStore((s) => !!s.settings.experimentalProjects)
+  const noun = projects ? 'project' : 'project group'
   const toggle = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
   const submit = async () => {
     setBusy(true)
@@ -92,10 +94,12 @@ function GroupModal({ onClose }: { onClose: () => void }) {
   }
   return (
     <Shell onClose={onClose} width="w-[460px]">
-      <div className="border-b border-line px-5 py-3 font-medium">{existing ? 'Edit project group' : 'New project group'}</div>
+      <div className="border-b border-line px-5 py-3 font-medium">{existing ? `Edit ${noun}` : `New ${noun}`}</div>
       <div className="space-y-4 px-5 py-4">
         <div className="text-[12px] text-muted">
-          A project group gives several repositories one orchestrator and one shared memory. It starts workspaces in whichever repo each piece of work belongs to.
+          {projects
+            ? "A project is one goal across one or more repositories. You talk to its orchestrator chat, which sends each message to the right thread; threads start workspaces in whichever repo the work belongs to."
+            : 'A project group gives several repositories one orchestrator and one shared memory. It starts workspaces in whichever repo each piece of work belongs to.'}
         </div>
         <input
           autoFocus
@@ -193,6 +197,7 @@ const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'integrations', label: 'Integrations', hint: 'Sign in to Linear, Notion and other services.' },
   { id: 'updates', label: 'Updates', hint: 'Choo Choo and Claude Code versions and update checks.' },
   { id: 'telemetry', label: 'Telemetry', hint: 'Export traces and metrics with OpenTelemetry.' },
+  { id: 'experimental', label: 'Experimental', hint: 'Features still being tried out. Off by default.' },
 ]
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
@@ -244,6 +249,13 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <AddonSettings />
         ) : tab === 'prompts' ? (
           <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
+        ) : tab === 'experimental' ? (
+          <Row
+            label="Projects"
+            hint="Project groups become projects. You talk to a project's orchestrator chat, which sends each message to the right thread or starts one, and the sidebar lists the project's work by repo and PR. Turning this off hides projects; nothing is deleted."
+          >
+            <input type="checkbox" checked={!!settings.experimentalProjects} onChange={(e) => void save({ experimentalProjects: e.target.checked })} />
+          </Row>
         ) : tab === 'telemetry' ? (
           <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (

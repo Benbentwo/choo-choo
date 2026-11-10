@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Workspace } from '@shared/types'
-import { useStore, openDoc, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread, closeReflect } from '../store'
+import { useStore, openGroupOrchestrator, openDoc, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread, closeReflect } from '../store'
 import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart, IconPhone } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
@@ -10,6 +10,8 @@ import { ReflectView, SessionFeedback } from './Reflect'
 import { PhonePanel } from './PhonePanel'
 import { CloudPanel, RunInCloudDialog } from './CloudPanel'
 import { StackSwitcher } from './Stack'
+import { ThreadsPanel } from './Projects'
+import { routerChat } from '@shared/projects'
 
 export function Center({ ws }: { ws: Workspace }) {
   const s = useStore()
@@ -23,6 +25,20 @@ export function Center({ ws }: { ws: Workspace }) {
   const [menu, setMenu] = useState(false)
   const [reflecting, setReflecting] = useState(false)
   const [cloudDialog, setCloudDialog] = useState(false)
+  // A project's orchestrator: one chat at a time, picked from the Threads panel instead of tabs.
+  const project = !!ws.orchestrator && !!ws.groupId && !!s.settings.experimentalProjects
+  const [threadsOpen, setThreadsOpen] = useState(() => localStorage.getItem('threads-panel') !== 'closed')
+  const toggleThreads = (open: boolean) => {
+    setThreadsOpen(open)
+    try {
+      localStorage.setItem('threads-panel', open ? 'open' : 'closed')
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  const isRouter = project && active?.id === routerChat(s.chats, ws.id)?.id
+  // A workspace a project started shows the project before its repo.
+  const partOf = s.settings.experimentalProjects && !ws.orchestrator ? s.groups.find((g) => g.id === ws.orchestratorId) : undefined
 
   useEffect(() => {
     if (chats.length === 0) void newChatTab(ws.id)
@@ -54,7 +70,7 @@ export function Center({ ws }: { ws: Workspace }) {
     }
   }
 
-  return (
+  const main = (
     <main className="flex min-w-0 flex-1 flex-col bg-bg">
       <header className="drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
         {!s.sidebarOpen && (
@@ -62,7 +78,15 @@ export function Center({ ws }: { ws: Workspace }) {
             <IconSidebar width={16} height={16} />
           </button>
         )}
-        <span className="text-muted">{repo?.name}</span>
+        {partOf && (
+          <>
+            <button className="no-drag text-muted hover:text-fg" onClick={() => void openGroupOrchestrator(partOf.id)} title="Open the project's orchestrator chat">
+              {partOf.name}
+            </button>
+            <IconRight className="text-faint" />
+          </>
+        )}
+        <span className="text-muted">{project ? ws.title : repo?.name}</span>
         <IconRight className="text-faint" />
         {ws.stack ? (
           <>
@@ -71,7 +95,9 @@ export function Center({ ws }: { ws: Workspace }) {
             <StackSwitcher ws={ws} />
           </>
         ) : (
-          <span className="no-drag selectable truncate">{ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch}</span>
+          <span className="no-drag selectable truncate">
+            {project ? (isRouter ? 'Orchestrator chat' : `# ${active?.title ?? ''}`) : ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch}
+          </span>
         )}
         <div className="no-drag relative">
           <button title="Workspace actions" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => setMenu(!menu)}>
@@ -109,22 +135,31 @@ export function Center({ ws }: { ws: Workspace }) {
           </button>
         )}
         <div className="flex-1" />
+        {project && (
+          <button
+            className={`no-drag flex items-center gap-1.5 rounded-md border border-line px-2 py-0.5 text-[12px] ${threadsOpen ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+            onClick={() => toggleThreads(!threadsOpen)}
+            title="Show this project's threads"
+          >
+            Threads <span className="text-faint">{chats.filter((c) => c.thread).length}</span>
+          </button>
+        )}
         <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ rightOpen: !s.rightOpen })} title="Toggle right panel">
           <IconPanelRight width={16} height={16} />
         </button>
       </header>
 
       <div className="flex h-11 shrink-0 items-end gap-1 border-b border-line px-4">
-        {chats.map((c) => {
+        {(project ? chats.filter((c) => c.id === activeId) : chats).map((c) => {
           const on = !doc && c.id === activeId
           return (
             <div key={c.id} className={`group flex h-10 max-w-[220px] items-center gap-2 border-b-2 px-3 ${on ? 'border-fg text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
               <button className="truncate" onClick={() => s.setActiveChat(ws.id, c.id)}>
                 {c.status === 'running' && <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-add align-middle" />}
                 {c.status !== 'running' && c.unread && c.id !== activeId && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-sky-400 align-middle" />}
-                {c.title}
+                {project && !c.thread ? 'Orchestrator chat' : c.title}
               </button>
-              {chats.length > 1 && (
+              {chats.length > 1 && !project && (
                 <button title="Close chat" className="invisible rounded text-faint group-hover:visible hover:text-fg" onClick={() => void closeChatTab(c.id)}>
                   <IconX width={12} height={12} />
                 </button>
@@ -149,7 +184,7 @@ export function Center({ ws }: { ws: Workspace }) {
             </button>
           </div>
         )}
-        <button className="mb-2.5 ml-1 rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => void newChatTab(ws.id)} title="New chat (⌘T)">
+        <button className="mb-2.5 ml-1 rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => void newChatTab(ws.id)} title={project ? 'New thread' : 'New chat (⌘T)'}>
           <IconPlus />
         </button>
         <div className="flex-1" />
@@ -207,6 +242,13 @@ export function Center({ ws }: { ws: Workspace }) {
       {reflecting && <SessionFeedback ws={ws} archive={false} onClose={() => setReflecting(false)} />}
       {cloudDialog && active && <RunInCloudDialog chat={active} ws={ws} onClose={() => setCloudDialog(false)} />}
     </main>
+  )
+  if (!project || !threadsOpen) return main
+  return (
+    <div className="flex min-w-0 flex-1">
+      {main}
+      <ThreadsPanel ws={ws} activeId={activeId} onClose={() => toggleThreads(false)} />
+    </div>
   )
 }
 

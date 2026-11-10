@@ -14,6 +14,8 @@ import { Stats } from './Stats'
 import { BrandMark } from './BrandMark'
 import { UpdateBanners } from './Updates'
 import { AddonActions, addonViews } from './Addons'
+import { ProjectsSection } from './Projects'
+import { inProject } from '@shared/projects'
 
 export function Sidebar() {
   const s = useStore()
@@ -25,6 +27,9 @@ export function Sidebar() {
   // Right-click menu on an Orchestrator or add-on row.
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; key: string } | null>(null)
   const hiddenRows = s.settings.sidebarHidden ?? []
+  // With projects on, a project's workspaces list under the project, not under their repo.
+  const projectsOn = !!s.settings.experimentalProjects
+  const plain = (w: Workspace) => !projectsOn || !inProject(w, s.groups)
   const rowHidden = (key: string) => hiddenRows.includes(key)
   const hideMenu = (key: string) => (e: React.MouseEvent) => {
     e.preventDefault()
@@ -195,8 +200,9 @@ export function Sidebar() {
       <div className="border-t border-line" />
 
       <div className="flex-1 overflow-y-auto px-2 py-3">
+        {projectsOn && <ProjectsSection />}
         <div ref={headerRef} className="mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
-          <span className="flex-1">My workspaces</span>
+          <span className="flex-1">{projectsOn ? 'Repos' : 'My workspaces'}</span>
           <button className="rounded p-0.5 hover:bg-hover hover:text-fg" title="View options" onClick={() => setMenu(menu ? null : 'view')}>
             <IconDots />
           </button>
@@ -207,7 +213,7 @@ export function Sidebar() {
           {menu && <Menu anchor={headerRef.current} items={menu === 'view' ? viewItems : addProjectItems()} onClose={() => setMenu(null)} />}
           {rowMenu && <Menu anchor={null} at={rowMenu} items={[{ label: 'Hide from sidebar', onClick: () => setSidebarRowHidden(rowMenu.key, true) }]} onClose={() => setRowMenu(null)} />}
         </div>
-        {s.groups.length > 0 && (
+        {!projectsOn && s.groups.length > 0 && (
           <div className="mb-3">
             <div className="mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
               <span className="flex-1">Project groups</span>
@@ -246,7 +252,7 @@ export function Sidebar() {
         )}
         {view.group === 'none' &&
           (() => {
-            const list = sortWs(s.workspaces.filter((w) => !w.archived && !w.orchestrator && visible.some((r) => r.id === w.repoId)))
+            const list = sortWs(s.workspaces.filter((w) => !w.archived && !w.orchestrator && plain(w) && visible.some((r) => r.id === w.repoId)))
             const ids = list.map((w) => w.id)
             return list.map((w) => <WsRow key={w.id} w={w} repoName={s.repos.find((r) => r.id === w.repoId)?.name} dnd={wsDragProps(w, ids)} />)
           })()}
@@ -255,11 +261,11 @@ export function Sidebar() {
           // A hidden orchestrator still shows while it's open or waiting on you.
           const orchHidden = rowHidden(orchestratorRowKey(repo.id))
           const showWs = (w: Workspace) => !w.orchestrator || !orchHidden || s.selectedWs === w.id || s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
-          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId && showWs(w))).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
+          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId && plain(w) && showWs(w))).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
           const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived && !w.orchestrator).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           const wsIds = wss.filter((w) => !w.orchestrator).map((w) => w.id)
           const collapsed = (s.settings.sidebarCollapsed ?? []).includes(repo.id)
-          const childIds = new Set(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId).map((w) => w.id))
+          const childIds = new Set(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId && plain(w)).map((w) => w.id))
           const childCount = wss.filter((w) => !w.orchestrator).length
           const childNeedsYou = collapsed && s.chats.some((c) => childIds.has(c.workspaceId) && (c.unread || (s.permissions[c.id]?.length ?? 0) > 0))
           return (
