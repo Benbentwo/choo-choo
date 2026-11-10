@@ -1,6 +1,17 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { moveId, sortWorkspaces } from '../src/shared/sidebarOrder'
-import { namingContext } from '../src/main/naming'
+import { namingContext, suggestTitleFromChats } from '../src/main/naming'
+
+// The model's reply, or the error running it throws, for each test.
+const sdk = vi.hoisted(() => ({ reply: '', error: null as Error | null }))
+vi.mock('../src/main/claudeBinary', () => ({ claudeExecutable: () => '/nonexistent/claude' }))
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  query: () =>
+    (async function* () {
+      if (sdk.error) throw sdk.error
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: sdk.reply }] } }
+    })()
+}))
 import type { ChatItem } from '../src/shared/types'
 
 const ws = (title: string, createdAt: number, order?: number) => ({ id: title, title, createdAt, order })
@@ -42,5 +53,33 @@ describe('namingContext', () => {
   it('keeps the most recent part when long', () => {
     const long: ChatItem[] = [{ id: '1', kind: 'user', text: 'old '.repeat(100), ts: 1 }, { id: '2', kind: 'user', text: 'recent', ts: 2 }]
     expect(namingContext([long], 20).endsWith('USER: recent')).toBe(true)
+  })
+})
+
+describe('suggestTitleFromChats', () => {
+  const chats: ChatItem[][] = [[{ id: '1', kind: 'user', text: 'Fix the login page', ts: 1 }]]
+  beforeEach(() => {
+    sdk.reply = ''
+    sdk.error = null
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  it('returns the title from the reply', async () => {
+    sdk.reply = 'Sure: {"title":"Fix login page"}'
+    await expect(suggestTitleFromChats(chats)).resolves.toBe('Fix login page')
+  })
+  it('returns null with nothing to go on, without asking the model', async () => {
+    sdk.error = new Error('should not run')
+    await expect(suggestTitleFromChats([[]])).resolves.toBeNull()
+  })
+  it('gives the friendly error for an unreadable reply', async () => {
+    for (const reply of ['no json here', '{"title":', '{"title":42}', '{"title":"  "}']) {
+      sdk.reply = reply
+      await expect(suggestTitleFromChats(chats)).rejects.toThrow("Couldn't come up with a name. Try again, or rename it yourself.")
+    }
+  })
+  it('passes through and logs a failure to run the model', async () => {
+    sdk.error = new Error('Claude Code process exited with code 1')
+    await expect(suggestTitleFromChats(chats)).rejects.toThrow("Couldn't reach Claude to name this workspace: Claude Code process exited with code 1")
+    expect(console.error).toHaveBeenCalledWith('[naming] regenerate name failed:', sdk.error)
   })
 })

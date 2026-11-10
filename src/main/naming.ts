@@ -80,13 +80,19 @@ export function namingContext(chats: ChatItem[][], maxChars = 6000): string {
 export async function suggestTitleFromChats(chats: ChatItem[][]): Promise<string | null> {
   const context = namingContext(chats)
   if (!context.trim()) return null
-  // Errors running the model (no binary, signed out, network) pass through with their own message.
-  const json = await askHaiku(
-    'Below is a coding session. Give it a short title that says what the work is about now; if the focus moved, name where it ended up. ' +
-      'Reply with only JSON like {"title":"Automate photo upload"}. Title: 2-5 words, sentence case.\n\n<session>\n' +
-      context +
-      '\n</session>'
-  )
+  let json: Record<string, unknown> | null
+  try {
+    json = await askHaiku(
+      'Below is a coding session. Give it a short title that says what the work is about now; if the focus moved, name where it ended up. ' +
+        'Reply with only JSON like {"title":"Automate photo upload"}. Title: 2-5 words, sentence case.\n\n<session>\n' +
+        context +
+        '\n</session>'
+    )
+  } catch (e) {
+    // Running the model failed (no binary, signed out, network): keep the real cause, in the log and the message.
+    console.error('[naming] regenerate name failed:', e)
+    throw new Error(`Couldn't reach Claude to name this workspace: ${e instanceof Error ? e.message : String(e)}`)
+  }
   const title = typeof json?.title === 'string' ? json.title.trim().slice(0, 80) : ''
   if (!title) throw new Error("Couldn't come up with a name. Try again, or rename it yourself.")
   return title
