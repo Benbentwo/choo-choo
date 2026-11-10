@@ -20,8 +20,11 @@ export function fallbackTitle(text: string): string {
   return t.length > 40 ? `${t.slice(0, 40).trim()}…` : t
 }
 
-/** Sends one prompt to Haiku with no tools and returns the JSON object in its reply. */
-async function askHaiku(prompt: string): Promise<Record<string, unknown>> {
+/**
+ * Sends one prompt to Haiku with no tools and returns the JSON object in its reply, or null when the
+ * reply has none. Failures to run at all (no Claude binary, signed out, network) throw.
+ */
+async function askHaiku(prompt: string): Promise<Record<string, unknown> | null> {
   const { query } = await import('@anthropic-ai/claude-agent-sdk')
   const q = query({
     prompt,
@@ -31,18 +34,23 @@ async function askHaiku(prompt: string): Promise<Record<string, unknown>> {
   for await (const m of q as AsyncIterable<any>) {
     if (m.type === 'assistant') for (const b of m.message?.content ?? []) if (b.type === 'text') text += b.text
   }
-  return JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
+  try {
+    const json: unknown = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
+    return json && typeof json === 'object' ? (json as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
 }
 
 /** Asks a small model for a short title and branch slug, like Conductor does. Falls back to heuristics. */
 export async function suggestName(prompt: string): Promise<{ title: string; slug: string }> {
   const fallback = { title: fallbackTitle(prompt), slug: slugify(prompt) }
   try {
-    const json = (await askHaiku(
+    const json = ((await askHaiku(
       'Name this coding task. Reply with only JSON like {"title":"Automate photo upload","branch":"automate-photo-upload"}. ' +
         'Title: 2-5 words, sentence case. Branch: 2-5 lowercase words, kebab-case.\n\nTask:\n' +
         prompt.slice(0, 2000)
-    )) as { title?: string; branch?: string }
+    )) ?? {}) as { title?: string; branch?: string }
     return {
       title: json.title?.trim() || fallback.title,
       slug: slugify(json.branch ?? '', 6) || fallback.slug
@@ -72,19 +80,14 @@ export function namingContext(chats: ChatItem[][], maxChars = 6000): string {
 export async function suggestTitleFromChats(chats: ChatItem[][]): Promise<string | null> {
   const context = namingContext(chats)
   if (!context.trim()) return null
-  const failed = "Couldn't come up with a name. Try again, or rename it yourself."
-  let json: { title?: unknown }
-  try {
-    json = await askHaiku(
-      'Below is a coding session. Give it a short title that says what the work is about now; if the focus moved, name where it ended up. ' +
-        'Reply with only JSON like {"title":"Automate photo upload"}. Title: 2-5 words, sentence case.\n\n<session>\n' +
-        context +
-        '\n</session>'
-    )
-  } catch {
-    throw new Error(failed)
-  }
-  const title = typeof json.title === 'string' ? json.title.trim().slice(0, 80) : ''
-  if (!title) throw new Error(failed)
+  // Errors running the model (no binary, signed out, network) pass through with their own message.
+  const json = await askHaiku(
+    'Below is a coding session. Give it a short title that says what the work is about now; if the focus moved, name where it ended up. ' +
+      'Reply with only JSON like {"title":"Automate photo upload"}. Title: 2-5 words, sentence case.\n\n<session>\n' +
+      context +
+      '\n</session>'
+  )
+  const title = typeof json?.title === 'string' ? json.title.trim().slice(0, 80) : ''
+  if (!title) throw new Error("Couldn't come up with a name. Try again, or rename it yourself.")
   return title
 }
