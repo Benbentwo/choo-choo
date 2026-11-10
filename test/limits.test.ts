@@ -36,3 +36,32 @@ describe('Codex limits', () => {
     expect(codexLimits(join(tmpdir(), 'no-such-codex-dir'))).toBeNull()
   })
 })
+
+describe('Codex hitting its limit', () => {
+  it('reads when it frees up from the error message', async () => {
+    const { parseRetryAt } = await import('../src/main/limits')
+    const t = parseRetryAt('You’ve hit your usage limit. Visit https://chatgpt.com/settings/usage to purchase more credits or try again at Nov 16th, 2026 5:39 PM.')
+    expect(new Date(t!).getFullYear()).toBe(2026)
+    expect(new Date(t!).getDate()).toBe(16)
+    expect(new Date(t!).getHours()).toBe(17)
+  })
+
+  it('marks the matching window full even when the last snapshot said 58%', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codex-cap-'))
+    const d = join(root, '2026', '11', '10')
+    mkdirSync(d, { recursive: true })
+    const now = Date.now()
+    const until = new Date(now + 6 * 86400_000)
+    const pretty = until.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+    writeFileSync(
+      join(d, 'rollout-b.jsonl'),
+      [
+        line(new Date(now - 2000).toISOString(), { primary: { used_percent: 58, window_minutes: 10080, resets_at: Math.round(until.getTime() / 1000) }, secondary: null, plan_type: 'pro' }),
+        JSON.stringify({ timestamp: new Date(now - 1000).toISOString(), type: 'event_msg', payload: { type: 'task_complete', error: { message: `You’ve hit your usage limit. Try again at ${pretty}.`, codex_error_info: 'usage_limit_exceeded' } } })
+      ].join('\n')
+    )
+    const r = codexLimits(root)!
+    expect(r.capped).toBeTruthy()
+    expect(r.windows[0]).toMatchObject({ label: 'Week', percent: 100 })
+  })
+})

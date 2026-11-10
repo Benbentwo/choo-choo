@@ -1062,4 +1062,6 @@ export interface SubscriptionLimits {
   plan?: string
   windows: LimitWindow[]
   updatedAt: number
+  /** The tool said the limit is used up, and when it frees up again. */
+  capped?: { since: number; until?: number }
 }
