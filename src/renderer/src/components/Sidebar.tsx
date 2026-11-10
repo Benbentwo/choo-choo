@@ -8,9 +8,10 @@ import { LimitsFooter } from './LimitsFooter'
 import { addProjectItems } from './AddProject'
 import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, openAutomationsPage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
-import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
+import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconMerged, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
 import { StackRows } from './Stack'
 import { Stats } from './Stats'
+import { usePrState } from '../prState'
 import { BrandMark } from './BrandMark'
 import { UpdateBanners } from './Updates'
 import { AddonActions, addonViews } from './Addons'
@@ -466,6 +467,7 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
   const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
   const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
   const blocker = s.chats.some((c) => c.workspaceId === w.id && c.advisorBlocker)
+  const pr = usePrState(w, s.repos.find((r) => r.id === w.repoId))
   return (
     <div
       role="button"
@@ -507,7 +509,13 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
       onKeyDown={(e) => !editing && e.key === 'Enter' && s.selectWorkspace(w.id)}
       className={`group flex h-9 w-full cursor-default items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'} ${dropLine} ${dnd?.drag?.id === w.id ? 'opacity-50' : ''}`}
     >
-      {running || naming ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : w.stack ? <IconStack className="shrink-0 text-accent" /> : <IconBranch className="shrink-0" />}
+      {running || naming ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : w.stack ? <IconStack className="shrink-0 text-accent" /> : pr?.state === 'MERGED' ? (
+        <span className="flex shrink-0" title={`#${pr.number} is merged`}><IconMerged className="text-violet-400" /></span>
+      ) : pr?.state === 'OPEN' && pr.reviewDecision === 'APPROVED' ? (
+        <span className="flex shrink-0" title={`#${pr.number} is approved`}><IconBranch className="text-add" /></span>
+      ) : (
+        <IconBranch className="shrink-0" />
+      )}
       {editing ? (
         <input
           autoFocus

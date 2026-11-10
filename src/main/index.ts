@@ -1043,6 +1043,13 @@ function registerIpc() {
   h('scripts:running', (id: string, kind: string) => pty.isAlive(`${id}:${kind}`))
   h('pr:get', async (id: string) => {
     const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (pr?.state === 'OPEN') pr.behindBy = await gh.prBehindBy(ws.path, pr)
+    return pr
+  })
+  // For sidebar rows: no catching up on the branch and no compare call. The PR watch keeps the branch current.
+  h('pr:state', (id: string) => {
+    const ws = findWs(id)
     return gh.prForBranch(ws.path, prRef(ws))
   })
   h('pr:comments', async (id: string) => {
@@ -1130,6 +1137,17 @@ function registerIpc() {
     const pr = await gh.prForBranch(ws.path, prRef(ws))
     if (!pr) throw new Error('No pull request for this branch')
     await gh.markPrReady(ws.path, pr.number)
+  })
+  h('pr:update', async (id: string) => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) throw new Error('No pull request for this branch')
+    await gh.updatePrBranch(ws.path, pr.number)
+    try {
+      await git.pullBranch(ws.path, ws.branch)
+    } catch (e) {
+      throw new Error(`The branch is updated on GitHub, but the worktree could not take the new commits: ${(e as Error).message}`)
+    }
   })
   h('chat:send', (id: string, text: string, images: string[] = []) => {
     // The person wrote, so the orchestrator may wake itself again.

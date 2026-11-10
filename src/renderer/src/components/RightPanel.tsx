@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CheckRun, FileChange, PrComment, PrInfo, Workspace } from '@shared/types'
-import { fixChecksPrompt, nextPrAction, resolveConflictsPrompt, summarizeChecks } from '@shared/prStatus'
+import { canUpdateBranch, fixChecksPrompt, nextPrAction, resolveConflictsPrompt, summarizeChecks } from '@shared/prStatus'
 import { newSince, prCommentsPrompt } from '@shared/prComments'
 import { useStore, reportError, openDoc, type RightTab } from '../store'
 import { IconComment, IconDown, IconEye, IconPR, IconSearch } from '../icons'
@@ -266,6 +266,21 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
     }
   }
 
+  /** GitHub's "Update branch": merges the base branch in, so the PR is tested against what it will land on. */
+  const updateBranch = async () => {
+    setMenu(false)
+    setBusy(true)
+    try {
+      await window.api.updatePrBranch(ws.id)
+    } catch (e) {
+      reportError(e)
+    } finally {
+      // Also after a failure: GitHub may have the update even when the worktree couldn't take it.
+      setPr(await window.api.getPr(ws.id).catch(() => pr))
+      setBusy(false)
+    }
+  }
+
   const merge = async () => {
     setMenu(false)
     setBusy(true)
@@ -359,6 +374,9 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
                 {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
                 {pr.state === 'OPEN' && comments.length > 0 && <MenuBtn label={`Add all comments to chat (${comments.length})`} onClick={() => void addComments()} />}
                 {pr.state === 'OPEN' && pr.isDraft && <MenuBtn label={busy ? 'Marking ready…' : 'Mark ready for review'} onClick={() => void markReady()} />}
+                {canUpdateBranch(pr) && !agentBusy && (
+                  <MenuBtn label={busy ? 'Updating…' : `Update branch${pr.behindBy ? ` (${pr.behindBy} behind ${pr.baseRefName ?? 'base'})` : ''}`} onClick={() => void updateBranch()} />
+                )}
                 {pr.state === 'OPEN' && <MenuBtn label={ws.stack ? 'Add a PR on top of the stack' : 'Stack a new PR on top'} onClick={() => void stackOnTop()} />}
               </>
             ) : (

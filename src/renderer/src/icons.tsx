@@ -33,6 +33,10 @@ export const IconSearch = (p: SVGProps<SVGSVGElement>) => (
 export const IconBranch = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10M18 9c0 4-6 3-11 8" /></svg>
 )
+/** A merged pull request: a branch joined back into the line it came from. */
+export const IconMerged = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="13" r="2" /><path d="M6 7v10M6 7c0 4 4 6 10 6" /></svg>
+)
 export const IconSidebar = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg>
 )

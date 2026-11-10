@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { CheckRun, GithubRepo, PrComment, PrInfo, SourceOption } from '@shared/types'
 import { parsePrFeedback, PR_FEEDBACK_QUERY } from '@shared/prComments'
+import { comparePath } from '@shared/prStatus'
 import { parsePrInbox, prInboxQuery, type InboxPr, type PrRole } from '@shared/prInbox'
 import type { RepoItem } from '@shared/automations'
 
@@ -10,7 +11,7 @@ const exec = promisify(execFile)
 /** The pull request of a branch, or the one with that number: `gh pr view` takes either. */
 export async function prForBranch(cwd: string, branch: string): Promise<PrInfo | null> {
   try {
-    const { stdout } = await exec('gh', ['pr', 'view', branch, '--json', 'number,url,state,isDraft,title,mergeable,reviewDecision,mergeStateStatus,headRefName'], { cwd })
+    const { stdout } = await exec('gh', ['pr', 'view', branch, '--json', 'number,url,state,isDraft,title,mergeable,reviewDecision,mergeStateStatus,headRefName,baseRefName,isCrossRepository,headRepositoryOwner'], { cwd })
     return JSON.parse(stdout) as PrInfo
   } catch {
     return null
@@ -24,6 +25,29 @@ export async function mergePr(cwd: string, number: number) {
 /** Takes a draft PR out of draft so reviewers are asked for. */
 export async function markPrReady(cwd: string, number: number) {
   await exec('gh', ['pr', 'ready', String(number)], { cwd })
+}
+
+/** How many commits the PR's base branch has that its own branch lacks; undefined when GitHub can't say. */
+export async function prBehindBy(cwd: string, pr: PrInfo): Promise<number | undefined> {
+  const path = comparePath(pr)
+  if (!path) return undefined
+  try {
+    const { stdout } = await exec('gh', ['api', path, '--jq', '.behind_by'], { cwd, timeout: 20_000 })
+    const n = Number(stdout.trim())
+    return Number.isFinite(n) ? n : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Merges the base branch into the PR's branch on GitHub, as the "Update branch" button there does. */
+export async function updatePrBranch(cwd: string, number: number) {
+  try {
+    await exec('gh', ['pr', 'update-branch', String(number)], { cwd })
+  } catch (e) {
+    const err = e as { stderr?: string; message?: string }
+    throw new Error((err.stderr || err.message || 'Could not update the branch').trim())
+  }
 }
 
 /** Unresolved review threads, reviews and conversation comments on a PR. */
