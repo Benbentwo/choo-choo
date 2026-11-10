@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CheckRun, FileChange, PrComment, PrInfo, Workspace } from '@shared/types'
 import { canUpdateBranch, fixChecksPrompt, nextPrAction, resolveConflictsPrompt, summarizeChecks } from '@shared/prStatus'
 import { newSince, prCommentsPrompt } from '@shared/prComments'
+import { isTheirs, type PrReviewInfo } from '@shared/prReview'
 import { useStore, reportError, openDoc, type RightTab } from '../store'
 import { IconComment, IconDown, IconEye, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
@@ -189,6 +190,8 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const chatId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
   const agentBusy = chats.some((c) => c.status === 'running')
   const prVersion = s.prVersion[ws.id] ?? 0
+  // On someone else's PR the header pill already says it needs your review.
+  const theirs = isTheirs(s.prReview[ws.id]?.info)
 
   useEffect(() => {
     let live = true
@@ -196,11 +199,21 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       void window.api.getPr(ws.id).then((p) => {
         if (!live) return
         setPr(p)
-        if (p?.state !== 'OPEN') {
-          setChecks([])
-          return setComments([])
+        const set = (v: { pr: PrInfo; info: PrReviewInfo } | null) => {
+          const st = useStore.getState()
+          st.set({ prReview: { ...st.prReview, [ws.id]: v } })
         }
-        window.api.getPrComments(ws.id).then((c) => live && setComments(c), () => {})
+        if (!p) set(null)
+        // Feedback, who wrote the PR and who is signed in: the diff and Review tab use these too.
+        window.api.getPrReview(ws.id).then(
+          (r) => {
+            if (!live) return
+            set(r)
+            setComments(r && r.pr.state === 'OPEN' ? r.info.feedback : [])
+          },
+          () => {}
+        )
+        if (p?.state !== 'OPEN') return setChecks([])
         window.api.getChecks(ws.id).then((c) => live && setChecks(c), () => {})
       })
     setAddedAt(localStorage.getItem(addedKey(ws.id)) ?? undefined)
@@ -351,7 +364,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
           </button>
         ) : pr ? (
           <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => void window.api.openExternal(pr.url)} title={action === 'review' ? 'Waiting for an approving review' : action === 'waiting' ? 'Checks are running' : pr.title}>
-            <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : action === 'review' ? 'Needs review' : 'Open'} #{pr.number}
+            <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : action === 'review' && !theirs ? 'Needs review' : 'Open'} #{pr.number}
           </button>
         ) : (
           <button

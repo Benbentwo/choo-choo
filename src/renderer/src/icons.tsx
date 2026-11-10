@@ -139,3 +139,6 @@ export const IconStack = (p: SVGProps<SVGSVGElement>) => (
 export const IconRestack = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M20 9a8 8 0 0 0-14.5-3M4 15a8 8 0 0 0 14.5 3" /><path d="M5 2v4h4M19 22v-4h-4" /></svg>
 )
+export const IconBot = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="4.5" y="8" width="15" height="11" rx="3" /><path d="M12 4v4M9.5 13h.01M14.5 13h.01" /></svg>
+)

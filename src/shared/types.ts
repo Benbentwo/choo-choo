@@ -4,6 +4,7 @@ import type { UpdateStatus } from './updates'
 import type { PrInbox } from './prInbox'
 import type { Automation, AutomationRun, GithubWatchState } from './automations'
 import type { AddonActionContext, AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
+import type { PrDiffTarget, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
 export interface Repo {
   id: string
   name: string
@@ -370,6 +371,8 @@ export interface PrInfo {
   headRepositoryOwner?: { login: string }
   /** Commits on the base branch that this branch doesn't have yet. Only filled for the PR button. */
   behindBy?: number
+  /** The PR's head commit. */
+  headRefOid?: string
 }
 
 /** One piece of review feedback on a PR, ready to hand to the agent. */
@@ -377,6 +380,10 @@ export interface PrComment {
   id: string
   /** inline: an unresolved review thread on a line; review: a review's summary; comment: a conversation comment. */
   kind: 'inline' | 'review' | 'comment'
+  /** Inline only: the review thread, for replying and resolving. */
+  threadId?: string
+  /** Inline only: which side of the diff the thread is on. */
+  side?: 'new' | 'old'
   author: string
   body: string
   /** For threads, the time of the newest reply. */
@@ -968,6 +975,14 @@ export interface Api {
   updatePrBranch(workspaceId: string): Promise<void>
   /** Unresolved review threads, reviews and comments on the workspace's PR. */
   getPrComments(workspaceId: string): Promise<PrComment[]>
+  /** The workspace's PR with its feedback, author, the signed-in gh user and their last review. */
+  getPrReview(workspaceId: string): Promise<{ pr: PrInfo; info: PrReviewInfo } | null>
+  /** Which lines of the PR can take review comments, and whether the worktree's line numbers match it. */
+  getPrDiffTarget(workspaceId: string): Promise<PrDiffTarget | null>
+  /** Posts a review on the workspace's PR. */
+  submitPrReview(workspaceId: string, drafts: ReviewDraft[], body: string, event: ReviewEvent): Promise<{ url: string }>
+  replyToPrThread(workspaceId: string, threadId: string, body: string): Promise<void>
+  resolvePrThread(workspaceId: string, threadId: string): Promise<void>
   stackStatus(workspaceId: string): Promise<StackStatus | null>
   /** Turns a workspace into a stack (if it isn't one) and adds a new branch on top of the top PR. */
   stackAddLayer(workspaceId: string): Promise<void>

@@ -79,6 +79,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Review findings inline in the diff, with Fix buttons
 - ✅ Review findings in the chat as tiles (severity, file and line, what is wrong, the fix) instead of the raw JSON block; a tile opens the diff at that line, and each has Ask the agent to fix this
 - ✅ Add all PR comments to chat: unresolved review threads, change requests and comments, with file/line context; new-comment count in the header
+- ✅ Line comments pick Agent or GitHub review (default by who wrote the PR); submit a GitHub review with Comment, Approve or Request changes; findings into your review; GitHub threads inline with Reply, Resolve, Ask agent; header says whose PR it is
 
 ### Bottom panel
 - ✅ Terminal tabs (xterm + pty), persist across workspace switches

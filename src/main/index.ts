@@ -7,6 +7,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
 import type { Automation } from '@shared/automations'
 import type { Artifact, Chat, FeedbackOptions, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
+import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import { sessionUsage } from './usage'
 import * as store from './store'
@@ -1056,6 +1057,42 @@ function registerIpc() {
     const ws = await wsForPr(id)
     const pr = await gh.prForBranch(ws.path, prRef(ws))
     return pr ? gh.prComments(ws.path, pr.number) : []
+  })
+  h('pr:review', async (id: string) => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return pr ? { pr, info: await gh.prReview(ws.path, pr.number) } : null
+  })
+  h('pr:diffTarget', async (id: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) return null
+    const [lines, head, status] = await Promise.all([
+      gh.prDiffLines(ws.path, pr.number),
+      git.git(ws.path, ['rev-parse', 'HEAD']).catch(() => ''),
+      git.git(ws.path, ['status', '--porcelain', '-z']).catch(() => '')
+    ])
+    // -z: "XY path\0", with a second path after renames.
+    const dirty = status.split('\0').filter((e) => e.length > 3).map((e) => e.slice(3))
+    return { lines, headMatches: !!pr.headRefOid && head.trim() === pr.headRefOid, dirty }
+  })
+  h('pr:submitReview', async (id: string, drafts: ReviewDraft[], body: string, event: ReviewEvent) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) throw new Error('This workspace has no PR to review.')
+    const r = await gh.submitReview(ws.path, pr.number, drafts, body, event, pr.headRefOid)
+    send('pr:changed', ws.id)
+    return r
+  })
+  h('pr:replyThread', async (id: string, threadId: string, body: string) => {
+    const ws = findWs(id)
+    await gh.replyToThread(ws.path, threadId, body)
+    send('pr:changed', ws.id)
+  })
+  h('pr:resolveThread', async (id: string, threadId: string) => {
+    const ws = findWs(id)
+    await gh.resolveThread(ws.path, threadId)
+    send('pr:changed', ws.id)
   })
   h('stack:status', (id: string) => stack.status(findWs(id)))
   h('stack:addLayer', (id: string) => stack.addLayer(findWs(id)))
