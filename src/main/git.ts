@@ -234,6 +234,13 @@ export async function currentBranch(cwd: string): Promise<string | null> {
   return (await tryGit(cwd, ['branch', '--show-current']))?.trim() || null
 }
 
+/** The PR a branch was checked out from, when it tracks refs/pull/<n>/head (what `gh pr checkout` sets up for fork PRs). */
+export async function pullNumberOf(cwd: string, branch: string): Promise<number | null> {
+  const merge = (await tryGit(cwd, ['config', '--get', `branch.${branch}.merge`]))?.trim()
+  const n = merge?.match(/^refs\/pull\/(\d+)\/head$/)?.[1]
+  return n ? Number(n) : null
+}
+
 /** Moves a worktree folder, keeping uncommitted and untracked files. Fails for worktrees with submodules. */
 export async function moveWorktree(repo: string, from: string, to: string) {
   await git(repo, ['worktree', 'move', from, to])

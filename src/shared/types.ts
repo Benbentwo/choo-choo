@@ -92,6 +92,11 @@ export interface Workspace {
   /** City name, also the worktree folder name. */
   name: string
   branch: string
+  /**
+   * The PR this workspace's branch belongs to, when known by number: opened from a PR, or the
+   * agent ran `gh pr checkout`. Fork PRs live on a local branch (pr-12) that GitHub can't find by name.
+   */
+  prNumber?: number
   baseRef: string
   path: string
   title: string

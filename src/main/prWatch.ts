@@ -36,12 +36,16 @@ interface Watch {
   checksEtag?: string
   sha?: string
   lastFull: number
+  /** Branch and PR the probes were for. */
+  key?: string
 }
 
 export interface WatchTarget {
   id: string
   path: string
   branch: string
+  /** Known PR number: probed by number, which also finds fork PRs. */
+  pr?: number
 }
 
 /** How often to probe each workspace: often while the app is in front, less in the background. */
@@ -54,19 +58,21 @@ const FULL_EVERY_MS = 5 * 60_000
  * Watches each workspace's PR and checks with cheap ETag probes, and calls `onChange` when
  * something changed, so the UI refetches only then instead of every panel polling on a timer.
  */
-export function startPrWatch(opts: { targets: () => WatchTarget[]; focused: () => boolean; onChange: (wsId: string) => void }) {
+export function startPrWatch(opts: { targets: () => WatchTarget[]; focused: () => boolean; onChange: (wsId: string) => void; beforeTick?: () => Promise<void> }) {
   const watches = new Map<string, Watch>()
   let lastTick = 0
   let busy = false
 
   const probe = async (t: WatchTarget, w: Watch): Promise<boolean> => {
     let changed = false
-    const pulls = await conditionalGet(
-      t.path,
-      `repos/{owner}/{repo}/pulls?head={owner}:${encodeURIComponent(t.branch)}&state=all&per_page=1`,
-      w.pullsEtag,
-      '[.[0] | {n: .number, sha: .head.sha}]'
-    )
+    const pulls = t.pr
+      ? await conditionalGet(t.path, `repos/{owner}/{repo}/pulls/${t.pr}`, w.pullsEtag, '[{n: .number, sha: .head.sha}]')
+      : await conditionalGet(
+          t.path,
+          `repos/{owner}/{repo}/pulls?head={owner}:${encodeURIComponent(t.branch)}&state=all&per_page=1`,
+          w.pullsEtag,
+          '[.[0] | {n: .number, sha: .head.sha}]'
+        )
     if (pulls.status === 200) {
       changed = w.pullsEtag !== undefined
       w.pullsEtag = pulls.etag
@@ -97,10 +103,14 @@ export function startPrWatch(opts: { targets: () => WatchTarget[]; focused: () =
     lastTick = now
     busy = true
     try {
+      await opts.beforeTick?.().catch(() => {})
       const targets = opts.targets()
       for (const id of watches.keys()) if (!targets.some((t) => t.id === id)) watches.delete(id)
       for (const t of targets) {
-        const w = watches.get(t.id) ?? { lastFull: now }
+        const key = `${t.branch}#${t.pr ?? ''}`
+        let w = watches.get(t.id) ?? { lastFull: now, key }
+        // The workspace moved to another branch or PR: start that one's probes fresh and refresh now.
+        if (w.key !== key) w = { lastFull: 0, key }
         watches.set(t.id, w)
         let changed = false
         try {
