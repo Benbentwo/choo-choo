@@ -1,8 +1,7 @@
 name: Preview build
-# Unsigned test builds of main, downloadable from the run's Artifacts section.
+# Unsigned test builds, downloadable from the run's Artifacts section. Merges to main get a signed
+# beta release from the Beta workflow instead, so this runs by hand and on PRs that change the build.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
   pull_request:
     paths: ['.github/workflows/preview.yml', 'electron-builder.yml']
