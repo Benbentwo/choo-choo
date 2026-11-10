@@ -33,7 +33,7 @@ describe('Codex limits', () => {
   })
 
   it('returns nothing when Codex has never run', () => {
-    expect(codexLimits(join(tmpdir(), 'no-such-codex-dir'))).toBeNull()
+    expect(codexLimits(join(mkdtempSync(join(tmpdir(), 'codex-none-')), 'sessions'))).toBeNull()
   })
 })
 
