@@ -970,6 +970,9 @@ function registerIpc() {
   h('stack:continue', (id: string) => stack.continueJob(findWs(id)))
   h('stack:stop', (id: string) => stack.stopJob(findWs(id)))
   h('stack:dissolve', (id: string) => stack.dissolve(findWs(id)))
+  h('stack:linkGithub', (id: string) => stack.linkGithub(findWs(id)))
+  h('stack:mergeThrough', (id: string, branch: string) => stack.mergeThrough(findWs(id), branch))
+  h('stack:installCli', () => stack.installCli())
   h('checks:get', (id: string) => {
     const ws = findWs(id)
     return gh.checks(ws.path, ws.branch)

@@ -5,7 +5,7 @@
 | Status | In review |
 | Owner | Claude |
 | Requested by | Ben, 2026-11-10 |
-| Last updated | 2026-11-10 |
+| Last updated | 2026-11-10 (link on GitHub, merge through) |
 
 ## Problem
 
@@ -23,7 +23,6 @@ A big feature often ships as several PRs, each built on the one below. Today a w
 ## Non-goals
 
 - Importing stacks made by other tools (Graphite, ghstack, spr). A workspace on any branch can grow a stack from that branch.
-- Merging a whole stack in one click. The bottom PR merges as usual; "Sync with main" then drops it and rebases the rest.
 - Several worktrees per stack, or a branch per workspace inside a stack (see [decision 0010](../decisions/0010-one-worktree-per-stack.md)).
 
 ## User experience
@@ -32,6 +31,8 @@ A big feature often ships as several PRs, each built on the one below. Today a w
 
 ![Address feedback](../media/stacked-prs-feedback.png)
 
+![Merge through a PR](../media/stacked-prs-merge-through.png) ![After the merge](../media/stacked-prs-merged.png)
+
 - **Starting a stack.** The PR menu (the arrow beside the PR status) has "Stack a new PR on top" once the workspace has a PR. It makes a new branch on top of the current one (named after the bottom branch with `-2`, `-3`, …), checks it out, and opens the Stack tab. "Add PR on top" in the Stack tab and the header switcher does the same.
 - **Sidebar.** A stacked workspace shows a stack icon. Its PRs are listed under it, bottom first, indented one level further: number, PR title (or branch), comment count, PR number. The PR being worked on has an accent dot; a PR that needs a restack has an amber dot. Clicking one opens the workspace on that PR.
 - **Header.** Instead of the branch name, the header shows the workspace title and a switcher pill ("2/4 Export API #121 ▾"). Its menu lists the PRs top to bottom and "Add a PR on top".
@@ -39,6 +40,8 @@ A big feature often ships as several PRs, each built on the one below. Today a w
 - **Stack tab** (right panel, first tab, only on stacked workspaces): every PR from top to bottom on a vertical line down to the base branch. Each card shows number, title, PR link, a sync badge (Working here, Needs restack, Not pushed, Merged, Conflicts, Up to date), branch, review or checks state, unresolved comments and commit count, with "Work on this PR" and "Address N".
 - **Keep up to date** (switch in the Stack tab, on by default): after each agent turn on a PR that isn't the top one, the PRs above it that fell behind are rebased and pushed, and a note in the chat says which. If a rebase hits conflicts, the conflicts are handed to the agent in the same chat; when its turn ends the restack carries on.
 - **Restack now** does the same by hand. **Sync with main** fetches the base branch, drops merged PRs from the bottom of the stack, and rebases the whole stack onto the latest base.
+- **Link on GitHub.** With two or more open PRs, the Stack tab offers "Link on GitHub". It registers the stack with GitHub's [stacked pull requests](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs), so GitHub shows the PRs as one stack, or adds the PRs on top that GitHub's stack is missing. Once linked, the tab says "Linked on GitHub as stack #N". Repos where GitHub has no stacks API show nothing.
+- **Merge through #N.** On a linked stack each open PR has "Merge through #N · M PRs" ("Merge #N" for the bottom one), like Orca and GitHub. It asks once ("Merge #121, #122 into main together? If one can't merge, none do."), then GitHub merges that PR and every PR below it as one squash each, all or none, through the merge queue if the repo has one. The merged branches leave the stack; the PRs above end up on the new base (GitHub's rebase, or the app's own restack). A merge queue shows "Queued …" instead, and Sync with main tidies up once they land. The button waits until every PR below is open, pushed and restacked, and needs GitHub's `gh stack` extension: an "Install gh-stack" button runs `gh extension install github/gh-stack`.
 - **Address feedback.** "Address all feedback (N)" (or "Address N" on one PR) opens a panel with a checkbox per PR that has unresolved feedback, "Stop after each PR so I can check the fix", and "Reply on GitHub and resolve the threads it fixed" (on). Start runs, in the active chat: for each PR bottom first, check out its branch, send the PR's comments, wait for the turn, restack the PRs above it. A progress card in the Stack tab lists the steps; Stop ends it; a failure or pause shows Continue.
 
 ## Requirements
@@ -50,13 +53,15 @@ A big feature often ships as several PRs, each built on the one below. Today a w
 5. Creating a PR from a stacked workspace targets the branch below.
 6. Nothing switches branches or restacks while the worktree has uncommitted tracked changes; the app says so instead.
 7. Only one stack operation runs at a time per workspace.
-8. Feedback is fetched and fenced exactly as for "Add all comments to chat" ([pr-comments](pr-comments.md)); the agent is told to commit only to the PR's branch and leave rebasing to the app.
+8. Linking only creates a GitHub stack or appends to one; a GitHub stack with a different order is reported, never rewritten.
+9. Merge through runs only on a linked stack, with a clean worktree, every PR up to it open, pushed and not behind, through `gh stack merge <N> --squash --yes` (decision [0012](../decisions/0012-github-stacks-for-merging.md)).
+10. Feedback is fetched and fenced exactly as for "Add all comments to chat" ([pr-comments](pr-comments.md)); the agent is told to commit only to the PR's branch and leave rebasing to the app.
 
 ## Design
 
 - `src/shared/types.ts`: `Workspace.stack` (`Stack`: layers, `autoRestack`, `restacking`), `StackStatus`, `StackJob`, `FeedbackOptions`.
-- `src/shared/stack.ts`: pure helpers: PR base for a branch, next branch name, bottom-first order, feedback steps, the feedback and conflict prompts.
-- `src/main/stack.ts`: git and gh work: `addLayer`, `switchLayer`, `restack` (with `ontoBase`), `status`, and the job runner that drives feedback and conflict fixes across agent turns. `onTurnDone` is called from `onChatDone` in `src/main/index.ts`.
+- `src/shared/stack.ts`: pure helpers: PR base for a branch, next branch name, bottom-first order, feedback steps, the feedback and conflict prompts, the GitHub link plan and which PRs a merge-through takes.
+- `src/main/stack.ts`: git and gh work: `addLayer`, `switchLayer`, `restack` (with `ontoBase`), `status`, `linkGithub`, `mergeThrough` (then `afterMerge`), `installCli`, and the job runner that drives feedback and conflict fixes across agent turns. `onTurnDone` is called from `onChatDone` in `src/main/index.ts`.
 - IPC `stack:*` → `window.api.stack*`; `stack:changed` reloads the status into the renderer store (`stacks`).
 - `src/renderer/src/components/Stack.tsx`: `StackRows` (sidebar), `StackSwitcher` (header), `StackTab` and the feedback panel.
 
@@ -74,7 +79,7 @@ A big feature often ships as several PRs, each built on the one below. Today a w
 
 ## Testing
 
-`test/stack.test.ts`: helpers, and end to end against real git (a local origin): adding PRs, switching, carrying a lower change up and pushing, status, a conflict handed to the "agent" and finished after its turn, and refusing to switch with uncommitted changes. The built app was driven under Playwright with a stand-in `gh` for the screenshots.
+`test/stack-github.test.ts`: linking and merge-through against real git with a stand-in `gh` (`test/fixtures/fake-gh.cjs`), both when GitHub rebases the PRs left and when it doesn't. `test/stack.test.ts`: helpers, and end to end against real git (a local origin): adding PRs, switching, carrying a lower change up and pushing, status, a conflict handed to the "agent" and finished after its turn, and refusing to switch with uncommitted changes. The built app was driven under Playwright with a stand-in `gh` for the screenshots.
 
 ## Rollout
 
@@ -85,4 +90,5 @@ On for everyone; nothing changes until a workspace grows a stack. "Unstack" isn'
 - Plan board: run a dependency chain as a stack.
 - Orchestrator tool: restack and address feedback across stacks.
 - Group a stack's PRs together on the PRs page.
-- Merge the bottom PR from the Stack tab, then sync automatically.
+- Call GitHub's asynchronous merge endpoint directly once it's documented, and drop the `gh stack` dependency.
+- The header Merge button still merges one PR; on a linked stack it could offer Merge through instead.

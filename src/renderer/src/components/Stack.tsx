@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { StackLayerStatus, StackStatus, Workspace } from '@shared/types'
-import { restackConflictPrompt } from '@shared/stack'
+import { githubLinked, mergeThroughLabel, mergeThroughPrs, restackConflictPrompt } from '@shared/stack'
 import { useStore, reportError, loadStack } from '../store'
 import { IconCheck, IconComment, IconDown, IconPlus, IconRestack, IconStack, IconX } from '../icons'
 
@@ -169,6 +169,9 @@ export function StackTab({ ws }: { ws: Workspace }) {
   const status = useStackStatus(ws)
   const [busy, setBusy] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string[] | null>(null)
+  /** The branch whose "Merge through" is waiting for a second click, and the last merge's outcome. */
+  const [confirmMerge, setConfirmMerge] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const chats = s.chats.filter((c) => c.workspaceId === ws.id)
   const chatId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
   const agentBusy = chats.some((c) => c.status === 'running')
@@ -191,6 +194,20 @@ export function StackTab({ ws }: { ws: Workspace }) {
   const totalComments = withFeedback.reduce((n, l) => n + l.comments, 0)
   const base = status.base.replace(/^origin\//, '')
   const job = status.job
+  const openPrs = status.layers.filter((l) => l.pr?.state === 'OPEN').map((l) => l.pr!.number)
+  const gh = status.github
+  const linked = githubLinked(openPrs, gh)
+  const mergeThrough = (branch: string, prs: number[]) =>
+    act('merge', async () => {
+      setConfirmMerge(null)
+      setNotice(null)
+      const r = await window.api.stackMergeThrough(ws.id, branch)
+      setNotice(
+        r.queued
+          ? `Queued ${prs.map((n) => `#${n}`).join(', ')} to merge. Press Sync with ${base} once they land.`
+          : `Merged ${r.merged.map((n) => `#${n}`).join(', ')} into ${base}${r.dropped.length ? ' and took them off the stack' : ''}.`
+      )
+    })
 
   return (
     <div className="flex h-full flex-col">
@@ -199,13 +216,56 @@ export function StackTab({ ws }: { ws: Workspace }) {
           <IconStack className="text-accent" />
           <span className="font-semibold">{ws.title}</span>
           <span className="text-faint">
-            {status.layers.length} PRs on {base}
+            {status.layers.length} PR{status.layers.length === 1 ? '' : 's'} on {base}
           </span>
           <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[12px] text-muted" title="After each agent turn on a lower PR, rebase the PRs above it and push them">
             Keep up to date
             <input type="checkbox" className="accent-[var(--color-accent)]" checked={ws.stack.autoRestack} onChange={(e) => void run(() => window.api.stackSetAuto(ws.id, e.target.checked))} />
           </label>
         </div>
+
+        {gh !== 'unavailable' && openPrs.length >= 2 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-bg px-3 py-2 text-[12.5px]">
+            {linked && typeof gh === 'object' && gh ? (
+              <span className="text-muted">
+                Linked on GitHub as stack #{gh.number}. Merging goes through GitHub, all PRs or none.
+              </span>
+            ) : (
+              <>
+                <span className="text-muted">{gh ? 'Some PRs are missing from the GitHub stack.' : 'Link the stack on GitHub so it shows as a stack there and can merge in one step.'}</span>
+                <button
+                  disabled={!!busy || !!job}
+                  className="ml-auto rounded-md border border-accent/50 px-2 py-0.5 text-accent hover:bg-accent/10 disabled:opacity-40"
+                  onClick={act('link', () => window.api.stackLinkGithub(ws.id))}
+                >
+                  {busy === 'link' ? 'Linking…' : 'Link on GitHub'}
+                </button>
+              </>
+            )}
+            {linked && !status.ghStackCli && (
+              <>
+                <span className="text-faint">Merging needs GitHub's gh-stack extension.</span>
+                <button
+                  disabled={!!busy}
+                  className="ml-auto rounded-md border border-line px-2 py-0.5 text-muted hover:bg-hover hover:text-fg disabled:opacity-40"
+                  onClick={act('install', () => window.api.stackInstallCli())}
+                  title="Runs gh extension install github/gh-stack"
+                >
+                  {busy === 'install' ? 'Installing…' : 'Install gh-stack'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {notice && (
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-add/40 bg-add/10 px-3 py-2 text-[12.5px]">
+            <span className="flex-1">{notice}</span>
+            <button className="text-faint hover:text-fg" onClick={() => setNotice(null)} title="Dismiss">
+              <IconX width={11} height={11} />
+            </button>
+          </div>
+        )}
 
         {job && (
           <div className="mb-3 overflow-hidden rounded-lg border border-line bg-bg">
@@ -280,6 +340,8 @@ export function StackTab({ ws }: { ws: Workspace }) {
           const i = status.layers.indexOf(l)
           const current = l.branch === status.current
           const conflict = status.conflict?.branch === l.branch
+          const merge = linked && l.pr?.state === 'OPEN' ? mergeThroughPrs(status.layers, i) : null
+          const confirming = confirmMerge === l.branch && merge && 'prs' in merge
           return (
             <div key={l.branch} className="flex gap-2.5">
               <div className="relative w-[18px] shrink-0">
@@ -316,8 +378,23 @@ export function StackTab({ ws }: { ws: Workspace }) {
                     {l.commits} commit{l.commits === 1 ? '' : 's'}
                   </span>
                 </div>
-                {(!current || l.comments > 0) && (
-                  <div className="mt-2 flex gap-1.5 text-[11.5px]">
+                {confirming && (
+                  <div className="mt-2 rounded border border-accent/40 bg-accent/5 px-2 py-1.5 text-[12px]">
+                    <div className="mb-1.5">
+                      Merge {merge.prs.map((n) => `#${n}`).join(', ')} into {base} together? If one can't merge, none do.
+                    </div>
+                    <div className="flex gap-1.5 text-[11.5px]">
+                      <button className="rounded bg-accent px-2 py-0.5 font-semibold text-[#1a1b20] hover:opacity-90" onClick={mergeThrough(l.branch, merge.prs)}>
+                        {mergeThroughLabel(merge.prs)}
+                      </button>
+                      <button className="rounded border border-line px-2 py-0.5 text-muted hover:bg-hover" onClick={() => setConfirmMerge(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {(!current || l.comments > 0 || merge) && !confirming && (
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[11.5px]">
                     {!current && (
                       <button disabled={!!status.conflict || !!job} className="rounded border border-line px-2 py-0.5 text-muted hover:bg-hover hover:text-fg disabled:opacity-40" onClick={() => switchTo(ws, l.branch)}>
                         Work on this PR
@@ -326,6 +403,16 @@ export function StackTab({ ws }: { ws: Workspace }) {
                     {l.comments > 0 && (
                       <button disabled={!!job || agentBusy} className="rounded border border-accent/50 px-2 py-0.5 text-accent hover:bg-accent/10 disabled:opacity-40" onClick={() => setFeedback([l.branch])}>
                         Address {l.comments}
+                      </button>
+                    )}
+                    {merge && (
+                      <button
+                        disabled={'why' in merge || !status.ghStackCli || !!busy || !!job || agentBusy || status.dirty || !!status.conflict}
+                        className="ml-auto rounded border border-line px-2 py-0.5 text-muted hover:bg-hover hover:text-fg disabled:opacity-40"
+                        title={'why' in merge ? merge.why : !status.ghStackCli ? 'Install gh-stack first' : `Merge this PR and every PR below it into ${base}, all or none`}
+                        onClick={() => setConfirmMerge(l.branch)}
+                      >
+                        {busy === 'merge' ? 'Merging…' : 'prs' in merge ? mergeThroughLabel(merge.prs) : 'Merge'}
                       </button>
                     )}
                   </div>
