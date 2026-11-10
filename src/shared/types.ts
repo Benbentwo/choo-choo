@@ -448,6 +448,10 @@ export interface Settings extends AppearanceSettings {
   whileRunning?: 'steer' | 'queue'
   /** Orgs ("owner") or repos ("owner/repo") left off the PRs page on this machine. */
   prsHidden?: string[]
+  /** Sidebar rows hidden with right-click > Hide from sidebar (keys from shared/sidebarHidden.ts). */
+  sidebarHidden?: string[]
+  /** Projects collapsed in the sidebar (repo ids): only the project row shows. */
+  sidebarCollapsed?: string[]
   /** Spend cap per message for new chats, in dollars. 0 means no cap. */
   defaultBudgetUsd?: number
   /** Branch prefix; empty uses the GitHub user or git user.name. */

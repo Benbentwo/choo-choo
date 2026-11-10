@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { toggleHidden } from '@shared/sidebarHidden'
 import { readCachedAppearance } from './appearanceCache'
 import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
@@ -380,6 +381,27 @@ export async function openGroupOrchestrator(groupId: string) {
   } catch (e) {
     reportError(e)
   }
+}
+
+/** Hide or show a sidebar row (an Orchestrator or add-on row). Keys come from shared/sidebarHidden.ts. */
+export function setSidebarRowHidden(keys: string | string[], hidden: boolean) {
+  saveSidebarList('sidebarHidden', keys, hidden)
+}
+
+/** Collapse a project in the sidebar so only its row shows, or expand it again. */
+export function setRepoCollapsed(repoId: string, collapsed: boolean) {
+  saveSidebarList('sidebarCollapsed', repoId, collapsed)
+}
+
+function saveSidebarList(field: 'sidebarHidden' | 'sidebarCollapsed', keys: string | string[], on: boolean) {
+  const cur = useStore.getState().settings[field] ?? []
+  const next = [keys].flat().reduce((list, key) => toggleHidden(list, key, on), cur)
+  if (next === cur) return
+  useStore.getState().set({ settings: { ...useStore.getState().settings, [field]: next } })
+  void window.api
+    .saveSettings({ [field]: next })
+    .then((settings) => useStore.getState().set({ settings }))
+    .catch(reportError)
 }
 
 export function editGroup(groupId: string | null) {
