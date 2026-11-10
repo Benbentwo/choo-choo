@@ -178,6 +178,23 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   )
 }
 
+type SettingsTab = ReturnType<typeof useStore.getState>['settingsTab']
+
+// The section list down the left of Settings, in this order.
+const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
+  { id: 'general', label: 'General', hint: 'Default model, effort and permissions, notifications, branches and archiving.' },
+  { id: 'appearance', label: 'Appearance', hint: 'Theme, accent color, text size, density and fonts.' },
+  { id: 'projects', label: 'Projects', hint: 'Your projects and their workspaces.' },
+  { id: 'agents', label: 'Agents', hint: 'Extra agents and the advisor.' },
+  { id: 'prompts', label: 'Prompts', hint: 'Custom instructions added to chats, for every project or one.' },
+  { id: 'mcp', label: 'MCP', hint: 'MCP servers Claude Code loads for each project.' },
+  { id: 'plugins', label: 'Plugins', hint: 'Claude Code plugins, marketplaces and your own skills.' },
+  { id: 'addons', label: 'Add-ons', hint: 'Views, orchestrator tools and agent skills from git repos you can read.' },
+  { id: 'integrations', label: 'Integrations', hint: 'Sign in to Linear, Notion and other services.' },
+  { id: 'updates', label: 'Updates', hint: 'Choo Choo and Claude Code versions and update checks.' },
+  { id: 'telemetry', label: 'Telemetry', hint: 'Export traces and metrics with OpenTelemetry.' },
+]
+
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const settings = useStore((s) => s.settings)
   const modelDetails = useStore((s) => s.modelDetails)
@@ -185,26 +202,32 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<SettingsTab>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
+  const current = SETTINGS_SECTIONS.find((x) => x.id === tab) ?? SETTINGS_SECTIONS[0]
   return (
-    <Shell onClose={onClose} width="w-[940px]">
-      <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
-        <div className="pb-3 font-medium">Settings</div>
-        <div className="ml-auto flex gap-1">
-          {(['general', 'projects', 'agents', 'prompts', 'mcp', 'plugins', 'addons', 'integrations', 'updates', 'telemetry', 'appearance'] as const).map((t) => (
+    <Shell onClose={onClose} width="w-[1040px]">
+      <div className="flex h-[76vh] max-h-[760px]">
+        <nav aria-label="Settings sections" role="tablist" aria-orientation="vertical" className="flex w-48 shrink-0 flex-col gap-0.5 overflow-y-auto rounded-l-xl border-r border-line bg-bg/40 p-2">
+          <div className="px-2.5 pt-1.5 pb-2 text-[11px] font-medium tracking-wide text-faint uppercase">Settings</div>
+          {SETTINGS_SECTIONS.map((t) => (
             <button
-              key={t}
+              key={t.id}
               role="tab"
-              onClick={() => setTab(t)}
-              className={`-mb-px border-b-2 px-2.5 pb-2.5 ${t === 'addons' ? '' : 'capitalize'} ${tab === t ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={`rounded-md px-2.5 py-1.5 text-left ${tab === t.id ? 'bg-raised text-fg' : 'text-muted hover:bg-raised/50 hover:text-fg'}`}
             >
-              {t === 'mcp' ? 'MCP' : t === 'addons' ? 'Add-ons' : t}
+              {t.label}
             </button>
           ))}
-        </div>
-      </div>
-      <div className="max-h-[70vh] overflow-y-auto">
+        </nav>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="border-b border-line px-5 pt-4 pb-3">
+            <div className="text-[15px] font-medium">{current.label}</div>
+            <div className="mt-0.5 text-[12px] text-faint">{current.hint}</div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'projects' ? (
           <ProjectsSettings />
         ) : tab === 'appearance' ? (
@@ -307,6 +330,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             </Row>
           </>
         )}
+          </div>
+        </div>
       </div>
     </Shell>
   )
