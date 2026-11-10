@@ -18,11 +18,14 @@ export interface AddonHost {
   chatItems(chatId: string): ChatItem[]
   /** Chats waiting for the person to approve a tool call. */
   pendingChatIds(): Set<string>
-  createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  /** A new workspace on a fresh branch, or on a pull request's own branch when `source` names one. */
+  createWorkspace(repoId: string, source?: { kind: 'pr'; number: number }): Promise<{ workspace: Workspace; chat: Chat }>
   /** Starts a turn in a chat. Throws if the chat is busy. */
   sendToChat(chat: Chat, text: string): void
   stopChat(chatId: string): Promise<void>
   prStatus(ws: Workspace): Promise<{ pr: PrInfo | null; checks: CheckRun[] }>
+  /** A pull request of the project by its number, whether or not a workspace is on it. */
+  prByNumber(repo: Repo, number: number): Promise<{ pr: PrInfo | null; checks: CheckRun[] }>
   notify(title: string, body: string, workspaceId?: string): void
   openWorkspace(workspaceId: string): void
   /** Persist state changed by a call and tell the window. */
@@ -63,9 +66,11 @@ const schemas = {
   'workspaces.start': z.object({ repoId: z.string(), task: z.string().min(1).max(100_000), title: z.string().max(80).optional(), model: z.enum(MODELS).optional(), planFirst: z.boolean().optional() }),
   'workspaces.message': z.object({ workspaceId: z.string(), message: z.string().min(1).max(100_000) }),
   'workspaces.stop': z.object({ workspaceId: z.string() }),
+  'workspaces.forPr': z.object({ repoId: z.string(), number: z.number().int().min(1) }),
   'prs.status': z.object({ workspaceId: z.string() }),
-  'files.list': z.object({ repoId: z.string(), dir: z.string().max(300).optional() }),
-  'files.read': z.object({ repoId: z.string(), path: z.string().min(1).max(300) }),
+  'prs.get': z.object({ repoId: z.string(), number: z.number().int().min(1) }),
+  'files.list': z.object({ repoId: z.string(), dir: z.string().max(300).optional(), workspaceId: z.string().optional() }),
+  'files.read': z.object({ repoId: z.string(), path: z.string().min(1).max(300), workspaceId: z.string().optional() }),
   'files.write': z.object({ repoId: z.string(), path: z.string().min(1).max(300), content: z.string() }),
   'files.delete': z.object({ repoId: z.string(), path: z.string().min(1).max(300) }),
   'store.get': z.object({ key: z.string().min(1).max(128) }),
@@ -189,21 +194,41 @@ function writeStorage(host: AddonHost, caller: Caller, data: Record<string, unkn
 
 const okSegments = (p: string) => safeRelativePath(p) && p.split('/').every((seg) => !seg.startsWith('.'))
 
-/**
- * The absolute path for `rel` inside a project's `.choo-choo` folder. Refuses anything that could
- * land elsewhere: odd paths, dotfiles, and any symlink in the part of the path that already exists.
- */
-function projectPath(host: AddonHost, repoId: string, rel: string | undefined, kind: 'file' | 'dir'): string {
+/** A project an add-on may name: one the person hasn't hidden. */
+function findRepo(host: AddonHost, repoId: string): Repo {
   const repo = host.repos().find((r) => r.id === repoId && !r.hidden)
   if (!repo) throw new Error(`No project ${repoId}`)
+  return repo
+}
+
+/**
+ * The absolute path for `rel` inside a project's `.choo-choo` folder: the one in its main checkout,
+ * or the one in a workspace's worktree when `workspaceId` names a workspace of that project.
+ * Refuses anything that could land elsewhere: odd paths, dotfiles, and any symlink in the part of
+ * the path that already exists.
+ */
+function projectPath(host: AddonHost, repoId: string, rel: string | undefined, kind: 'file' | 'dir', workspaceId?: string): string {
+  const repo = findRepo(host, repoId)
+  const ws = workspaceId ? findWorkspace(host, workspaceId) : undefined
+  if (ws && ws.repoId !== repo.id) throw new Error(`Workspace ${ws.id} isn't in project ${repoId}`)
+  const root = ws ? ws.path : repo.path
   if (rel !== undefined && !okSegments(rel)) throw new Error(`"${rel}" isn't a path inside ${PROJECT_DIR}/. Use one like plans/q3.plan.md.`)
   if (kind === 'file' && !FILE_TYPES.includes(extname(rel ?? '').toLowerCase())) throw new Error(`Add-ons can only keep ${FILE_TYPES.join(', ')} files in ${PROJECT_DIR}/`)
-  const target = join(repo.path, PROJECT_DIR, rel ?? '')
+  const target = join(root, PROJECT_DIR, rel ?? '')
   let exists = target
-  while (!existsSync(exists) && exists !== repo.path && dirname(exists) !== exists) exists = dirname(exists)
+  while (!existsSync(exists) && exists !== root && dirname(exists) !== exists) exists = dirname(exists)
   const real = realpathSync(exists)
-  if (real !== join(realpathSync(repo.path), relative(repo.path, exists))) throw new Error(`${PROJECT_DIR}/${rel ?? ''} leads outside the project through a link`)
+  if (real !== join(realpathSync(root), relative(root, exists))) throw new Error(`${PROJECT_DIR}/${rel ?? ''} leads outside the ${ws ? 'workspace' : 'project'} through a link`)
   return target
+}
+
+/** A pull request and its checks, as an add-on sees them. */
+function describePr({ pr, checks }: { pr: PrInfo | null; checks: CheckRun[] }) {
+  const sum = summarizeChecks(checks)
+  return {
+    pr: pr ? { number: pr.number, url: pr.url, state: pr.state, isDraft: pr.isDraft, title: pr.title, reviewDecision: pr.reviewDecision ?? '', mergeState: pr.mergeStateStatus ?? '', branch: pr.headRefName ?? '' } : null,
+    checks: { total: sum.total, passed: sum.passed, pending: sum.pending, failed: sum.failed.map((c) => ({ name: c.workflow ? `${c.workflow} / ${c.name}` : c.name, link: c.link })) }
+  }
 }
 
 function listFiles(root: string, dir: string, out: { path: string; size: number; modified: number }[], depth = 0) {
@@ -291,23 +316,31 @@ export async function call(host: AddonHost, caller: Caller, method: string, args
       return null
     }
 
-    case 'prs.status': {
-      const ws = findWorkspace(host, a.workspaceId)
-      const { pr, checks } = await host.prStatus(ws)
-      const sum = summarizeChecks(checks)
-      return {
-        pr: pr ? { number: pr.number, url: pr.url, state: pr.state, isDraft: pr.isDraft, title: pr.title, reviewDecision: pr.reviewDecision ?? '', mergeState: pr.mergeStateStatus ?? '' } : null,
-        checks: { total: sum.total, passed: sum.passed, pending: sum.pending, failed: sum.failed.map((c) => ({ name: c.workflow ? `${c.workflow} / ${c.name}` : c.name, link: c.link })) }
-      }
+    case 'workspaces.forPr': {
+      const repo = findRepo(host, a.repoId)
+      const { pr } = await host.prByNumber(repo, a.number)
+      if (!pr) throw new Error(`No pull request #${a.number} in ${repo.name}, or GitHub couldn't be reached`)
+      // One workspace per pull request: the one already on its branch, however it got there.
+      const there = host.workspaces().find((w) => w.repoId === repo.id && !w.archived && !w.orchestrator && (w.branch === pr.headRefName || w.branch === `pr-${a.number}`))
+      if (there) return describe(host, there, host.pendingChatIds())
+      const { workspace } = await host.createWorkspace(repo.id, { kind: 'pr', number: a.number })
+      workspace.addonId = caller.id
+      host.saved()
+      return describe(host, workspace, host.pendingChatIds())
     }
+
+    case 'prs.status':
+      return describePr(await host.prStatus(findWorkspace(host, a.workspaceId)))
+    case 'prs.get':
+      return describePr(await host.prByNumber(findRepo(host, a.repoId), a.number))
 
     case 'files.list': {
       const out: { path: string; size: number; modified: number }[] = []
-      listFiles(projectPath(host, a.repoId, undefined, 'dir'), projectPath(host, a.repoId, a.dir || undefined, 'dir'), out)
+      listFiles(projectPath(host, a.repoId, undefined, 'dir', a.workspaceId), projectPath(host, a.repoId, a.dir || undefined, 'dir', a.workspaceId), out)
       return out
     }
     case 'files.read': {
-      const file = projectPath(host, a.repoId, a.path, 'file')
+      const file = projectPath(host, a.repoId, a.path, 'file', a.workspaceId)
       // Open first, then check what was opened: a file checked by name could be swapped before it is read.
       // Never through a link, and never waiting on a pipe someone left under that name.
       let fd: number
@@ -316,7 +349,7 @@ export async function call(host: AddonHost, caller: Caller, method: string, args
       } catch (e) {
         const code = (e as NodeJS.ErrnoException).code
         if (code === 'ENOENT' || code === 'ENOTDIR') return null
-        if (code === 'ELOOP') throw new Error(`${PROJECT_DIR}/${a.path} leads outside the project through a link`)
+        if (code === 'ELOOP') throw new Error(`${PROJECT_DIR}/${a.path} leads outside the ${a.workspaceId ? 'workspace' : 'project'} through a link`)
         throw e
       }
       try {
@@ -324,7 +357,7 @@ export async function call(host: AddonHost, caller: Caller, method: string, args
         if (!st.isFile()) throw new Error(`${a.path} isn't a file`)
         if (st.size > FILE_LIMIT) throw new Error(`${a.path} is over 1 MB`)
         // The folders above it, checked again now that the file is open: what was opened is what is at that path.
-        const there = lstatSync(projectPath(host, a.repoId, a.path, 'file'))
+        const there = lstatSync(projectPath(host, a.repoId, a.path, 'file', a.workspaceId))
         if (there.ino !== st.ino || there.dev !== st.dev) throw new Error(`${a.path} changed while it was being read. Try again.`)
         return { content: readFileSync(fd, 'utf8'), modified: Math.round(st.mtimeMs) }
       } finally {

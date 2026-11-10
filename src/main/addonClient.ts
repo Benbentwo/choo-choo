@@ -115,12 +115,19 @@ export const HOST_SCRIPT = String.raw`(() => {
       read: (workspaceId, opts) => call('workspaces.read', { workspaceId, ...(opts || {}) }),
       start: (opts) => call('workspaces.start', opts),
       message: (workspaceId, message) => call('workspaces.message', { workspaceId, message }),
-      stop: (workspaceId) => call('workspaces.stop', { workspaceId })
+      stop: (workspaceId) => call('workspaces.stop', { workspaceId }),
+      /** The workspace on a pull request's branch, made now if there is none. Starts no agent. */
+      forPr: (repoId, number) => call('workspaces.forPr', { repoId, number })
     },
-    prs: { status: (workspaceId) => call('prs.status', { workspaceId }) },
+    prs: {
+      status: (workspaceId) => call('prs.status', { workspaceId }),
+      /** A pull request of the project by its number, with or without a workspace. */
+      get: (repoId, number) => call('prs.get', { repoId, number })
+    },
     files: {
-      list: (repoId, dir) => call('files.list', { repoId, dir }),
-      read: (repoId, path) => call('files.read', { repoId, path }),
+      /** opts.workspaceId: look in that workspace's worktree instead of the project's main checkout. */
+      list: (repoId, dir, opts) => call('files.list', { repoId, dir, ...(opts || {}) }),
+      read: (repoId, path, opts) => call('files.read', { repoId, path, ...(opts || {}) }),
       write: (repoId, path, content) => call('files.write', { repoId, path, content }),
       delete: (repoId, path) => call('files.delete', { repoId, path })
     },

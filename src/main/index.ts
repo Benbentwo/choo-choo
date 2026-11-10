@@ -409,10 +409,14 @@ const addonDeps: addonHost.Deps = {
     chats: () => store.get().chats,
     chatItems: (id) => store.chatItems(id),
     pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId)),
-    createWorkspace: (repoId) => createWorkspace(repoId),
+    createWorkspace: (repoId, source) => createWorkspace(repoId, source),
     sendToChat: (chat, text) => sendToChat(chat, text),
     stopChat: (id) => agent.stop(id),
     prStatus: orchestratorHost.prStatus,
+    prByNumber: async (repo, number) => {
+      const pr = await gh.prForBranch(repo.path, String(number))
+      return { pr, checks: pr ? await gh.checks(repo.path, String(number)).catch(() => []) : [] }
+    },
     notify: (title, body, workspaceId) => {
       if (!store.get().settings.notifications || !Notification.isSupported()) return
       const n = new Notification({ title, body })
