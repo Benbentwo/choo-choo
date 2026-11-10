@@ -1041,11 +1041,17 @@ export interface ReviewFinding {
 }
 
 export interface LimitWindow {
+  /** Stable id across refreshes, e.g. claude:five_hour. */
+  key: string
   /** e.g. 5h, Week, Opus week */
   label: string
   /** Percent of the window used, 0-100. */
   percent: number
   resetsAt?: number
+  /** Length of the window, when known (5 hours, 7 days). */
+  windowMs?: number
+  /** Readings recorded during the current window, oldest first. */
+  history?: { t: number; p: number }[]
 }
 
 /** Plan usage for one AI subscription, shown in the sidebar footer. */
