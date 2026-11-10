@@ -414,6 +414,7 @@ function PermissionCards({ chat }: { chat: Chat }) {
   return (
     <>
       {reqs.map((r) => {
+        if (r.toolName === 'AskUserQuestion') return <QuestionCard key={r.id} id={r.id} input={r.input} />
         const summary = toolSummary(r.toolName, r.input)
         return (
           <div key={r.id} className="my-3 rounded-xl border border-sky-500/40 bg-sky-500/5">
@@ -436,5 +437,109 @@ function PermissionCards({ chat }: { chat: Chat }) {
         )
       })}
     </>
+  )
+}
+
+type Question = { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string; preview?: string }[] }
+
+/** The text Claude reads back for one question: picked labels (comma-separated when several), plus any typed answer. */
+export function answerText(picked: string[], other: string): string {
+  return [...picked, other.trim()].filter(Boolean).join(', ')
+}
+
+/** Claude's AskUserQuestion: each question with clickable options, plus a free-text "Other". */
+function QuestionCard({ id, input }: { id: string; input: unknown }) {
+  const questions = ((input as { questions?: Question[] })?.questions ?? []).filter((q) => q?.question)
+  const [picked, setPicked] = useState<Record<string, string[]>>({})
+  const [other, setOther] = useState<Record<string, string>>({})
+  const [focus, setFocus] = useState<Record<string, string>>({})
+  const answers = Object.fromEntries(questions.map((q) => [q.question, answerText(picked[q.question] ?? [], other[q.question] ?? '')]))
+  const complete = questions.length > 0 && questions.every((q) => answers[q.question])
+  const submit = (a: Record<string, string>) => {
+    window.api.respondPermission(id, 'allow', a)
+    removePermission(id)
+  }
+  const dismiss = () => {
+    window.api.respondPermission(id, 'deny')
+    removePermission(id)
+  }
+  const pick = (q: Question, label: string) => {
+    const cur = picked[q.question] ?? []
+    if (q.multiSelect) {
+      setPicked({ ...picked, [q.question]: cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label] })
+      return
+    }
+    // One single-choice question: a click is the answer.
+    if (questions.length === 1) return submit({ [q.question]: label })
+    setPicked({ ...picked, [q.question]: [label] })
+    setOther({ ...other, [q.question]: '' })
+  }
+  if (!questions.length) {
+    return (
+      <div className="my-3 rounded-xl border border-accent/40 bg-raised px-4 py-3 text-[12px]">
+        Claude asked a question this app couldn't read.{' '}
+        <button className="underline hover:text-fg" onClick={dismiss}>
+          Dismiss
+        </button>
+      </div>
+    )
+  }
+  const instant = questions.length === 1 && !questions[0].multiSelect
+  return (
+    <div className="my-3 rounded-xl border border-accent/40 bg-raised" data-testid="question-card">
+      {questions.map((q) => {
+        const sel = picked[q.question] ?? []
+        const preview = q.options.find((o) => o.label === (focus[q.question] ?? sel[0]))?.preview
+        return (
+          <div key={q.question} className="border-b border-line px-4 py-3 last:border-b-0">
+            {q.header && <div className="mb-1 text-[11px] font-medium tracking-wide text-accent uppercase">{q.header}</div>}
+            <div className="mb-2 font-medium">{q.question}</div>
+            <div className="flex flex-col gap-1.5">
+              {q.options.map((o) => {
+                const on = sel.includes(o.label)
+                return (
+                  <button
+                    key={o.label}
+                    className={`rounded-lg border px-3 py-2 text-left hover:bg-hover ${on ? 'border-accent bg-accent/10' : 'border-line'}`}
+                    onClick={() => pick(q, o.label)}
+                    onMouseEnter={() => o.preview && setFocus({ ...focus, [q.question]: o.label })}
+                  >
+                    <div className="flex items-center gap-2 text-[13px]">
+                      {q.multiSelect && <span className={`inline-block h-3 w-3 rounded-sm border ${on ? 'border-accent bg-accent' : 'border-faint'}`} />}
+                      <span className="font-medium">{o.label}</span>
+                    </div>
+                    {o.description && <div className="mt-0.5 text-[12px] text-muted">{o.description}</div>}
+                  </button>
+                )
+              })}
+              <input
+                className="rounded-lg border border-line bg-bg px-3 py-2 text-[13px] outline-none placeholder:text-faint focus:border-accent"
+                placeholder="Other: type your own answer"
+                value={other[q.question] ?? ''}
+                onChange={(e) => {
+                  setOther({ ...other, [q.question]: e.target.value })
+                  if (!q.multiSelect && e.target.value) setPicked({ ...picked, [q.question]: [] })
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && complete) submit(answers)
+                }}
+              />
+            </div>
+            {preview && <pre className="mt-2 max-h-60 overflow-auto rounded-md bg-bg px-3 py-2 font-mono text-[11px] whitespace-pre-wrap">{preview}</pre>}
+          </div>
+        )
+      })}
+      <div className="flex items-center gap-2 px-4 py-3">
+        {(!instant || other[questions[0].question]) && (
+          <button className="rounded-md bg-fg px-3 py-1 font-medium text-bg hover:opacity-90 disabled:opacity-40" disabled={!complete} onClick={() => submit(answers)}>
+            Submit
+          </button>
+        )}
+        <button className="rounded-md px-3 py-1 text-muted hover:bg-hover" onClick={dismiss}>
+          Skip
+        </button>
+        <span className="text-[12px] text-faint">or reply below</span>
+      </div>
+    </div>
   )
 }

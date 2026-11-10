@@ -9,7 +9,7 @@ import * as orchestrator from './orchestrator'
 import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
 import * as notion from './integrations/notion'
 import { buildSystemPrompt } from '@shared/systemPrompt'
-import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, runningTasks } from './claudeOptions'
+import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, questionReply, runningTasks } from './claudeOptions'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[] }) => void
 
@@ -85,13 +85,15 @@ const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'Web
 for (const t of orchestrator.READ_ONLY) READ_ONLY_TOOLS.add(t)
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
 
-const pending = new Map<string, { req: PermissionRequest; resolve: (d: PermissionDecision) => void }>()
+type Answer = { decision: PermissionDecision; answers?: Record<string, string> }
+const pending = new Map<string, { req: PermissionRequest; resolve: (a: Answer) => void }>()
 
-export function respondPermission(id: string, decision: PermissionDecision) {
+/** Settles a pending ask. `answers` carries the picks for an AskUserQuestion card (question text -> answer). */
+export function respondPermission(id: string, decision: PermissionDecision, answers?: Record<string, string>) {
   const p = pending.get(id)
   if (!p) return
   pending.delete(id)
-  p.resolve(decision)
+  p.resolve({ decision, answers })
 }
 
 export function pendingPermissions(): PermissionRequest[] {
@@ -311,9 +313,12 @@ export async function send(
         // The plan card asks the user; the agent must not start building on its own.
         return { behavior: 'deny', message: 'The plan is shown to the user for approval. Stop here and wait for their reply.' }
       }
-      if (autoAllow.has(toolName) || !needsApproval(chat.permission, chat.alwaysAllow, toolName)) return { behavior: 'allow', updatedInput: input }
+      // A question for the user always goes to the user, whatever the permission setting:
+      // allowing it without answers makes Claude carry on as if nobody replied.
+      const question = toolName === 'AskUserQuestion'
+      if (!question && (autoAllow.has(toolName) || !needsApproval(chat.permission, chat.alwaysAllow, toolName))) return { behavior: 'allow', updatedInput: input }
       const req: PermissionRequest = { id: randomUUID(), chatId: chat.id, toolName, input }
-      const decision = await new Promise<PermissionDecision>((resolve) => {
+      const { decision, answers } = await new Promise<Answer>((resolve) => {
         pending.set(req.id, { req, resolve })
         const cancel = () => respondPermission(req.id, 'deny')
         opts.signal.addEventListener('abort', cancel, { once: true })
@@ -322,6 +327,7 @@ export async function send(
         onAsk?.(chat, req)
       })
       emit(chat.id, { permissionDone: req.id })
+      if (question) return questionReply(input, decision, answers)
       if (decision === 'deny') return { behavior: 'deny', message: 'The user declined this tool call.' }
       if (decision === 'always') {
         chat.alwaysAllow = [...new Set([...(chat.alwaysAllow ?? []), toolName])]

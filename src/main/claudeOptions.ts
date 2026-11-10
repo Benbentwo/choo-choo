@@ -16,6 +16,22 @@ export function permissionMode(chat: Pick<Chat, 'planMode' | 'permission'>): str
   return 'default'
 }
 
+/**
+ * What canUseTool returns once the user has answered (or skipped) an AskUserQuestion card.
+ * Claude Code reads the picks from `answers` (question text -> answer, several picks comma-separated).
+ */
+export function questionReply(
+  input: Record<string, unknown>,
+  decision: string,
+  answers: Record<string, string> | undefined
+): { behavior: 'allow'; updatedInput: Record<string, unknown> } | { behavior: 'deny'; message: string } {
+  const given = Object.fromEntries(Object.entries(answers ?? {}).filter(([, v]) => typeof v === 'string' && v.trim()))
+  if (decision === 'deny' || !Object.keys(given).length) {
+    return { behavior: 'deny', message: 'The user skipped the question without answering. Ask in chat if you still need an answer, or carry on with your best judgment.' }
+  }
+  return { behavior: 'allow', updatedInput: { ...input, answers: given } }
+}
+
 /** Session settings for a chat (the SDK's `settings` option and extra env), or nothing to pass. */
 export function chatSettings(chat: Pick<Chat, 'fast' | 'outputStyle'>, extras: Extras): { settings?: Record<string, unknown>; env: Record<string, string> } {
   const advisor = claudeAdvisorOptions(extras.claudeAdvisor)
