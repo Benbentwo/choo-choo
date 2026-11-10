@@ -213,7 +213,7 @@ export function Center({ ws }: { ws: Workspace }) {
 
       {/* An open diff or file takes the place of the chat history; the composer stays below it. */}
       {doc?.kind === 'diff' ? (
-        <DiffView ws={ws} file={doc.path} />
+        <DiffView ws={ws} file={doc.path} line={doc.line} />
       ) : doc?.kind === 'file' ? (
         <FileView ws={ws} file={doc.path} line={doc.line} />
       ) : doc?.kind === 'reflect' && reflect ? (

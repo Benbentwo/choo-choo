@@ -230,6 +230,28 @@ export async function addWorktreeForBranch(repo: string, path: string, branch: s
   await git(repo, ['worktree', 'add', path, branch])
 }
 
+/**
+ * Brings a branch's new commits on the remote into the worktree. Fast-forwards when it can; with unpushed
+ * local commits it merges, and backs out if that conflicts. Uncommitted edits stay, or git refuses.
+ */
+export async function pullBranch(cwd: string, branch: string) {
+  const fail = (e: unknown) => new Error(((e as { stderr?: string }).stderr || (e as Error).message).trim())
+  if ((await currentBranch(cwd)) !== branch) {
+    // Another branch of the stack is checked out: move this one's ref without touching the files.
+    await git(cwd, ['fetch', 'origin', `${branch}:${branch}`]).catch((e) => { throw fail(e) })
+    return
+  }
+  const upstream = await tryGit(cwd, ['rev-parse', '--abbrev-ref', `${branch}@{upstream}`])
+  const from = upstream ? [] : ['origin', branch]
+  if ((await tryGit(cwd, ['pull', '--ff-only', ...from])) !== null) return
+  try {
+    await git(cwd, ['pull', '--no-rebase', '--no-edit', ...from])
+  } catch (e) {
+    await tryGit(cwd, ['merge', '--abort'])
+    throw fail(e)
+  }
+}
+
 export async function currentBranch(cwd: string): Promise<string | null> {
   return (await tryGit(cwd, ['branch', '--show-current']))?.trim() || null
 }

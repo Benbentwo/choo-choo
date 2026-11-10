@@ -364,6 +364,12 @@ export interface PrInfo {
   mergeStateStatus?: string
   /** The branch the pull request is made from. */
   headRefName?: string
+  /** The branch the pull request merges into. */
+  baseRefName?: string
+  isCrossRepository?: boolean
+  headRepositoryOwner?: { login: string }
+  /** Commits on the base branch that this branch doesn't have yet. Only filled for the PR button. */
+  behindBy?: number
 }
 
 /** One piece of review feedback on a PR, ready to hand to the agent. */
@@ -950,9 +956,13 @@ export interface Api {
   stopScript(workspaceId: string, kind: ScriptKind): void
   isScriptRunning(workspaceId: string, kind: ScriptKind): Promise<boolean>
   getPr(workspaceId: string): Promise<PrInfo | null>
+  /** The PR without the extra lookups the PR button needs: cheap enough for every sidebar row. */
+  getPrState(workspaceId: string): Promise<PrInfo | null>
   mergePr(workspaceId: string): Promise<void>
   /** Takes the workspace's draft PR out of draft. */
   markPrReady(workspaceId: string): Promise<void>
+  /** Merges the base branch into the PR's branch on GitHub, then pulls the result into the worktree. */
+  updatePrBranch(workspaceId: string): Promise<void>
   /** Unresolved review threads, reviews and comments on the workspace's PR. */
   getPrComments(workspaceId: string): Promise<PrComment[]>
   stackStatus(workspaceId: string): Promise<StackStatus | null>

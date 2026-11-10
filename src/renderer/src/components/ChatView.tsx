@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { Chat, ChatItem } from '@shared/types'
-import { useStore, reportError, removePermission } from '../store'
+import type { Chat, ChatItem, ReviewFinding } from '@shared/types'
+import { useStore, reportError, removePermission, openDoc } from '../store'
+import { splitFindingsBlock } from '../review'
+import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import { setDraft } from './Composer'
-import { tidyMarkdown } from '../markdown'
+import { splitFences, tidyMarkdown } from '../markdown'
 import { MARKDOWN_COMPONENTS } from './CodeBlock'
 import { API_PRICE_NOTE } from './UsageGraphs'
 import { IconDown, IconRight, IconTool } from '../icons'
@@ -102,6 +104,53 @@ async function revert(chat: Chat, itemId: string) {
   }
 }
 
+/** Claude's text. A review's closing findings block shows as tiles that open the code, not as raw JSON. */
+function AssistantText({ text, chat }: { text: string; chat: Chat }) {
+  const split = useMemo(() => splitFindingsBlock(text), [text])
+  const md = (t: string) => t && <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{tidyMarkdown(t)}</ReactMarkdown>
+  if (!split) return <div className="prose-chat my-3 leading-relaxed">{md(text)}</div>
+  return (
+    <div className="my-3">
+      <div className="prose-chat leading-relaxed">{md(split.before)}</div>
+      <FindingTiles findings={split.findings} chat={chat} />
+      <div className="prose-chat leading-relaxed">{md(split.after)}</div>
+    </div>
+  )
+}
+
+function FindingTiles({ findings, chat }: { findings: ReviewFinding[]; chat: Chat }) {
+  const ws = useStore((s) => s.workspaces.find((w) => w.id === chat.workspaceId))
+  if (!findings.length) return <div className="my-2 rounded-lg border border-line px-3 py-2 text-muted">No issues found</div>
+  return (
+    <div className="my-2 flex flex-col gap-1.5">
+      {findings.map((f, i) => (
+        <div key={i} className="rounded-lg border border-line bg-panel hover:border-faint">
+          <button
+            className="block w-full px-3 py-2 text-left"
+            title="Open this line in the diff"
+            onClick={() => openDoc(chat.workspaceId, { kind: 'diff', path: f.file, line: f.line })}
+          >
+            <div className="flex items-center gap-2">
+              <span className={`text-[11px] font-medium uppercase ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span>
+              <span className="min-w-0 truncate font-mono text-[11px] text-muted">
+                {f.file}
+                {f.line ? `:${f.line}` : ''}
+              </span>
+            </div>
+            <div className="mt-1">{f.message}</div>
+            {f.fix && <div className="mt-1 text-muted">{f.fix}</div>}
+          </button>
+          {ws && (
+            <button className="block px-3 pb-2 text-[12px] text-muted hover:text-fg" onClick={() => void sendFix(ws, f)}>
+              Ask the agent to fix this
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?: Extract<ChatItem, { kind: 'tool' }>[] }) {
   switch (item.kind) {
     case 'user':
@@ -135,7 +184,15 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
                   ))}
                 </div>
               )}
-              {stripRunMarker(stripRouted(item.text).text).text}
+              {splitFences(stripRunMarker(stripRouted(item.text).text).text).map((part, i) =>
+                part.code ? (
+                  <pre key={i} className="my-1.5 overflow-x-auto rounded-md border border-line bg-bg px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre" title={part.lang}>
+                    {part.text}
+                  </pre>
+                ) : (
+                  <div key={i}>{part.text}</div>
+                )
+              )}
             </div>
           )}
         </div>
@@ -143,11 +200,7 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
     case 'note':
       return <div className="my-3 text-center text-[11px] text-faint">{item.text}</div>
     case 'assistant':
-      return (
-        <div className="prose-chat my-3 leading-relaxed">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{tidyMarkdown(item.text)}</ReactMarkdown>
-        </div>
-      )
+      return <AssistantText text={item.text} chat={chat} />
     case 'tool':
       if (item.name === 'ExitPlanMode') return <PlanItem item={item} chat={chat} />
       if (item.name === 'Agent' || item.name === 'Task') return <SubagentItem item={item} calls={children ?? []} />

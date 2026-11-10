@@ -26,6 +26,20 @@ export function nextPrAction(pr: PrInfo, c: ChecksSummary): PrAction {
   return 'merge'
 }
 
+/** The GitHub API path that compares a PR's branch with its base, for `gh api`. Null when the PR lacks the names. */
+export function comparePath(pr: PrInfo): string | null {
+  if (!pr.baseRefName || !pr.headRefName) return null
+  const ref = (r: string) => r.split('/').map(encodeURIComponent).join('/')
+  const owner = pr.isCrossRepository && pr.headRepositoryOwner?.login ? `${encodeURIComponent(pr.headRepositoryOwner.login)}:` : ''
+  return `repos/{owner}/{repo}/compare/${ref(pr.baseRefName)}...${owner}${ref(pr.headRefName)}`
+}
+
+/** Whether to offer "Update branch": the PR is open, behind its base, and merging the base in wouldn't conflict. */
+export function canUpdateBranch(pr: PrInfo): boolean {
+  if (pr.state !== 'OPEN' || pr.mergeable === 'CONFLICTING' || pr.mergeStateStatus === 'DIRTY') return false
+  return (pr.behindBy ?? 0) > 0 || pr.mergeStateStatus === 'BEHIND'
+}
+
 export function fixChecksPrompt(pr: PrInfo, failed: CheckRun[]): string {
   return [
     `These checks are failing on PR #${pr.number}:`,

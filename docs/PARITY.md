@@ -52,6 +52,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Chat tabs per workspace, ⌘T / ⌘W
 - ✅ Model picker (Opus / Fable / Sonnet / Haiku) and effort (Low / Medium / High / Extra high / Max)
 - ✅ Streaming replies with markdown, collapsible tool calls, cost and duration
+- ✅ Code blocks in your own messages: text between ``` fences shows as a monospace block that keeps its spacing. While the cursor is inside an open fence the composer turns monospace and Enter adds a line; closing the fence or ⌘Enter sends.
 - ✅ Stop (button or Esc)
 - ✅ Send while Claude works: Steer (default, folded in at the next step) or Queue (sent after), set in Settings > General
 - ✅ `/clear` folds the messages before it behind a "Context cleared" divider, with Show earlier messages
@@ -73,8 +74,10 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ PR and check status stay fresh through ETag polling (free 304s), every 15s while focused; no webhook server needed
 - ✅ A workspace adopts the existing PR of whatever branch is checked out in it, including one the agent switched to itself (orchestrator-started workspaces) and fork PRs
 - ✅ Review: agent code review in a new tab
-- ✅ Create PR (agent commits, pushes, opens PR), draft option; PR status, open, squash merge
+- ✅ Create PR (agent commits, pushes, opens PR), draft option; PR status, open, squash merge, update a branch that is behind its base
+- ✅ Word-level highlights in the diff: within an edited line, the words that changed are shaded more strongly, as on GitHub
 - ✅ Review findings inline in the diff, with Fix buttons
+- ✅ Review findings in the chat as tiles (severity, file and line, what is wrong, the fix) instead of the raw JSON block; a tile opens the diff at that line, and each has Ask the agent to fix this
 - ✅ Add all PR comments to chat: unresolved review threads, change requests and comments, with file/line context; new-comment count in the header
 
 ### Bottom panel

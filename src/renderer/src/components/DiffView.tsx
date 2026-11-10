@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Workspace } from '@shared/types'
 import { useStore, setCodeComments, type CodeComment } from '../store'
 import { IconX } from '../icons'
 import { useReview } from '../review'
+import { pairedSegs } from '../wordDiff'
 import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import type { ReviewFinding } from '@shared/types'
 
@@ -41,8 +42,9 @@ export function parseDiff(diff: string): Line[] {
   return out
 }
 
-export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
+export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line?: number }) {
   const [diff, setDiff] = useState<string | null>(null)
+  const box = useRef<HTMLDivElement>(null)
   const stats = useStore((s) => s.stats[ws.id])
   const { findings } = useReview(ws.id)
   const mine = (findings ?? []).filter((f) => f.file === file)
@@ -68,8 +70,16 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
     void window.api.getFileDiff(ws.id, file).then(setDiff, (e) => setDiff(`error: ${e}`))
   }, [ws.id, file, stats])
 
+  // Opened at a line (from a review finding): bring that row into view once the diff is in.
+  useEffect(() => {
+    if (!line || diff === null) return
+    box.current?.querySelector(`[data-new-line="${line}"]`)?.scrollIntoView({ block: 'center' })
+  }, [line, diff, file])
+
+  const lines = useMemo(() => (diff === null ? [] : parseDiff(diff)), [diff])
+  // The words that changed within an edited line, as GitHub shades them.
+  const words = useMemo(() => pairedSegs(lines), [lines])
   if (diff === null) return <div className="flex-1 p-6 text-faint">Loading diff…</div>
-  const lines = parseDiff(diff)
   const shownLines = new Set(lines.map((l) => l.newNo).filter((n): n is number => n != null))
   const unplaced = mine.filter((f) => !f.line || !shownLines.has(f.line))
   const numbered = (i: number) => lines[i] && (lines[i].kind === 'add' || lines[i].kind === 'del' || lines[i].kind === 'ctx')
@@ -99,8 +109,9 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
   /** Queued comments that end on this row. */
   const queuedAt = (l: (typeof lines)[number]) =>
     queuedHere.filter((c) => (c.side === 'old' ? l.kind === 'del' && l.oldNo === c.end : l.kind !== 'del' && l.newNo === c.end))
+  // The table is as wide as its longest code line, so a note is sized to the visible width (cqw) and sticks while scrolling sideways.
   const Comment = ({ f }: { f: ReviewFinding }) => (
-    <div className="my-1 mr-4 ml-[6.5rem] rounded-md border border-line bg-panel px-3 py-2 font-sans">
+    <div className="sticky left-0 my-1 mr-4 ml-[6.5rem] w-[calc(100cqw-7.5rem)] max-w-3xl rounded-md border border-line bg-panel px-3 py-2 font-sans">
       <div className="flex items-center gap-2">
         <span className={`text-[11px] font-medium uppercase ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span>
         <span className="flex-1" />
@@ -113,7 +124,7 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
     </div>
   )
   return (
-    <div className="selectable flex-1 overflow-auto font-mono text-[12px] leading-[20px]">
+    <div ref={box} className="selectable flex-1 overflow-auto font-mono text-[12px] leading-[20px] [container-type:inline-size]">
       <div className="sticky top-0 z-10 border-b border-line bg-panel px-4 py-2 text-muted">{file}</div>
       {lines.length === 0 && <div className="p-6 font-sans text-faint">No textual changes (binary or empty file).</div>}
       {unplaced.map((f, i) => (
@@ -124,6 +135,7 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
           {lines.flatMap((l, i) => [
             <tr
               key={i}
+              data-new-line={l.kind !== 'del' ? (l.newNo ?? undefined) : undefined}
               onMouseEnter={() => extend(i)}
               className={
                 i >= lo && i <= hi
@@ -140,7 +152,17 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
               <td className={`w-4 select-none ${l.kind === 'add' ? 'text-add' : l.kind === 'del' ? 'text-del' : 'text-faint'}`}>
                 {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ''}
               </td>
-              <td className="pr-4 whitespace-pre">{l.text}</td>
+              <td className="pr-4 whitespace-pre">
+                {words.get(i)?.map((w, k) =>
+                  w.changed ? (
+                    <span key={k} className={`rounded-[3px] ${l.kind === 'add' ? 'bg-add/35' : 'bg-del/35'}`}>
+                      {w.text}
+                    </span>
+                  ) : (
+                    w.text
+                  )
+                ) ?? l.text}
+              </td>
             </tr>,
             ...(l.newNo != null && l.kind !== 'del'
               ? mine
@@ -156,7 +178,7 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
             ...queuedAt(l).map((c) => (
               <tr key={`q${c.id}`}>
                 <td colSpan={4}>
-                  <div className="my-1 mr-4 ml-[6.5rem] flex items-start gap-2 rounded-md border border-accent/40 bg-panel px-3 py-2 font-sans">
+                  <div className="sticky left-0 my-1 mr-4 ml-[6.5rem] w-[calc(100cqw-7.5rem)] max-w-3xl flex items-start gap-2 rounded-md border border-accent/40 bg-panel px-3 py-2 font-sans">
                     <span className="flex-1 whitespace-pre-wrap">{c.text}</span>
                     <span className="shrink-0 text-[11px] text-faint">In the chat box</span>
                     <button title="Remove comment" className="shrink-0 text-faint hover:text-fg" onClick={() => setCodeComments(ws.id, (list) => list.filter((x) => x.id !== c.id))}>
@@ -170,7 +192,7 @@ export function DiffView({ ws, file }: { ws: Workspace; file: string }) {
               ? [
                   <tr key="new-comment">
                     <td colSpan={4}>
-                      <div className="my-1 mr-4 ml-[6.5rem] rounded-md border border-line bg-panel p-2 font-sans">
+                      <div className="sticky left-0 my-1 mr-4 ml-[6.5rem] w-[calc(100cqw-7.5rem)] max-w-3xl rounded-md border border-line bg-panel p-2 font-sans">
                         <textarea
                           autoFocus
                           rows={2}
