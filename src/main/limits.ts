@@ -1,5 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LimitWindow, SubscriptionLimits } from '@shared/types'
@@ -52,7 +52,7 @@ export async function claudeLimits(apiKey: string): Promise<SubscriptionLimits |
   }
 }
 
-/** Newest rollout files under ~/.codex/sessions/YYYY/MM/DD, without walking the whole tree. */
+/** Most recently written rollout files under ~/.codex/sessions/YYYY/MM/DD. A long session keeps writing to the file from the day it started, so every day is checked (stat only). */
 function recentRollouts(root: string, n = 8): string[] {
   const out: { f: string; t: number }[] = []
   const desc = (d: string) => (existsSync(d) ? readdirSync(d).filter((x) => /^\d+$/.test(x)).sort().reverse() : [])
@@ -61,12 +61,40 @@ function recentRollouts(root: string, n = 8): string[] {
       for (const d of desc(join(root, y, m))) {
         const dir = join(root, y, m, d)
         for (const f of readdirSync(dir)) if (f.endsWith('.jsonl')) out.push({ f: join(dir, f), t: statSync(join(dir, f)).mtimeMs })
-        if (out.length >= n * 3) return out.sort((a, b) => b.t - a.t).slice(0, n).map((x) => x.f)
       }
   return out.sort((a, b) => b.t - a.t).slice(0, n).map((x) => x.f)
 }
 
 type CodexSnapshot = { ts: number; plan?: string; windows: LimitWindow[] }
+
+/** "try again at Nov 16th, 2026 5:39 PM" → a timestamp (local time, as Codex prints it). */
+export function parseRetryAt(message: string): number | undefined {
+  const m = message.match(/try again (?:at|on) ([A-Z][a-z]{2,8} \d{1,2}(?:st|nd|rd|th)?,? \d{4},? \d{1,2}:\d{2}\s*[AP]M)/i)
+  if (!m) return undefined
+  const t = Date.parse(m[1].replace(/(\d)(st|nd|rd|th)/, '$1').replace(/,(?= \d{1,2}:)/, ''))
+  return Number.isFinite(t) ? t : undefined
+}
+
+/**
+ * When Codex refused a turn for being over the limit. Its rate-limit snapshots can still read below
+ * 100% (another bucket ran out), so this error is the reliable signal.
+ */
+export function codexCaps(text: string): { ts: number; until?: number }[] {
+  const out: { ts: number; until?: number }[] = []
+  for (const line of text.split('\n')) {
+    if (!line.includes('usage_limit_exceeded') && !line.includes('usage_limit_reached')) continue
+    let e: any
+    try {
+      e = JSON.parse(line)
+    } catch {
+      continue
+    }
+    const err = e?.payload?.error ?? e?.payload
+    const msg = String(err?.message ?? '')
+    out.push({ ts: Date.parse(e.timestamp) || 0, until: parseRetryAt(msg) })
+  }
+  return out
+}
 
 /** Every rate-limit snapshot in a Codex log, oldest first. */
 export function codexSnapshots(text: string): CodexSnapshot[] {
@@ -124,9 +152,12 @@ export function parseCodexLimits(text: string): { ts: number; plan?: string; win
 export function codexLimits(root = join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'sessions')): SubscriptionLimits | null {
   let best: ReturnType<typeof parseCodexLimits> = null
   const all: CodexSnapshot[] = []
+  let cap: { ts: number; until?: number } | null = null
   for (const f of recentRollouts(root)) {
     try {
-      const snaps = codexSnapshots(readFileSync(f, 'utf8'))
+      const parsed = parseRollout(f)
+      for (const c of parsed.caps) if (!cap || c.ts > cap.ts) cap = c
+      const snaps = parsed.snaps
       all.push(...snaps)
       for (const r of snaps) if (!best || r.ts > best.ts) best = r
     } catch {
@@ -138,8 +169,58 @@ export function codexLimits(root = join(process.env.CODEX_HOME || join(homedir()
   // A snapshot from weeks ago says nothing about now.
   if (!best || Date.now() - best.ts > 8 * 24 * 3600_000) return null
   // Windows that have reset since the snapshot are back to zero.
-  const windows = best.windows.map((w) => (w.resetsAt && w.resetsAt < Date.now() ? { ...w, percent: 0 } : w))
-  return { provider: 'codex', name: 'Codex', plan: best.plan, windows: windows.map(withHistory), updatedAt: best.ts }
+  let windows = best.windows.map((w) => (w.resetsAt && w.resetsAt < Date.now() ? { ...w, percent: 0 } : w))
+  // Refused for the limit after the last snapshot, and it hasn't freed up yet: that window is full.
+  const now = Date.now()
+  const capped = cap && cap.ts >= best.ts - 60_000 && (cap.until ? cap.until > now : now - cap.ts < 24 * 3600_000) ? { since: cap.ts, until: cap.until } : undefined
+  if (capped) {
+    // The window that frees up when Codex says to try again; otherwise the longest one.
+    const match = windows.find((w) => capped.until && w.resetsAt && Math.abs(w.resetsAt - capped.until) < 36 * 3600_000) ?? [...windows].sort((a, b) => (b.windowMs ?? 0) - (a.windowMs ?? 0))[0]
+    windows = match ? windows.map((w) => (w === match ? { ...w, percent: 100, resetsAt: capped.until ?? w.resetsAt } : w)) : [{ key: 'codex:cap', label: 'Limit', percent: 100, resetsAt: capped.until }]
+    for (const w of windows) if (w.percent === 100) record(w.key, capped.since, 100)
+  }
+  return { provider: 'codex', name: 'Codex', plan: best.plan, windows: windows.map(withHistory), updatedAt: Math.max(best.ts, capped?.since ?? 0), capped }
+}
+
+/**
+ * The end of a log, at most `max` bytes. A long Codex session's log can pass the size of a JS string,
+ * and the readings that matter are the latest ones anyway.
+ */
+export function readTail(file: string, max = 16 * 1024 * 1024): string {
+  const fd = openSync(file, 'r')
+  try {
+    return tailOf(fd, fstatSync(fd).size, max)
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function tailOf(fd: number, size: number, max = 16 * 1024 * 1024): string {
+  const len = Math.min(size, max)
+  const buf = Buffer.alloc(len)
+  readSync(fd, buf, 0, len, size - len)
+  const text = buf.toString('utf8')
+  // Drop the partial first line when the file was cut.
+  return size > max ? text.slice(text.indexOf('\n') + 1) : text
+}
+
+/** Parsed logs by path, reused while the file hasn't changed, so a refresh only reads what moved. */
+const parsedLogs = new Map<string, { key: string; snaps: CodexSnapshot[]; caps: { ts: number; until?: number }[] }>()
+function parseRollout(f: string) {
+  // One handle: the cache key and the contents come from the same open file.
+  const fd = openSync(f, 'r')
+  try {
+    const st = fstatSync(fd)
+    const key = `${st.size}:${st.mtimeMs}`
+    const hit = parsedLogs.get(f)
+    if (hit?.key === key) return hit
+    const text = tailOf(fd, st.size)
+    const out = { key, snaps: codexSnapshots(text), caps: codexCaps(text) }
+    parsedLogs.set(f, out)
+    return out
+  } finally {
+    closeSync(fd)
+  }
 }
 
 let cache: { at: number; value: SubscriptionLimits[] } | null = null

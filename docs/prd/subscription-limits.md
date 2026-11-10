@@ -41,7 +41,9 @@ The footer card shows a small gradient area graph for the provider's first windo
 
 1. Claude: read through the Agent SDK's `/usage` data (`usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET`, behaviors skipped). If the method is missing or fails, Claude is just left out.
 2. Codex: read the newest `rate_limits` snapshot from `~/.codex/sessions/**/rollout-*.jsonl`. Ignore snapshots older than 8 days, and count windows whose reset time has passed as 0%.
-3. Refresh on launch, every 2 minutes, and when any chat finishes a turn. The main process caches for 1 minute.
+3. When Codex refuses a turn with `usage_limit_exceeded`, treat the matching window as full (100%) until the "try again at" time in the error, even if the last snapshot read lower. Codex can report e.g. 58% on one bucket and still stop on another.
+4. Read only the last 16 MB of each Codex log (a long session's log can be gigabytes), and check every day folder, since a session keeps writing to the file from the day it started. Parsed logs are reused until they change.
+5. Refresh on launch, every 2 minutes, and when any chat finishes a turn. The main process caches for 1 minute.
 
 ## Design
 
