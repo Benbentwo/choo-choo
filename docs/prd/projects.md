@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In progress: projects and threads behind Settings › Experimental (this PR). Automations not started |
+| Status | Shipped behind Settings › Experimental (PR #79). Automations are their own feature: [automations.md](automations.md) |
 | Requested by | Ben, 2026-11-10 |
 | Last updated | 2026-11-10 |
 
@@ -20,7 +20,7 @@ Big pieces of work, such as a milestone or a change across several repos, need m
 
 ## Non-goals
 
-- Automations (scheduled checks that open a workspace per finding). Ben wants to review where they live first.
+- Automations. They got their own page next to Pull requests, and can send results to a project or a repo; see [automations.md](automations.md).
 - Slack-style replies hanging off a message. Threads are whole conversations.
 - Tying a workspace to a thread in the sidebar. Workspaces belong to the project; the thread only gets its updates.
 
@@ -70,6 +70,5 @@ Runs on the Agent SDK with the person's own sign-in like every chat ([decision 0
 
 ## Future work
 
-- Automations: where they live is open (Ben, 2026-11-10).
 - Thread and project views as split-panel panes.
 - Rename "project group" everywhere once the flag is on by default.

@@ -64,6 +64,24 @@ export interface ProjectRole {
   }
 }
 
+/**
+ * Set when this turn is an automation run: start_workspace then takes a finding id, and the app
+ * enforces the per-run cap and skips findings an earlier run already handled.
+ */
+export interface AutomationHooks {
+  name: string
+  chatId: string
+  maxFindings: number
+  /**
+   * Holds a slot for this finding, or says why not: an earlier run handled it, or this run is
+   * at its cap. Synchronous, so parallel calls can't both take the last slot.
+   */
+  claim(findingId: string): string | undefined
+  /** Gives the slot back when the workspace couldn't be made. */
+  release(findingId: string): void
+  record(findingId: string, title: string, workspace: Workspace): void
+}
+
 /** Tools an add-on gives the orchestrator. The add-on's background page answers the calls. */
 export interface AddonToolset {
   /** MCP server name: tools show up as `mcp__<server>__<tool>`. */
@@ -102,7 +120,7 @@ export function writeMemory(scope: Scope, content: string) {
   renameSync(`${f}.tmp`, f)
 }
 
-export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[] = [], role?: ProjectRole): string {
+export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[] = [], role?: ProjectRole, run?: AutomationHooks): string {
   const intro = scope.group
     ? [
         `You are the orchestrator for the ${scope.name} project in Choo Choo. It spans these repositories:`,
@@ -126,6 +144,15 @@ export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[
     '- Keep replies short: what you started, what finished, what needs the person.',
     '',
     ...roleLines(role),
+    ...(run
+      ? [
+          'Automation:',
+          `- This chat belongs to the automation "${run.name}". Its runs start on a schedule, a GitHub event or a button press, not from a message the person typed, and nobody watches them live.`,
+          `- Each run: check what the automation asks, then open one workspace per finding with start_workspace, passing finding_id and finding_title. At most ${run.maxFindings} per run. The app refuses findings an earlier run already handled, so you never need to track that yourself.`,
+          '- End with a short summary: what you checked, which workspaces you opened, and what you skipped.',
+          ''
+        ]
+      : []),
     ...(addons.length
       ? [
           'Add-ons:',
@@ -255,7 +282,14 @@ export function checksSummary(checks: CheckRun[]): { state: 'none' | 'pending' |
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Options merged into the orchestrator's query(): its tools, its prompt and what it may not do. */
-export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'), scope: Scope, host: Host, addons: AddonToolset[] = [], role?: ProjectRole): Record<string, unknown> {
+export function queryOptions(
+  sdk: typeof import('@anthropic-ai/claude-agent-sdk'),
+  scope: Scope,
+  host: Host,
+  addons: AddonToolset[] = [],
+  role?: ProjectRole,
+  run?: AutomationHooks
+): Record<string, unknown> {
   const { tool, createSdkMcpServer } = sdk
   const inScope = (w: Workspace) => scope.repos.some((r) => r.id === w.repoId)
   const live = () => store.get().workspaces.filter((w) => inScope(w) && !w.archived && !w.orchestrator)
@@ -268,6 +302,35 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
     const r = scope.repos.find((x) => x.name === name || x.id === name) ?? scope.repos.find((x) => x.name.toLowerCase() === name.toLowerCase())
     if (!r) throw new Error(`No repo ${name} here. Use one of ${repoNames.join(', ')}.`)
     return r
+  }
+
+  type StartArgs = { task: string; repo?: string; where?: 'local' | 'cloud'; model?: Chat['model']; plan_first?: boolean; pr?: number; branch?: string }
+  const startWorkspace = async (a: StartArgs, finding?: { id: string; title: string }) => {
+    const repo = pickRepo(a.repo)
+    const open = live().find((w) => w.repoId === repo.id && ((a.pr && w.prNumber === a.pr) || (!a.pr && a.branch && w.branch === a.branch)))
+    if (open) {
+      if (run && finding) run.release(finding.id)
+      return text(`Workspace ${open.id} (${open.title}) is already on that ${a.pr ? 'PR' : 'branch'}. Use message_workspace to give it the task.`)
+    }
+    const source: WorkspaceSource | undefined = a.pr ? { kind: 'pr', number: a.pr } : a.branch ? { kind: 'branch', name: a.branch } : undefined
+    const { workspace, chat } = await host.createWorkspace(repo.id, source)
+    workspace.orchestrated = true
+    workspace.orchestratorId = scope.id
+    if (role?.kind === 'thread') workspace.threadId = role.chatId
+    if (run && finding) {
+      workspace.threadId = run.chatId
+      run.record(finding.id, finding.title || a.task.split('\n')[0].slice(0, 60), workspace)
+    }
+    if (a.where === 'cloud') {
+      store.save()
+      await host.runInCloud(chat, workspace, a.task)
+      return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'in-cloud', note: 'The cloud session link shows in list_workspaces once Claude Code prints it. Follow progress with pr_status.' }))
+    }
+    if (a.model) chat.model = a.model
+    if (a.plan_first) chat.planMode = true
+    store.save()
+    host.sendToChat(chat, a.task)
+    return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'running' }))
   }
 
   const tools = [
@@ -285,27 +348,27 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
         model: z.enum(['opus', 'fable', 'sonnet', 'haiku', 'codex']).optional().describe('Defaults to the person\'s default model. Ignored in the cloud.'),
         plan_first: z.boolean().optional().describe('Start in plan mode: the agent proposes a plan and waits instead of editing. Local only.'),
         pr: z.number().int().positive().optional().describe('Work on this existing pull request: the workspace checks out its branch.'),
-        branch: z.string().optional().describe('Work on this existing branch on origin instead of a new one. Ignored when pr is set.')
+        branch: z.string().optional().describe('Work on this existing branch on origin instead of a new one. Ignored when pr is set.'),
+        ...(run
+          ? {
+              finding_id: z.string().min(1).describe('A stable id for what this workspace handles: an issue key, URL or PR number. Runs skip ids already handled.'),
+              finding_title: z.string().max(80).optional().describe('A few words naming the finding, for the run history.')
+            }
+          : {})
       },
       async (a) => {
-        const repo = pickRepo((a as { repo?: string }).repo)
-        const open = live().find((w) => w.repoId === repo.id && ((a.pr && w.prNumber === a.pr) || (!a.pr && a.branch && w.branch === a.branch)))
-        if (open) return text(`Workspace ${open.id} (${open.title}) is already on that ${a.pr ? 'PR' : 'branch'}. Use message_workspace to give it the task.`)
-        const source: WorkspaceSource | undefined = a.pr ? { kind: 'pr', number: a.pr } : a.branch ? { kind: 'branch', name: a.branch } : undefined
-        const { workspace, chat } = await host.createWorkspace(repo.id, source)
-        workspace.orchestrated = true
-        workspace.orchestratorId = scope.id
-        if (role?.kind === 'thread') workspace.threadId = role.chatId
-        if (a.where === 'cloud') {
-          store.save()
-          await host.runInCloud(chat, workspace, a.task)
-          return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'in-cloud', note: 'The cloud session link shows in list_workspaces once Claude Code prints it. Follow progress with pr_status.' }))
+        const finding = run ? { id: String((a as { finding_id?: string }).finding_id ?? '').trim(), title: String((a as { finding_title?: string }).finding_title ?? '').trim() } : undefined
+        if (run && finding) {
+          if (!finding.id) throw new Error('Pass finding_id.')
+          const no = run.claim(finding.id)
+          if (no) return text(`Skipped: ${no}`)
         }
-        if (a.model) chat.model = a.model
-        if (a.plan_first) chat.planMode = true
-        store.save()
-        host.sendToChat(chat, a.task)
-        return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'running' }))
+        try {
+          return await startWorkspace(a as StartArgs, finding)
+        } catch (e) {
+          if (run && finding) run.release(finding.id)
+          throw e
+        }
       }
     ),
     tool(
@@ -467,10 +530,11 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
       ...addonServers
     },
     // Memory can change between turns, so render the prompt fresh each time.
-    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, readMemory(scope), addons, role), snapshot: false },
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, readMemory(scope), addons, role, run), snapshot: false },
     disallowedTools: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'],
     // Add-on tools that only read need no OK from the person, like the built-in ones below.
-    autoAllowTools: addons.flatMap((set) => set.tools.filter((t) => t.readOnly).map((t) => `mcp__${set.server}__${t.name}`))
+    // An automation's start_workspace is vouched for by the person who made it; the app caps it.
+    autoAllowTools: [...addons.flatMap((set) => set.tools.filter((t) => t.readOnly).map((t) => `mcp__${set.server}__${t.name}`)), ...(run ? ['mcp__choo__start_workspace'] : [])]
   }
 }
 

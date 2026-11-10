@@ -5,6 +5,7 @@ import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
+import type { Automation } from '@shared/automations'
 import type { Artifact, Chat, FeedbackOptions, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import { sessionUsage } from './usage'
@@ -30,6 +31,7 @@ import * as plugins from './plugins'
 import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
+import * as automations from './automations'
 import { projectThreads, routerChat, threadTitle, updateTarget } from '@shared/projects'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
@@ -352,7 +354,8 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
       store.save()
       send('state:changed')
     }
-    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets(), role)
+    const run = automations.hooksFor(chat)
+    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets(), role, run)
   }
   void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
 }
@@ -597,6 +600,24 @@ async function deleteGroup(groupId: string) {
   store.save()
 }
 
+/**
+ * An automation's chat: a thread on its project's orchestrator, or a chat on its repo's
+ * orchestrator. The orchestrator is opened first, so its own chat stays the first one.
+ */
+async function automationChat(a: Automation): Promise<Chat> {
+  const { workspace } = a.target.kind === 'project' ? await openGroupOrchestrator(a.target.groupId) : await openOrchestrator(a.target.repoId)
+  let chat = store.get().chats.find((c) => c.workspaceId === workspace.id && c.automationId === a.id)
+  if (!chat) {
+    chat = a.target.kind === 'project' ? newThread(workspace, a.name) : newChat(workspace.id)
+    chat.automationId = a.id
+    if (chat.model === 'codex') chat.model = 'opus'
+  }
+  chat.title = a.name
+  store.save()
+  send('state:changed')
+  return chat
+}
+
 /** The orchestrator that started a workspace: its project group's, or its repo's. */
 function orchestratorOf(ws: Workspace): Workspace | undefined {
   const all = store.get().workspaces.filter((w) => w.orchestrator && !w.archived)
@@ -684,6 +705,7 @@ function onChatDone(chat: Chat) {
     }, 0)
   }
   notifyDone(chat)
+  automations.onTurnDone(chat)
   noteForOrchestrator(chat)
   if (finished.has(chat.id)) scheduleWake(chat.id)
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
@@ -903,6 +925,10 @@ function registerIpc() {
   h('group:orchestrator', (groupId: string) => openGroupOrchestrator(groupId))
   h('group:save', (g: { id?: string; name: string; repoIds: string[] }) => saveGroup(g))
   h('group:delete', (groupId: string) => deleteGroup(groupId))
+  h('automation:save', (a: Parameters<typeof automations.save>[0]) => automations.save(a))
+  h('automation:enable', (id: string, on: boolean) => automations.setEnabled(id, on))
+  h('automation:delete', (id: string) => automations.remove(id))
+  h('automation:run', (id: string) => automations.runNow(id))
   h('ws:restore', async (id: string) => {
     const ws = findWs(id)
     if (ws.orchestrator) {
@@ -1456,6 +1482,16 @@ app.whenReady().then(async () => {
   })
   buildMenu()
   createWindow()
+  automations.init({
+    chatFor: automationChat,
+    send: (chat, text) => sendToChat(chat, text),
+    isRunning: (id) => agent.isRunning(id),
+    loadPrs: async () => (await loadPrInbox()).prs,
+    changed: () => {
+      store.save()
+      send('state:changed')
+    }
+  })
   updates.startUpdater(send)
   // PR and check changes: cheap ETag probes, and the UI refetches only when one reports a change.
   const prWatch = startPrWatch({

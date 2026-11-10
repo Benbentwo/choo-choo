@@ -3,6 +3,7 @@ import { toggleHidden } from '@shared/sidebarHidden'
 import { readCachedAppearance } from './appearanceCache'
 import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
+import type { Automation, AutomationRun } from '@shared/automations'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
 
 export interface Doc {
@@ -58,6 +59,10 @@ interface UI {
   addonPress: AddonPress | null
   /** The PRs page is open in the center. */
   prsPage: boolean
+  /** The Automations page is open. */
+  automationsPage: boolean
+  automations: Automation[]
+  automationRuns: AutomationRun[]
   /** Last load of the PRs page's list, and its error. */
   prInbox: PrInbox | null
   prInboxError: string | null
@@ -128,6 +133,9 @@ export const useStore = create<UI>((set, get) => ({
   addonPage: null,
   addonPress: null,
   prsPage: false,
+  automationsPage: false,
+  automations: [],
+  automationRuns: [],
   prInbox: readInboxCache(),
   prInboxError: null,
   prInboxLoading: false,
@@ -158,20 +166,20 @@ export const useStore = create<UI>((set, get) => ({
   rightTab: 'changes',
   error: null,
 
-  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [] }),
+  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [], automations: s.automations ?? [], automationRuns: s.automationRuns ?? [] }),
   selectWorkspace: (id, fromHistory) => {
-    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null, addonPage: null, prsPage: false })
+    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false })
     const { history, historyIndex } = get()
     const h = [...history.slice(0, historyIndex + 1), id].slice(-50)
-    set({ selectedWs: id, draftRepo: null, addonPage: null, prsPage: false, history: h, historyIndex: h.length - 1 })
+    set({ selectedWs: id, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, history: h, historyIndex: h.length - 1 })
   },
   back: () => {
     const { history, historyIndex } = get()
-    if (historyIndex > 0) set({ historyIndex: historyIndex - 1, selectedWs: history[historyIndex - 1], addonPage: null, prsPage: false })
+    if (historyIndex > 0) set({ historyIndex: historyIndex - 1, selectedWs: history[historyIndex - 1], addonPage: null, prsPage: false, automationsPage: false })
   },
   forward: () => {
     const { history, historyIndex } = get()
-    if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, selectedWs: history[historyIndex + 1], addonPage: null, prsPage: false })
+    if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, selectedWs: history[historyIndex + 1], addonPage: null, prsPage: false, automationsPage: false })
   },
   setActiveChat: (wsId, chatId) =>
     set((s) => ({ activeChat: { ...s.activeChat, [wsId]: chatId }, openDoc: { ...s.openDoc, [wsId]: null } })),
@@ -216,12 +224,12 @@ export function reportError(e: unknown) {
 
 /** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
 export function newWorkspace(repoId: string) {
-  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, automationsPage: false })
 }
 
 /** Shows an add-on's view in the center. */
 export function openAddonPage(page: AddonPage) {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: page, prsPage: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: page, prsPage: false, automationsPage: false })
 }
 
 let presses = 0
@@ -236,15 +244,20 @@ export function runAddonAction(addon: AddonInfo, action: AddonAction, ctx: Addon
   if (target.to === 'background') return void window.api.addonAction(addon.key, action.id, ctx).catch(reportError)
   const st = useStore.getState()
   const addonPress: AddonPress = { n: ++presses, at: Date.now(), key: addon.key, viewId: target.viewId, repoId: target.repoId, press: { id: action.id, place: action.place, ...ctx } }
-  if (target.to === 'page') return st.set({ selectedWs: null, draftRepo: null, addonPage: { key: addon.key, viewId: target.viewId, repoId: target.repoId }, prsPage: false, addonPress })
+  if (target.to === 'page') return st.set({ selectedWs: null, draftRepo: null, addonPage: { key: addon.key, viewId: target.viewId, repoId: target.repoId }, prsPage: false, automationsPage: false, addonPress })
   if (st.selectedWs !== target.workspaceId) st.selectWorkspace(target.workspaceId)
   st.set({ rightOpen: true, rightTab: `addon:${addon.key}/${target.viewId}`, addonPress: { ...addonPress, workspaceId: target.workspaceId } })
 }
 
 /** Shows the PRs page in the center and reloads its list. */
 export function openPrsPage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, automationsPage: false })
   void refreshPrInbox()
+}
+
+/** Opens the Automations page. */
+export function openAutomationsPage() {
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: true })
 }
 
 let inboxLoad: Promise<void> | null = null

@@ -252,7 +252,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         ) : tab === 'experimental' ? (
           <Row
             label="Projects"
-            hint="Project groups become projects. You talk to a project's orchestrator chat, which sends each message to the right thread or starts one, and the sidebar lists the project's work by repo and PR. Turning this off hides projects; nothing is deleted."
+            hint="Project groups become projects. You talk to a project's orchestrator chat, which sends each message to the right thread or starts one, and the sidebar lists the project's work by repo and PR. Also turns on Automations: checks that run on a schedule or a GitHub event and open a workspace per finding. Turning this off hides projects and pauses automations; nothing is deleted."
           >
             <input type="checkbox" checked={!!settings.experimentalProjects} onChange={(e) => void save({ experimentalProjects: e.target.checked })} />
           </Row>
