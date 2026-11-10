@@ -1,5 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LimitWindow, SubscriptionLimits } from '@shared/types'
@@ -187,31 +187,40 @@ export function codexLimits(root = join(process.env.CODEX_HOME || join(homedir()
  * and the readings that matter are the latest ones anyway.
  */
 export function readTail(file: string, max = 16 * 1024 * 1024): string {
-  const size = statSync(file).size
-  if (size <= max) return readFileSync(file, 'utf8')
   const fd = openSync(file, 'r')
   try {
-    const buf = Buffer.alloc(max)
-    readSync(fd, buf, 0, max, size - max)
-    const text = buf.toString('utf8')
-    // Drop the partial first line.
-    return text.slice(text.indexOf('\n') + 1)
+    return tailOf(fd, fstatSync(fd).size, max)
   } finally {
     closeSync(fd)
   }
 }
 
+function tailOf(fd: number, size: number, max = 16 * 1024 * 1024): string {
+  const len = Math.min(size, max)
+  const buf = Buffer.alloc(len)
+  readSync(fd, buf, 0, len, size - len)
+  const text = buf.toString('utf8')
+  // Drop the partial first line when the file was cut.
+  return size > max ? text.slice(text.indexOf('\n') + 1) : text
+}
+
 /** Parsed logs by path, reused while the file hasn't changed, so a refresh only reads what moved. */
 const parsedLogs = new Map<string, { key: string; snaps: CodexSnapshot[]; caps: { ts: number; until?: number }[] }>()
 function parseRollout(f: string) {
-  const st = statSync(f)
-  const key = `${st.size}:${st.mtimeMs}`
-  const hit = parsedLogs.get(f)
-  if (hit?.key === key) return hit
-  const text = readTail(f)
-  const out = { key, snaps: codexSnapshots(text), caps: codexCaps(text) }
-  parsedLogs.set(f, out)
-  return out
+  // One handle: the cache key and the contents come from the same open file.
+  const fd = openSync(f, 'r')
+  try {
+    const st = fstatSync(fd)
+    const key = `${st.size}:${st.mtimeMs}`
+    const hit = parsedLogs.get(f)
+    if (hit?.key === key) return hit
+    const text = tailOf(fd, st.size)
+    const out = { key, snaps: codexSnapshots(text), caps: codexCaps(text) }
+    parsedLogs.set(f, out)
+    return out
+  } finally {
+    closeSync(fd)
+  }
 }
 
 let cache: { at: number; value: SubscriptionLimits[] } | null = null
