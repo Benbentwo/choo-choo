@@ -23,7 +23,7 @@ import * as updates from './updater'
 import { registerUiComment } from './uiComment'
 import * as conductor from './conductorImport'
 import { modelDetails } from './models'
-import { subscriptionLimits } from './limits'
+import { initLimitsHistory, subscriptionLimits } from './limits'
 import { listOutputStyles } from './claudeOptions'
 import * as mcp from './mcp'
 import * as plugins from './plugins'
@@ -1381,6 +1381,7 @@ app.whenReady().then(async () => {
   // Packaged builds get the icon from the .icns; in dev, show the brand icon in the Dock too.
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
+  initLimitsHistory(join(app.getPath('userData'), 'data'))
   // Projects added before avatars existed: look up their GitHub owner once.
   void Promise.all(store.get().repos.filter((r) => r.githubOwner === undefined).map(async (r) => (r.githubOwner = existsSync(r.path) ? await git.githubOwner(r.path) : ''))).then(() => {
     store.save()

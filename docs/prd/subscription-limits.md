@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #75); graph in review |
 | Owner | Claude |
 | Requested by | Ben, in-app comment, 2026-11-10 |
 | Last updated | 2026-11-10 |
@@ -24,6 +24,18 @@
 ## User experience
 
 The sidebar footer gains a block above "Choo Choo": the provider and plan (e.g. "Claude Max"), then up to three windows, each with a bar, percent used and time until reset. Bars turn amber at 70% and red at 90%. With two providers, dots show which one is visible. Hovering pauses the rotation and clicking skips to the next. Nothing shows when no limits are known.
+
+### Graph (Ben, 2026-11-10)
+
+> Let's have time on the X-axis, Y-axis being your usage... a vertical dotted line of when your reset is and a horizontal line for where the cap is. And then maybe some text on whether you're on track or not... I would like a gradient graph.
+
+The footer card shows a small gradient area graph for the provider's first window that has a reset time, with one line of pace text under it. Clicking the card opens a larger card with a graph and pace text for every window. In each graph:
+
+- **X axis:** the window, from its start (reset time minus window length) to just past reset.
+- **Y axis:** percent used.
+- **Lines:** a red dashed line at the cap (100%), a dotted vertical line at reset, a faint dotted diagonal for an even pace, and a dashed line projecting the current rate.
+- **Pace text:** "On track", "Ahead of pace: at this rate you hit the cap <when>, before it resets <when>", or "At the cap". The rate comes from readings over the last quarter of the window when they cover at least a twentieth of it, otherwise from the average since the window started.
+- **History:** Codex history comes from its logs. Claude only reports the current number, so Choo Choo records readings in `limits-history.json` in its data folder, keeping 9 days. A Claude graph fills in from the first launch onward.
 
 ## Requirements
 
