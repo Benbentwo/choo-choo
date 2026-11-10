@@ -6,6 +6,7 @@ import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
 import { AddonPage } from './components/Addons'
 import { PrInboxPage } from './components/PrInbox'
+import { AutomationsPage } from './components/Automations'
 import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
 import { TitleTips } from './components/Tip'
@@ -123,6 +124,8 @@ export function App() {
           </>
         ) : s.prsPage ? (
           <PrInboxPage />
+        ) : s.automationsPage && s.settings.experimentalProjects ? (
+          <AutomationsPage />
         ) : s.addonPage ? (
           <AddonPage page={s.addonPage} />
         ) : s.draftRepo ? (

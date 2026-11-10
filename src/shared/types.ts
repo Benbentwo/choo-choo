@@ -2,6 +2,7 @@ import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
 import type { PrInbox } from './prInbox'
+import type { Automation, AutomationRun, GithubWatchState } from './automations'
 import type { AddonActionContext, AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
 export interface Repo {
   id: string
@@ -121,6 +122,8 @@ export interface Workspace {
   threadId?: string
   /** The add-on that started this workspace, by plugin id. */
   addonId?: string
+  /** The automation whose run opened this workspace. */
+  automationId?: string
   /** Set while this workspace is shared with coworkers. */
   share?: { id: string; link: string; sharedAt: number; autoSync: boolean }
   /** Set when this workspace was opened from a coworker's share. */
@@ -305,6 +308,8 @@ export interface Chat {
   sharedChatId?: string
   /** A thread in a project: one topic's conversation with the project's orchestrator. See docs/prd/projects.md. */
   thread?: boolean
+  /** The automation whose runs post here: a thread on a project's orchestrator, or a chat on a repo's. */
+  automationId?: string
   /** Context window of the model, as Claude Code last reported it. */
   contextWindow?: number
   /** Fast mode: faster output on models that support it, at a higher price. */
@@ -661,6 +666,14 @@ export interface AppState {
   recentPaths?: string[]
   /** Workspace folders left on disk when a project was removed without cleanup; Settings > Projects can delete them. */
   leftovers?: Leftover[]
+  /** Checks that run on a schedule or a GitHub event. See shared/automations.ts. */
+  automations?: Automation[]
+  /** Recent automation runs, newest last. */
+  automationRuns?: AutomationRun[]
+  /** Finding ids each automation already opened a workspace for, by automation id. */
+  automationLedger?: Record<string, string[]>
+  /** Where the PR inbox stood at the last GitHub poll, for GitHub-event automations. */
+  githubWatch?: GithubWatchState
 }
 
 export interface Leftover {
@@ -847,6 +860,13 @@ export interface Api {
   saveGroup(group: { id?: string; name: string; repoIds: string[] }): Promise<RepoGroup>
   /** Deletes the group and hides its orchestrator. Workspaces and memory stay. */
   deleteGroup(groupId: string): Promise<void>
+  /** Creates or updates an automation. */
+  saveAutomation(a: Partial<Automation> & Pick<Automation, 'name' | 'prompt' | 'trigger' | 'target'>): Promise<Automation>
+  setAutomationEnabled(id: string, enabled: boolean): Promise<Automation>
+  /** Deletes an automation. Its chat, workspaces and run history stay. */
+  deleteAutomation(id: string): Promise<void>
+  /** Starts a run now, whatever the trigger. */
+  runAutomation(id: string): Promise<AutomationRun>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   /** Reviews the workspace's chats for friction and suggests agent-setup changes. Writes nothing. */

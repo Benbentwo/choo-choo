@@ -18,7 +18,8 @@ Start here when you join the project, human or agent. These docs hold what the c
 |---|---|
 | [Import from Conductor](prd/conductor-import.md) | Shipped |
 | [Orchestrator](prd/orchestrator.md) | Shipped |
-| [Projects](prd/projects.md) | Experimental: threads and the repo › PR sidebar; automations not started |
+| [Projects](prd/projects.md) | Experimental: threads and the repo › PR sidebar |
+| [Automations](prd/automations.md) | Experimental, in review |
 | [Shared sessions](prd/shared-sessions.md) | Shipped |
 | [Archive and reflect](prd/archive-and-reflect.md) | Shipped |
 | [Extra agents and advisor](prd/extra-agents.md) | Shipped |
@@ -58,6 +59,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0010](decisions/0010-one-worktree-per-stack.md) | A stack of PRs lives in one workspace and one worktree; the app restacks with plain git |
 | [0012](decisions/0012-github-stacks-for-merging.md) | Stacks are linked to GitHub's stacked pull requests and merged through them, all or none |
 | [0013](decisions/0013-project-threads.md) | Projects: the orchestrator chat routes each message to a thread; the sidebar shows work by repo and PR, not by thread |
+| [0014](decisions/0014-automations-own-page-polled-events.md) | Automations get their own page and target a project or a repo; GitHub events are polled while the app is open, no webhooks |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 

@@ -6,9 +6,9 @@ import { orchestratorRowKey, parseRowKey, viewRowKey } from '@shared/sidebarHidd
 import { Menu, type MenuItem } from './Menu'
 import { LimitsFooter } from './LimitsFooter'
 import { addProjectItems } from './AddProject'
-import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
+import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, openAutomationsPage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
-import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconPR, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
+import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
 import { StackRows } from './Stack'
 import { Stats } from './Stats'
 import { BrandMark } from './BrandMark'
@@ -172,7 +172,7 @@ export function Sidebar() {
       </div>
 
       <nav className="px-2 pb-3">
-        <NavItem icon={<IconHome />} label="Home" active={!s.selectedWs && !s.addonPage && !s.draftRepo && !s.prsPage} onClick={() => s.selectWorkspace(null)} />
+        <NavItem icon={<IconHome />} label="Home" active={!s.selectedWs && !s.addonPage && !s.draftRepo && !s.prsPage && !s.automationsPage} onClick={() => s.selectWorkspace(null)} />
         <NavItem icon={<IconPlus />} label="Create" onClick={() => s.set({ modal: 'create' })} />
         <NavItem icon={<IconSearch />} label="Search" onClick={() => openPalette()} hint="⌘K" />
         <NavItem
@@ -183,6 +183,16 @@ export function Sidebar() {
           onClick={openPrsPage}
           badge={toReview || undefined}
         />
+        {projectsOn && (
+          <NavItem
+            icon={<IconRefresh />}
+            label="Automations"
+            title="Checks that run on a schedule or a GitHub event and open a workspace per finding"
+            active={s.automationsPage && !s.selectedWs}
+            onClick={openAutomationsPage}
+            hint={s.automations.filter((a) => a.enabled).length ? String(s.automations.filter((a) => a.enabled).length) : undefined}
+          />
+        )}
         {appViews.map(({ addon, view }) => (
           <NavItem
             key={`${addon.key}/${view.id}`}

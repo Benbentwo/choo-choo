@@ -10,6 +10,7 @@ import { API_PRICE_NOTE } from './UsageGraphs'
 import { IconDown, IconRight, IconTool } from '../icons'
 import { RouteItem } from './Projects'
 import { stripRouted } from '@shared/projects'
+import { stripRunMarker } from '@shared/automations'
 
 export function ChatView({ chat }: { chat: Chat }) {
   const all = useStore((s) => s.items[chat.id])
@@ -123,6 +124,7 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
             >
               {item.fromAdvisor && <div className="mb-1 text-[11px] font-medium text-advisor">From the advisor</div>}
               {stripRouted(item.text).routed && <div className="mb-1 text-[11px] text-faint">Sent here from the orchestrator chat</div>}
+              {stripRunMarker(item.text).reason && <div className="mb-1 text-[11px] text-faint">Automation run · {stripRunMarker(item.text).reason}</div>}
               {item.sentWhileRunning && (
                 <div className="mb-1 text-[11px] text-faint">{item.sentWhileRunning === 'steer' ? 'Sent while Claude was working · steered in' : 'Sent while Claude was working · queued'}</div>
               )}
@@ -133,7 +135,7 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
                   ))}
                 </div>
               )}
-              {stripRouted(item.text).text}
+              {stripRunMarker(stripRouted(item.text).text).text}
             </div>
           )}
         </div>
