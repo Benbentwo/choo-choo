@@ -10,8 +10,11 @@ import { fmt } from './Stats'
 import { MergedActions } from './Reflect'
 import { UsageGraphs } from './UsageGraphs'
 import { AddonActions, AddonFrame, addonTabId, addonViews } from './Addons'
+import { StackTab } from './Stack'
+import { prBaseFor } from '@shared/stack'
 
-const TABS: { id: RightTab; label: string }[] = [
+const TABS: { id: RightTab; label: string; stack?: boolean }[] = [
+  { id: 'stack', label: 'Stack', stack: true },
   { id: 'artifacts', label: 'Artifacts' },
   { id: 'files', label: 'All files' },
   { id: 'changes', label: 'Changes' },
@@ -31,7 +34,8 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   // The add-on behind the open tab was turned off: fall back to Changes.
   useEffect(() => {
     if (s.rightTab.startsWith('addon:') && !addonTab) s.set({ rightTab: 'changes' })
-  }, [s.rightTab, !!addonTab])
+    if (s.rightTab === 'stack' && !ws.stack) s.set({ rightTab: 'changes' })
+  }, [s.rightTab, !!addonTab, !!ws.stack])
 
   useEffect(() => {
     void window.api.getChanges(ws.id).then(setChanges, () => setChanges([]))
@@ -53,7 +57,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
 
       <div className={`flex min-h-0 flex-col ${s.bottomOpen ? 'flex-[1_1_50%]' : 'flex-1'}`}>
         <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto px-2 whitespace-nowrap [scrollbar-width:none]">
-          {TABS.map((t) => (
+          {TABS.filter((t) => !t.stack || ws.stack).map((t) => (
             <button
               key={t.id}
               onClick={() => s.set({ rightTab: t.id })}
@@ -92,6 +96,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
           </div>
         )}
         <div className={`min-h-0 flex-1 overflow-y-auto ${addonTab ? 'hidden' : ''}`}>
+          {s.rightTab === 'stack' && <StackTab ws={ws} />}
           {s.rightTab === 'changes' && <ChangesList ws={ws} changes={filter ? changes.filter((c) => c.path.toLowerCase().includes(filter.toLowerCase())) : changes} />}
           {s.rightTab === 'files' && <FilesTab ws={ws} filter={filter} />}
           {s.rightTab === 'artifacts' && <ArtifactsTab ws={ws} />}
@@ -214,7 +219,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       const chat = s.chats.find((c) => c.id === chatId)
       const { extras } = s.settings
       const reviewFirst = extras.agents.reviewer && extras.reviewBeforePr && chat?.model !== 'codex'
-      await window.api.sendMessage(chatId, prPrompt(ws, repo?.defaultBranch ?? 'main', draft, reviewFirst))
+      await window.api.sendMessage(chatId, prPrompt(ws, prBaseFor(ws.stack, ws.branch, repo?.defaultBranch ?? 'main'), draft, reviewFirst))
     } catch (e) {
       reportError(e)
     }
@@ -232,6 +237,17 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       const newest = comments.reduce((m, c) => (c.createdAt > m ? c.createdAt : m), '')
       localStorage.setItem(addedKey(ws.id), newest)
       setAddedAt(newest)
+    } catch (e) {
+      reportError(e)
+    }
+  }
+
+  /** Starts a new branch built on this PR's branch, turning the workspace into a stack. */
+  const stackOnTop = async () => {
+    setMenu(false)
+    try {
+      await window.api.stackAddLayer(ws.id)
+      s.set({ rightTab: 'stack' })
     } catch (e) {
       reportError(e)
     }
@@ -343,6 +359,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
                 {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
                 {pr.state === 'OPEN' && comments.length > 0 && <MenuBtn label={`Add all comments to chat (${comments.length})`} onClick={() => void addComments()} />}
                 {pr.state === 'OPEN' && pr.isDraft && <MenuBtn label={busy ? 'Marking ready…' : 'Mark ready for review'} onClick={() => void markReady()} />}
+                {pr.state === 'OPEN' && <MenuBtn label={ws.stack ? 'Add a PR on top of the stack' : 'Stack a new PR on top'} onClick={() => void stackOnTop()} />}
               </>
             ) : (
               <>

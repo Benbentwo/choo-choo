@@ -5,7 +5,7 @@ import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
-import type { Artifact, Chat, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
+import type { Artifact, Chat, FeedbackOptions, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import { sessionUsage } from './usage'
 import * as store from './store'
@@ -16,6 +16,7 @@ import { pickCityName } from './names'
 import { readScripts } from './scripts'
 import { listCommands } from './commands'
 import * as gh from './github'
+import * as stack from './stack'
 import { startPrWatch } from './prWatch'
 import { suggestName, suggestTitleFromChats } from './naming'
 import * as updates from './updater'
@@ -382,6 +383,24 @@ const orchestratorHost: orchestrator.Host = {
   }
 }
 
+stack.init({
+  save: () => store.save(),
+  changed: (wsId) => {
+    send('stack:changed', wsId)
+    send('state:changed')
+  },
+  sendToChat: (chat, text) => sendToChat(chat, text),
+  isRunning: (id) => agent.isRunning(id),
+  stopChat: (id) => void agent.stop(id),
+  findChat: (id) => store.get().chats.find((c) => c.id === id),
+  note: (chat, text) => {
+    const item = { id: randomUUID(), kind: 'note' as const, text, ts: Date.now() }
+    store.upsertItem(chat.id, item)
+    emitChat(chat.id, { item })
+  },
+  defaultBranch: (ws) => store.get().repos.find((r) => r.id === ws.repoId)?.defaultBranch ?? ws.baseRef.replace(/^origin\//, '')
+})
+
 /** What add-on views may ask the app to do; see addonApi.ts for the permission checks in front of it. */
 const addonDeps: addonHost.Deps = {
   host: {
@@ -604,6 +623,7 @@ function onChatDone(chat: Chat) {
   if (finished.has(chat.id)) scheduleWake(chat.id)
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   if (ws) autoSync(ws)
+  if (ws) stack.onTurnDone(ws, chat)
 }
 
 function notifyDone(chat: Chat) {
@@ -934,6 +954,18 @@ function registerIpc() {
     const pr = await gh.prForBranch(ws.path, ws.branch)
     return pr ? gh.prComments(ws.path, pr.number) : []
   })
+  h('stack:status', (id: string) => stack.status(findWs(id)))
+  h('stack:addLayer', (id: string) => stack.addLayer(findWs(id)))
+  h('stack:switch', (id: string, branch: string) => stack.switchLayer(findWs(id), branch))
+  h('stack:restack', async (id: string, ontoBase: boolean) => {
+    const r = await stack.restack(findWs(id), ontoBase)
+    if (r.conflict) throw new Error(`Restacking ${r.conflict.branch} stopped on conflicts in ${r.conflict.files.join(', ')}. Ask the agent to resolve them, then restack again.`)
+  })
+  h('stack:setAuto', (id: string, on: boolean) => stack.setAuto(findWs(id), on))
+  h('stack:feedback', (id: string, chatId: string, opts: FeedbackOptions) => stack.addressFeedback(findWs(id), findChat(chatId), opts))
+  h('stack:continue', (id: string) => stack.continueJob(findWs(id)))
+  h('stack:stop', (id: string) => stack.stopJob(findWs(id)))
+  h('stack:dissolve', (id: string) => stack.dissolve(findWs(id)))
   h('checks:get', (id: string) => {
     const ws = findWs(id)
     return gh.checks(ws.path, ws.branch)

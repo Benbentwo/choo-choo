@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons, refreshPrInbox } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons, refreshPrInbox, loadStack } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Center } from './components/Center'
 import { RightPanel } from './components/RightPanel'
@@ -91,12 +91,14 @@ export function App() {
       const st = useStore.getState()
       st.set({ prVersion: { ...st.prVersion, [wsId]: (st.prVersion[wsId] ?? 0) + 1 } })
     })
+    const offStack = window.api.onStackChanged((wsId) => void loadStack(wsId))
     const offLink = window.api.onOpenShareLink((link) => useStore.getState().set({ modal: 'open-share', shareLinkDraft: link }))
     const offNav = window.api.onNavigate((wsId, chatId) => {
       useStore.getState().setActiveChat(wsId, chatId)
       useStore.getState().selectWorkspace(wsId)
     })
     return () => {
+      offStack()
       clearInterval(prTimer)
       offAddons()
       offLink()

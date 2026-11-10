@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { readCachedAppearance } from './appearanceCache'
 import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
-import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover } from '@shared/types'
+import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
 
 export interface Doc {
   /** reflect: the workspace's Reflect tab (see `reflects`). */
@@ -16,7 +16,7 @@ export interface Doc {
 export type PaletteMode = 'all' | 'files' | 'grep'
 
 /** `addon:<key>/<viewId>` is a tab an add-on adds beside a workspace. */
-export type RightTab = 'artifacts' | 'files' | 'changes' | 'checks' | 'graphs' | 'review' | `addon:${string}`
+export type RightTab = 'stack' | 'artifacts' | 'files' | 'changes' | 'checks' | 'graphs' | 'review' | `addon:${string}`
 
 /** An add-on view open in the center: one from the sidebar's top list, or one under a project. */
 export interface AddonPage {
@@ -68,6 +68,8 @@ interface UI {
   codeComments: Record<string, CodeComment[]>
   /** Bumped when GitHub reports a change to a workspace's PR or checks; PR views reload on it. */
   prVersion: Record<string, number>
+  /** Last stack status per stacked workspace, for the Stack tab, the header switcher and the sidebar. */
+  stacks: Record<string, StackStatus | null | undefined>
   /** A Reflect tab open in the workspace: the person's feedback, and whether to archive after. */
   reflects: Record<string, { feedback: string; archiveAfter: boolean } | undefined>
   settings: Settings
@@ -132,6 +134,7 @@ export const useStore = create<UI>((set, get) => ({
   openDoc: {},
   codeComments: {},
   prVersion: {},
+  stacks: {},
   reflects: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
   modal: null,
@@ -535,5 +538,15 @@ export async function loadModelDetails() {
     useStore.getState().set({ modelDetails: await window.api.modelDetails() })
   } catch {
     /* labels fall back to plain names */
+  }
+}
+
+/** Reloads a stacked workspace's status (git, PRs, comments, checks) into the store. */
+export async function loadStack(wsId: string): Promise<void> {
+  try {
+    const st = await window.api.stackStatus(wsId)
+    useStore.getState().set({ stacks: { ...useStore.getState().stacks, [wsId]: st } })
+  } catch {
+    // Keep the last status; the next change or poll tries again.
   }
 }

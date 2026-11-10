@@ -9,6 +9,7 @@ import { FileView } from './FileView'
 import { ReflectView, SessionFeedback } from './Reflect'
 import { PhonePanel } from './PhonePanel'
 import { CloudPanel, RunInCloudDialog } from './CloudPanel'
+import { StackSwitcher } from './Stack'
 
 export function Center({ ws }: { ws: Workspace }) {
   const s = useStore()
@@ -63,7 +64,15 @@ export function Center({ ws }: { ws: Workspace }) {
         )}
         <span className="text-muted">{repo?.name}</span>
         <IconRight className="text-faint" />
-        <span className="no-drag selectable truncate">{ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch}</span>
+        {ws.stack ? (
+          <>
+            <span className="truncate">{ws.title}</span>
+            <IconRight className="text-faint" />
+            <StackSwitcher ws={ws} />
+          </>
+        ) : (
+          <span className="no-drag selectable truncate">{ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch}</span>
+        )}
         <div className="no-drag relative">
           <button title="Workspace actions" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => setMenu(!menu)}>
             <IconDots />
