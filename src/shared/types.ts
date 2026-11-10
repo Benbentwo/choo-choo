@@ -261,6 +261,8 @@ export interface PrInfo {
   reviewDecision?: string
   /** GitHub's overall verdict: CLEAN, BLOCKED, BEHIND, DIRTY, UNSTABLE, … */
   mergeStateStatus?: string
+  /** The branch the pull request is made from. */
+  headRefName?: string
 }
 
 /** One piece of review feedback on a PR, ready to hand to the agent. */

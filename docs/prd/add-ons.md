@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Shipped: views, permissions and the host API (PR #55); background pages, orchestrator tools and project pins (PR #56); project files for add-ons (PR #58); buttons in the app (PR #64). The Plan board, the first real add-on, is in its own repo and uses the first three |
+| Status | Shipped: views, permissions and the host API (PR #55); background pages, orchestrator tools and project pins (PR #56); project files for add-ons (PR #58); buttons in the app (PR #64); pull requests by number and files in a workspace (PR #66). The Plan board, the first real add-on, is in its own repo and uses the first three |
 | Owner | Claude (project thread) |
 | Requested by | Ben, 2026-11-09 ("How do we support add-ons that expand functionality? Organizations can have a private add-on … so that the main project can stay open-sourced.") |
 | Last updated | 2026-11-10 |
@@ -63,10 +63,11 @@ People want Choo Choo to do things that don't belong in the core app for everyon
 13. An add-on's tools are fixed by its manifest, need a background page and the `orchestrator:tools` permission, and are shown by name before it is turned on. A manifest whose tool schema can't be read is not loaded.
 14. A tool call reaches only the background page of the add-on that listed the tool, and only an answer to a call that page was given is accepted. A tool that doesn't answer in five minutes fails; so do pending calls when the page restarts.
 15. Pins never act on their own. Only `owner/repo` and git URLs are accepted as pinned sources (never folders), only ids the project's file names can be installed through it, and installing still ends at the permissions panel.
-16. The only project files an add-on can touch are text files (`.md`, `.json`, `.txt`, `.yaml`, `.yml`, at most 1 MB) under `.choo-choo/` in a project's main checkout, with separate permissions to read and to write. Dotfiles, other paths and anything reached through a symlink are refused.
+16. The only project files an add-on can touch are text files (`.md`, `.json`, `.txt`, `.yaml`, `.yml`, at most 1 MB) under `.choo-choo/` in a project's main checkout, with separate permissions to read and to write. Dotfiles, other paths and anything reached through a symlink are refused. With the read permission an add-on can also read the same kind of file under `.choo-choo/` in a workspace's worktree, so a plan an agent wrote there can be brought over without the agent writing outside its worktree. Writes only ever go to the main checkout.
 
 17. An add-on's buttons are fixed by its manifest (`actions`), need the `ui:buttons` permission, and are listed with their places before it is turned on. The app draws them from the manifest's words and its own icons; no add-on code, markup or image runs or shows in the app's interface. One add-on gets at most 2 buttons per place and 8 in the palette.
 18. A press reaches only the add-on that listed the button: the view the button names, opened first, or the add-on's background page. A press for the background page is checked in the main process (the add-on is on, the button is its own, the project and workspace exist) before it is passed on. Buttons never show on orchestrator chats.
+19. With `prs:read` an add-on can ask for any pull request of a project by its number, not only the one a workspace is on. With `workspaces:start` it can open a pull request in a workspace: the one already on its branch, or a new one with the branch checked out. That starts no agent.
 
 ## Design
 

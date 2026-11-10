@@ -6,9 +6,10 @@ import { parsePrInbox, prInboxQuery, type InboxPr, type PrRole } from '@shared/p
 
 const exec = promisify(execFile)
 
+/** The pull request of a branch, or the one with that number: `gh pr view` takes either. */
 export async function prForBranch(cwd: string, branch: string): Promise<PrInfo | null> {
   try {
-    const { stdout } = await exec('gh', ['pr', 'view', branch, '--json', 'number,url,state,isDraft,title,mergeable,reviewDecision,mergeStateStatus'], { cwd })
+    const { stdout } = await exec('gh', ['pr', 'view', branch, '--json', 'number,url,state,isDraft,title,mergeable,reviewDecision,mergeStateStatus,headRefName'], { cwd })
     return JSON.parse(stdout) as PrInfo
   } catch {
     return null
