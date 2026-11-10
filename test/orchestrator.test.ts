@@ -150,3 +150,63 @@ describe('tools from add-ons', () => {
     expect(long).toMatch(/cut: the answer was 150000 characters/)
   })
 })
+
+describe('project threads', () => {
+  const sdk = {
+    tool: (name: string, description: string, shape: object, handler: (a: unknown) => Promise<{ content: { text: string }[] }>) => ({ name, description, shape, handler }),
+    createSdkMcpServer: (o: { name: string; tools: { name: string }[] }) => o
+  } as never
+  type Server = { mcpServers: Record<string, { tools: { name: string; handler(a: unknown): Promise<{ content: { text: string }[] }> }[] }> }
+  const chat = (id: string, title: string) => ({ id, workspaceId: 'o', title, model: 'opus', effort: 'high', status: 'idle', createdAt: 1, thread: true }) as import('../src/shared/types').Chat
+  const role = (kind: 'router' | 'thread') => {
+    const threads = [chat('t1', 'Signup flow')]
+    const sent: [string, string][] = []
+    const r: import('../src/main/orchestrator').ProjectRole = {
+      kind,
+      chatId: kind === 'router' ? 'r' : 't1',
+      title: kind === 'router' ? 'Orchestrator' : 'Signup flow',
+      threads: {
+        list: () => threads,
+        create: (title) => {
+          const c = chat(`t${threads.length + 1}`, title)
+          threads.push(c)
+          return c
+        },
+        forward: (c, text) => void sent.push([c.id, text])
+      }
+    }
+    return { r, threads, sent }
+  }
+
+  it('gives the orchestrator chat routing tools instead of start_workspace', () => {
+    const names = (o: Server) => o.mcpServers.choo.tools.map((t) => t.name)
+    const router = orch.queryOptions(sdk, repo, {} as never, [], role('router').r) as Server
+    expect(names(router)).toContain('send_to_thread')
+    expect(names(router)).toContain('list_threads')
+    expect(names(router)).not.toContain('start_workspace')
+    const thread = orch.queryOptions(sdk, repo, {} as never, [], role('thread').r) as Server
+    expect(names(thread)).toContain('start_workspace')
+    expect(names(thread)).not.toContain('send_to_thread')
+  })
+  it('forwards to an existing thread or starts one, marking the message', async () => {
+    const { r, threads, sent } = role('router')
+    const o = orch.queryOptions(sdk, repo, {} as never, [], r) as Server
+    const send = o.mcpServers.choo.tools.find((t) => t.name === 'send_to_thread')!
+    const a = JSON.parse((await send.handler({ thread_id: 't1', message: 'Skip invites for solo accounts' })).content[0].text)
+    expect(a).toEqual({ thread_id: 't1', title: 'Signup flow', created: false })
+    const b = JSON.parse((await send.handler({ new_thread_title: 'Dark mode', message: 'Start dark mode' })).content[0].text)
+    expect(b).toMatchObject({ title: 'Dark mode', created: true })
+    expect(threads).toHaveLength(2)
+    expect(sent.map(([id, t]) => [id, t.split('\n')[0]])).toEqual([
+      ['t1', '[Sent here from the orchestrator chat]'],
+      [b.thread_id, '[Sent here from the orchestrator chat]']
+    ])
+    await expect(send.handler({ message: 'x' })).rejects.toThrow(/thread_id or new_thread_title/)
+    await expect(send.handler({ thread_id: 'nope', message: 'x' })).rejects.toThrow(/No thread nope/)
+  })
+  it('tells each chat its role', () => {
+    expect(orch.systemPrompt(repo, '', [], role('router').r)).toContain("This is the project's orchestrator chat")
+    expect(orch.systemPrompt(repo, '', [], role('thread').r)).toContain('You are in the thread "Signup flow"')
+    expect(orch.systemPrompt(repo, '')).not.toContain('This chat:')
+  })
+})

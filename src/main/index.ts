@@ -30,6 +30,7 @@ import * as plugins from './plugins'
 import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
+import { projectThreads, routerChat, threadTitle, updateTarget } from '@shared/projects'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import * as archive from './archive'
@@ -345,9 +346,48 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
     const scope = scopeFor(ws, repo)
     // The orchestrator's tools only exist on Claude.
     if (chat.model === 'codex') chat.model = 'opus'
-    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets())
+    const role = projectRole(ws, chat)
+    if (role?.kind === 'thread' && chat.title === 'New thread') {
+      chat.title = threadTitle(text)
+      store.save()
+      send('state:changed')
+    }
+    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets(), role)
   }
   void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
+}
+
+/** With projects on, a project orchestrator's first chat routes messages and the rest are threads. */
+function projectRole(ws: Workspace, chat: Chat): orchestrator.ProjectRole | undefined {
+  if (!ws.groupId || !store.get().settings.experimentalProjects) return undefined
+  const router = routerChat(store.get().chats, ws.id)
+  const kind = chat.thread || (router && router.id !== chat.id) ? 'thread' : 'router'
+  return {
+    kind,
+    chatId: chat.id,
+    title: chat.title,
+    threads: {
+      list: () => projectThreads(store.get().chats, ws.id),
+      create: (title) => newThread(ws, title),
+      forward: (c, t) => {
+        autoWakes.delete(c.id)
+        sendFromPerson(c, t, [])
+      }
+    }
+  }
+}
+
+/** A new thread on a project's orchestrator, reading the same repos as its orchestrator chat. */
+function newThread(ws: Workspace, title = 'New thread'): Chat {
+  const chat = newChat(ws.id)
+  chat.thread = true
+  chat.title = title
+  if (chat.model === 'codex') chat.model = 'opus'
+  const router = routerChat(store.get().chats, ws.id)
+  if (router?.additionalDirectories) chat.additionalDirectories = [...router.additionalDirectories]
+  store.save()
+  send('state:changed')
+  return chat
 }
 
 /** What an orchestrator directs: its repo, or every repo in its project group. */
@@ -465,7 +505,7 @@ const addonDeps: addonHost.Deps = {
 
 function orchestratorChat(ws: Workspace, title: string): Chat {
   const s = store.get()
-  let chat = s.chats.find((c) => c.workspaceId === ws.id)
+  let chat = s.chats.find((c) => c.workspaceId === ws.id && !c.thread)
   if (!chat) {
     chat = newChat(ws.id)
     chat.title = title
@@ -581,7 +621,8 @@ function noteForOrchestrator(chat: Chat) {
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   if (!ws?.orchestrated || ws.orchestrator) return
   const orch = orchestratorOf(ws)
-  const orchChat = orch && store.get().chats.find((c) => c.workspaceId === orch.id)
+  // A project workspace reports to the thread that started it.
+  const orchChat = orch && updateTarget(ws, store.get().chats, orch.id)
   if (!orchChat) return
   const list = finished.get(orchChat.id) ?? new Map()
   list.set(ws.id, { title: ws.title, id: ws.id, state: chat.status === 'error' ? 'error' : 'finished', at: Date.now() })
@@ -912,7 +953,11 @@ function registerIpc() {
     })
     store.save()
   })
-  h('chat:create', (wsId: string) => newChat(wsId))
+  h('chat:create', (wsId: string) => {
+    const ws = findWs(wsId)
+    // On a project's orchestrator a new chat is a new thread.
+    return ws.orchestrator && ws.groupId && store.get().settings.experimentalProjects ? newThread(ws) : newChat(wsId)
+  })
   h('chat:close', async (id: string) => {
     await agent.stop(id)
     const closing = store.get().chats.find((c) => c.id === id)

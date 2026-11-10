@@ -6,6 +6,7 @@ import type { Chat, ChatItem, CheckRun, PrInfo, Repo, RepoGroup, Workspace, Work
 import * as store from './store'
 import * as git from './git'
 import { toolShape } from './addons'
+import { ROUTED_PREFIX } from '@shared/projects'
 
 /**
  * The orchestrator is a chat that lives in the repo's main checkout. The person tells it what
@@ -46,6 +47,23 @@ export interface Host {
   prStatus(ws: Workspace): Promise<{ pr: PrInfo | null; checks: CheckRun[] }>
 }
 
+/**
+ * Which chat of a project's orchestrator this turn runs in. The orchestrator chat ("router")
+ * forwards each message to a thread; a thread does the work. See docs/prd/projects.md.
+ */
+export interface ProjectRole {
+  kind: 'router' | 'thread'
+  chatId: string
+  title: string
+  threads: {
+    list(): Chat[]
+    /** Makes a new thread chat with this title. */
+    create(title: string): Chat
+    /** Sends a message into a thread as if the person wrote it there, queued if the thread is busy. */
+    forward(chat: Chat, text: string): void
+  }
+}
+
 /** Tools an add-on gives the orchestrator. The add-on's background page answers the calls. */
 export interface AddonToolset {
   /** MCP server name: tools show up as `mcp__<server>__<tool>`. */
@@ -84,7 +102,7 @@ export function writeMemory(scope: Scope, content: string) {
   renameSync(`${f}.tmp`, f)
 }
 
-export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[] = []): string {
+export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[] = [], role?: ProjectRole): string {
   const intro = scope.group
     ? [
         `You are the orchestrator for the ${scope.name} project in Choo Choo. It spans these repositories:`,
@@ -107,6 +125,7 @@ export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[
     '- When a workspace needs a tool approval, tell the person; you cannot approve for them.',
     '- Keep replies short: what you started, what finished, what needs the person.',
     '',
+    ...roleLines(role),
     ...(addons.length
       ? [
           'Add-ons:',
@@ -122,6 +141,26 @@ export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[
     memory.trim() || '(empty)',
     '</memory>'
   ].join('\n')
+}
+
+function roleLines(role?: ProjectRole): string[] {
+  if (!role) return []
+  if (role.kind === 'router')
+    return [
+      'This chat:',
+      "- This is the project's orchestrator chat, the front door. The project's work is split into threads: separate conversations with you, one per topic. Threads start the workspaces; you route.",
+      "- For each message from the person, call list_threads, then send_to_thread: pass thread_id when it fits an existing thread's topic, or new_thread_title (two to four words) when it is new work that fits none. Forward the person's message in full, adding any context from this chat the thread needs.",
+      '- Then reply with one short line saying where it went. Do not do the work here and do not wait for the thread.',
+      '- Answer quick questions about status yourself with list_threads, list_workspaces, read_workspace or pr_status, without forwarding.',
+      ''
+    ]
+  return [
+    'This chat:',
+    `- You are in the thread "${role.title}" of this project. Other threads cover other topics and share your memory; list_workspaces shows every workspace in the project, whichever thread started it.`,
+    `- Messages that start with ${ROUTED_PREFIX} came from the person through the orchestrator chat.`,
+    '- Updates about workspaces you start in this thread come back to this thread.',
+    ''
+  ]
 }
 
 function text(t: string) {
@@ -216,7 +255,7 @@ export function checksSummary(checks: CheckRun[]): { state: 'none' | 'pending' |
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Options merged into the orchestrator's query(): its tools, its prompt and what it may not do. */
-export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'), scope: Scope, host: Host, addons: AddonToolset[] = []): Record<string, unknown> {
+export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'), scope: Scope, host: Host, addons: AddonToolset[] = [], role?: ProjectRole): Record<string, unknown> {
   const { tool, createSdkMcpServer } = sdk
   const inScope = (w: Workspace) => scope.repos.some((r) => r.id === w.repoId)
   const live = () => store.get().workspaces.filter((w) => inScope(w) && !w.archived && !w.orchestrator)
@@ -256,6 +295,7 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
         const { workspace, chat } = await host.createWorkspace(repo.id, source)
         workspace.orchestrated = true
         workspace.orchestratorId = scope.id
+        if (role?.kind === 'thread') workspace.threadId = role.chatId
         if (a.where === 'cloud') {
           store.save()
           await host.runInCloud(chat, workspace, a.task)
@@ -405,6 +445,9 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
     )
   ]
 
+  // The orchestrator chat routes; threads start the work.
+  const ownTools = role?.kind === 'router' ? [...tools.filter((t) => t.name !== 'start_workspace'), ...routerTools(tool, role)] : tools
+
   const context = { repoIds: scope.repos.map((r) => r.id) }
   const addonServers = Object.fromEntries(
     addons.map((set) => [
@@ -420,19 +463,56 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
 
   return {
     mcpServers: {
-      choo: createSdkMcpServer({ name: 'choo', version: '1.0.0', tools, alwaysLoad: true, timeout: (MAX_WAIT_MIN + 2) * 60_000 }),
+      choo: createSdkMcpServer({ name: 'choo', version: '1.0.0', tools: ownTools, alwaysLoad: true, timeout: (MAX_WAIT_MIN + 2) * 60_000 }),
       ...addonServers
     },
     // Memory can change between turns, so render the prompt fresh each time.
-    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, readMemory(scope), addons), snapshot: false },
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, readMemory(scope), addons, role), snapshot: false },
     disallowedTools: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'],
     // Add-on tools that only read need no OK from the person, like the built-in ones below.
     autoAllowTools: addons.flatMap((set) => set.tools.filter((t) => t.readOnly).map((t) => `mcp__${set.server}__${t.name}`))
   }
 }
 
+/** The orchestrator chat's own tools: see the project's threads, and forward a message to one. */
+function routerTools(tool: typeof import('@anthropic-ai/claude-agent-sdk').tool, role: ProjectRole) {
+  return [
+    tool('list_threads', "List this project's threads: id, title, whether it is running, and the last thing you said there.", {}, async () =>
+      text(
+        JSON.stringify(
+          role.threads.list().map((c) => ({ id: c.id, title: c.title, status: c.status, lastMessage: clip(lastAssistantText(c.id), 300) })),
+          null,
+          2
+        )
+      )
+    ),
+    tool(
+      'send_to_thread',
+      "Forward the person's message to a thread, which then works on it. Pass thread_id for an existing thread, or new_thread_title to start a new one. Returns right away.",
+      {
+        message: z.string().describe("The person's message, in full, plus any context from this chat the thread needs."),
+        thread_id: z.string().optional(),
+        new_thread_title: z.string().max(60).optional().describe('Two to four words naming the topic, for a new thread.')
+      },
+      async (a) => {
+        const threads = role.threads.list()
+        let chat = a.thread_id ? threads.find((c) => c.id === a.thread_id) : undefined
+        if (a.thread_id && !chat) throw new Error(`No thread ${a.thread_id}. Call list_threads for ids, or pass new_thread_title.`)
+        const created = !chat
+        if (!chat) {
+          const title = a.new_thread_title?.trim()
+          if (!title) throw new Error('Pass thread_id or new_thread_title.')
+          chat = role.threads.create(title)
+        }
+        role.threads.forward(chat, `${ROUTED_PREFIX}\n${a.message}`)
+        return text(JSON.stringify({ thread_id: chat.id, title: chat.title, created }))
+      }
+    )
+  ]
+}
+
 /** Tools that only read, so they never need the person's OK. */
-export const READ_ONLY = ['list_workspaces', 'read_workspace', 'wait_for_workspaces', 'pr_status'].map((t) => `mcp__choo__${t}`)
+export const READ_ONLY = ['list_workspaces', 'read_workspace', 'wait_for_workspaces', 'pr_status', 'list_threads'].map((t) => `mcp__choo__${t}`)
 
 /** The message that wakes an idle orchestrator when workspaces it started finish. */
 export function autoUpdatePrompt(done: { title: string; id: string; state: 'finished' | 'error' | 'needs-approval' }[]): string {

@@ -62,5 +62,7 @@ Runs on the Agent SDK with the user's own sign-in like any other chat. Memory st
 
 ## Future work
 
+- Projects: threads and a repo › PR sidebar for project groups, behind Settings › Experimental. See [Projects](projects.md).
+
 - Show orchestrated workspaces grouped under the orchestrator in the sidebar.
 - Show a cloud workspace's progress inside Choo Choo (today only its PR and claude.ai/code show it).
