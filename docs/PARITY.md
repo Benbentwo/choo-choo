@@ -45,6 +45,8 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Drag to reorder repos
 - ✅ Drag to reorder workspaces (Sort by > Manual)
 - ✅ Right-click a workspace: Rename…, Regenerate name from the chat, Reveal in Finder, Copy branch name, Archive
+- ✅ Right-click the Orchestrator row or an add-on row (such as Plans) > Hide from sidebar; bring rows back from the project's ⋯ menu or View options > Hidden rows (choo-choo addition)
+- ✅ Click a project's icon to collapse it to one row (shows a workspace count and a dot when something inside is unread or needs you); click again to expand (choo-choo addition)
 
 ### Chat
 - ✅ Chat tabs per workspace, ⌘T / ⌘W

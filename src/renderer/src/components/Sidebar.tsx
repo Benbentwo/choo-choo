@@ -2,11 +2,12 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import type { Repo, Workspace } from '@shared/types'
 import { visiblePrs } from '@shared/prInbox'
 import { moveId, sortWorkspaces, type WorkspaceSort } from '@shared/sidebarOrder'
+import { orchestratorRowKey, parseRowKey, viewRowKey } from '@shared/sidebarHidden'
 import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
-import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, reportError } from '../store'
+import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
-import { IconAddon, IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconPR, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
+import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconPR, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
 import { StackRows } from './Stack'
 import { Stats } from './Stats'
 import { BrandMark } from './BrandMark'
@@ -20,7 +21,31 @@ export function Sidebar() {
   const [view, setView] = useState<View>(loadView)
   const [menu, setMenu] = useState<'view' | 'add' | null>(null)
   const [repoMenu, setRepoMenu] = useState<{ id: string; el: HTMLElement } | null>(null)
-  const repoMenuItems = (repo: Repo): MenuItem[] => [
+  // Right-click menu on an Orchestrator or add-on row.
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; key: string } | null>(null)
+  const hiddenRows = s.settings.sidebarHidden ?? []
+  const rowHidden = (key: string) => hiddenRows.includes(key)
+  const hideMenu = (key: string) => (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setRowMenu({ x: e.clientX, y: e.clientY, key })
+  }
+  // Hidden rows that still exist, labelled for the menus that bring them back.
+  const hiddenList = hiddenRows.flatMap((key) => {
+    const r = parseRowKey(key)
+    if (!r) return []
+    const repo = r.repoId ? s.repos.find((x) => x.id === r.repoId) : undefined
+    if (r.repoId && !repo) return []
+    if (r.kind === 'orchestrator') return [{ key, repoId: r.repoId, label: 'Orchestrator', where: repo?.name }]
+    const addon = s.addons.find((a) => a.key === r.addonKey && a.state === 'on')
+    const view = addon?.manifest?.views?.find((v) => v.id === r.viewId)
+    return view ? [{ key, repoId: r.repoId, label: view.title, where: repo?.name }] : []
+  })
+  const repoMenuItems = (repo: Repo): MenuItem[] => {
+    const shows = hiddenList.filter((h) => h.repoId === repo.id).map((h): MenuItem => ({ label: `Show ${h.label}`, onClick: () => setSidebarRowHidden(h.key, false) }))
+    return [...shows, ...(shows.length ? [{ kind: 'sep' } as const] : []), ...baseRepoItems(repo)]
+  }
+  const baseRepoItems = (repo: Repo): MenuItem[] => [
     {
       label: repo.hidden ? 'Show in sidebar' : 'Hide from sidebar',
       onClick: () => void window.api.setRepoHidden(repo.id, !repo.hidden).then(() => useStore.getState().set({ repos: s.repos.map((r) => (r.id === repo.id ? { ...r, hidden: !r.hidden } : r)) }))
@@ -103,13 +128,26 @@ export function Sidebar() {
         { label: 'Manual (drag to sort)', checked: view.sort === 'manual', onClick: () => updateView({ sort: 'manual' }) }
       ]
     },
+    ...(hiddenList.length
+      ? [
+          {
+            label: `Hidden rows (${hiddenList.length})`,
+            submenu: [
+              ...hiddenList.map((h): MenuItem => ({ label: h.where ? `${h.label} · ${h.where}` : h.label, hint: 'Show', onClick: () => setSidebarRowHidden(h.key, false) })),
+              { kind: 'sep' },
+              { label: 'Show all', onClick: () => setSidebarRowHidden(hiddenList.map((h) => h.key), false) }
+            ]
+          } satisfies MenuItem
+        ]
+      : []),
     { kind: 'sep' },
     { label: 'Add project…', icon: <IconPlus />, keepOpen: true, onClick: () => setMenu('add') },
     { label: 'New project group…', icon: <IconOrchestrator />, onClick: () => editGroup(null) }
   ]
   const hiddenCount = s.repos.filter((r) => r.hidden).length
   const toReview = visiblePrs(s.prInbox?.prs ?? [], s.settings.prsHidden).filter((p) => p.roles.includes('review')).length
-  const appViews = addonViews(s.addons, 'app')
+  // A hidden row still shows while it's the open page, so the page you're on never vanishes.
+  const appViews = addonViews(s.addons, 'app').filter(({ addon, view }) => !rowHidden(viewRowKey(addon.key, view.id)) || (s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && !s.addonPage.repoId))
   const repoViews = addonViews(s.addons, 'repo')
 
   return (
@@ -147,6 +185,7 @@ export function Sidebar() {
             title={`From the ${addon.name} add-on`}
             active={s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && !s.addonPage.repoId}
             onClick={() => openAddonPage({ key: addon.key, viewId: view.id })}
+            onContextMenu={hideMenu(viewRowKey(addon.key, view.id))}
             actions={<AddonActions place="view-row" view={{ key: addon.key, viewId: view.id }} />}
           />
         ))}
@@ -165,6 +204,7 @@ export function Sidebar() {
           </button>
           {repoMenu && s.repos.some((r) => r.id === repoMenu.id) && <Menu anchor={repoMenu.el} items={repoMenuItems(s.repos.find((r) => r.id === repoMenu.id)!)} onClose={() => setRepoMenu(null)} />}
           {menu && <Menu anchor={headerRef.current} items={menu === 'view' ? viewItems : addProjectItems()} onClose={() => setMenu(null)} />}
+          {rowMenu && <Menu anchor={null} at={rowMenu} items={[{ label: 'Hide from sidebar', onClick: () => setSidebarRowHidden(rowMenu.key, true) }]} onClose={() => setRowMenu(null)} />}
         </div>
         {s.groups.length > 0 && (
           <div className="mb-3">
@@ -211,9 +251,16 @@ export function Sidebar() {
           })()}
         {view.group === 'project' && visible.map((repo) => {
           // The orchestrator, if open, sits at the top of its repo.
-          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId)).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
+          // A hidden orchestrator still shows while it's open or waiting on you.
+          const orchHidden = rowHidden(orchestratorRowKey(repo.id))
+          const showWs = (w: Workspace) => !w.orchestrator || !orchHidden || s.selectedWs === w.id || s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
+          const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId && showWs(w))).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
           const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived && !w.orchestrator).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           const wsIds = wss.filter((w) => !w.orchestrator).map((w) => w.id)
+          const collapsed = (s.settings.sidebarCollapsed ?? []).includes(repo.id)
+          const childIds = new Set(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId).map((w) => w.id))
+          const childCount = wss.filter((w) => !w.orchestrator).length
+          const childNeedsYou = collapsed && s.chats.some((c) => childIds.has(c.workspaceId) && (c.unread || (s.permissions[c.id]?.length ?? 0) > 0))
           return (
             <div
               key={repo.id}
@@ -241,8 +288,22 @@ export function Sidebar() {
                 title="Drag to reorder"
                 className="group flex h-9 cursor-grab items-center gap-2 rounded-md px-2 hover:bg-hover active:cursor-grabbing"
               >
-                <RepoIcon repo={repo} />
-                <span className={`flex-1 truncate font-medium ${repo.hidden ? 'text-faint' : ''}`}>{repo.name}</span>
+                <button
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-raised"
+                  title={collapsed ? 'Expand project' : 'Collapse project'}
+                  aria-expanded={!collapsed}
+                  onClick={() => setRepoCollapsed(repo.id, !collapsed)}
+                >
+                  <span className="flex group-hover:hidden">
+                    <RepoIcon repo={repo} />
+                  </span>
+                  <IconDown width={14} height={14} className={`hidden text-muted group-hover:block ${collapsed ? '-rotate-90' : ''}`} />
+                </button>
+                <span className={`flex-1 truncate font-medium ${repo.hidden ? 'text-faint' : ''}`}>
+                  {repo.name}
+                  {collapsed && childCount > 0 && <span className="ml-1.5 text-[11px] font-normal text-faint">{childCount}</span>}
+                  {childNeedsYou && <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle shadow-[0_0_6px_var(--color-accent)]" />}
+                </span>
                 <button
                   className={`rounded p-1 text-muted hover:bg-raised hover:text-fg ${repoMenu?.id === repo.id ? '' : 'invisible group-hover:visible'}`}
                   title="Project settings"
@@ -258,48 +319,55 @@ export function Sidebar() {
                   <IconPlus />
                 </button>
               </div>
-              <PinRow repoId={repo.id} />
-              {repoViews.map(({ addon, view }) => {
-                const on = s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && s.addonPage.repoId === repo.id
-                return (
-                  <button
-                    key={`${addon.key}/${view.id}`}
-                    title={`From the ${addon.name} add-on`}
-                    onClick={() => openAddonPage({ key: addon.key, viewId: view.id, repoId: repo.id })}
-                    className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 pl-5 text-left ${on ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
-                  >
-                    <IconAddon className="shrink-0" />
-                    <span className="flex-1 truncate">{view.title}</span>
-                    <AddonActions place="view-row" repoId={repo.id} view={{ key: addon.key, viewId: view.id }} />
-                  </button>
-                )
-              })}
-              {wss.map((w) => (
-                <Fragment key={w.id}>
-                  <WsRow w={w} dnd={wsDragProps(w, wsIds)} />
-                  {w.stack && <StackRows ws={w} />}
-                </Fragment>
-              ))}
-              {archived.length > 0 && (
-                <button
-                  className="flex h-7 w-full items-center pl-5 text-left text-[11px] text-faint hover:text-muted"
-                  onClick={() => setShowArchived({ ...showArchived, [repo.id]: !showArchived[repo.id] })}
-                >
-                  {showArchived[repo.id] ? 'Hide archived' : `Archived (${archived.length})`}
-                </button>
-              )}
-              {showArchived[repo.id] &&
-                archived.map((w) => (
-                  <div key={w.id} className="group flex h-8 items-center gap-2 rounded-md pr-2 pl-5 text-faint hover:bg-hover">
-                    <IconBranch className="shrink-0" />
-                    <span className="flex-1 truncate" title={w.branch}>
-                      {w.title}
-                    </span>
-                    <button className="invisible rounded px-1.5 text-[11px] text-muted group-hover:visible hover:bg-raised hover:text-fg" onClick={() => void restoreWorkspace(w.id)}>
-                      Restore
+              {!collapsed && (
+                <>
+                  <PinRow repoId={repo.id} />
+                  {repoViews.map(({ addon, view }) => {
+                    const on = s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && s.addonPage.repoId === repo.id
+                    const key = viewRowKey(addon.key, view.id, repo.id)
+                    if (rowHidden(key) && !on) return null
+                    return (
+                      <button
+                        key={`${addon.key}/${view.id}`}
+                        title={`From the ${addon.name} add-on`}
+                        onClick={() => openAddonPage({ key: addon.key, viewId: view.id, repoId: repo.id })}
+                        onContextMenu={hideMenu(key)}
+                        className={`flex h-9 w-full items-center gap-2 rounded-md pr-2 pl-5 text-left ${on ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+                      >
+                        <IconAddon className="shrink-0" />
+                        <span className="flex-1 truncate">{view.title}</span>
+                        <AddonActions place="view-row" repoId={repo.id} view={{ key: addon.key, viewId: view.id }} />
+                      </button>
+                    )
+                  })}
+                  {wss.map((w) => (
+                    <Fragment key={w.id}>
+                      <WsRow w={w} dnd={wsDragProps(w, wsIds)} />
+                      {w.stack && <StackRows ws={w} />}
+                    </Fragment>
+                  ))}
+                  {archived.length > 0 && (
+                    <button
+                      className="flex h-7 w-full items-center pl-5 text-left text-[11px] text-faint hover:text-muted"
+                      onClick={() => setShowArchived({ ...showArchived, [repo.id]: !showArchived[repo.id] })}
+                    >
+                      {showArchived[repo.id] ? 'Hide archived' : `Archived (${archived.length})`}
                     </button>
-                  </div>
-                ))}
+                  )}
+                  {showArchived[repo.id] &&
+                    archived.map((w) => (
+                      <div key={w.id} className="group flex h-8 items-center gap-2 rounded-md pr-2 pl-5 text-faint hover:bg-hover">
+                        <IconBranch className="shrink-0" />
+                        <span className="flex-1 truncate" title={w.branch}>
+                          {w.title}
+                        </span>
+                        <button className="invisible rounded px-1.5 text-[11px] text-muted group-hover:visible hover:bg-raised hover:text-fg" onClick={() => void restoreWorkspace(w.id)}>
+                          Restore
+                        </button>
+                      </div>
+                    ))}
+                </>
+              )}
             </div>
           )
         })}
@@ -322,9 +390,9 @@ export function Sidebar() {
   )
 }
 
-function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; badge?: number; actions?: React.ReactNode; onClick: () => void }) {
+function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; badge?: number; actions?: React.ReactNode; onClick: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
   return (
-    <button onClick={p.onClick} title={p.title} className={`flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left ${p.active ? 'bg-raised' : 'hover:bg-hover'}`}>
+    <button onClick={p.onClick} onContextMenu={p.onContextMenu} title={p.title} className={`flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left ${p.active ? 'bg-raised' : 'hover:bg-hover'}`}>
       <span className="text-muted">{p.icon}</span>
       <span className="flex-1">{p.label}</span>
       {p.hint && <span className="text-[11px] text-faint">{p.hint}</span>}
@@ -361,15 +429,18 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
       setNaming(false)
     }
   }
-  const menuItems: MenuItem[] = [
-    { label: 'Rename…', onClick: () => setEditing(true) },
-    { label: 'Regenerate name', hint: 'from the chat', onClick: () => void regenerate() },
-    { kind: 'sep' },
-    { label: 'Reveal in Finder', onClick: () => void window.api.revealInFinder(w.path) },
-    { label: 'Copy branch name', onClick: () => void navigator.clipboard.writeText(w.branch) },
-    { kind: 'sep' },
-    { label: 'Archive workspace', onClick: () => void archiveWorkspace(w.id) }
-  ]
+  // The orchestrator can only be hidden; the button on the project row still opens it.
+  const menuItems: MenuItem[] = w.orchestrator
+    ? [{ label: 'Hide from sidebar', onClick: () => setSidebarRowHidden(orchestratorRowKey(w.repoId), true) }]
+    : [
+        { label: 'Rename…', onClick: () => setEditing(true) },
+        { label: 'Regenerate name', hint: 'from the chat', onClick: () => void regenerate() },
+        { kind: 'sep' },
+        { label: 'Reveal in Finder', onClick: () => void window.api.revealInFinder(w.path) },
+        { label: 'Copy branch name', onClick: () => void navigator.clipboard.writeText(w.branch) },
+        { kind: 'sep' },
+        { label: 'Archive workspace', onClick: () => void archiveWorkspace(w.id) }
+      ]
   const dropLine = dnd?.drag?.over === w.id ? (dnd.drag.after ? 'shadow-[0_2px_0_var(--color-accent)]' : 'shadow-[0_-2px_0_var(--color-accent)]') : ''
   const running = s.chats.some((c) => c.workspaceId === w.id && c.status === 'running')
   const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
@@ -404,7 +475,6 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
       }}
       onDragEnd={() => dnd?.end()}
       onContextMenu={(e) => {
-        if (w.orchestrator) return
         e.preventDefault()
         hover.close()
         setMenuAt({ x: e.clientX, y: e.clientY })
