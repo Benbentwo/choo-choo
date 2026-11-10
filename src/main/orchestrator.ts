@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { Chat, ChatItem, CheckRun, PrInfo, Repo, RepoGroup, Workspace } from '@shared/types'
+import type { Chat, ChatItem, CheckRun, PrInfo, Repo, RepoGroup, Workspace, WorkspaceSource } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 import { toolShape } from './addons'
@@ -30,7 +30,8 @@ export function groupScope(group: RepoGroup, repos: Repo[]): Scope {
 
 /** What the orchestrator needs from the app. Kept small so this file has no Electron imports. */
 export interface Host {
-  createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  /** With a source, the workspace checks out that PR's or branch's head instead of a new branch. */
+  createWorkspace(repoId: string, source?: WorkspaceSource): Promise<{ workspace: Workspace; chat: Chat }>
   /** Starts a turn in a chat. Throws if the chat is busy. */
   sendToChat(chat: Chat, text: string): void
   stopChat(chatId: string): Promise<void>
@@ -96,6 +97,7 @@ export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[
     '',
     'How you work:',
     '- Each workspace is its own git worktree and branch with its own coding agent. Start one per independent piece of work with start_workspace, and give it a complete, self-contained task: the goal, the relevant files, constraints, and what "done" means (for example tests pass and a PR is open).',
+    '- To continue an existing pull request or branch (fix review comments, rebase, finish it), pass pr or branch to start_workspace rather than asking the agent to check it out, so the workspace shows that PR.',
     '- Run independent tasks in parallel. Keep dependent work in one workspace, or wait for the first to finish before starting the next.',
     '- After starting work, call wait_for_workspaces, then check results with read_workspace. Send corrections or next steps with message_workspace. You do not have to wait: when a workspace you started finishes while you are idle, Choo Choo wakes you with an automatic update so you can check it and report back.',
     '- Use pr_status to see a workspace\'s pull request and CI checks, and to wait for checks to finish.',
@@ -236,17 +238,22 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
     }),
     tool(
       'start_workspace',
-      'Create a new workspace (worktree, branch and agent) and give its agent a task. Returns right away; the agent works in the background.',
+      'Create a new workspace (worktree, branch and agent) and give its agent a task. Returns right away; the agent works in the background. To continue an existing pull request or branch, pass pr or branch so the workspace starts on it and shows that PR.',
       {
         task: z.string().describe('Complete instructions for the agent. It cannot see this conversation.'),
         ...(scope.group ? { repo: z.string().describe(`Which repository: ${repoNames.join(', ')}.`) } : {}),
         where: z.enum(['local', 'cloud']).optional().describe('local (default) runs on this Mac. cloud runs in a Claude Code cloud session that keeps going with the Mac closed.'),
         model: z.enum(['opus', 'fable', 'sonnet', 'haiku', 'codex']).optional().describe('Defaults to the person\'s default model. Ignored in the cloud.'),
-        plan_first: z.boolean().optional().describe('Start in plan mode: the agent proposes a plan and waits instead of editing. Local only.')
+        plan_first: z.boolean().optional().describe('Start in plan mode: the agent proposes a plan and waits instead of editing. Local only.'),
+        pr: z.number().int().positive().optional().describe('Work on this existing pull request: the workspace checks out its branch.'),
+        branch: z.string().optional().describe('Work on this existing branch on origin instead of a new one. Ignored when pr is set.')
       },
       async (a) => {
         const repo = pickRepo((a as { repo?: string }).repo)
-        const { workspace, chat } = await host.createWorkspace(repo.id)
+        const open = live().find((w) => w.repoId === repo.id && ((a.pr && w.prNumber === a.pr) || (!a.pr && a.branch && w.branch === a.branch)))
+        if (open) return text(`Workspace ${open.id} (${open.title}) is already on that ${a.pr ? 'PR' : 'branch'}. Use message_workspace to give it the task.`)
+        const source: WorkspaceSource | undefined = a.pr ? { kind: 'pr', number: a.pr } : a.branch ? { kind: 'branch', name: a.branch } : undefined
+        const { workspace, chat } = await host.createWorkspace(repo.id, source)
         workspace.orchestrated = true
         workspace.orchestratorId = scope.id
         if (a.where === 'cloud') {

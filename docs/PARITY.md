@@ -71,6 +71,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Artifacts: files the agent wrote
 - ✅ Checks: PR check runs, re-run failed jobs
 - ✅ PR and check status stay fresh through ETag polling (free 304s), every 15s while focused; no webhook server needed
+- ✅ A workspace adopts the existing PR of whatever branch is checked out in it, including one the agent switched to itself (orchestrator-started workspaces) and fork PRs
 - ✅ Review: agent code review in a new tab
 - ✅ Create PR (agent commits, pushes, opens PR), draft option; PR status, open, squash merge
 - ✅ Review findings inline in the diff, with Fix buttons

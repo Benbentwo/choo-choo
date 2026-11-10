@@ -39,6 +39,7 @@ import * as notion from './integrations/notion'
 import * as addonHost from './addonHost'
 import { originUrl, githubSlug } from './share'
 import { prBranch, type PrInbox } from '@shared/prInbox'
+import { prRef, syncWorkspaceBranch } from './workspacePr'
 
 let win: BrowserWindow | null = null
 
@@ -157,6 +158,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
   let title = name
   let named = false
   let context: string | undefined
+  let prNumber: number | undefined
   if (source?.kind === 'branch') {
     branch = source.name
     await git.addWorktreeForRemoteBranch(repo.path, path, branch)
@@ -169,6 +171,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     else await git.addWorktreeForRemoteBranch(repo.path, path, branch)
     title = `#${source.number} ${pr.title}`
     named = true
+    prNumber = source.number
   } else {
     const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
     branch = opts.branch ?? `${prefix}/${name}`
@@ -180,7 +183,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
       context = notion.pageContext(await notion.fetchPage(source.id))
     }
   }
-  const workspace: Workspace = { id: randomUUID(), repoId, name, branch, baseRef, path, title, named, createdAt: Date.now() }
+  const workspace: Workspace = { id: randomUUID(), repoId, name, branch, ...(prNumber ? { prNumber } : {}), baseRef, path, title, named, createdAt: Date.now() }
   s.workspaces.push(workspace)
   const chat = newChat(workspace.id)
   if (folders.length) chat.additionalDirectories = [...new Set(folders)]
@@ -359,9 +362,24 @@ function scopeFor(ws: Workspace, repo: Repo): orchestrator.Scope {
 
 const cloudOut = { onData: (i: string, d: string) => send('pty:data', i, d), onExit: (i: string, c: number) => send('pty:exit', i, c), stateChanged: () => send('state:changed') }
 
+/** Notices a branch the agent checked out in the worktree, so PR lookups follow it. See workspacePr.ts. */
+async function catchUpBranch(ws: Workspace) {
+  if (!(await syncWorkspaceBranch(ws))) return
+  store.save()
+  send('state:changed')
+  send('pr:changed', ws.id)
+}
+
+/** The workspace, caught up with the branch checked out in it, for looking up its PR. */
+async function wsForPr(id: string) {
+  const ws = findWs(id)
+  await catchUpBranch(ws)
+  return ws
+}
+
 const orchestratorHost: orchestrator.Host = {
-  createWorkspace: async (repoId) => {
-    const r = await createWorkspace(repoId)
+  createWorkspace: async (repoId, source) => {
+    const r = await createWorkspace(repoId, source)
     send('state:changed')
     return r
   },
@@ -378,8 +396,9 @@ const orchestratorHost: orchestrator.Host = {
   },
   sendToCloud: (chat, ws, text) => cloud.sendToCloud(chat, ws, text, agentEnv(ws), emitChat),
   prStatus: async (ws) => {
-    const pr = await gh.prForBranch(ws.path, ws.branch)
-    return { pr, checks: pr ? await gh.checks(ws.path, ws.branch).catch(() => []) : [] }
+    await catchUpBranch(ws)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return { pr, checks: pr ? await gh.checks(ws.path, prRef(ws)).catch(() => []) : [] }
   }
 }
 
@@ -627,6 +646,7 @@ function onChatDone(chat: Chat) {
   if (finished.has(chat.id)) scheduleWake(chat.id)
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   if (ws) autoSync(ws)
+  if (ws) void catchUpBranch(ws)
   if (ws) stack.onTurnDone(ws, chat)
 }
 
@@ -949,13 +969,13 @@ function registerIpc() {
   h('scripts:run', (id: string, kind: 'setup' | 'run') => runScript(findWs(id), kind))
   ipcMain.on('scripts:stop', (_e, id: string, kind: string) => pty.kill(`${id}:${kind}`))
   h('scripts:running', (id: string, kind: string) => pty.isAlive(`${id}:${kind}`))
-  h('pr:get', (id: string) => {
-    const ws = findWs(id)
-    return gh.prForBranch(ws.path, ws.branch)
+  h('pr:get', async (id: string) => {
+    const ws = await wsForPr(id)
+    return gh.prForBranch(ws.path, prRef(ws))
   })
   h('pr:comments', async (id: string) => {
-    const ws = findWs(id)
-    const pr = await gh.prForBranch(ws.path, ws.branch)
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
     return pr ? gh.prComments(ws.path, pr.number) : []
   })
   h('stack:status', (id: string) => stack.status(findWs(id)))
@@ -973,9 +993,9 @@ function registerIpc() {
   h('stack:linkGithub', (id: string) => stack.linkGithub(findWs(id)))
   h('stack:mergeThrough', (id: string, branch: string) => stack.mergeThrough(findWs(id), branch))
   h('stack:installCli', () => stack.installCli())
-  h('checks:get', (id: string) => {
-    const ws = findWs(id)
-    return gh.checks(ws.path, ws.branch)
+  h('checks:get', async (id: string) => {
+    const ws = await wsForPr(id)
+    return gh.checks(ws.path, prRef(ws))
   })
   h('checks:rerun', (id: string, link: string) => gh.rerunFailed(findWs(id).path, link))
   h('ws:artifacts', (id: string) => artifacts(findWs(id)))
@@ -1027,14 +1047,14 @@ function registerIpc() {
     return addRepo(dest)
   })
   h('pr:merge', async (id: string) => {
-    const ws = findWs(id)
-    const pr = await gh.prForBranch(ws.path, ws.branch)
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
     if (!pr) throw new Error('No pull request for this branch')
     await gh.mergePr(ws.path, pr.number)
   })
   h('pr:ready', async (id: string) => {
-    const ws = findWs(id)
-    const pr = await gh.prForBranch(ws.path, ws.branch)
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
     if (!pr) throw new Error('No pull request for this branch')
     await gh.markPrReady(ws.path, pr.number)
   })
@@ -1391,13 +1411,17 @@ app.whenReady().then(async () => {
   updates.startUpdater(send)
   // PR and check changes: cheap ETag probes, and the UI refetches only when one reports a change.
   const prWatch = startPrWatch({
+    // Agents switch branches on their own (gh pr checkout); follow them before probing GitHub.
+    beforeTick: async () => {
+      for (const w of store.get().workspaces) await catchUpBranch(w)
+    },
     targets: () => {
       const s = store.get()
       return s.workspaces
         .filter((w) => !w.archived && !w.orchestrator)
         .flatMap((w) => {
           const repo = s.repos.find((r) => r.id === w.repoId)
-          return repo?.githubOwner && w.branch !== repo.defaultBranch ? [{ id: w.id, path: w.path, branch: w.branch }] : []
+          return repo?.githubOwner && w.branch !== repo.defaultBranch ? [{ id: w.id, path: w.path, branch: w.branch, pr: w.stack ? undefined : w.prNumber }] : []
         })
     },
     focused: () => !!win?.isFocused(),

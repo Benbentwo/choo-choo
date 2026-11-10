@@ -25,7 +25,8 @@ const apiStack = (s) => ({ number: s.number, pull_requests: s.prs.map((n) => ({ 
 const branchOf = (n) => Object.keys(st.prs).find((b) => st.prs[b].number === n)
 
 if (a[0] === 'pr' && a[1] === 'view') {
-  const pr = st.prs[a[2]]
+  // Like gh, take a branch name or a PR number.
+  const pr = st.prs[a[2]] ?? Object.values(st.prs).find((p) => String(p.number) === a[2])
   if (!pr) fail('no pull requests found')
   out({ number: pr.number, url: `https://github.com/o/r/pull/${pr.number}`, state: pr.state, isDraft: false, title: pr.title ?? a[2], baseRefName: pr.base ?? 'main' })
 } else if (a[0] === 'pr' && a[1] === 'edit') {

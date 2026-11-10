@@ -209,7 +209,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       live = false
     }
     // prVersion: the PR watcher in the main process saw a change on GitHub.
-  }, [ws.id, stats, agentBusy, prVersion])
+  }, [ws.id, ws.branch, ws.prNumber, stats, agentBusy, prVersion])
 
   const create = async (draft: boolean) => {
     setMenu(false)
