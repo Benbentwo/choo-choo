@@ -12,6 +12,10 @@ on:
       version:
         description: 'Version, like 0.2.0. Leave empty to use the draft release version.'
         required: false
+      test_only:
+        description: 'Test build only: sign, notarize and check the app, then keep it as a workflow artifact. No release is created or changed.'
+        type: boolean
+        default: false
 concurrency:
   group: release
   cancel-in-progress: false
@@ -34,8 +38,11 @@ jobs:
           EVENT: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           WANT: ${{ inputs.version }}
+          TEST_ONLY: ${{ inputs.test_only }}
         run: |
-          if [ "$EVENT" = "release" ]; then
+          if [ "$TEST_ONLY" = "true" ]; then
+            tag="v0.0.0-test.$GITHUB_RUN_NUMBER"
+          elif [ "$EVENT" = "release" ]; then
             tag="$RELEASE_TAG"
           else
             draft=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft)][0].tag_name // ""')
@@ -70,6 +77,7 @@ jobs:
           VERSION: ${{ steps.rel.outputs.version }}
           # electron-builder uploads the dmg, zip and latest-mac.yml (read by the updater) into the release.
           GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ inputs.test_only && 'never' || 'always' }}
         run: |
           if [ -n "$SIGN_CSC_LINK" ]; then
             export CSC_LINK="$SIGN_CSC_LINK" CSC_KEY_PASSWORD="$SIGN_CSC_KEY_PASSWORD"
@@ -86,9 +94,24 @@ jobs:
             echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
           npx electron-vite build
-          npx electron-builder --mac --publish always -c.extraMetadata.version="$VERSION" "${sign[@]}"
+          npx electron-builder --mac --publish "$PUBLISH" -c.extraMetadata.version="$VERSION" "${sign[@]}"
+      # The runner is a Mac, so check the result the way a person's Mac would.
+      - name: Check signing and notarization
+        if: steps.build.outputs.signed == 'true'
+        run: |
+          for app in dist/mac*/*.app; do
+            echo "== $app"
+            codesign -dv --verbose=2 "$app" 2>&1 | grep -E '^(Authority|TeamIdentifier|Runtime|Timestamp)'
+            codesign --verify --deep --strict --verbose=2 "$app"
+            xcrun stapler validate "$app"
+            spctl -a -vv -t exec "$app"
+          done
+          for dmg in dist/*.dmg; do
+            echo "== $dmg"
+            spctl -a -vv -t open --context context:primary-signature "$dmg" || echo "::warning::$dmg is not notarized itself (the app inside is)."
+          done
       - name: Publish the release
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && !inputs.test_only
         run: gh release edit "${{ steps.rel.outputs.tag }}" --draft=false --latest
       - uses: actions/upload-artifact@v4
         with:
@@ -101,6 +124,7 @@ jobs:
   # Needs a HOMEBREW_TAP_TOKEN secret that can push to that repo; skipped with a warning without it.
   homebrew:
     needs: mac
+    if: ${{ !inputs.test_only }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
