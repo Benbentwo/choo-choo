@@ -4,6 +4,7 @@ import { visiblePrs } from '@shared/prInbox'
 import { moveId, sortWorkspaces, type WorkspaceSort } from '@shared/sidebarOrder'
 import { orchestratorRowKey, parseRowKey, viewRowKey } from '@shared/sidebarHidden'
 import { Menu, type MenuItem } from './Menu'
+import { LimitsFooter } from './LimitsFooter'
 import { addProjectItems } from './AddProject'
 import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
@@ -379,7 +380,10 @@ export function Sidebar() {
       </div>
 
       <UpdateBanners openSettings={() => s.set({ modal: 'settings', settingsTab: 'updates' })} />
-      <div className="flex items-center gap-2 border-t border-line px-3 py-2 text-faint">
+      <div className="border-t border-line">
+        <LimitsFooter />
+      </div>
+      <div className="flex items-center gap-2 px-3 py-2 text-faint">
         <BrandMark size={14} />
         <span className="flex-1 text-[11px]">Choo Choo</span>
         <button className="rounded p-1 hover:bg-hover hover:text-fg" title="Settings (⌘,)" onClick={() => s.set({ modal: 'settings' })}>

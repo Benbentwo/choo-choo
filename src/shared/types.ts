@@ -952,6 +952,8 @@ export interface Api {
   /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
   cloneRepo(url: string, dir?: string): Promise<Repo>
   pickFolder(): Promise<string | null>
+  /** Plan limits for Claude and Codex, whichever are signed in. Cached for a minute unless force. */
+  subscriptionLimits(force?: boolean): Promise<SubscriptionLimits[]>
   /** Removes a project. With deleteFiles, its workspace folders (and archived copies) are deleted; otherwise they're kept as a leftover. */
   removeProject(repoId: string, opts: { deleteFiles: boolean }): Promise<void>
   /** Permanently deletes a workspace: its folder, archived copy and chats. The branch is kept. */
@@ -1031,4 +1033,22 @@ export interface ReviewFinding {
   severity: 'high' | 'medium' | 'low'
   message: string
   fix?: string
+}
+
+export interface LimitWindow {
+  /** e.g. 5h, Week, Opus week */
+  label: string
+  /** Percent of the window used, 0-100. */
+  percent: number
+  resetsAt?: number
+}
+
+/** Plan usage for one AI subscription, shown in the sidebar footer. */
+export interface SubscriptionLimits {
+  provider: 'claude' | 'codex'
+  name: string
+  /** pro, max, team, … when known. */
+  plan?: string
+  windows: LimitWindow[]
+  updatedAt: number
 }

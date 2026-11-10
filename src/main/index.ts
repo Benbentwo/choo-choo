@@ -23,6 +23,7 @@ import * as updates from './updater'
 import { registerUiComment } from './uiComment'
 import * as conductor from './conductorImport'
 import { modelDetails } from './models'
+import { subscriptionLimits } from './limits'
 import { listOutputStyles } from './claudeOptions'
 import * as mcp from './mcp'
 import * as plugins from './plugins'
@@ -1015,6 +1016,7 @@ function registerIpc() {
   h('gh:repos', () => gh.listMyRepos())
   h('prs:inbox', () => loadPrInbox())
   h('models:details', () => modelDetails())
+  h('limits:get', (force?: boolean) => subscriptionLimits(store.get().settings.anthropicApiKey ?? '', !!force))
   h('conductor:preview', () => previewConductor())
   h('conductor:import', (opts: { useWorkspacesRoot: boolean }) => importConductor(opts))
   h('repo:quickstart', async (name: string) => {

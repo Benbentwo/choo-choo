@@ -122,6 +122,7 @@ const api: Api = {
   setZoom: (f) => webFrame.setZoomFactor(f),
   cloneRepo: inv('repo:clone') as Api['cloneRepo'],
   pickFolder: inv('folder:pick') as Api['pickFolder'],
+  subscriptionLimits: inv('limits:get') as Api['subscriptionLimits'],
   removeProject: inv('repo:removeProject') as Api['removeProject'],
   deleteWorkspace: inv('ws:delete') as Api['deleteWorkspace'],
   deleteLeftover: inv('leftover:delete') as Api['deleteLeftover'],
