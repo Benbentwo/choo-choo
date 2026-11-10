@@ -5,6 +5,8 @@ name: Beta
 # Runs after Release Drafter so the version starts from the draft's next version, like v0.2.0-beta.57.
 # Prereleases are never marked Latest, so stable users and the Homebrew cask never see them.
 on:
+  push:
+    branches: [claude/project-thread-yeejr2] # TEMP: dry-run test, remove before merge
   workflow_run:
     workflows: [Release Drafter]
     types: [completed]
