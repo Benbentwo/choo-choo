@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
 import { App } from './App'
-import { FeedbackOverlay } from './dev/FeedbackOverlay'
+import { FeedbackOverlay } from './components/FeedbackOverlay'
 import { applyCachedAppearance } from './appearance'
 import { AddonBackgrounds } from './components/Addons'
 
@@ -19,7 +19,7 @@ createRoot(document.getElementById('root')!).render(
     ) : (
       <>
         <App />
-        {import.meta.env.DEV && <FeedbackOverlay />}
+        <FeedbackOverlay />
       </>
     )}
   </StrictMode>

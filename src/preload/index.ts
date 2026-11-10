@@ -171,7 +171,5 @@ const api: Api = {
 
 contextBridge.exposeInMainWorld('api', api)
 
-// Dev-only feedback mode (see src/main/devFeedback.ts).
-if (process.env.ELECTRON_RENDERER_URL) {
-  contextBridge.exposeInMainWorld('devFeedback', { submit: inv('devFeedback:submit') })
-}
+// Comment mode (see src/main/uiComment.ts): dev writes to the checkout, packaged builds open a workspace or an issue.
+contextBridge.exposeInMainWorld('uiComment', { info: inv('uiComment:info'), submit: inv('uiComment:submit') })

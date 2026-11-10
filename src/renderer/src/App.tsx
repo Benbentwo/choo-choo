@@ -65,6 +65,8 @@ export function App() {
           return openPalette('grep')
         case 'settings':
           return st.set({ modal: 'settings' })
+        case 'comment-mode':
+          return void window.dispatchEvent(new Event('choo:comment-mode'))
         case 'open-share':
           return st.set({ modal: 'open-share' })
         case 'new-workspace':

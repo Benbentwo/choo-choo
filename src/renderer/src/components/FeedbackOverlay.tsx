@@ -1,9 +1,26 @@
-// Dev-only comment mode: press ⌘⇧K (or the pill in the corner), click any element, type a note.
-// The note plus screenshots land in .feedback/ for the agent iterating on the app.
+// Comment mode: press ⌘⇧K (Help > Comment on Choo Choo, or the pill in dev), click any element, type a note.
+// In dev the note lands in .feedback/ for the agent iterating on the checkout; in a packaged build it opens a
+// workspace on choo-choo itself, or a GitHub issue (see src/main/uiComment.ts).
 import { useEffect, useRef, useState } from 'react'
+import { TARGET_LABELS, buildLabel, type CommentInfo, type CommentResult, type CommentSubmit, type CommentTarget } from '@shared/uiComment'
+import { refreshState, useStore } from '../store'
 
-type Bridge = { submit(p: unknown): Promise<string> }
-const bridge = (window as unknown as { devFeedback?: Bridge }).devFeedback
+type Bridge = {
+  info(): Promise<CommentInfo>
+  submit(p: CommentSubmit): Promise<CommentResult>
+}
+const bridge = (window as unknown as { uiComment?: Bridge }).uiComment
+
+const HINTS: Record<CommentTarget, string> = {
+  local: 'Writes to .feedback/ in this checkout for the Claude Code session watching it.',
+  workspace: 'Opens a new workspace on choo-choo and starts Claude on the fix. Clones the repo the first time, or your fork if you can’t push to it.',
+  issue: 'Opens a prefilled GitHub issue in your browser. The element screenshot is copied so you can paste it in.'
+}
+const SEND_LABEL: Record<CommentTarget, string> = {
+  local: 'Send',
+  workspace: 'Fix it',
+  issue: 'Open issue'
+}
 
 const UI_ATTR = 'data-feedback-ui'
 
@@ -51,16 +68,31 @@ export function FeedbackOverlay() {
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [info, setInfo] = useState<CommentInfo | null>(null)
+  const [sendTo, setSendTo] = useState<CommentTarget>('local')
+  const [includeFull, setIncludeFull] = useState(true)
   const textRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
+    void bridge?.info().then((i) => {
+      setInfo(i)
+      setSendTo(i.defaultTarget)
+      // The whole window can show private repos and code, so packaged builds leave it out unless asked.
+      setIncludeFull(!i.packaged)
+    })
+    // ⌘⇧K is the Help menu's accelerator; the menu forwards it here.
+    const toggle = () => {
+      setActive((a) => !a)
+      setTarget(null)
+      setHover(null)
+    }
+    window.addEventListener('choo:comment-mode', toggle)
+    return () => window.removeEventListener('choo:comment-mode', toggle)
+  }, [])
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setActive((a) => !a)
-        setTarget(null)
-        setHover(null)
-      } else if (e.key === 'Escape' && active) {
+      if (e.key === 'Escape' && active) {
         // Comment mode is the top layer: Esc backs out of it and nothing underneath (dialogs, menus) sees the key.
         e.preventDefault()
         e.stopImmediatePropagation()
@@ -104,7 +136,7 @@ export function FeedbackOverlay() {
     }
   }, [active, target])
 
-  if (!bridge) return null
+  if (!bridge || !info) return null
 
   async function submit() {
     if (!target || !comment.trim() || !bridge) return
@@ -112,25 +144,42 @@ export function FeedbackOverlay() {
     // Let the popover disappear before the screenshot is taken.
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
     const r = target.rect
+    if (sendTo === 'workspace') setToast('Opening a choo-choo workspace…')
+    let hold = 2000
     try {
-      await bridge.submit({
+      const res = await bridge.submit({
         comment: comment.trim(),
         selector: selectorFor(target.el),
         component: componentChain(target.el),
         text: (target.el as HTMLElement).innerText?.slice(0, 300) ?? '',
-        rect: { x: r.x, y: r.y, width: r.width, height: r.height }
+        rect: { x: r.x, y: r.y, width: r.width, height: r.height },
+        target: sendTo,
+        includeFull
       })
-      setToast('Sent to Claude')
+      if (res.target === 'workspace') {
+        await refreshState()
+        const st = useStore.getState()
+        st.selectWorkspace(res.workspaceId)
+        st.setActiveChat(res.workspaceId, res.chatId)
+        setToast(`✓ Opened workspace ${res.branch}`)
+        setActive(false)
+        hold = 4000
+      } else if (res.target === 'issue') {
+        setToast('✓ Issue opened in your browser. Paste the screenshot (⌘V).')
+        setActive(false)
+        hold = 5000
+      } else setToast('Sent to Claude')
     } catch (err) {
-      setToast(`Failed: ${String(err)}`)
+      setToast(`Failed: ${String(err).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '')}`)
+      hold = 6000
     }
     setBusy(false)
     setTarget(null)
-    setTimeout(() => setToast(null), 2000)
+    setTimeout(() => setToast(null), hold)
   }
 
   const box = target?.rect ?? hover
-  const popTop = target ? Math.min(target.rect.bottom + 8, window.innerHeight - 170) : 0
+  const popTop = target ? Math.min(target.rect.bottom + 8, window.innerHeight - 270) : 0
   const popLeft = target ? Math.min(Math.max(8, target.rect.left), window.innerWidth - 336) : 0
 
   return (
@@ -193,38 +242,117 @@ export function FeedbackOverlay() {
               font: 'inherit'
             }}
           />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              marginTop: 6,
+              fontSize: 12,
+              color: '#aaa'
+            }}
+          >
+            <span>Send to</span>
+            <select value={sendTo} onChange={(e) => setSendTo(e.target.value as CommentTarget)} style={field}>
+              {info.targets.map((t) => (
+                <option key={t} value={t}>
+                  {TARGET_LABELS[t]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: '#999',
+              marginTop: 4,
+              lineHeight: 1.35
+            }}
+          >
+            {HINTS[sendTo]}
+          </div>
+          {sendTo !== 'local' && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: 6,
+                fontSize: 11,
+                color: '#bbb',
+                flexWrap: 'wrap'
+              }}
+            >
+              <span style={chip}>element screenshot</span>
+              {sendTo === 'workspace' && (
+                <label style={{ ...chip, cursor: 'pointer' }} title="The whole window can show other repos and code">
+                  <input
+                    type="checkbox"
+                    checked={includeFull}
+                    onChange={(e) => setIncludeFull(e.target.checked)}
+                    style={{ margin: '0 4px 0 0', verticalAlign: -1 }}
+                  />
+                  whole window
+                </label>
+              )}
+              <span style={chip}>{buildLabel(info)}</span>
+            </div>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 8,
+              marginTop: 8
+            }}
+          >
             <button onClick={() => setTarget(null)} style={btn(false)}>
               Cancel
             </button>
             <button onClick={() => void submit()} disabled={!comment.trim()} style={btn(true)}>
-              Send
+              {SEND_LABEL[sendTo]}
             </button>
           </div>
         </div>
       )}
-      <button
-        onClick={() => {
-          setActive((a) => !a)
-          setTarget(null)
-          setHover(null)
-        }}
-        title="Comment mode (⌘⇧K)"
-        style={{
-          position: 'fixed',
-          right: 12,
-          bottom: 12,
-          zIndex: 2147483647,
-          ...btn(active),
-          borderRadius: 999,
-          padding: '6px 12px',
-          opacity: active ? 1 : 0.7
-        }}
-      >
-        {toast ?? (active ? 'Click something to comment · Esc to exit' : '💬 Comment ⌘⇧K')}
-      </button>
+      {(!info.packaged || active || toast) && (
+        <button
+          onClick={() => {
+            setActive((a) => !a)
+            setTarget(null)
+            setHover(null)
+          }}
+          title="Comment mode (⌘⇧K)"
+          style={{
+            position: 'fixed',
+            right: 12,
+            bottom: 12,
+            zIndex: 2147483647,
+            ...btn(active),
+            borderRadius: 999,
+            padding: '6px 12px',
+            opacity: active ? 1 : 0.7
+          }}
+        >
+          {toast ?? (active ? 'Click something to comment · Esc to exit' : '💬 Comment ⌘⇧K')}
+        </button>
+      )}
     </div>
   )
+}
+
+const field: React.CSSProperties = {
+  background: '#1a1817',
+  color: '#eee',
+  border: '1px solid #444',
+  borderRadius: 5,
+  padding: '2px 4px',
+  font: '12px system-ui'
+}
+const chip: React.CSSProperties = {
+  background: '#3a3633',
+  borderRadius: 4,
+  padding: '2px 6px'
 }
 
 function btn(primary: boolean): React.CSSProperties {

@@ -22,7 +22,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Archive and reflect](prd/archive-and-reflect.md) | Shipped |
 | [Extra agents and advisor](prd/extra-agents.md) | Shipped |
 | [Appearance](prd/appearance.md) | Shipped |
-| [Comment mode](prd/comment-mode.md) | Shipped (dev builds only) |
+| [Comment mode](prd/comment-mode.md) | Shipped |
 | [Custom system prompts](prd/system-prompts.md) | In review |
 | [Telemetry](prd/telemetry.md) | In review |
 | [Review plan](prd/plan-review.md) | Shipped |
