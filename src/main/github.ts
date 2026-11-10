@@ -3,6 +3,7 @@ import { promisify } from 'node:util'
 import type { CheckRun, GithubRepo, PrComment, PrInfo, SourceOption } from '@shared/types'
 import { parsePrFeedback, PR_FEEDBACK_QUERY } from '@shared/prComments'
 import { parsePrInbox, prInboxQuery, type InboxPr, type PrRole } from '@shared/prInbox'
+import type { RepoItem } from '@shared/automations'
 
 const exec = promisify(execFile)
 
@@ -63,6 +64,16 @@ export async function listMyRepos(): Promise<GithubRepo[]> {
   )
   const repos = stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l) as GithubRepo)
   return repos.sort((a, b) => (b.pushedAt ?? '').localeCompare(a.pushedAt ?? ''))
+}
+
+/** The newest open issues and PRs in the repo at `cwd`, newest first. */
+export async function recentIssues(cwd: string): Promise<RepoItem[]> {
+  const { stdout } = await exec(
+    'gh',
+    ['api', 'repos/{owner}/{repo}/issues?state=open&sort=created&direction=desc&per_page=30', '--jq', '[.[] | {number, title, url: .html_url, author: (.user.login // "ghost"), labels: [.labels[].name], isPr: (.pull_request != null)}]'],
+    { cwd, timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }
+  )
+  return JSON.parse(stdout || '[]') as RepoItem[]
 }
 
 /** Open PRs that ask for the person's review, plus the ones they opened, across every repo gh can see. */

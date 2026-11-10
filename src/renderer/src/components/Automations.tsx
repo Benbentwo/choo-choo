@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { DAYS, DEFAULT_MAX_FINDINGS, GITHUB_EVENTS, describeTrigger, type Automation, type AutomationRun, type AutomationTarget, type AutomationTrigger, type GithubEvent } from '@shared/automations'
+import { DAYS, DEFAULT_MAX_FINDINGS, GITHUB_EVENTS, describeTrigger, isRepoEvent, type Automation, type AutomationRun, type AutomationTarget, type AutomationTrigger, type GithubEvent } from '@shared/automations'
 import { useStore, refreshState, reportError } from '../store'
 import { IconPlay, IconPlus, IconSidebar } from '../icons'
 
@@ -233,6 +233,7 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
   const [at, setAt] = useState(t && 'at' in t ? t.at : '09:00')
   const [day, setDay] = useState(t?.kind === 'weekly' ? t.day : 1)
   const [event, setEvent] = useState<GithubEvent>(t?.kind === 'github' ? t.event : 'review_requested')
+  const [label, setLabel] = useState(t?.kind === 'github' ? (t.label ?? '') : '')
   const firstTarget = (): string => (s.groups[0] ? `project:${s.groups[0].id}` : s.repos[0] ? `repo:${s.repos[0].id}` : '')
   const [target, setTarget] = useState(initial ? `${initial.target.kind}:${initial.target.kind === 'project' ? initial.target.groupId : initial.target.repoId}` : firstTarget())
   const [max, setMax] = useState(initial?.maxFindings ?? DEFAULT_MAX_FINDINGS)
@@ -249,7 +250,7 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
       case 'weekly':
         return { kind: 'weekly', day, at }
       case 'github':
-        return { kind: 'github', event }
+        return { kind: 'github', event, ...(isRepoEvent(event) && label.trim() ? { label: label.trim() } : {}) }
       default:
         return { kind: 'manual' }
     }
@@ -333,8 +334,13 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
             ))}
           </select>
         )}
+        {kind === 'github' && isRepoEvent(event) && <input className={`${select} w-40`} placeholder="Any label" value={label} onChange={(e) => setLabel(e.target.value)} title="Only items with this label. Leave empty for all." />}
       </div>
-      {kind === 'github' && <div className="ml-[120px] text-[12px] text-faint">Checked every two minutes while Choo Choo is open, for PRs in the repos below. {GITHUB_EVENTS.find((e) => e.id === event)?.hint}</div>}
+      {kind === 'github' && (
+        <div className="ml-[120px] text-[12px] text-faint">
+          Checked every two minutes while Choo Choo is open, in the repos below. {GITHUB_EVENTS.find((e) => e.id === event)?.hint}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2 text-[13px]">
         <span className="w-28 text-muted">Results go to</span>
         <select className={select} value={target} onChange={(e) => setTarget(e.target.value)}>

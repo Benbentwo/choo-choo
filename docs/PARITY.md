@@ -93,7 +93,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Orchestrator: one chat per repo that starts workspaces, briefs their agents, waits on them, follows up and keeps a memory file. It wakes itself with an automatic update when a workspace it started finishes, can run workspaces in a Claude Code cloud session, and watches each workspace's PR and CI checks. See [PRD](prd/orchestrator.md).
 - ✅ Project groups: several repos share one orchestrator and one memory; it starts each workspace in the repo the work belongs to.
 - 🧪 Projects (Settings › Experimental, choo-choo addition): a project's orchestrator chat forwards each message to the right thread or starts one; threads are listed in a panel like Claude desktop projects; the sidebar shows project › repos › PRs, all foldable. See [PRD](prd/projects.md).
-- 🧪 Automations (Settings › Experimental, choo-choo addition): checks that run on a schedule, a GitHub event (review requested, CI failed, PR reviewed) or Run now, and open one workspace per finding in a project thread or a repo, capped per run and never twice for the same finding. See [PRD](prd/automations.md).
+- 🧪 Automations (Settings › Experimental, choo-choo addition): checks that run on a schedule, a GitHub event (review requested, CI failed, PR reviewed, new issue or PR, optionally by label) or Run now, and open one workspace per finding in a project thread or a repo, capped per run and never twice for the same finding. See [PRD](prd/automations.md).
 
 ## Build sequence
 1. **Foundation**: app scaffold, layout, repos, worktree sessions, agent chat, Changes + diff, terminal.

@@ -19,7 +19,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Import from Conductor](prd/conductor-import.md) | Shipped |
 | [Orchestrator](prd/orchestrator.md) | Shipped |
 | [Projects](prd/projects.md) | Experimental: threads and the repo › PR sidebar |
-| [Automations](prd/automations.md) | Experimental, in review |
+| [Automations](prd/automations.md) | Experimental: shipped (PR #80); new issue and PR triggers in review |
 | [Shared sessions](prd/shared-sessions.md) | Shipped |
 | [Archive and reflect](prd/archive-and-reflect.md) | Shipped |
 | [Extra agents and advisor](prd/extra-agents.md) | Shipped |
