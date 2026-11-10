@@ -1,4 +1,4 @@
-import type { PrComment, Stack, StackJob } from './types'
+import type { GithubStack, PrComment, Stack, StackJob, StackLayerStatus } from './types'
 import { prCommentsPrompt } from './prComments'
 
 /** Position of a branch in the stack, or -1. */
@@ -85,4 +85,48 @@ export function mergedBottom(states: ({ state: string } | null)[]): number {
   let n = 0
   while (n < states.length && states[n]?.state === 'MERGED') n++
   return n
+}
+
+/**
+ * How to bring GitHub's stack in line with ours. `ours` is the stack's open PRs bottom first, `theirs` the
+ * GitHub stack that holds our bottom PR (if any). GitHub only appends on top, so a different order can't be fixed here.
+ */
+export function githubLinkPlan(ours: number[], theirs: GithubStack | null): { action: 'create' | 'add' | 'none' | 'mismatch'; prs: number[] } {
+  if (!theirs) return ours.length >= 2 ? { action: 'create', prs: ours } : { action: 'none', prs: [] }
+  // Merged PRs leave GitHub's stack from the bottom, so line up from our bottom PR.
+  const from = theirs.prs.indexOf(ours[0])
+  const live = from < 0 ? theirs.prs : theirs.prs.slice(from)
+  const shared = Math.min(live.length, ours.length)
+  for (let i = 0; i < shared; i++) if (live[i] !== ours[i]) return { action: 'mismatch', prs: [] }
+  if (live.length > ours.length) return { action: 'mismatch', prs: [] }
+  const rest = ours.slice(live.length)
+  return rest.length ? { action: 'add', prs: rest } : { action: 'none', prs: [] }
+}
+
+/** True when every open PR of the stack is in GitHub's stack, in our order. */
+export function githubLinked(ours: number[], theirs: GithubStack | null | 'unavailable'): boolean {
+  return !!theirs && theirs !== 'unavailable' && ours.length > 0 && githubLinkPlan(ours, theirs).action === 'none'
+}
+
+/**
+ * The PRs a "Merge through" on layer `i` merges, bottom first: every open PR from the bottom up to `i`.
+ * Returns why it can't run instead when a PR is missing, not pushed, or a layer below has no open PR.
+ */
+export function mergeThroughPrs(layers: StackLayerStatus[], i: number): { prs: number[] } | { why: string } {
+  const prs: number[] = []
+  for (let k = 0; k <= i; k++) {
+    const l = layers[k]
+    if (l.pr?.state === 'MERGED') continue
+    if (!l.pr || l.pr.state !== 'OPEN') return { why: `${l.branch} has no open PR` }
+    if (!l.pushed || l.unpushed) return { why: `Push ${l.branch} first` }
+    if (k > 0 && l.behind) return { why: 'Restack first' }
+    prs.push(l.pr.number)
+  }
+  return prs.length ? { prs } : { why: 'Nothing to merge' }
+}
+
+/** The button label, like Orca's and GitHub's: "Merge #12" or "Merge through #14 · 3 PRs". */
+export function mergeThroughLabel(prs: number[]): string {
+  const top = prs[prs.length - 1]
+  return prs.length === 1 ? `Merge #${top}` : `Merge through #${top} · ${prs.length} PRs`
 }

@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
-import type { Chat, FeedbackOptions, PrInfo, Stack, StackJob, StackLayerStatus, StackStatus, Workspace } from '@shared/types'
-import { advanceStep, bottomFirst, feedbackSteps, layerIndex, mergedBottom, nextLayerBranch, parentRef, prBaseFor, restackConflictPrompt, stackFeedbackPrompt } from '@shared/stack'
+import type { Chat, FeedbackOptions, GithubStack, MergeThroughResult, PrInfo, Stack, StackJob, StackLayerStatus, StackStatus, Workspace } from '@shared/types'
+import { advanceStep, bottomFirst, feedbackSteps, githubLinkPlan, layerIndex, mergedBottom, mergeThroughPrs, nextLayerBranch, parentRef, prBaseFor, restackConflictPrompt, stackFeedbackPrompt } from '@shared/stack'
 import { summarizeChecks } from '@shared/prStatus'
 import * as gh from './github'
 
@@ -296,7 +296,190 @@ export async function status(ws: Workspace): Promise<StackStatus | null> {
   )
   host.save()
   const conflict = rebasing ? { branch: st.restacking?.branch ?? here, files: await conflicted(cwd) } : undefined
-  return { current: here, base: ws.baseRef, dirty: await isDirty(cwd), conflict, layers, job: jobs.get(ws.id)?.view }
+  const open = openPrs(layers)
+  const [github, ghStackCli] = await Promise.all([open.length ? githubStackFor(cwd, open[0]) : Promise.resolve(null), hasGhStack()])
+  return { current: here, base: ws.baseRef, dirty: await isDirty(cwd), conflict, layers, job: jobs.get(ws.id)?.view, github, ghStackCli }
+}
+
+// ---- GitHub's stacked pull requests: link the stack, merge through a PR ----
+
+const API = ['-H', 'Accept: application/vnd.github+json', '-H', 'X-GitHub-Api-Version: 2026-03-10']
+
+/** Open PR numbers, bottom first. */
+const openPrs = (layers: StackLayerStatus[]) => layers.filter((l) => l.pr?.state === 'OPEN').map((l) => l.pr!.number)
+
+interface ApiStack {
+  number: number
+  pull_requests?: { number: number; state?: string; merged_at?: string | null }[]
+}
+const toStack = (s: ApiStack): GithubStack => ({ number: s.number, prs: (s.pull_requests ?? []).filter((p) => !p.merged_at && p.state !== 'closed').map((p) => p.number) })
+
+/** The GitHub stack that holds this PR, null if none, 'unavailable' if this repo has no stacks API. */
+export async function githubStackFor(cwd: string, pr: number): Promise<GithubStack | null | 'unavailable'> {
+  try {
+    const { stdout } = await exec('gh', ['api', ...API, `repos/{owner}/{repo}/stacks?pull_request=${pr}`], { cwd, timeout: 20_000 })
+    const list = JSON.parse(stdout) as ApiStack[]
+    return Array.isArray(list) && list[0] ? toStack(list[0]) : null
+  } catch {
+    return 'unavailable'
+  }
+}
+
+/** Creates the stack on GitHub from the open PRs, or appends the PRs GitHub's stack is missing. */
+export function linkGithub(ws: Workspace): Promise<GithubStack> {
+  return locked(ws.id, async () => {
+    const st = need(ws)
+    const prs: number[] = []
+    for (const l of st.layers) {
+      const pr = await prView(ws.path, l.branch)
+      if (pr?.state === 'MERGED') continue
+      if (pr?.state !== 'OPEN') throw new Error(`Open a PR for ${l.branch} first`)
+      prs.push(pr.number)
+    }
+    if (prs.length < 2) throw new Error('A GitHub stack needs at least two open PRs')
+    const theirs = await githubStackFor(ws.path, prs[0])
+    if (theirs === 'unavailable') throw new Error("GitHub's stacked pull requests aren't available for this repository")
+    const plan = githubLinkPlan(prs, theirs)
+    if (plan.action === 'mismatch') throw new Error(`#${prs[0]} is already in GitHub stack #${theirs!.number} with different PRs. Unstack it on GitHub first.`)
+    if (plan.action === 'none') return theirs!
+    const path = plan.action === 'create' ? 'repos/{owner}/{repo}/stacks' : `repos/{owner}/{repo}/stacks/${theirs!.number}/add`
+    const fields = plan.prs.flatMap((n) => ['-F', `pull_requests[]=${n}`])
+    const { stdout } = await exec('gh', ['api', ...API, '-X', 'POST', path, ...fields], { cwd: ws.path, timeout: 30_000 }).catch((e) => {
+      throw new Error(`GitHub didn't accept the stack: ${ghError(e)}`)
+    })
+    host.changed(ws.id)
+    return toStack(JSON.parse(stdout) as ApiStack)
+  })
+}
+
+const ghError = (e: unknown) => ((e as { stderr?: string }).stderr || (e as Error).message || '').trim().split('\n').slice(-3).join(' ')
+
+let ghStackCache = false
+/** GitHub's `gh stack` extension is installed. Once seen, it's remembered; until then each status asks again. */
+export async function hasGhStack(): Promise<boolean> {
+  if (ghStackCache) return true
+  try {
+    const { stdout } = await exec('gh', ['extension', 'list'], { timeout: 10_000 })
+    ghStackCache = /\bgh-stack\b/.test(stdout)
+  } catch {
+    ghStackCache = false
+  }
+  return ghStackCache
+}
+
+/** For tests: forget that gh-stack was seen. */
+export function forgetGhStack() {
+  ghStackCache = false
+}
+
+export async function installCli() {
+  try {
+    await exec('gh', ['extension', 'install', 'github/gh-stack'], { timeout: 120_000 })
+  } catch (e) {
+    const msg = ghError(e)
+    if (!/already installed/i.test(msg)) throw new Error(`Couldn't install gh-stack: ${msg}`)
+  }
+  ghStackCache = true
+}
+
+/**
+ * Merges the PR on `branch` and every open PR below it in one step, through GitHub's stack merge (all or
+ * none, merge-queue aware), then drops the merged branches from the bottom of the stack.
+ */
+export function mergeThrough(ws: Workspace, branch: string): Promise<MergeThroughResult> {
+  return locked(ws.id, async () => {
+    const st = need(ws)
+    const cwd = ws.path
+    const i = layerIndex(st, branch)
+    if (i < 0) throw new Error(`${branch} is not in this stack`)
+    if (jobs.has(ws.id)) throw new Error('Wait for the stack job to finish')
+    if (await rebaseInProgress(cwd)) throw new Error('Finish the restack in progress first')
+    if (await isDirty(cwd)) throw new Error(`Commit the changes on ${await current(cwd)} first`)
+    const s = await status(ws)
+    if (!s) throw new Error('This workspace is not a stack')
+    const pick = mergeThroughPrs(s.layers, i)
+    if ('why' in pick) throw new Error(pick.why)
+    const gs = s.github
+    if (!gs || gs === 'unavailable' || githubLinkPlan(openPrs(s.layers), gs).action !== 'none') throw new Error('Link the stack on GitHub first')
+    if (!(await hasGhStack())) throw new Error('Install gh-stack first')
+
+    const top = pick.prs[pick.prs.length - 1]
+    try {
+      await exec('gh', ['stack', 'merge', String(top), '--squash', '--yes'], { cwd, timeout: 5 * 60_000 })
+    } catch (e) {
+      throw new Error(`GitHub didn't merge the stack: ${ghError(e)}`)
+    }
+
+    // The merge runs in the background on GitHub (or waits in the merge queue): watch the top PR for a while.
+    let merged = false
+    for (let t = 0; t < 30 && !merged; t++) {
+      merged = (await prView(cwd, branch))?.state === 'MERGED'
+      if (!merged) await new Promise((r) => setTimeout(r, t < 5 ? 1000 : 3000))
+    }
+    if (!merged) {
+      host.changed(ws.id)
+      return { merged: [], queued: true, dropped: [] }
+    }
+    const dropped = await afterMerge(ws)
+    host.changed(ws.id)
+    return { merged: pick.prs, queued: false, dropped }
+  })
+}
+
+/**
+ * After GitHub merged the bottom of the stack: take GitHub's rebased branches for the PRs above (it
+ * retargets them onto the base), drop the merged branches, and leave the worktree on a live PR.
+ */
+async function afterMerge(ws: Workspace): Promise<string[]> {
+  const st = need(ws)
+  const cwd = ws.path
+  const baseBranch = ws.baseRef.replace(/^origin\//, '')
+  const before = new Map<string, string | null>()
+  for (const l of st.layers) before.set(l.branch, await sha(cwd, l.branch))
+  await tryG(cwd, ['fetch', 'origin', baseBranch, ...st.layers.map((l) => `+refs/heads/${l.branch}:refs/remotes/origin/${l.branch}`), '--quiet'])
+
+  const prs = await Promise.all(st.layers.map((l) => prView(cwd, l.branch)))
+  const n = mergedBottom(prs)
+  const dropped = st.layers.slice(0, n).map((l) => l.branch)
+  const home = await current(cwd)
+
+  if (n >= st.layers.length) {
+    // Everything merged: the stack is done. Leave the workspace on the top branch like any merged PR.
+    st.layers = st.layers.slice(-1)
+    st.layers[0].parentSha = (await sha(cwd, ws.baseRef)) ?? undefined
+    host.save()
+    return dropped.slice(0, -1)
+  }
+
+  const rest = st.layers.slice(n)
+  const baseTip = await sha(cwd, ws.baseRef)
+  // GitHub retargets the PRs above onto the base and rebases them. Take its branches when it did that for
+  // every PR left. Merging needed every branch pushed, so the local branches hold nothing GitHub lacks.
+  let adopt = !!baseTip
+  for (const l of rest) {
+    if (!adopt) break
+    const remote = await sha(cwd, `origin/${l.branch}`)
+    adopt = !!remote && (await isAncestor(cwd, baseTip!, remote))
+  }
+  if (adopt) {
+    st.layers = rest
+    for (let k = 0; k < rest.length; k++) {
+      const l = rest[k]
+      const remote = (await sha(cwd, `origin/${l.branch}`))!
+      if (remote !== before.get(l.branch)) {
+        if (l.branch === home) await g(cwd, ['reset', '--hard', remote])
+        else await g(cwd, ['branch', '-f', l.branch, remote])
+      }
+      l.parentSha = k === 0 ? baseTip! : ((await sha(cwd, rest[k - 1].branch)) ?? undefined)
+    }
+    if (layerIndex(st, home) < 0) await g(cwd, ['checkout', st.layers[0].branch])
+  } else {
+    // GitHub hasn't rebased the rest (yet): do it here, the same way Sync with main does.
+    await restackNow(ws, true)
+  }
+  ws.branch = await current(cwd)
+  host.save()
+  return dropped
 }
 
 export function setAuto(ws: Workspace, on: boolean) {

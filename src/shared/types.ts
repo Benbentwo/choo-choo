@@ -176,6 +176,28 @@ export interface StackStatus {
   conflict?: { branch: string; files: string[] }
   layers: StackLayerStatus[]
   job?: StackJob
+  /**
+   * The stack as GitHub knows it (GitHub's stacked pull requests), or null when it isn't linked yet.
+   * 'unavailable' when GitHub has no stacks for this repo (the feature is off, or `gh` can't reach it).
+   */
+  github: GithubStack | null | 'unavailable'
+  /** The `gh stack` extension is installed; merging a linked stack goes through it. */
+  ghStackCli: boolean
+}
+
+/** A pull request stack on GitHub: PR numbers bottom to top. */
+export interface GithubStack {
+  number: number
+  prs: number[]
+}
+
+export interface MergeThroughResult {
+  /** PRs that merged, bottom first. */
+  merged: number[]
+  /** The repo uses a merge queue: the PRs were queued and merge later. */
+  queued: boolean
+  /** Merged branches dropped from the bottom of the stack. */
+  dropped: string[]
 }
 
 export interface FeedbackOptions {
@@ -913,6 +935,12 @@ export interface Api {
   stackStopJob(workspaceId: string): Promise<void>
   /** Leaves the stack: the workspace goes back to one branch, the one checked out. */
   stackDissolve(workspaceId: string): Promise<void>
+  /** Creates the stack on GitHub from the stack's open PRs, or adds the PRs it is missing on top. */
+  stackLinkGithub(workspaceId: string): Promise<GithubStack>
+  /** Merges the PR on this branch and every PR below it in one step (all or none), then drops them from the stack. */
+  stackMergeThrough(workspaceId: string, branch: string): Promise<MergeThroughResult>
+  /** Installs GitHub's `gh stack` extension (`gh extension install github/gh-stack`). */
+  stackInstallCli(): Promise<void>
   getChecks(workspaceId: string): Promise<CheckRun[]>
   rerunCheck(workspaceId: string, link: string): Promise<void>
   getArtifacts(workspaceId: string): Promise<Artifact[]>
