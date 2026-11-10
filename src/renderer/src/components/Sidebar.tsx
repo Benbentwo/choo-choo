@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { Repo, Workspace } from '@shared/types'
 import { visiblePrs } from '@shared/prInbox'
 import { moveId, sortWorkspaces, type WorkspaceSort } from '@shared/sidebarOrder'
@@ -6,7 +6,8 @@ import { Menu, type MenuItem } from './Menu'
 import { addProjectItems } from './AddProject'
 import { useStore, openAddonPage, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, reportError } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
-import { IconAddon, IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconPR, IconRepo, IconRight, IconSearch, IconSidebar } from '../icons'
+import { IconAddon, IconArchive, IconBranch, IconDots, IconGear, IconHome, IconLeft, IconOrchestrator, IconPlus, IconPR, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
+import { StackRows } from './Stack'
 import { Stats } from './Stats'
 import { BrandMark } from './BrandMark'
 import { UpdateBanners } from './Updates'
@@ -274,7 +275,10 @@ export function Sidebar() {
                 )
               })}
               {wss.map((w) => (
-                <WsRow key={w.id} w={w} dnd={wsDragProps(w, wsIds)} />
+                <Fragment key={w.id}>
+                  <WsRow w={w} dnd={wsDragProps(w, wsIds)} />
+                  {w.stack && <StackRows ws={w} />}
+                </Fragment>
               ))}
               {archived.length > 0 && (
                 <button
@@ -413,7 +417,7 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
       onKeyDown={(e) => !editing && e.key === 'Enter' && s.selectWorkspace(w.id)}
       className={`group flex h-9 w-full cursor-default items-center gap-2 rounded-md pr-2 ${repoName ? 'pl-2' : 'pl-5'} text-left ${s.selectedWs === w.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'} ${dropLine} ${dnd?.drag?.id === w.id ? 'opacity-50' : ''}`}
     >
-      {running || naming ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : <IconBranch className="shrink-0" />}
+      {running || naming ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : w.orchestrator ? <IconOrchestrator className="shrink-0" /> : w.stack ? <IconStack className="shrink-0 text-accent" /> : <IconBranch className="shrink-0" />}
       {editing ? (
         <input
           autoFocus

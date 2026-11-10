@@ -118,6 +118,71 @@ export interface Workspace {
   share?: { id: string; link: string; sharedAt: number; autoSync: boolean }
   /** Set when this workspace was opened from a coworker's share. */
   importedShare?: { id: string; link: string; sharedBy: string; sharedAt: number }
+  /** Set when the workspace holds a stack of PRs, one branch each. `branch` is the one checked out. */
+  stack?: Stack
+}
+
+/** One PR's branch in a stack. */
+export interface StackLayer {
+  branch: string
+  /** The parent's commit this branch was last built on, so a restack moves only this branch's own commits. */
+  parentSha?: string
+  /** Last PR seen for the branch, so the sidebar can show it without asking GitHub. */
+  pr?: { number: number; title: string }
+}
+
+/** Several PRs for one feature, each built on the one below it, all in one worktree. See docs/prd/stacked-prs.md. */
+export interface Stack {
+  /** Bottom (built on the base branch) to top. */
+  layers: StackLayer[]
+  /** Restack the PRs above after each agent turn that changed a lower one. */
+  autoRestack: boolean
+  /** Set while a rebase stopped part way, so the next restack can pick up where it left off. */
+  restacking?: { branch: string; newParent: string; home: string }
+}
+
+export interface StackLayerStatus {
+  branch: string
+  sha: string
+  /** The branch below it (or the base) has commits this one isn't built on yet. */
+  behind: boolean
+  /** Commits on this branch that are not on the one below. */
+  commits: number
+  /** On origin, and whether origin has a different commit. */
+  pushed: boolean
+  unpushed: boolean
+  pr: (PrInfo & { baseRefName?: string }) | null
+  /** Unresolved review feedback on the PR. */
+  comments: number
+  checks: { total: number; failed: number; pending: number }
+}
+
+/** A run of steps the app drives across the stack: addressing feedback, or getting past a restack conflict. */
+export interface StackJob {
+  kind: 'feedback' | 'restack'
+  chatId: string
+  steps: { label: string; state: 'todo' | 'doing' | 'done' | 'failed' }[]
+  /** Waiting for the person to continue (the "ask me before each PR" option). */
+  paused?: boolean
+  error?: string
+}
+
+export interface StackStatus {
+  current: string
+  base: string
+  /** Uncommitted changes in the worktree. Switching PRs and restacking wait for these to be committed. */
+  dirty: boolean
+  /** A rebase stopped on conflicts in these files. */
+  conflict?: { branch: string; files: string[] }
+  layers: StackLayerStatus[]
+  job?: StackJob
+}
+
+export interface FeedbackOptions {
+  /** Branches to address, any order; they run bottom first. */
+  branches: string[]
+  askEach: boolean
+  reply: boolean
 }
 
 /** A share found in a repository's remote. */
@@ -830,6 +895,17 @@ export interface Api {
   markPrReady(workspaceId: string): Promise<void>
   /** Unresolved review threads, reviews and comments on the workspace's PR. */
   getPrComments(workspaceId: string): Promise<PrComment[]>
+  stackStatus(workspaceId: string): Promise<StackStatus | null>
+  /** Turns a workspace into a stack (if it isn't one) and adds a new branch on top of the top PR. */
+  stackAddLayer(workspaceId: string): Promise<void>
+  stackSwitch(workspaceId: string, branch: string): Promise<void>
+  stackRestack(workspaceId: string, ontoBase: boolean): Promise<void>
+  stackSetAuto(workspaceId: string, on: boolean): Promise<void>
+  stackAddressFeedback(workspaceId: string, chatId: string, opts: FeedbackOptions): Promise<void>
+  stackContinue(workspaceId: string): Promise<void>
+  stackStopJob(workspaceId: string): Promise<void>
+  /** Leaves the stack: the workspace goes back to one branch, the one checked out. */
+  stackDissolve(workspaceId: string): Promise<void>
   getChecks(workspaceId: string): Promise<CheckRun[]>
   rerunCheck(workspaceId: string, link: string): Promise<void>
   getArtifacts(workspaceId: string): Promise<Artifact[]>
@@ -894,6 +970,7 @@ export interface Api {
   onStateChanged(cb: () => void): () => void
   /** A workspace's PR or its checks changed on GitHub (or a periodic full refresh is due). */
   onPrChanged(cb: (workspaceId: string) => void): () => void
+  onStackChanged(cb: (workspaceId: string) => void): () => void
   updateStatus(): Promise<UpdateStatus>
   /** Checks now, whatever the Settings toggles say. */
   checkForUpdates(which?: 'app' | 'claude' | 'all'): Promise<UpdateStatus>

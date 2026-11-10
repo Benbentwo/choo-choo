@@ -129,3 +129,9 @@ export const IconComment = (p: SVGProps<SVGSVGElement>) => (
 export const IconAddon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><path d="M17 4v6M14 7h6" /></svg>
 )
+export const IconStack = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="m12 3 9 4.5-9 4.5-9-4.5z" /><path d="m3 12 9 4.5 9-4.5" /><path d="m3 16.5 9 4.5 9-4.5" /></svg>
+)
+export const IconRestack = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M20 9a8 8 0 0 0-14.5-3M4 15a8 8 0 0 0 14.5 3" /><path d="M5 2v4h4M19 22v-4h-4" /></svg>
+)
