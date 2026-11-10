@@ -148,7 +148,9 @@ Dev mode has a built-in way to give Claude Code feedback on the running app:
 2. Open Claude Code in this repo and say "watch for my comments". [CLAUDE.md](CLAUDE.md) tells it how: it runs `scripts/watch-feedback.sh` in the background and gets a line for each new comment.
 3. In the app, press ⌘⇧K (or click the "Comment" pill in the bottom-right), click any element, type what should change, and press Enter.
 
-Each comment is saved to `.feedback/` in your checkout with the element's selector, its React component, and two screenshots. Claude reads it, makes the change, and moves it to `.feedback/done/`. UI edits hot-reload; main-process edits restart the app. Comment mode only exists in dev builds, and `.feedback/` is gitignored, so comments stay on your machine.
+Each comment is saved to `.feedback/` in your checkout with the element's selector, its React component, and two screenshots. Claude reads it, makes the change, and moves it to `.feedback/done/`. UI edits hot-reload; main-process edits restart the app. `.feedback/` is gitignored, so comments stay on your machine.
+
+In a release build, ⌘⇧K (Help > Comment on Choo Choo…) works the same way, but **Fix it** opens a new workspace on this repo with your note and a screenshot, and Claude starts on the fix there. The first time, the app clones the repo, or your fork if you can't push to it, so the PR goes upstream. Pick **GitHub issue** instead to open a prefilled issue in your browser.
 
 ## Release
 

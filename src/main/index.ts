@@ -20,7 +20,7 @@ import * as stack from './stack'
 import { startPrWatch } from './prWatch'
 import { suggestName, suggestTitleFromChats } from './naming'
 import * as updates from './updater'
-import { registerDevFeedback } from './devFeedback'
+import { registerUiComment } from './uiComment'
 import * as conductor from './conductorImport'
 import { modelDetails } from './models'
 import { listOutputStyles } from './claudeOptions'
@@ -143,13 +143,13 @@ function newChat(workspaceId: string): Chat {
   return chat
 }
 
-async function createWorkspace(repoId: string, source?: WorkspaceSource, folders: string[] = []) {
+async function createWorkspace(repoId: string, source?: WorkspaceSource, folders: string[] = [], opts: { baseRef?: string; branch?: string } = {}) {
   const s = store.get()
   const repo = s.repos.find((r) => r.id === repoId)
   if (!repo) throw new Error('Unknown repo')
   const taken = new Set(s.workspaces.filter((w) => w.repoId === repoId).map((w) => w.name))
   const name = pickCityName(taken)
-  const baseRef = await git.baseRefFor(repo.path, repo.defaultBranch)
+  const baseRef = opts.baseRef ?? (await git.baseRefFor(repo.path, repo.defaultBranch))
   const dir = join(workspacesRoot(), repo.name)
   mkdirSync(dir, { recursive: true })
   const path = join(dir, name)
@@ -171,7 +171,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     named = true
   } else {
     const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
-    branch = `${prefix}/${name}`
+    branch = opts.branch ?? `${prefix}/${name}`
     await git.addWorktree(repo.path, path, branch, baseRef)
     if (source?.kind === 'issue') {
       const issue = await gh.issueText(repo.path, source.number)
@@ -1251,7 +1251,8 @@ function buildMenu() {
         { role: 'togglefullscreen' }
       ]
     },
-    { role: 'windowMenu' }
+    { role: 'windowMenu' },
+    { role: 'help', submenu: [{ label: 'Comment on Choo Choo…', accelerator: 'CmdOrCtrl+Shift+K', click: m('comment-mode') }] }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -1374,7 +1375,14 @@ app.whenReady().then(async () => {
     runSetup: (ws) => void runScript(ws, 'setup'),
     notifyChanged: () => send('state:changed')
   })
-  registerDevFeedback(() => win)
+  registerUiComment({
+    getWin: () => win,
+    repos: () => store.get().repos,
+    reposRoot: REPOS_ROOT,
+    addRepo,
+    createWorkspace: (repoId, o) => createWorkspace(repoId, undefined, [], o),
+    sendToChat: (chat, text, images) => sendToChat(chat, text, images)
+  })
   buildMenu()
   createWindow()
   updates.startUpdater(send)
