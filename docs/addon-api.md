@@ -210,7 +210,7 @@ The client sets CSS variables on `<html>` and keeps them current: `--choo-bg`, `
 | `choo.files.write(repoId, path, content)` / `delete(repoId, path)` | `files:write` | Creates, replaces or deletes a file under `.choo-choo/`. Only `.md`, `.json`, `.txt`, `.yaml` and `.yml`, at most 1 MB, no dotfiles, and never through a symlink. The change is an ordinary uncommitted edit in the project. |
 | `choo.store.get(key)` / `set(key, value)` / `delete(key)` / `keys()` | `storage` | Your add-on's own JSON storage on this Mac, 1 MB in total. |
 | `choo.actions.handle(id, fn)` | none | Answers presses of the button `id` from the manifest's `actions`: `fn({ place, repoId?, workspaceId? })`. See [Buttons in the app](#buttons-in-the-app). |
-| `choo.ui.openWorkspace(workspaceId)` | none | Shows the workspace in the app. |
+| `choo.ui.openWorkspace(workspaceId, { beside? })` | none | Shows the workspace in the app. From a page, `{ beside: true }` opens it in a pane next to the page instead of replacing the page (up to three stacked panes, then the last is reused). |
 | `choo.ui.notify(title, body?, workspaceId?)` | `notify` | A system notification, prefixed with your add-on's name. Respects the person's notification setting. |
 | `net:<host>` | (a permission, not a method) | Lets views `fetch` and load images from `https://<host>`. `*.example.com` covers subdomains. |
 

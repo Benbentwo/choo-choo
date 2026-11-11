@@ -42,6 +42,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Arranging and renaming workspaces](prd/sidebar-workspaces.md) | In review |
 | [Stacked PRs](prd/stacked-prs.md) | In review |
 | [Subscription limits in the sidebar](prd/subscription-limits.md) | In review |
+| [Split panels](prd/split-panels.md) | In review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

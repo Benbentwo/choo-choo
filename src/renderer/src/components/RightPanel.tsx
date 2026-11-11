@@ -13,6 +13,7 @@ import { UsageGraphs } from './UsageGraphs'
 import { AddonActions, AddonFrame, addonTabId, addonViews } from './Addons'
 import { StackTab } from './Stack'
 import { prBaseFor } from '@shared/stack'
+import * as L from '@shared/layout'
 
 const TABS: { id: RightTab; label: string; stack?: boolean }[] = [
   { id: 'stack', label: 'Stack', stack: true },
@@ -31,6 +32,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   const stats = s.stats[ws.id]
   const addonTabs = addonViews(s.addons, 'workspace')
   const addonTab = addonTabs.find((t) => addonTabId(t.addon, t.view) === s.rightTab)
+  const split = !!s.layout && L.leaves(s.layout).length > 1
 
   // The add-on behind the open tab was turned off: fall back to Changes.
   useEffect(() => {
@@ -45,6 +47,12 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   return (
     <aside className="flex w-[420px] shrink-0 flex-col border-l border-line bg-panel">
       <div className="drag flex h-11 shrink-0 items-center justify-end gap-2 border-b border-line px-3">
+        {split && (
+          <span className="mr-auto flex min-w-0 items-center gap-1.5 text-[12.5px]" title="The right panel follows the focused pane">
+            <span className="shrink-0 text-muted">{s.repos.find((r) => r.id === ws.repoId)?.name} /</span>
+            <span className="truncate font-semibold">{ws.orchestrator ? 'Orchestrator' : ws.title}</span>
+          </span>
+        )}
         <button
           onClick={() => s.set({ rightTab: 'review' })}
           className={`no-drag flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 hover:bg-hover ${s.rightTab === 'review' ? 'bg-raised text-fg' : 'text-muted hover:text-fg'}`}

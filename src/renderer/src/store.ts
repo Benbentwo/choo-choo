@@ -5,15 +5,13 @@ import { actionTarget, type AddonAction, type AddonActionContext, type AddonActi
 import type { InboxPr, PrInbox } from '@shared/prInbox'
 import type { Automation, AutomationRun } from '@shared/automations'
 import { isTheirs, type CommentDest, type PrReviewInfo } from '@shared/prReview'
+import * as L from '@shared/layout'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type PrInfo, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
 
-export interface Doc {
-  /** reflect: the workspace's Reflect tab (see `reflects`). */
-  kind: 'diff' | 'file' | 'reflect'
-  path: string
-  /** Line to scroll to in a file. */
-  line?: number
-}
+export type Doc = L.Doc
+
+/** Something being dragged onto the panes: a workspace or add-on page from the sidebar, a pane by its header, or a chat or terminal tab. */
+export type DragItem = { kind: 'ws'; wsId: string } | { kind: 'addon'; key: string; viewId: string; repoId?: string } | { kind: 'leaf'; leafId: string } | { kind: 'tab'; leafId: string; tabId: string }
 
 /** Which list the ⌘K palette opens on. */
 export type PaletteMode = 'all' | 'files' | 'grep'
@@ -50,12 +48,22 @@ interface UI {
   permissions: Record<string, PermissionRequest[]>
   /** Background tasks of each chat's running turn. */
   tasks: Record<string, BackgroundTask[]>
+  /** The focused pane's workspace, when it shows one. */
   selectedWs: string | null
+  /** Split panels: how the center is divided (shared/layout.ts). Kept while Home, PRs or a new-workspace composer is shown. */
+  layout: L.Layout | null
+  /** The workspace the right panel shows: the focused pane's, or the last focused one while an add-on page or empty pane has focus. */
+  rightWs: string | null
+  /** The panes are showing, rather than Home, the PRs page or a new-workspace composer. */
+  panesShown: boolean
+  drag: DragItem | null
+  /** The saved layout last opened or saved, shown in the layout menu until the panes change shape. */
+  layoutName: string | null
   /** Installed add-ons; the ones that are on add views to the sidebar and the right panel. */
   addons: AddonInfo[]
   /** What each project's choo-choo.json asks for. */
   addonPins: PinStatus[]
-  /** The add-on view shown in the center instead of a workspace or Home. */
+  /** The focused pane's add-on page, when it shows one. */
   addonPage: AddonPage | null
   addonPress: AddonPress | null
   /** The PRs page is open in the center. */
@@ -131,6 +139,11 @@ export const useStore = create<UI>((set, get) => ({
   permissions: {},
   tasks: {},
   selectedWs: null,
+  layout: null,
+  rightWs: null,
+  panesShown: false,
+  drag: null,
+  layoutName: null,
   addons: [],
   addonPins: [],
   addonPage: null,
@@ -170,32 +183,61 @@ export const useStore = create<UI>((set, get) => ({
   rightTab: 'changes',
   error: null,
 
-  hydrate: (s) => set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [], automations: s.automations ?? [], automationRuns: s.automationRuns ?? [] }),
+  hydrate: (s) => {
+    set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [], automations: s.automations ?? [], automationRuns: s.automationRuns ?? [] })
+    if (!layoutLoaded) {
+      layoutLoaded = true
+      const saved = L.isLayout(s.settings.layout) ? s.settings.layout : null
+      const l = L.prune(saved, liveOf(get()))
+      if (l) return applyLayout(l, { save: false })
+    }
+    reconcileLayout()
+  },
   selectWorkspace: (id, fromHistory) => {
-    if (fromHistory || !id) return set({ selectedWs: id, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false })
+    if (!id) return set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, panesShown: false })
+    showView(viewFor(id))
+    if (fromHistory) return
     const { history, historyIndex } = get()
     const h = [...history.slice(0, historyIndex + 1), id].slice(-50)
-    set({ selectedWs: id, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, history: h, historyIndex: h.length - 1 })
+    set({ history: h, historyIndex: h.length - 1 })
   },
   back: () => {
     const { history, historyIndex } = get()
-    if (historyIndex > 0) set({ historyIndex: historyIndex - 1, selectedWs: history[historyIndex - 1], addonPage: null, prsPage: false, automationsPage: false })
+    if (historyIndex > 0) {
+      set({ historyIndex: historyIndex - 1 })
+      showView(viewFor(history[historyIndex - 1]))
+    }
   },
   forward: () => {
     const { history, historyIndex } = get()
-    if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, selectedWs: history[historyIndex + 1], addonPage: null, prsPage: false, automationsPage: false })
+    if (historyIndex < history.length - 1) {
+      set({ historyIndex: historyIndex + 1 })
+      showView(viewFor(history[historyIndex + 1]))
+    }
   },
-  setActiveChat: (wsId, chatId) =>
-    set((s) => ({ activeChat: { ...s.activeChat, [wsId]: chatId }, openDoc: { ...s.openDoc, [wsId]: null } })),
-  upsertChat: (c) =>
+  setActiveChat: (wsId, chatId) => {
+    const l = get().layout
+    const leaf = l && L.leafOfWorkspace(l, wsId)
+    if (!l || !leaf || leaf.view.kind !== 'workspace') return set((s) => ({ activeChat: { ...s.activeChat, [wsId]: chatId }, openDoc: { ...s.openDoc, [wsId]: null } }))
+    let view = L.syncWorkspace(leaf.view, chatsOf(get(), wsId))
+    const g = L.groupOf(view.inner, chatId) ?? (L.findNode(view.inner, view.focusGroup) as L.Group)
+    view = { ...view, inner: L.mapNode(view.inner, g.id, (n) => ({ ...(n as L.Group), active: chatId, doc: null })), focusGroup: g.id }
+    applyLayout(L.updateLeaf(l, leaf.id, (x) => ({ ...x, view })), { show: false })
+  },
+  upsertChat: (c) => {
     set((s) => {
       const i = s.chats.findIndex((x) => x.id === c.id)
       const chats = [...s.chats]
       if (i >= 0) chats[i] = c
       else chats.push(c)
       return { chats }
-    }),
-  removeChat: (id) => set((s) => ({ chats: s.chats.filter((c) => c.id !== id) })),
+    })
+    if (!layoutHasChat(get().layout, c)) reconcileLayout()
+  },
+  removeChat: (id) => {
+    set((s) => ({ chats: s.chats.filter((c) => c.id !== id) }))
+    reconcileLayout()
+  },
   setItems: (chatId, items) => set((s) => ({ items: { ...s.items, [chatId]: items } })),
   upsertItem: (chatId, item) =>
     set((s) => {
@@ -208,6 +250,263 @@ export const useStore = create<UI>((set, get) => ({
   setStats: (wsId, st) => set((s) => ({ stats: { ...s.stats, [wsId]: st } })),
   set: (p) => set(p)
 }))
+
+// ---------- split panels ----------
+
+let layoutLoaded = false
+/** The last inner split of each workspace that left the screen, so showing it again restores its groups. */
+const innerCache: Record<string, { inner: L.GNode; focusGroup: string }> = {}
+
+type St = ReturnType<typeof useStore.getState>
+const chatsOf = (st: St, wsId: string) => st.chats.filter((c) => c.workspaceId === wsId).map((c) => c.id)
+const liveOf = (st: St) => ({ workspaces: new Set(st.workspaces.filter((w) => !w.archived).map((w) => w.id)), chatsOf: (id: string) => chatsOf(st, id) })
+
+function layoutHasChat(l: L.Layout | null, c: Chat): boolean {
+  const leaf = l && L.leafOfWorkspace(l, c.workspaceId)
+  return !leaf || leaf.view.kind !== 'workspace' || !!L.groupOf(leaf.view.inner, c.id)
+}
+
+/** A pane view for a workspace: its last split if it had one, else one group on its active chat. */
+export function viewFor(wsId: string): L.PaneView {
+  const st = useStore.getState()
+  const chats = chatsOf(st, wsId)
+  const cached = innerCache[wsId]
+  if (cached) return L.syncWorkspace({ kind: 'workspace', wsId, ...cached }, chats)
+  return L.workspaceView(wsId, chats, st.activeChat[wsId])
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | undefined
+function saveLayoutSoon(layout: L.Layout | null) {
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => void window.api.saveSettings({ layout }).catch(() => {}), 400)
+}
+
+/**
+ * Sets the layout and everything read from it: the focused pane's workspace or page, and each
+ * shown workspace's active chat and open doc (from its focused group), which older code reads.
+ */
+export function applyLayout(next: L.Layout | null, opts: { show?: boolean; save?: boolean } = {}) {
+  const st = useStore.getState()
+  const prev = st.layout
+  if (prev) {
+    // Remember the splits of workspaces leaving the screen.
+    const still = new Set(next ? L.leaves(next).flatMap((l) => (l.view.kind === 'workspace' ? [l.view.wsId] : [])) : [])
+    for (const l of L.leaves(prev)) if (l.view.kind === 'workspace' && !still.has(l.view.wsId)) innerCache[l.view.wsId] = { inner: l.view.inner, focusGroup: l.view.focusGroup }
+  }
+  const patch: Partial<St> = { layout: next }
+  if (!next) Object.assign(patch, { selectedWs: null, rightWs: null, addonPage: null, panesShown: false })
+  else {
+    const f = L.focusedLeaf(next)
+    patch.selectedWs = f.view.kind === 'workspace' ? f.view.wsId : null
+    // Keep the right panel on the last workspace while a page or empty pane has focus, so it doesn't jump in and out.
+    const firstWs = L.leaves(next).find((x) => x.view.kind === 'workspace')?.view
+    patch.rightWs = patch.selectedWs ?? (st.rightWs && L.leafOfWorkspace(next, st.rightWs) ? st.rightWs : firstWs?.kind === 'workspace' ? firstWs.wsId : null)
+    patch.addonPage = f.view.kind === 'addon' ? { key: f.view.key, viewId: f.view.viewId, repoId: f.view.repoId } : null
+    const activeChat = { ...st.activeChat }
+    const openDoc = { ...st.openDoc }
+    for (const l of L.leaves(next)) {
+      if (l.view.kind !== 'workspace') continue
+      const g = (L.findNode(l.view.inner, l.view.focusGroup) as L.Group | null) ?? L.leavesOf(l.view.inner)[0]
+      if (g.active && g.chats.includes(g.active)) activeChat[l.view.wsId] = g.active
+      openDoc[l.view.wsId] = g.doc
+    }
+    Object.assign(patch, { activeChat, openDoc })
+    if (opts.show !== false) Object.assign(patch, { panesShown: true, draftRepo: null, prsPage: false, automationsPage: false })
+  }
+  st.set(patch)
+  if (opts.save !== false) saveLayoutSoon(next)
+}
+
+/** Shows a workspace or page in the focused pane, or `side` of it in a new pane. */
+export function showView(view: L.PaneView, side?: L.Side) {
+  applyLayout(L.show(useStore.getState().layout, view, side))
+}
+
+/** Keeps the panes in step after workspaces or chats change. */
+function reconcileLayout() {
+  const st = useStore.getState()
+  if (!st.layout) return
+  const next = L.prune(st.layout, liveOf(st))
+  if (next !== st.layout) applyLayout(next, { show: st.panesShown })
+}
+
+const cur = () => useStore.getState().layout
+
+export function focusLeaf(leafId: string) {
+  const l = cur()
+  if (l && l.focus !== leafId) applyLayout({ ...l, focus: leafId }, { save: false })
+}
+
+export function focusDir(dir: L.Side) {
+  const l = cur()
+  const id = l && L.neighbor(l, dir)
+  if (id) focusLeaf(id)
+}
+
+export function splitPane(side: L.Side) {
+  const l = cur()
+  if (!l) return
+  applyLayout(L.splitFocused(l, side))
+}
+
+export function closePane(leafId?: string) {
+  const l = cur()
+  if (!l) return
+  applyLayout(L.closeLeaf(l, leafId ?? l.focus))
+}
+
+export function toggleMaximize(leafId?: string) {
+  const l = cur()
+  if (!l || L.leaves(l).length < 2) return
+  const id = leafId ?? l.focus
+  applyLayout({ ...l, focus: id, maximized: l.maximized === id ? null : id })
+}
+
+export function setPaneSizes(splitId: string, sizes: number[], save = true) {
+  const l = cur()
+  if (l) applyLayout({ ...l, root: L.setSizes(l.root, splitId, sizes) }, { save })
+}
+
+/** A workspace, page or pane was dropped on a pane: in the middle replaces (or swaps), on an edge splits. */
+export function dropOnLeaf(item: DragItem, targetId: string, side?: L.Side) {
+  const l = cur()
+  if (!l) return
+  if (item.kind === 'leaf') return applyLayout(L.moveLeaf(l, item.leafId, targetId, side))
+  if (item.kind === 'ws') return applyLayout(L.dropView(l, viewFor(item.wsId), targetId, side))
+  if (item.kind === 'addon') return applyLayout(L.dropView(l, { kind: 'addon', key: item.key, viewId: item.viewId, repoId: item.repoId }, targetId, side))
+}
+
+function updateWorkspaceView(leafId: string, fn: (v: Extract<L.PaneView, { kind: 'workspace' }>) => Extract<L.PaneView, { kind: 'workspace' }>, opts?: { save?: boolean }) {
+  const l = cur()
+  const leaf = l && (L.findNode(l.root, leafId) as L.Leaf | null)
+  if (!l || !leaf || leaf.view.kind !== 'workspace') return
+  const view = fn(leaf.view)
+  if (view !== leaf.view) applyLayout(L.updateLeaf(l, leafId, (x) => ({ ...x, view })), { show: false, ...opts })
+}
+
+/** A chat or terminal tab dropped on a group of its own workspace: in the middle moves it there, on an edge splits it out. */
+export function dropTab(leafId: string, tabId: string, groupId: string, side?: L.Side) {
+  updateWorkspaceView(leafId, (v) => {
+    const r = L.moveTab(v.inner, tabId, groupId, side)
+    return r.inner === v.inner ? v : { ...v, inner: r.inner, focusGroup: r.group }
+  })
+  focusLeaf(leafId)
+}
+
+export function setGroupSizes(leafId: string, splitId: string, sizes: number[], save = true) {
+  updateWorkspaceView(leafId, (v) => ({ ...v, inner: L.setSizes(v.inner, splitId, sizes) }), { save })
+}
+
+export function focusGroup(leafId: string, groupId: string) {
+  const l = cur()
+  const leaf = l && (L.findNode(l.root, leafId) as L.Leaf | null)
+  if (!l || !leaf) return
+  if (leaf.view.kind === 'workspace' && leaf.view.focusGroup !== groupId) updateWorkspaceView(leafId, (v) => ({ ...v, focusGroup: groupId }), { save: false })
+  focusLeaf(leafId)
+}
+
+/** Picks a tab in a group; picking a chat or terminal closes the group's diff or file, like before splits. */
+export function setGroupActive(leafId: string, groupId: string, tabId: string) {
+  updateWorkspaceView(leafId, (v) => ({ ...v, focusGroup: groupId, inner: L.mapNode(v.inner, groupId, (g) => ({ ...(g as L.Group), active: tabId, doc: null })) }))
+}
+
+export function setGroupDoc(leafId: string, groupId: string, doc: Doc | null) {
+  updateWorkspaceView(leafId, (v) => {
+    let inner = L.mapNode(v.inner, groupId, (g) => ({ ...(g as L.Group), doc }))
+    const g = L.findNode(inner, groupId) as L.Group
+    // A group that only held a file goes away when the file closes.
+    if (!doc && !g.chats.length && !g.terms.length && L.leavesOf(inner).length > 1) inner = L.removeNode(inner, groupId) ?? inner
+    const focus = L.findNode(inner, v.focusGroup) ? v.focusGroup : L.leavesOf(inner)[0].id
+    return { ...v, inner, focusGroup: focus }
+  })
+}
+
+/** Opens the group's open diff or file in a new group beside it. */
+export function splitDocOut(leafId: string, groupId: string, side: L.Side) {
+  updateWorkspaceView(leafId, (v) => {
+    const g = L.findNode(v.inner, groupId) as L.Group | null
+    if (!g?.doc) return v
+    const ng: L.Group = { ...L.newGroup(), doc: g.doc }
+    let inner = L.mapNode(v.inner, groupId, (x) => ({ ...(x as L.Group), doc: null }))
+    inner = L.insertBeside(inner, groupId, side, ng)
+    return { ...v, inner, focusGroup: ng.id }
+  })
+}
+
+export function mergeGroups(leafId: string) {
+  updateWorkspaceView(leafId, (v) => {
+    const g = L.mergeGroups(v.inner)
+    return { ...v, inner: g, focusGroup: g.id }
+  })
+}
+
+let termSeq = 0
+/** Opens a terminal of the workspace as a tab in the focused group. */
+export function addTerminalTab(leafId: string) {
+  updateWorkspaceView(leafId, (v) => {
+    const g = (L.findNode(v.inner, v.focusGroup) as L.Group | null) ?? L.leavesOf(v.inner)[0]
+    const id = `${v.wsId}:pane-term-${Date.now().toString(36)}${termSeq++}`
+    return { ...v, focusGroup: g.id, inner: L.mapNode(v.inner, g.id, (x) => ({ ...(x as L.Group), terms: [...(x as L.Group).terms, id], active: id, doc: null })) }
+  })
+}
+
+export function closeTerminalTab(leafId: string, termId: string) {
+  window.api.ptyKill(termId)
+  updateWorkspaceView(leafId, (v) => {
+    const g = L.groupOf(v.inner, termId)
+    if (!g) return v
+    const terms = g.terms.filter((t) => t !== termId)
+    let inner = L.mapNode(v.inner, g.id, (x) => ({ ...(x as L.Group), terms, active: g.active === termId ? (g.chats[0] ?? terms[0] ?? null) : g.active }))
+    if (!g.chats.length && !terms.length && !g.doc && L.leavesOf(inner).length > 1) inner = L.removeNode(inner, g.id) ?? inner
+    const focus = L.findNode(inner, v.focusGroup) ? v.focusGroup : L.leavesOf(inner)[0].id
+    return { ...v, inner, focusGroup: focus }
+  })
+}
+
+export function applyPreset(preset: L.Preset) {
+  const l = cur()
+  if (l) applyLayout(L.applyPreset(l, preset))
+}
+
+export function saveLayoutAs(name: string) {
+  const st = useStore.getState()
+  if (!st.layout || !name.trim()) return
+  const list = (st.settings.savedLayouts ?? []).filter((x) => x.name !== name.trim())
+  const savedLayouts = [...list, { name: name.trim(), layout: st.layout }]
+  st.set({ settings: { ...st.settings, savedLayouts }, layoutName: name.trim() })
+  void window.api.saveSettings({ savedLayouts }).catch(reportError)
+}
+
+export function deleteSavedLayout(name: string) {
+  const st = useStore.getState()
+  const savedLayouts = (st.settings.savedLayouts ?? []).filter((x) => x.name !== name)
+  st.set({ settings: { ...st.settings, savedLayouts }, ...(st.layoutName === name ? { layoutName: null } : {}) })
+  void window.api.saveSettings({ savedLayouts }).catch(reportError)
+}
+
+/** Switches to a saved layout. Panes of workspaces that are gone close. */
+export function openSavedLayout(name: string) {
+  const st = useStore.getState()
+  const saved = st.settings.savedLayouts?.find((x) => x.name === name)
+  if (!saved || !L.isLayout(saved.layout)) return
+  const l = L.prune(saved.layout, liveOf(st))
+  if (!l) return reportError(new Error(`The workspaces in "${name}" are all archived.`))
+  applyLayout(l)
+  useStore.getState().set({ layoutName: name })
+}
+
+/** An add-on page asked to show a workspace next to itself. Falls back to the focused pane when the page isn't open. */
+export function openWorkspaceBeside(wsId: string, chatId: string, beside: { key: string; viewId: string; repoId?: string }) {
+  const l = cur()
+  const page = l && L.leafOfAddon(l, beside.key, beside.viewId, beside.repoId)
+  const st = useStore.getState()
+  if (!l || !page) {
+    st.setActiveChat(wsId, chatId)
+    return st.selectWorkspace(wsId)
+  }
+  applyLayout(L.openBeside(l, page.id, viewFor(wsId)))
+  useStore.getState().setActiveChat(wsId, chatId)
+}
 
 export async function refreshState() {
   useStore.getState().hydrate(await window.api.getState())
@@ -228,12 +527,12 @@ export function reportError(e: unknown) {
 
 /** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
 export function newWorkspace(repoId: string) {
-  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, automationsPage: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, automationsPage: false, panesShown: false })
 }
 
 /** Shows an add-on's view in the center. */
-export function openAddonPage(page: AddonPage) {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: page, prsPage: false, automationsPage: false })
+export function openAddonPage(page: AddonPage, side?: L.Side) {
+  showView({ kind: 'addon', key: page.key, viewId: page.viewId, ...(page.repoId ? { repoId: page.repoId } : {}) }, side)
 }
 
 let presses = 0
@@ -248,20 +547,23 @@ export function runAddonAction(addon: AddonInfo, action: AddonAction, ctx: Addon
   if (target.to === 'background') return void window.api.addonAction(addon.key, action.id, ctx).catch(reportError)
   const st = useStore.getState()
   const addonPress: AddonPress = { n: ++presses, at: Date.now(), key: addon.key, viewId: target.viewId, repoId: target.repoId, press: { id: action.id, place: action.place, ...ctx } }
-  if (target.to === 'page') return st.set({ selectedWs: null, draftRepo: null, addonPage: { key: addon.key, viewId: target.viewId, repoId: target.repoId }, prsPage: false, automationsPage: false, addonPress })
+  if (target.to === 'page') {
+    st.set({ addonPress })
+    return openAddonPage({ key: addon.key, viewId: target.viewId, repoId: target.repoId })
+  }
   if (st.selectedWs !== target.workspaceId) st.selectWorkspace(target.workspaceId)
   st.set({ rightOpen: true, rightTab: `addon:${addon.key}/${target.viewId}`, addonPress: { ...addonPress, workspaceId: target.workspaceId } })
 }
 
 /** Shows the PRs page in the center and reloads its list. */
 export function openPrsPage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, automationsPage: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, automationsPage: false, panesShown: false })
   void refreshPrInbox()
 }
 
 /** Opens the Automations page. */
 export function openAutomationsPage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: true })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: true, panesShown: false })
 }
 
 let inboxLoad: Promise<void> | null = null
@@ -533,19 +835,29 @@ export function codeCommentsMessage(list: CodeComment[], text: string, review?: 
 /** Opens the workspace's Reflect tab, which runs the reflect agent with this feedback. */
 export function startReflect(wsId: string, feedback: string, archiveAfter: boolean) {
   const s = useStore.getState()
-  s.set({ reflects: { ...s.reflects, [wsId]: { feedback, archiveAfter } }, openDoc: { ...s.openDoc, [wsId]: { kind: 'reflect', path: 'Reflect' } } })
+  s.set({ reflects: { ...s.reflects, [wsId]: { feedback, archiveAfter } } })
+  openDoc(wsId, { kind: 'reflect', path: 'Reflect' })
 }
 
 /** Closes the Reflect tab, stopping the agent if it's still reading. */
 export function closeReflect(wsId: string) {
   const s = useStore.getState()
   void window.api.cancelReflect(wsId)
+  s.set({ reflects: { ...s.reflects, [wsId]: undefined } })
+  const leaf = s.layout && L.leafOfWorkspace(s.layout, wsId)
+  if (leaf?.view.kind === 'workspace') {
+    for (const g of L.leavesOf(leaf.view.inner)) if (g.doc?.kind === 'reflect') setGroupDoc(leaf.id, g.id, null)
+    return
+  }
   const open = s.openDoc[wsId]
-  s.set({ reflects: { ...s.reflects, [wsId]: undefined }, openDoc: { ...s.openDoc, [wsId]: open?.kind === 'reflect' ? null : (open ?? null) } })
+  s.set({ openDoc: { ...s.openDoc, [wsId]: open?.kind === 'reflect' ? null : (open ?? null) } })
 }
 
+/** Shows a diff, file or Reflect in the workspace's focused group, in place of its chat. */
 export function openDoc(wsId: string, doc: Doc | null) {
   const s = useStore.getState()
+  const leaf = s.layout && L.leafOfWorkspace(s.layout, wsId)
+  if (leaf?.view.kind === 'workspace') return setGroupDoc(leaf.id, leaf.view.focusGroup, doc)
   s.set({ openDoc: { ...s.openDoc, [wsId]: doc } })
 }
 

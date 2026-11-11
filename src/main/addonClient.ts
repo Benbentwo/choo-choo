@@ -157,7 +157,7 @@ export const HOST_SCRIPT = String.raw`(() => {
       }
     },
     ui: {
-      openWorkspace: (workspaceId) => call('ui.openWorkspace', { workspaceId }),
+      openWorkspace: (workspaceId, opts) => call('ui.openWorkspace', { workspaceId, ...(opts?.beside ? { beside: true } : {}) }),
       notify: (title, body, workspaceId) => call('ui.notify', { title, body, workspaceId })
     }
   }

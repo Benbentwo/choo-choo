@@ -142,3 +142,18 @@ export const IconRestack = (p: SVGProps<SVGSVGElement>) => (
 export const IconBot = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="4.5" y="8" width="15" height="11" rx="3" /><path d="M12 4v4M9.5 13h.01M14.5 13h.01" /></svg>
 )
+export const IconSplitRight = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" /></svg>
+)
+export const IconSplitDown = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 12h18" /></svg>
+)
+export const IconMaximize = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 9V4h5M20 15v5h-5M4 4l6 6M20 20l-6-6" /></svg>
+)
+export const IconSingle = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /></svg>
+)
+export const IconGrip = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base({ fill: 'currentColor', stroke: 'none', ...p })}><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" /></svg>
+)

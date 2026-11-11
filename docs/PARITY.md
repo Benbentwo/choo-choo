@@ -24,6 +24,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Three-pane layout: sidebar, chat, right panel; collapsible sidebar (⌘B), right panel, bottom panel (⌘J)
 - ✅ Breadcrumb header: repo › branch, workspace menu (Reveal in Finder, copy path/branch, copy the active chat's `claude --resume` command, archive)
 - ✅ Back/forward between workspaces
+- ✅ Split panels (beyond Conductor): workspaces and add-on pages side by side, chats/diffs/files/terminals split inside a workspace pane, drag to split, saved layouts ([PRD](prd/split-panels.md))
 - ✅ Home view with recent workspaces
 - ✅ Command palette (⌘K) with All / Workspaces / Projects / Actions / Settings tabs; recent workspaces include archived ones (dimmed, accent bar, opening restores)
 - ✅ File picker (⌘P) and search in files (⌘⇧F)

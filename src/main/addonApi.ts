@@ -27,7 +27,8 @@ export interface AddonHost {
   /** A pull request of the project by its number, whether or not a workspace is on it. */
   prByNumber(repo: Repo, number: number): Promise<{ pr: PrInfo | null; checks: CheckRun[] }>
   notify(title: string, body: string, workspaceId?: string): void
-  openWorkspace(workspaceId: string): void
+  /** `beside`: show it next to the add-on page that asked, when that page is open in a pane. */
+  openWorkspace(workspaceId: string, beside?: { key: string; viewId: string; repoId?: string }): void
   /** Persist state changed by a call and tell the window. */
   saved(): void
   /** An add-on changed its own data: tell its other pages. */
@@ -77,7 +78,7 @@ const schemas = {
   'store.set': z.object({ key: z.string().min(1).max(128), value: z.unknown() }),
   'store.delete': z.object({ key: z.string().min(1).max(128) }),
   'store.keys': z.object({}).optional(),
-  'ui.openWorkspace': z.object({ workspaceId: z.string() }),
+  'ui.openWorkspace': z.object({ workspaceId: z.string(), beside: z.boolean().optional() }),
   'ui.notify': z.object({ title: z.string().min(1).max(80), body: z.string().max(240).optional(), workspaceId: z.string().optional() })
 } as const
 
@@ -414,7 +415,7 @@ export async function call(host: AddonHost, caller: Caller, method: string, args
     }
 
     case 'ui.openWorkspace':
-      host.openWorkspace(findWorkspace(host, a.workspaceId).id)
+      host.openWorkspace(findWorkspace(host, a.workspaceId).id, a.beside && _context ? { key: caller.key, viewId: _context.viewId, ...(_context.repoId ? { repoId: _context.repoId } : {}) } : undefined)
       return null
     case 'ui.notify':
       host.notify(`${caller.name}: ${a.title}`, a.body ?? '', a.workspaceId ? findWorkspace(host, a.workspaceId).id : undefined)

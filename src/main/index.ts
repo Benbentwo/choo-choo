@@ -563,9 +563,9 @@ const addonDeps: addonHost.Deps = {
       })
       n.show()
     },
-    openWorkspace: (workspaceId) => {
+    openWorkspace: (workspaceId, beside) => {
       const chat = store.get().chats.find((c) => c.workspaceId === workspaceId && !c.review) ?? store.get().chats.find((c) => c.workspaceId === workspaceId)
-      if (chat) send('navigate', workspaceId, chat.id)
+      if (chat) send('navigate', workspaceId, chat.id, beside)
     },
     saved: () => {
       store.save()
@@ -1457,6 +1457,15 @@ function buildMenu() {
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: m('toggle-sidebar') },
         { label: 'Toggle Right Panel', accelerator: 'CmdOrCtrl+Alt+B', click: m('toggle-right') },
         { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+J', click: m('toggle-terminal') },
+        { type: 'separator' },
+        { label: 'Split Right', accelerator: 'CmdOrCtrl+\\', click: m('split-right') },
+        { label: 'Split Down', accelerator: 'CmdOrCtrl+Shift+\\', click: m('split-down') },
+        { label: 'Maximize Pane', accelerator: 'CmdOrCtrl+Shift+Return', click: m('maximize-pane') },
+        { label: 'Close Pane', accelerator: 'CmdOrCtrl+Alt+W', click: m('close-pane') },
+        { label: 'Focus Pane Left', accelerator: 'CmdOrCtrl+Alt+Left', click: m('focus-left') },
+        { label: 'Focus Pane Right', accelerator: 'CmdOrCtrl+Alt+Right', click: m('focus-right') },
+        { label: 'Focus Pane Above', accelerator: 'CmdOrCtrl+Alt+Up', click: m('focus-top') },
+        { label: 'Focus Pane Below', accelerator: 'CmdOrCtrl+Alt+Down', click: m('focus-bottom') },
         { type: 'separator' },
         { role: 'reload', accelerator: 'CmdOrCtrl+Shift+R' },
         { role: 'toggleDevTools' },

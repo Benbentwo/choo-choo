@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ADDON_API_VERSION, ADDON_SCHEME, BACKGROUND_VIEW, addonActions, isAddonRequest, type AddonActionContext, type AddonActionIcon, type AddonActionPlace, type AddonActionPress, type AddonContext, type AddonInfo, type AddonReply, type AddonSlot, type AddonToolCall, type AddonView } from '@shared/addons'
 import { monoFontStack, uiFontStack, type AppearanceSettings } from '@shared/themes'
-import { runAddonAction, useStore, type AddonPage as Page } from '../store'
+import { runAddonAction, useStore } from '../store'
 import { APPEARANCE_EVENT, resolved } from '../appearance'
 import { IconAddon, IconBranch, IconChart, IconCheck, IconComment, IconEye, IconFile, IconFolder, IconImport, IconPlay, IconPlus, IconPR, IconRefresh, IconRight, IconSearch, IconSidebar, IconTool } from '../icons'
 
@@ -242,47 +242,3 @@ export function AddonBackgrounds() {
   )
 }
 
-/** An add-on view filling the center, opened from the sidebar. */
-export function AddonPage({ page }: { page: Page }) {
-  const s = useStore()
-  const addon = s.addons.find((a) => a.key === page.key && a.state === 'on')
-  const view = addon?.manifest?.views.find((v) => v.id === page.viewId)
-  const repo = page.repoId ? s.repos.find((r) => r.id === page.repoId) : undefined
-
-  // The add-on was turned off or removed while its view was open.
-  useEffect(() => {
-    if (!addon || !view) useStore.getState().set({ addonPage: null })
-  }, [addon, view])
-  if (!addon || !view) return null
-
-  return (
-    <main className="flex min-w-0 flex-1 flex-col bg-bg">
-      <header className="drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
-        {!s.sidebarOpen && (
-          <button title="Show sidebar" className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
-            <IconSidebar width={16} height={16} />
-          </button>
-        )}
-        {repo && (
-          <>
-            <span className="text-muted">{repo.name}</span>
-            <IconRight className="text-faint" />
-          </>
-        )}
-        <span className="truncate">{view.title}</span>
-        <div className="flex-1" />
-        <button
-          className="no-drag flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[12px] text-faint hover:bg-hover hover:text-fg"
-          title={`This view comes from the ${addon.name} add-on. Click to manage add-ons.`}
-          onClick={() => s.set({ modal: 'settings', settingsTab: 'addons' })}
-        >
-          <IconAddon />
-          {addon.name}
-        </button>
-      </header>
-      <div className="flex min-h-0 flex-1">
-        <AddonFrame addon={addon} view={view} repoId={page.repoId} />
-      </div>
-    </main>
-  )
-}
