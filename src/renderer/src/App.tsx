@@ -5,6 +5,7 @@ import { Panes } from './components/Panes'
 import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
 import { PrInboxPage } from './components/PrInbox'
+import { AutomationsPage } from './components/Automations'
 import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
 import { TitleTips } from './components/Tip'
@@ -138,6 +139,8 @@ export function App() {
           </>
         ) : s.prsPage ? (
           <PrInboxPage />
+        ) : s.automationsPage && s.settings.experimentalProjects ? (
+          <AutomationsPage />
         ) : s.draftRepo ? (
           <NewWorkspace repoId={s.draftRepo} />
         ) : (

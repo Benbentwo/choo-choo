@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { CheckRun, FileChange, PrComment, PrInfo, Workspace } from '@shared/types'
-import { fixChecksPrompt, nextPrAction, resolveConflictsPrompt, summarizeChecks } from '@shared/prStatus'
+import { canUpdateBranch, fixChecksPrompt, nextPrAction, resolveConflictsPrompt, summarizeChecks } from '@shared/prStatus'
 import { newSince, prCommentsPrompt } from '@shared/prComments'
+import { isTheirs, type PrReviewInfo } from '@shared/prReview'
 import { useStore, reportError, openDoc, type RightTab } from '../store'
 import { IconComment, IconDown, IconEye, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
@@ -197,6 +198,8 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const chatId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
   const agentBusy = chats.some((c) => c.status === 'running')
   const prVersion = s.prVersion[ws.id] ?? 0
+  // On someone else's PR the header pill already says it needs your review.
+  const theirs = isTheirs(s.prReview[ws.id]?.info)
 
   useEffect(() => {
     let live = true
@@ -204,11 +207,21 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       void window.api.getPr(ws.id).then((p) => {
         if (!live) return
         setPr(p)
-        if (p?.state !== 'OPEN') {
-          setChecks([])
-          return setComments([])
+        const set = (v: { pr: PrInfo; info: PrReviewInfo } | null) => {
+          const st = useStore.getState()
+          st.set({ prReview: { ...st.prReview, [ws.id]: v } })
         }
-        window.api.getPrComments(ws.id).then((c) => live && setComments(c), () => {})
+        if (!p) set(null)
+        // Feedback, who wrote the PR and who is signed in: the diff and Review tab use these too.
+        window.api.getPrReview(ws.id).then(
+          (r) => {
+            if (!live) return
+            set(r)
+            setComments(r && r.pr.state === 'OPEN' ? r.info.feedback : [])
+          },
+          () => {}
+        )
+        if (p?.state !== 'OPEN') return setChecks([])
         window.api.getChecks(ws.id).then((c) => live && setChecks(c), () => {})
       })
     setAddedAt(localStorage.getItem(addedKey(ws.id)) ?? undefined)
@@ -217,7 +230,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       live = false
     }
     // prVersion: the PR watcher in the main process saw a change on GitHub.
-  }, [ws.id, stats, agentBusy, prVersion])
+  }, [ws.id, ws.branch, ws.prNumber, stats, agentBusy, prVersion])
 
   const create = async (draft: boolean) => {
     setMenu(false)
@@ -270,6 +283,21 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
     } catch (e) {
       reportError(e)
     } finally {
+      setBusy(false)
+    }
+  }
+
+  /** GitHub's "Update branch": merges the base branch in, so the PR is tested against what it will land on. */
+  const updateBranch = async () => {
+    setMenu(false)
+    setBusy(true)
+    try {
+      await window.api.updatePrBranch(ws.id)
+    } catch (e) {
+      reportError(e)
+    } finally {
+      // Also after a failure: GitHub may have the update even when the worktree couldn't take it.
+      setPr(await window.api.getPr(ws.id).catch(() => pr))
       setBusy(false)
     }
   }
@@ -344,7 +372,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
           </button>
         ) : pr ? (
           <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => void window.api.openExternal(pr.url)} title={action === 'review' ? 'Waiting for an approving review' : action === 'waiting' ? 'Checks are running' : pr.title}>
-            <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : action === 'review' ? 'Needs review' : 'Open'} #{pr.number}
+            <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : action === 'review' && !theirs ? 'Needs review' : 'Open'} #{pr.number}
           </button>
         ) : (
           <button
@@ -367,6 +395,9 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
                 {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
                 {pr.state === 'OPEN' && comments.length > 0 && <MenuBtn label={`Add all comments to chat (${comments.length})`} onClick={() => void addComments()} />}
                 {pr.state === 'OPEN' && pr.isDraft && <MenuBtn label={busy ? 'Marking ready…' : 'Mark ready for review'} onClick={() => void markReady()} />}
+                {canUpdateBranch(pr) && !agentBusy && (
+                  <MenuBtn label={busy ? 'Updating…' : `Update branch${pr.behindBy ? ` (${pr.behindBy} behind ${pr.baseRefName ?? 'base'})` : ''}`} onClick={() => void updateBranch()} />
+                )}
                 {pr.state === 'OPEN' && <MenuBtn label={ws.stack ? 'Add a PR on top of the stack' : 'Stack a new PR on top'} onClick={() => void stackOnTop()} />}
               </>
             ) : (

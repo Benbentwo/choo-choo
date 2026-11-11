@@ -5,7 +5,9 @@ import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
+import type { Automation } from '@shared/automations'
 import type { Artifact, Chat, FeedbackOptions, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
+import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import { sessionUsage } from './usage'
 import * as store from './store'
@@ -23,12 +25,15 @@ import * as updates from './updater'
 import { registerUiComment } from './uiComment'
 import * as conductor from './conductorImport'
 import { modelDetails } from './models'
+import { initLimitsHistory, subscriptionLimits } from './limits'
 import { listOutputStyles } from './claudeOptions'
 import * as mcp from './mcp'
 import * as plugins from './plugins'
 import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
+import * as automations from './automations'
+import { projectThreads, routerChat, threadTitle, updateTarget } from '@shared/projects'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import * as archive from './archive'
@@ -39,6 +44,7 @@ import * as notion from './integrations/notion'
 import * as addonHost from './addonHost'
 import { originUrl, githubSlug } from './share'
 import { prBranch, type PrInbox } from '@shared/prInbox'
+import { prRef, syncWorkspaceBranch } from './workspacePr'
 
 let win: BrowserWindow | null = null
 
@@ -157,6 +163,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
   let title = name
   let named = false
   let context: string | undefined
+  let prNumber: number | undefined
   if (source?.kind === 'branch') {
     branch = source.name
     await git.addWorktreeForRemoteBranch(repo.path, path, branch)
@@ -169,6 +176,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     else await git.addWorktreeForRemoteBranch(repo.path, path, branch)
     title = `#${source.number} ${pr.title}`
     named = true
+    prNumber = source.number
   } else {
     const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
     branch = opts.branch ?? `${prefix}/${name}`
@@ -180,7 +188,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
       context = notion.pageContext(await notion.fetchPage(source.id))
     }
   }
-  const workspace: Workspace = { id: randomUUID(), repoId, name, branch, baseRef, path, title, named, createdAt: Date.now() }
+  const workspace: Workspace = { id: randomUUID(), repoId, name, branch, ...(prNumber ? { prNumber } : {}), baseRef, path, title, named, createdAt: Date.now() }
   s.workspaces.push(workspace)
   const chat = newChat(workspace.id)
   if (folders.length) chat.additionalDirectories = [...new Set(folders)]
@@ -341,9 +349,49 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
     const scope = scopeFor(ws, repo)
     // The orchestrator's tools only exist on Claude.
     if (chat.model === 'codex') chat.model = 'opus'
-    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets())
+    const role = projectRole(ws, chat)
+    if (role?.kind === 'thread' && chat.title === 'New thread') {
+      chat.title = threadTitle(text)
+      store.save()
+      send('state:changed')
+    }
+    const run = automations.hooksFor(chat)
+    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets(), role, run)
   }
   void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
+}
+
+/** With projects on, a project orchestrator's first chat routes messages and the rest are threads. */
+function projectRole(ws: Workspace, chat: Chat): orchestrator.ProjectRole | undefined {
+  if (!ws.groupId || !store.get().settings.experimentalProjects) return undefined
+  const router = routerChat(store.get().chats, ws.id)
+  const kind = chat.thread || (router && router.id !== chat.id) ? 'thread' : 'router'
+  return {
+    kind,
+    chatId: chat.id,
+    title: chat.title,
+    threads: {
+      list: () => projectThreads(store.get().chats, ws.id),
+      create: (title) => newThread(ws, title),
+      forward: (c, t) => {
+        autoWakes.delete(c.id)
+        sendFromPerson(c, t, [])
+      }
+    }
+  }
+}
+
+/** A new thread on a project's orchestrator, reading the same repos as its orchestrator chat. */
+function newThread(ws: Workspace, title = 'New thread'): Chat {
+  const chat = newChat(ws.id)
+  chat.thread = true
+  chat.title = title
+  if (chat.model === 'codex') chat.model = 'opus'
+  const router = routerChat(store.get().chats, ws.id)
+  if (router?.additionalDirectories) chat.additionalDirectories = [...router.additionalDirectories]
+  store.save()
+  send('state:changed')
+  return chat
 }
 
 /** What an orchestrator directs: its repo, or every repo in its project group. */
@@ -359,9 +407,96 @@ function scopeFor(ws: Workspace, repo: Repo): orchestrator.Scope {
 
 const cloudOut = { onData: (i: string, d: string) => send('pty:data', i, d), onExit: (i: string, c: number) => send('pty:exit', i, c), stateChanged: () => send('state:changed') }
 
+/** Notices a branch the agent checked out in the worktree, so PR lookups follow it. See workspacePr.ts. */
+async function catchUpBranch(ws: Workspace) {
+  if (!(await syncWorkspaceBranch(ws))) return
+  store.save()
+  send('state:changed')
+  send('pr:changed', ws.id)
+}
+
+/** The workspace, caught up with the branch checked out in it, for looking up its PR. */
+async function wsForPr(id: string) {
+  const ws = findWs(id)
+  await catchUpBranch(ws)
+  return ws
+}
+
+/** Clones a git URL or GitHub owner/repo into the repos folder (or `dir`) and adds it to Choo Choo. */
+async function cloneAndAdd(url: string, dir?: string): Promise<Repo> {
+  url = url.trim()
+  const root = dir?.trim() ? resolve(dir.trim().replace(/^~(?=$|\/)/, homedir())) : REPOS_ROOT
+  // owner/repo shorthand (or a github.com URL) clones through gh, so private repos use the gh login.
+  const gh_ = url.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
+  if (!gh_ && !/^(https:\/\/|git@|ssh:\/\/)/.test(url)) throw new Error('Enter owner/repo, or an https or ssh git URL')
+  mkdirSync(root, { recursive: true })
+  let dest = join(root, git.repoNameFromUrl(url))
+  for (let n = 2; existsSync(dest); n++) dest = join(root, `${git.repoNameFromUrl(url)}-${n}`)
+  if (gh_) await gh.cloneRepo(gh_, dest)
+  else await git.clone(url, dest)
+  return addRepo(dest)
+}
+
+/** The GitHub owner/name of each repo in Choo Choo, looked up once per path. */
+const slugs = new Map<string, string>()
+async function repoSlug(r: Repo): Promise<string | undefined> {
+  if (!slugs.has(r.path)) slugs.set(r.path, (existsSync(r.path) && githubSlug(await originUrl(r.path).catch(() => ''))) || '')
+  return slugs.get(r.path) || undefined
+}
+
+let myRepos: { at: number; list: Promise<Awaited<ReturnType<typeof gh.listMyRepos>>> } | null = null
+
+/** Repos in Choo Choo and on GitHub that match a query, for a project's orchestrator. */
+async function findRepos(groupId: string, query: string) {
+  const s = store.get()
+  const group = s.groups?.find((g) => g.id === groupId)
+  const words = query.toLowerCase().split(/[\s,]+/).filter(Boolean)
+  const hit = (...fields: (string | undefined)[]) => !words.length || words.some((w) => fields.some((f) => f?.toLowerCase().includes(w)))
+  const local = await Promise.all(
+    s.repos.map(async (r) => ({ name: r.name, path: r.path, github: await repoSlug(r), inProject: !!group?.repoIds.includes(r.id) }))
+  )
+  if (!myRepos || Date.now() - myRepos.at > 10 * 60_000) myRepos = { at: Date.now(), list: gh.listMyRepos() }
+  const haveSlugs = new Set(local.map((l) => l.github?.toLowerCase()).filter(Boolean))
+  let github: { nameWithOwner: string; description?: string; private?: boolean }[] = []
+  try {
+    github = (await myRepos.list)
+      .filter((r) => !haveSlugs.has(r.nameWithOwner.toLowerCase()) && hit(r.nameWithOwner, r.description ?? undefined))
+      .slice(0, 20)
+      .map((r) => ({ nameWithOwner: r.nameWithOwner, description: r.description ?? undefined, private: r.private }))
+  } catch {
+    myRepos = null
+  }
+  return { local: local.filter((l) => hit(l.name, l.github)).slice(0, 30), github }
+}
+
+/** Adds a repo to a project: one in Choo Choo by name, path or owner/name, or (with clone) a GitHub repo it clones first. */
+async function addRepoToProject(groupId: string, ref: string, opts: { clone: boolean }): Promise<Repo> {
+  const s = store.get()
+  const group = s.groups?.find((g) => g.id === groupId)
+  if (!group) throw new Error('This project was deleted')
+  const want = ref.trim().replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '')
+  let repo = s.repos.find((r) => r.id === want || r.name === want || r.path === want) ?? s.repos.find((r) => r.name.toLowerCase() === want.toLowerCase())
+  if (!repo) for (const r of s.repos) if ((await repoSlug(r))?.toLowerCase() === want.toLowerCase()) repo = r
+  if (!repo) {
+    if (!opts.clone) throw new Error(`${ref} isn't in Choo Choo yet. Ask the person to clone it with clone_repo.`)
+    if (!/^[\w.-]+\/[\w.-]+$/.test(want)) throw new Error('Pass the GitHub repo as owner/name.')
+    repo = await cloneAndAdd(want)
+  }
+  if (!group.repoIds.includes(repo.id)) group.repoIds.push(repo.id)
+  // The project's chats can read it from their next turn.
+  const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === groupId)
+  if (orch && orch.repoId !== repo.id)
+    for (const c of s.chats.filter((c) => c.workspaceId === orch.id)) c.additionalDirectories = [...new Set([...(c.additionalDirectories ?? []), repo.path])]
+  store.save()
+  send('state:changed')
+  return repo
+}
+
 const orchestratorHost: orchestrator.Host = {
-  createWorkspace: async (repoId) => {
-    const r = await createWorkspace(repoId)
+  findRepos: (groupId, query) => findRepos(groupId, query),
+  addRepoToProject,
+  createWorkspace: async (repoId, source) => {
+    const r = await createWorkspace(repoId, source)
     send('state:changed')
     return r
   },
@@ -378,8 +513,9 @@ const orchestratorHost: orchestrator.Host = {
   },
   sendToCloud: (chat, ws, text) => cloud.sendToCloud(chat, ws, text, agentEnv(ws), emitChat),
   prStatus: async (ws) => {
-    const pr = await gh.prForBranch(ws.path, ws.branch)
-    return { pr, checks: pr ? await gh.checks(ws.path, ws.branch).catch(() => []) : [] }
+    await catchUpBranch(ws)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return { pr, checks: pr ? await gh.checks(ws.path, prRef(ws)).catch(() => []) : [] }
   }
 }
 
@@ -445,7 +581,7 @@ const addonDeps: addonHost.Deps = {
 
 function orchestratorChat(ws: Workspace, title: string): Chat {
   const s = store.get()
-  let chat = s.chats.find((c) => c.workspaceId === ws.id)
+  let chat = s.chats.find((c) => c.workspaceId === ws.id && !c.thread)
   if (!chat) {
     chat = newChat(ws.id)
     chat.title = title
@@ -502,7 +638,7 @@ async function openGroupOrchestrator(groupId: string) {
   return { workspace: ws, chat }
 }
 
-function saveGroup(input: { id?: string; name: string; repoIds: string[] }) {
+function saveGroup(input: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }) {
   const s = store.get()
   const name = String(input?.name ?? '').trim()
   const known = new Set(s.repos.map((r) => r.id))
@@ -520,6 +656,11 @@ function saveGroup(input: { id?: string; name: string; repoIds: string[] }) {
     group.name = name
     group.repoIds = repoIds
   }
+  // Short names only; the renderer falls back to the orchestrator mark for anything it doesn't know.
+  const icon = typeof input.icon === 'string' && /^[a-z0-9-]{1,40}$/.test(input.icon) ? input.icon : undefined
+  const color = typeof input.color === 'string' && /^[a-z]{1,20}$/.test(input.color) ? input.color : undefined
+  if (input.icon !== undefined) group.icon = icon
+  if (input.color !== undefined) group.color = color
   const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === group.id)
   if (orch) orch.title = name
   store.save()
@@ -535,6 +676,24 @@ async function deleteGroup(groupId: string) {
   }
   s.groups = (s.groups ?? []).filter((g) => g.id !== groupId)
   store.save()
+}
+
+/**
+ * An automation's chat: a thread on its project's orchestrator, or a chat on its repo's
+ * orchestrator. The orchestrator is opened first, so its own chat stays the first one.
+ */
+async function automationChat(a: Automation): Promise<Chat> {
+  const { workspace } = a.target.kind === 'project' ? await openGroupOrchestrator(a.target.groupId) : await openOrchestrator(a.target.repoId)
+  let chat = store.get().chats.find((c) => c.workspaceId === workspace.id && c.automationId === a.id)
+  if (!chat) {
+    chat = a.target.kind === 'project' ? newThread(workspace, a.name) : newChat(workspace.id)
+    chat.automationId = a.id
+    if (chat.model === 'codex') chat.model = 'opus'
+  }
+  chat.title = a.name
+  store.save()
+  send('state:changed')
+  return chat
 }
 
 /** The orchestrator that started a workspace: its project group's, or its repo's. */
@@ -561,7 +720,8 @@ function noteForOrchestrator(chat: Chat) {
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   if (!ws?.orchestrated || ws.orchestrator) return
   const orch = orchestratorOf(ws)
-  const orchChat = orch && store.get().chats.find((c) => c.workspaceId === orch.id)
+  // A project workspace reports to the thread that started it.
+  const orchChat = orch && updateTarget(ws, store.get().chats, orch.id)
   if (!orchChat) return
   const list = finished.get(orchChat.id) ?? new Map()
   list.set(ws.id, { title: ws.title, id: ws.id, state: chat.status === 'error' ? 'error' : 'finished', at: Date.now() })
@@ -623,10 +783,12 @@ function onChatDone(chat: Chat) {
     }, 0)
   }
   notifyDone(chat)
+  automations.onTurnDone(chat)
   noteForOrchestrator(chat)
   if (finished.has(chat.id)) scheduleWake(chat.id)
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   if (ws) autoSync(ws)
+  if (ws) void catchUpBranch(ws)
   if (ws) stack.onTurnDone(ws, chat)
 }
 
@@ -839,8 +1001,12 @@ function registerIpc() {
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))
   h('group:orchestrator', (groupId: string) => openGroupOrchestrator(groupId))
-  h('group:save', (g: { id?: string; name: string; repoIds: string[] }) => saveGroup(g))
+  h('group:save', (g: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }) => saveGroup(g))
   h('group:delete', (groupId: string) => deleteGroup(groupId))
+  h('automation:save', (a: Parameters<typeof automations.save>[0]) => automations.save(a))
+  h('automation:enable', (id: string, on: boolean) => automations.setEnabled(id, on))
+  h('automation:delete', (id: string) => automations.remove(id))
+  h('automation:run', (id: string) => automations.runNow(id))
   h('ws:restore', async (id: string) => {
     const ws = findWs(id)
     if (ws.orchestrator) {
@@ -891,7 +1057,11 @@ function registerIpc() {
     })
     store.save()
   })
-  h('chat:create', (wsId: string) => newChat(wsId))
+  h('chat:create', (wsId: string) => {
+    const ws = findWs(wsId)
+    // On a project's orchestrator a new chat is a new thread.
+    return ws.orchestrator && ws.groupId && store.get().settings.experimentalProjects ? newThread(ws) : newChat(wsId)
+  })
   h('chat:close', async (id: string) => {
     await agent.stop(id)
     const closing = store.get().chats.find((c) => c.id === id)
@@ -949,14 +1119,57 @@ function registerIpc() {
   h('scripts:run', (id: string, kind: 'setup' | 'run') => runScript(findWs(id), kind))
   ipcMain.on('scripts:stop', (_e, id: string, kind: string) => pty.kill(`${id}:${kind}`))
   h('scripts:running', (id: string, kind: string) => pty.isAlive(`${id}:${kind}`))
-  h('pr:get', (id: string) => {
+  h('pr:get', async (id: string) => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (pr?.state === 'OPEN') pr.behindBy = await gh.prBehindBy(ws.path, pr)
+    return pr
+  })
+  // For sidebar rows: no catching up on the branch and no compare call. The PR watch keeps the branch current.
+  h('pr:state', (id: string) => {
     const ws = findWs(id)
-    return gh.prForBranch(ws.path, ws.branch)
+    return gh.prForBranch(ws.path, prRef(ws))
   })
   h('pr:comments', async (id: string) => {
-    const ws = findWs(id)
-    const pr = await gh.prForBranch(ws.path, ws.branch)
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
     return pr ? gh.prComments(ws.path, pr.number) : []
+  })
+  h('pr:review', async (id: string) => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return pr ? { pr, info: await gh.prReview(ws.path, pr.number) } : null
+  })
+  h('pr:diffTarget', async (id: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) return null
+    const [lines, head, status] = await Promise.all([
+      gh.prDiffLines(ws.path, pr.number),
+      git.git(ws.path, ['rev-parse', 'HEAD']).catch(() => ''),
+      git.git(ws.path, ['status', '--porcelain', '-z']).catch(() => '')
+    ])
+    // -z: "XY path\0", with a second path after renames.
+    const dirty = status.split('\0').filter((e) => e.length > 3).map((e) => e.slice(3))
+    return { lines, headMatches: !!pr.headRefOid && head.trim() === pr.headRefOid, dirty }
+  })
+  h('pr:submitReview', async (id: string, drafts: ReviewDraft[], body: string, event: ReviewEvent) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) throw new Error('This workspace has no PR to review.')
+    const r = await gh.submitReview(ws.path, pr.number, drafts, body, event, pr.headRefOid)
+    send('pr:changed', ws.id)
+    return r
+  })
+  h('pr:replyThread', async (id: string, threadId: string, body: string) => {
+    const ws = findWs(id)
+    await gh.replyToThread(ws.path, threadId, body)
+    send('pr:changed', ws.id)
+  })
+  h('pr:resolveThread', async (id: string, threadId: string) => {
+    const ws = findWs(id)
+    await gh.resolveThread(ws.path, threadId)
+    send('pr:changed', ws.id)
   })
   h('stack:status', (id: string) => stack.status(findWs(id)))
   h('stack:addLayer', (id: string) => stack.addLayer(findWs(id)))
@@ -973,9 +1186,9 @@ function registerIpc() {
   h('stack:linkGithub', (id: string) => stack.linkGithub(findWs(id)))
   h('stack:mergeThrough', (id: string, branch: string) => stack.mergeThrough(findWs(id), branch))
   h('stack:installCli', () => stack.installCli())
-  h('checks:get', (id: string) => {
-    const ws = findWs(id)
-    return gh.checks(ws.path, ws.branch)
+  h('checks:get', async (id: string) => {
+    const ws = await wsForPr(id)
+    return gh.checks(ws.path, prRef(ws))
   })
   h('checks:rerun', (id: string, link: string) => gh.rerunFailed(findWs(id).path, link))
   h('ws:artifacts', (id: string) => artifacts(findWs(id)))
@@ -999,22 +1212,11 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] })
     return r.canceled ? null : (r.filePaths[0] ?? null)
   })
-  h('repo:clone', async (url: string, dir?: string) => {
-    url = url.trim()
-    const root = dir?.trim() ? resolve(dir.trim().replace(/^~(?=$|\/)/, homedir())) : REPOS_ROOT
-    // owner/repo shorthand (or a github.com URL) clones through gh, so private repos use the gh login.
-    const gh_ = url.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
-    if (!gh_ && !/^(https:\/\/|git@|ssh:\/\/)/.test(url)) throw new Error('Enter owner/repo, or an https or ssh git URL')
-    mkdirSync(root, { recursive: true })
-    let dest = join(root, git.repoNameFromUrl(url))
-    for (let n = 2; existsSync(dest); n++) dest = join(root, `${git.repoNameFromUrl(url)}-${n}`)
-    if (gh_) await gh.cloneRepo(gh_, dest)
-    else await git.clone(url, dest)
-    return addRepo(dest)
-  })
+  h('repo:clone', (url: string, dir?: string) => cloneAndAdd(url, dir))
   h('gh:repos', () => gh.listMyRepos())
   h('prs:inbox', () => loadPrInbox())
   h('models:details', () => modelDetails())
+  h('limits:get', (force?: boolean) => subscriptionLimits(store.get().settings.anthropicApiKey ?? '', !!force))
   h('conductor:preview', () => previewConductor())
   h('conductor:import', (opts: { useWorkspacesRoot: boolean }) => importConductor(opts))
   h('repo:quickstart', async (name: string) => {
@@ -1027,16 +1229,27 @@ function registerIpc() {
     return addRepo(dest)
   })
   h('pr:merge', async (id: string) => {
-    const ws = findWs(id)
-    const pr = await gh.prForBranch(ws.path, ws.branch)
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
     if (!pr) throw new Error('No pull request for this branch')
     await gh.mergePr(ws.path, pr.number)
   })
   h('pr:ready', async (id: string) => {
-    const ws = findWs(id)
-    const pr = await gh.prForBranch(ws.path, ws.branch)
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
     if (!pr) throw new Error('No pull request for this branch')
     await gh.markPrReady(ws.path, pr.number)
+  })
+  h('pr:update', async (id: string) => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) throw new Error('No pull request for this branch')
+    await gh.updatePrBranch(ws.path, pr.number)
+    try {
+      await git.pullBranch(ws.path, ws.branch)
+    } catch (e) {
+      throw new Error(`The branch is updated on GitHub, but the worktree could not take the new commits: ${(e as Error).message}`)
+    }
   })
   h('chat:send', (id: string, text: string, images: string[] = []) => {
     // The person wrote, so the orchestrator may wake itself again.
@@ -1368,6 +1581,7 @@ app.whenReady().then(async () => {
   // Packaged builds get the icon from the .icns; in dev, show the brand icon in the Dock too.
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
+  initLimitsHistory(join(app.getPath('userData'), 'data'))
   // Projects added before avatars existed: look up their GitHub owner once.
   void Promise.all(store.get().repos.filter((r) => r.githubOwner === undefined).map(async (r) => (r.githubOwner = existsSync(r.path) ? await git.githubOwner(r.path) : ''))).then(() => {
     store.save()
@@ -1397,16 +1611,37 @@ app.whenReady().then(async () => {
   })
   buildMenu()
   createWindow()
+  automations.init({
+    chatFor: automationChat,
+    send: (chat, text) => sendToChat(chat, text),
+    isRunning: (id) => agent.isRunning(id),
+    loadPrs: async () => (await loadPrInbox()).prs,
+    loadRepoItems: async (repoId) => {
+      const repo = store.get().repos.find((r) => r.id === repoId)
+      if (!repo || !existsSync(repo.path)) throw new Error('Repo not found')
+      const slug = githubSlug(await originUrl(repo.path).catch(() => ''))
+      if (!slug) throw new Error('Not a GitHub repo')
+      return { slug, items: await gh.recentIssues(repo.path) }
+    },
+    changed: () => {
+      store.save()
+      send('state:changed')
+    }
+  })
   updates.startUpdater(send)
   // PR and check changes: cheap ETag probes, and the UI refetches only when one reports a change.
   const prWatch = startPrWatch({
+    // Agents switch branches on their own (gh pr checkout); follow them before probing GitHub.
+    beforeTick: async () => {
+      for (const w of store.get().workspaces) await catchUpBranch(w)
+    },
     targets: () => {
       const s = store.get()
       return s.workspaces
         .filter((w) => !w.archived && !w.orchestrator)
         .flatMap((w) => {
           const repo = s.repos.find((r) => r.id === w.repoId)
-          return repo?.githubOwner && w.branch !== repo.defaultBranch ? [{ id: w.id, path: w.path, branch: w.branch }] : []
+          return repo?.githubOwner && w.branch !== repo.defaultBranch ? [{ id: w.id, path: w.path, branch: w.branch, pr: w.stack ? undefined : w.prNumber }] : []
         })
     },
     focused: () => !!win?.isFocused(),

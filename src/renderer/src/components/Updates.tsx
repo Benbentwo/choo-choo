@@ -95,6 +95,26 @@ export function UpdatesSettings({ settings, save }: { settings: Settings; save: 
         <input type="checkbox" aria-label="Check for Choo Choo updates" checked={settings.checkAppUpdates} onChange={(e) => save({ checkAppUpdates: e.target.checked })} />
       </Row>
       <Row
+        label="Update channel"
+        hint={
+          settings.updateChannel === 'beta'
+            ? 'Beta: a new signed build after every merged PR. Newest features, more bugs.'
+            : a.current.includes('-')
+              ? 'Stable: published releases only. You’re on a beta build, so you’ll move to the next stable release that’s newer than it.'
+              : 'Stable: published releases only.'
+        }
+      >
+        <select
+          aria-label="Update channel"
+          className="rounded-md border border-line bg-bg px-2 py-1 outline-none"
+          value={settings.updateChannel}
+          onChange={(e) => save({ updateChannel: e.target.value as Settings['updateChannel'] })}
+        >
+          <option value="stable">Stable</option>
+          <option value="beta">Beta</option>
+        </select>
+      </Row>
+      <Row
         label={`Choo Choo ${a.current}`}
         hint={
           <>

@@ -4,7 +4,7 @@
 |---|---|
 | Status | Shipped (PR #19); project groups, automatic updates, cloud workspaces and PR status added later |
 | Requested by | Ben, 2026-11-06 |
-| Last updated | 2026-11-06 |
+| Last updated | 2026-11-10 |
 
 ## Problem
 
@@ -38,10 +38,11 @@ Project groups: "New project group…" in the sidebar's view menu (or ⌘K) asks
 4. Messaging a workspace whose agent is still running fails; the orchestrator waits first. Waiting returns when agents stop or need the person to approve a tool call.
 5. Memory lives at `~/choo-choo/memory/<repo>.md` (max ~20 KB), rendered into the system prompt every turn. The person can edit the file directly. A project group's memory lives at `~/choo-choo/memory/groups/<group>.md`.
 6. `start_workspace` takes `where: "cloud"` to run the agent in a Claude Code cloud session (the same path as Run in cloud). Cloud workspaces report `in-cloud` and their link; `message_workspace` queues follow-ups into the session. Their transcript isn't visible locally, so the orchestrator follows them with `pr_status`.
-7. `pr_status` shows the PR for a workspace's branch and its checks, failures first, and can wait (up to 30 minutes) until no check is pending. It never asks for approval.
-8. Automatic updates: finished workspaces are batched for 4 seconds, skipped if the orchestrator already read them since they finished, and held until the orchestrator's own turn ends. At most 8 automatic turns run between messages from the person; after that a note says updates are paused.
-9. A project group needs a name and at least one repo. Removing a repo drops it from its groups. Deleting a group hides its orchestrator; workspaces and memory stay.
-10. Add-ons that are on and hold `orchestrator:tools` add their tools, one MCP server per add-on (`addon-<plugin name>`), and a line each in the prompt. Their read-only tools run without asking. See [Add-ons](add-ons.md).
+7. `start_workspace` takes `pr` or `branch` to start on an existing pull request or branch, the same as New workspace from a PR or branch, so the workspace shows that PR from the start. If a workspace is already on it, the tool says so and points to `message_workspace`.
+8. `pr_status` shows the PR for a workspace's branch and its checks, failures first, and can wait (up to 30 minutes) until no check is pending. It never asks for approval.
+9. Automatic updates: finished workspaces are batched for 4 seconds, skipped if the orchestrator already read them since they finished, and held until the orchestrator's own turn ends. At most 8 automatic turns run between messages from the person; after that a note says updates are paused.
+10. A project group needs a name and at least one repo. Removing a repo drops it from its groups. Deleting a group hides its orchestrator; workspaces and memory stay.
+11. Add-ons that are on and hold `orchestrator:tools` add their tools, one MCP server per add-on (`addon-<plugin name>`), and a line each in the prompt. Their read-only tools run without asking. See [Add-ons](add-ons.md).
 
 ## Design
 
@@ -60,6 +61,8 @@ Runs on the Agent SDK with the user's own sign-in like any other chat. Memory st
 `test/orchestrator.test.ts`.
 
 ## Future work
+
+- Projects: threads and a repo › PR sidebar for project groups, behind Settings › Experimental. See [Projects](projects.md).
 
 - Show orchestrated workspaces grouped under the orchestrator in the sidebar.
 - Show a cloud workspace's progress inside Choo Choo (today only its PR and claude.ai/code show it).

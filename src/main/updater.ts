@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
-import { isNewer, parseVersion, type AppUpdateMethod, type UpdateStatus } from '@shared/updates'
+import { isNewer, newestVersion, parseVersion, type AppUpdateMethod, type UpdateChannel, type UpdateStatus } from '@shared/updates'
 import * as store from './store'
 import { claudeSource, installedExecutable } from './claudeBinary'
 
@@ -13,6 +13,7 @@ type Send = (channel: string, ...args: unknown[]) => void
 
 const RELEASES = 'https://github.com/Benbentwo/choo-choo/releases'
 const LATEST_RELEASE_API = 'https://api.github.com/repos/Benbentwo/choo-choo/releases/latest'
+const RECENT_RELEASES_API = 'https://api.github.com/repos/Benbentwo/choo-choo/releases?per_page=30'
 const LATEST_CLAUDE = 'https://registry.npmjs.org/@anthropic-ai/claude-code/latest'
 const EVERY = 6 * 60 * 60 * 1000
 const BREW = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']
@@ -20,7 +21,7 @@ const BREW = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']
 let send: Send = () => {}
 let started = false
 const status: UpdateStatus = {
-  app: { current: app.getVersion(), method: 'download', state: 'idle' },
+  app: { current: app.getVersion(), channel: 'stable', method: 'download', state: 'idle' },
   claude: { source: 'bundled', state: 'idle' }
 }
 
@@ -35,10 +36,10 @@ export function getStatus(): UpdateStatus {
   return { app: { ...status.app }, claude: { ...status.claude } }
 }
 
-async function getJson(url: string): Promise<Record<string, unknown>> {
+async function getJson<T = Record<string, unknown>>(url: string): Promise<T> {
   const res = await net.fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'choo-choo' } })
   if (!res.ok) throw new Error(`${new URL(url).host} answered ${res.status}`)
-  return (await res.json()) as Record<string, unknown>
+  return (await res.json()) as T
 }
 
 // ---------- Choo Choo ----------
@@ -65,21 +66,39 @@ function updateMethod(): Promise<AppUpdateMethod> {
   })())
 }
 
+const channel = (): UpdateChannel => (store.get().settings.updateChannel === 'beta' ? 'beta' : 'stable')
+
+type Release = { tag_name?: string; html_url?: string; draft?: boolean }
+
+/** Stable: the release GitHub marks Latest. Beta: the newest of the recent releases, prereleases included. */
+async function newestRelease(ch: UpdateChannel): Promise<{ latest?: string; url: string }> {
+  if (ch === 'stable') {
+    const rel = await getJson<Release>(LATEST_RELEASE_API)
+    return { latest: parseVersion(rel.tag_name), url: rel.html_url ?? RELEASES }
+  }
+  const list = (await getJson<Release[]>(RECENT_RELEASES_API)).filter((r) => !r.draft)
+  const latest = newestVersion(list.map((r) => parseVersion(r.tag_name)))
+  return { latest, url: list.find((r) => parseVersion(r.tag_name) === latest)?.html_url ?? RELEASES }
+}
+
 let checkingApp: Promise<void> | null = null
-/** Finds the newest release. Signed builds start downloading it right away. */
+/** Finds the newest release on your channel. Signed builds start downloading it right away. */
 export function checkApp(): Promise<void> {
   return (checkingApp ??= (async () => {
     if (!app.isPackaged) return setApp({ state: 'unavailable', error: 'Updates are only checked in the packaged app.' })
     if (['ready', 'installing', 'downloading'].includes(status.app.state)) return
-    setApp({ state: 'checking', error: undefined, method: await updateMethod() })
+    const ch = channel()
+    setApp({ state: 'checking', error: undefined, channel: ch, method: await updateMethod() })
     try {
-      const rel = await getJson(LATEST_RELEASE_API)
-      const latest = parseVersion(String(rel.tag_name ?? ''))
-      const url = typeof rel.html_url === 'string' ? rel.html_url : RELEASES
+      const { latest, url } = await newestRelease(ch)
       if (!isNewer(latest, status.app.current)) return setApp({ state: 'up-to-date', latest, url, checkedAt: Date.now() })
       setApp({ state: 'available', latest, url, checkedAt: Date.now() })
       if (status.app.method === 'auto') {
         setApp({ state: 'downloading' })
+        // The updater turns prereleases on by itself when the running build is one, so set both every time.
+        // Never downgrade: someone leaving beta stays on their build until a newer stable release.
+        autoUpdater.allowPrerelease = ch === 'beta'
+        autoUpdater.allowDowngrade = false
         await autoUpdater.checkForUpdates()
       }
     } catch (e) {
@@ -197,6 +216,7 @@ export function startUpdater(sender: Send) {
   if (started) return
   started = true
   send = sender
+  status.app.channel = channel()
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.on('update-downloaded', (info) => setApp({ state: 'ready', latest: info.version }))
@@ -215,6 +235,10 @@ export function startUpdater(sender: Send) {
 export function onSettingsChanged(keys: string[]) {
   if (keys.includes('claudeBinary')) void (store.get().settings.checkClaudeUpdates ? checkClaude() : readClaude())
   if (keys.includes('checkAppUpdates') && store.get().settings.checkAppUpdates) void checkApp()
+  else if (keys.includes('updateChannel')) {
+    setApp({ channel: channel() })
+    if (store.get().settings.checkAppUpdates) void checkApp()
+  }
   if (keys.includes('checkClaudeUpdates') && store.get().settings.checkClaudeUpdates) void checkClaude()
 }
 

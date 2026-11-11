@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { McpAddSpec, McpServerView } from '@shared/types'
 import { reportError, useStore } from '../store'
 
@@ -36,23 +36,35 @@ export function McpSettings() {
   const current = useStore((s) => s.workspaces.find((w) => w.id === s.selectedWs)?.repoId)
   const [repoId, setRepoId] = useState(() => current ?? repos[0]?.id ?? '')
   const [servers, setServers] = useState<McpServerView[] | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
+  /** Rows with a change queued or running: the line to show meanwhile, and for a toggle the state it is heading to. */
+  const [pending, setPending] = useState<Record<string, { label: string; enabled?: boolean }>>({})
   const [open, setOpen] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
+  const queue = useRef<Promise<void>>(Promise.resolve())
+  const shown = useRef(repoId)
+  shown.current = repoId
 
-  const run = async (key: string, fn: () => Promise<McpServerView[] | void>) => {
-    setBusy(key)
-    try {
-      const list = await fn()
-      if (list) setServers(list)
-    } catch (e) {
-      reportError(e)
-    } finally {
-      setBusy(null)
-    }
+  /**
+   * Queues a change without locking the rest of the list. Changes run one at a time, since each starts
+   * Claude Code and writes its config; the row shows where it is heading until its turn is done.
+   */
+  const run = (key: string, label: string, fn: () => Promise<McpServerView[] | void>, enabled?: boolean) => {
+    const repo = repoId
+    setPending((p) => ({ ...p, [key]: { label, enabled } }))
+    queue.current = queue.current.then(async () => {
+      try {
+        const list = await fn()
+        if (list && shown.current === repo) setServers(list)
+      } catch (e) {
+        reportError(e)
+      } finally {
+        setPending(({ [key]: _done, ...rest }) => rest)
+      }
+    })
+    return queue.current
   }
-  const refresh = () => run('refresh', () => window.api.mcpStatus(repoId))
+  const refresh = () => run('refresh', 'Checking…', () => window.api.mcpStatus(repoId))
 
   useEffect(() => {
     setServers(null)
@@ -73,8 +85,8 @@ export function McpSettings() {
           ))}
         </select>
         <div className="flex-1" />
-        <button className="text-muted hover:text-fg disabled:opacity-40" disabled={!!busy} onClick={() => void refresh()}>
-          {busy === 'refresh' ? 'Checking…' : 'Refresh'}
+        <button className="text-muted hover:text-fg disabled:opacity-40" disabled={!!pending.refresh} onClick={() => void refresh()}>
+          {pending.refresh ? 'Checking…' : 'Refresh'}
         </button>
         <button className="rounded-md border border-line px-2 py-0.5 hover:bg-hover" onClick={() => setAdding(!adding)}>
           Add server
@@ -82,10 +94,10 @@ export function McpSettings() {
       </div>
       {adding && (
         <AddServer
-          busy={busy === 'add'}
+          busy={!!pending.add}
           onCancel={() => setAdding(false)}
           onAdd={(spec) =>
-            void run('add', async () => {
+            void run('add', 'Adding…', async () => {
               const list = await window.api.mcpAdd(repoId, spec)
               setAdding(false)
               return list
@@ -111,6 +123,7 @@ export function McpSettings() {
             {list.map((s) => {
         const st = STATUS[s.status] ?? STATUS.failed
         const key = `${s.source}:${s.name}`
+        const wait = pending[key]
         return (
           <div key={key} className="border-b border-line px-5 py-3 last:border-0">
             <div className="flex items-center gap-2">
@@ -121,23 +134,23 @@ export function McpSettings() {
               <span className="shrink-0 text-[11px] text-faint">{SOURCE[s.source] ?? s.source}</span>
               <div className="flex-1" />
               {s.status === 'needs-auth' && (
-                <button className="text-[12px] text-amber-400 hover:underline" onClick={() => void run(key, () => window.api.mcpSignIn(repoId))} title="Opens Terminal on Claude Code's /mcp screen">
+                <button className="text-[12px] text-amber-400 hover:underline" onClick={() => void window.api.mcpSignIn(repoId).catch(reportError)} title="Opens Terminal on Claude Code's /mcp screen">
                   Sign in…
                 </button>
               )}
               {s.status === 'failed' && (
-                <button className="text-[12px] text-muted hover:text-fg disabled:opacity-40" disabled={!!busy} onClick={() => void run(key, () => window.api.mcpReconnect(repoId, s.name))}>
+                <button className="text-[12px] text-muted hover:text-fg disabled:opacity-40" disabled={!!wait} onClick={() => void run(key, 'Reconnecting…', () => window.api.mcpReconnect(repoId, s.name))}>
                   Retry
                 </button>
               )}
               {s.removable && (
                 <button
                   className="text-[12px] text-faint hover:text-del disabled:opacity-40"
-                  disabled={!!busy}
+                  disabled={!!wait}
                   onClick={() => {
                     if (removing !== key) return setRemoving(key)
                     setRemoving(null)
-                    void run(key, () => window.api.mcpRemove(repoId, s.name, s.source))
+                    void run(key, 'Removing…', () => window.api.mcpRemove(repoId, s.name, s.source))
                   }}
                   onMouseLeave={() => removing === key && setRemoving(null)}
                 >
@@ -147,13 +160,16 @@ export function McpSettings() {
               <input
                 type="checkbox"
                 title={s.status === 'disabled' ? 'Turn on for this repo' : 'Turn off for this repo'}
-                checked={s.status !== 'disabled'}
-                disabled={!!busy}
-                onChange={(e) => void run(key, () => window.api.mcpToggle(repoId, s.name, e.target.checked))}
+                checked={wait?.enabled ?? s.status !== 'disabled'}
+                disabled={!!wait}
+                onChange={(e) => {
+                  const on = e.target.checked
+                  void run(key, on ? 'Turning on…' : 'Turning off…', () => window.api.mcpToggle(repoId, s.name, on), on)
+                }}
               />
             </div>
             <div className="mt-0.5 truncate pl-4 font-mono text-[11px] text-faint" title={s.target}>
-              {busy === key ? 'Working…' : `${st.label} · ${s.transport}${s.target ? ` · ${s.target}` : ''}${s.tools.length ? ` · ${s.tools.length} tools` : ''}`}
+              {wait ? wait.label : `${st.label} · ${s.transport}${s.target ? ` · ${s.target}` : ''}${s.tools.length ? ` · ${s.tools.length} tools` : ''}`}
             </div>
             {s.error && <div className="mt-1 pl-4 text-[12px] text-del">{s.error}</div>}
             {open === key && s.tools.length > 0 && (

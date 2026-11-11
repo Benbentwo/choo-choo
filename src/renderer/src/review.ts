@@ -28,6 +28,20 @@ export function parseFindings(text: string): ReviewFinding[] | null {
   }
 }
 
+/**
+ * A review reply cut around its findings block, so the chat can show the findings as tiles instead
+ * of raw JSON. Null when the reply has no findings block (other ```json blocks stay as code).
+ */
+export function splitFindingsBlock(text: string): { before: string; findings: ReviewFinding[]; after: string } | null {
+  const blocks = [...text.matchAll(/```json\s*([\s\S]*?)```/g)]
+  const last = blocks[blocks.length - 1]
+  if (!last || last.index === undefined) return null
+  const findings = parseFindings(text)
+  // A JSON block that isn't shaped like findings is someone's data, not a review.
+  if (!findings || (findings.length === 0 && !/^\s*(\[\s*\]|\{\s*"findings"\s*:\s*\[\s*\]\s*\})\s*$/.test(last[1]))) return null
+  return { before: text.slice(0, last.index).trimEnd(), findings, after: text.slice(last.index + last[0].length).trimStart() }
+}
+
 export function findingsFromItems(items: ChatItem[]): ReviewFinding[] | null {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i]

@@ -15,6 +15,7 @@ import { OpenShareModal, ShareModal } from './ShareModals'
 import { CommandPalette } from './CommandPalette'
 import { UpdatesSettings } from './Updates'
 import { UsageGraphs } from './UsageGraphs'
+import { ProjectIcon, ProjectIconPicker } from './ProjectIcon'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -65,12 +66,15 @@ function GroupModal({ onClose }: { onClose: () => void }) {
   const existing = useStore((s) => s.groups.find((g) => g.id === s.editGroup))
   const [name, setName] = useState(existing?.name ?? '')
   const [picked, setPicked] = useState<string[]>(existing?.repoIds ?? [])
+  const [look, setLook] = useState<{ icon?: string; color?: string }>({ icon: existing?.icon, color: existing?.color })
   const [busy, setBusy] = useState(false)
+  const projects = useStore((s) => !!s.settings.experimentalProjects)
+  const noun = projects ? 'project' : 'project group'
   const toggle = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
   const submit = async () => {
     setBusy(true)
     try {
-      const g = await window.api.saveGroup({ id: existing?.id, name, repoIds: picked })
+      const g = await window.api.saveGroup({ id: existing?.id, name, repoIds: picked, ...(projects ? { icon: look.icon ?? '', color: look.color ?? '' } : {}) })
       await refreshState()
       onClose()
       if (!existing) await openGroupOrchestrator(g.id)
@@ -92,19 +96,29 @@ function GroupModal({ onClose }: { onClose: () => void }) {
   }
   return (
     <Shell onClose={onClose} width="w-[460px]">
-      <div className="border-b border-line px-5 py-3 font-medium">{existing ? 'Edit project group' : 'New project group'}</div>
+      <div className="border-b border-line px-5 py-3 font-medium">{existing ? `Edit ${noun}` : `New ${noun}`}</div>
       <div className="space-y-4 px-5 py-4">
         <div className="text-[12px] text-muted">
-          A project group gives several repositories one orchestrator and one shared memory. It starts workspaces in whichever repo each piece of work belongs to.
+          {projects
+            ? "A project is one goal across one or more repositories. You talk to its orchestrator chat, which sends each message to the right thread; threads start workspaces in whichever repo the work belongs to."
+            : 'A project group gives several repositories one orchestrator and one shared memory. It starts workspaces in whichever repo each piece of work belongs to.'}
         </div>
-        <input
-          autoFocus
-          className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent"
-          placeholder="Name, e.g. Storefront"
+        <div className="flex items-center gap-2">
+          {projects && (
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line">
+              <ProjectIcon group={look} size={16} />
+            </span>
+          )}
+          <input
+            autoFocus
+            className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent"
+            placeholder="Name, e.g. Storefront"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && name.trim() && picked.length && void submit()}
-        />
+            onKeyDown={(e) => e.key === 'Enter' && name.trim() && picked.length && void submit()}
+          />
+        </div>
+        {projects && <ProjectIconPicker icon={look.icon} color={look.color} onChange={setLook} />}
         <div className="max-h-64 overflow-y-auto rounded-md border border-line">
           {repos.length === 0 && <div className="px-3 py-2 text-faint">Add a repository first.</div>}
           {repos.map((r) => (
@@ -119,7 +133,7 @@ function GroupModal({ onClose }: { onClose: () => void }) {
       <div className="flex items-center gap-2 border-t border-line px-5 py-3">
         {existing && (
           <button className="rounded-md px-2.5 py-1 text-del hover:bg-hover" onClick={() => void remove()}>
-            Delete group
+            Delete {noun}
           </button>
         )}
         <div className="flex-1" />
@@ -193,6 +207,7 @@ const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'integrations', label: 'Integrations', hint: 'Sign in to Linear, Notion and other services.' },
   { id: 'updates', label: 'Updates', hint: 'Choo Choo and Claude Code versions and update checks.' },
   { id: 'telemetry', label: 'Telemetry', hint: 'Export traces and metrics with OpenTelemetry.' },
+  { id: 'experimental', label: 'Experimental', hint: 'Features still being tried out. Off by default.' },
 ]
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
@@ -244,6 +259,13 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <AddonSettings />
         ) : tab === 'prompts' ? (
           <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
+        ) : tab === 'experimental' ? (
+          <Row
+            label="Projects"
+            hint="Project groups become projects. You talk to a project's orchestrator chat, which sends each message to the right thread or starts one, and the sidebar lists the project's work by repo and PR. Also turns on Automations: checks that run on a schedule or a GitHub event and open a workspace per finding. Turning this off hides projects and pauses automations; nothing is deleted."
+          >
+            <input type="checkbox" checked={!!settings.experimentalProjects} onChange={(e) => void save({ experimentalProjects: e.target.checked })} />
+          </Row>
         ) : tab === 'telemetry' ? (
           <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (

@@ -18,6 +18,8 @@ Start here when you join the project, human or agent. These docs hold what the c
 |---|---|
 | [Import from Conductor](prd/conductor-import.md) | Shipped |
 | [Orchestrator](prd/orchestrator.md) | Shipped |
+| [Projects](prd/projects.md) | Experimental: threads and the repo › PR sidebar |
+| [Automations](prd/automations.md) | Experimental: shipped (PR #80); new issue and PR triggers in review |
 | [Shared sessions](prd/shared-sessions.md) | Shipped |
 | [Archive and reflect](prd/archive-and-reflect.md) | Shipped |
 | [Extra agents and advisor](prd/extra-agents.md) | Shipped |
@@ -28,6 +30,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Review plan](prd/plan-review.md) | Shipped |
 | [Integrations](prd/integrations.md) | Planned |
 | [Add PR comments to chat](prd/pr-comments.md) | In review |
+| [Line comments to the agent or a GitHub review](prd/review-comments.md) | In review |
 | [Remote sessions (phone and cloud)](prd/remote-sessions.md) | Phone shipped; cloud in review |
 | [Update checks](prd/update-checks.md) | Shipped |
 | [Claude Code session controls](prd/claude-code-controls.md) | Shipped (PR #49) |
@@ -38,6 +41,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Add-ons](prd/add-ons.md) | Shipped: views, background pages, orchestrator tools, project pins; Plan board next |
 | [Arranging and renaming workspaces](prd/sidebar-workspaces.md) | In review |
 | [Stacked PRs](prd/stacked-prs.md) | In review |
+| [Subscription limits in the sidebar](prd/subscription-limits.md) | In review |
 | [Split panels](prd/split-panels.md) | In review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
@@ -56,6 +60,9 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0009](decisions/0009-add-ons-declare-buttons-the-app-draws-them.md) | Add-ons change the app's own interface only by declaring buttons in named places; the app draws them |
 | [0010](decisions/0010-one-worktree-per-stack.md) | A stack of PRs lives in one workspace and one worktree; the app restacks with plain git |
 | [0012](decisions/0012-github-stacks-for-merging.md) | Stacks are linked to GitHub's stacked pull requests and merged through them, all or none |
+| [0013](decisions/0013-project-threads.md) | Projects: the orchestrator chat routes each message to a thread; the sidebar shows work by repo and PR, not by thread |
+| [0014](decisions/0014-automations-own-page-polled-events.md) | Automations get their own page and target a project or a repo; GitHub events are polled while the app is open, no webhooks |
+| [0015](decisions/0015-beta-channel-uses-prereleases.md) | The beta update channel is GitHub prereleases built and signed on every merge to main; stable stays manually published releases |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 

@@ -33,6 +33,10 @@ export const IconSearch = (p: SVGProps<SVGSVGElement>) => (
 export const IconBranch = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10M18 9c0 4-6 3-11 8" /></svg>
 )
+/** A merged pull request: a branch joined back into the line it came from. */
+export const IconMerged = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="13" r="2" /><path d="M6 7v10M6 7c0 4 4 6 10 6" /></svg>
+)
 export const IconSidebar = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg>
 )
@@ -134,6 +138,9 @@ export const IconStack = (p: SVGProps<SVGSVGElement>) => (
 )
 export const IconRestack = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M20 9a8 8 0 0 0-14.5-3M4 15a8 8 0 0 0 14.5 3" /><path d="M5 2v4h4M19 22v-4h-4" /></svg>
+)
+export const IconBot = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="4.5" y="8" width="15" height="11" rx="3" /><path d="M12 4v4M9.5 13h.01M14.5 13h.01" /></svg>
 )
 export const IconSplitRight = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" /></svg>

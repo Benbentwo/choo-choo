@@ -3,8 +3,10 @@ import { toggleHidden } from '@shared/sidebarHidden'
 import { readCachedAppearance } from './appearanceCache'
 import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
+import type { Automation, AutomationRun } from '@shared/automations'
+import { isTheirs, type CommentDest, type PrReviewInfo } from '@shared/prReview'
 import * as L from '@shared/layout'
-import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
+import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type PrInfo, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
 
 export type Doc = L.Doc
 
@@ -66,6 +68,10 @@ interface UI {
   addonPress: AddonPress | null
   /** The PRs page is open in the center. */
   prsPage: boolean
+  /** The Automations page is open. */
+  automationsPage: boolean
+  automations: Automation[]
+  automationRuns: AutomationRun[]
   /** Last load of the PRs page's list, and its error. */
   prInbox: PrInbox | null
   prInboxError: string | null
@@ -73,8 +79,10 @@ interface UI {
   activeChat: Record<string, string>
   /** Diff or file open in the center instead of the chat, per workspace. */
   openDoc: Record<string, Doc | null>
-  /** Comments on diff lines waiting to be sent to the agent as one message, per workspace. */
+  /** Comments on diff lines, per workspace: queued for the agent, or drafts in the person's GitHub review. */
   codeComments: Record<string, CodeComment[]>
+  /** The workspace's PR with its author, the signed-in gh user and open feedback; loaded by the PR button. */
+  prReview: Record<string, { pr: PrInfo; info: PrReviewInfo } | null | undefined>
   /** Bumped when GitHub reports a change to a workspace's PR or checks; PR views reload on it. */
   prVersion: Record<string, number>
   /** Last stack status per stacked workspace, for the Stack tab, the header switcher and the sidebar. */
@@ -94,7 +102,7 @@ interface UI {
   usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance'
+  settingsTab: 'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance' | 'experimental'
   recentPaths: string[]
   modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */
@@ -141,12 +149,16 @@ export const useStore = create<UI>((set, get) => ({
   addonPage: null,
   addonPress: null,
   prsPage: false,
+  automationsPage: false,
+  automations: [],
+  automationRuns: [],
   prInbox: readInboxCache(),
   prInboxError: null,
   prInboxLoading: false,
   activeChat: {},
   openDoc: {},
-  codeComments: {},
+  codeComments: loadCodeComments(),
+  prReview: {},
   prVersion: {},
   stacks: {},
   reflects: {},
@@ -172,7 +184,7 @@ export const useStore = create<UI>((set, get) => ({
   error: null,
 
   hydrate: (s) => {
-    set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [] })
+    set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [], automations: s.automations ?? [], automationRuns: s.automationRuns ?? [] })
     if (!layoutLoaded) {
       layoutLoaded = true
       const saved = L.isLayout(s.settings.layout) ? s.settings.layout : null
@@ -182,7 +194,7 @@ export const useStore = create<UI>((set, get) => ({
     reconcileLayout()
   },
   selectWorkspace: (id, fromHistory) => {
-    if (!id) return set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, panesShown: false })
+    if (!id) return set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, panesShown: false })
     showView(viewFor(id))
     if (fromHistory) return
     const { history, historyIndex } = get()
@@ -299,7 +311,7 @@ export function applyLayout(next: L.Layout | null, opts: { show?: boolean; save?
       openDoc[l.view.wsId] = g.doc
     }
     Object.assign(patch, { activeChat, openDoc })
-    if (opts.show !== false) Object.assign(patch, { panesShown: true, draftRepo: null, prsPage: false })
+    if (opts.show !== false) Object.assign(patch, { panesShown: true, draftRepo: null, prsPage: false, automationsPage: false })
   }
   st.set(patch)
   if (opts.save !== false) saveLayoutSoon(next)
@@ -515,7 +527,7 @@ export function reportError(e: unknown) {
 
 /** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
 export function newWorkspace(repoId: string) {
-  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, automationsPage: false, panesShown: false })
 }
 
 /** Shows an add-on's view in the center. */
@@ -545,8 +557,13 @@ export function runAddonAction(addon: AddonInfo, action: AddonAction, ctx: Addon
 
 /** Shows the PRs page in the center and reloads its list. */
 export function openPrsPage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, automationsPage: false, panesShown: false })
   void refreshPrInbox()
+}
+
+/** Opens the Automations page. */
+export function openAutomationsPage() {
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: true, panesShown: false })
 }
 
 let inboxLoad: Promise<void> | null = null
@@ -764,21 +781,55 @@ export interface CodeComment {
   /** The commented lines, as shown in the diff. */
   code: string
   text: string
+  /** agent: sent with the next chat message. github: a draft in the person's review, posted on submit. Missing means agent. */
+  dest?: CommentDest
+  /** Copied from a reviewer-agent finding. */
+  fromFinding?: boolean
+}
+
+export const destOf = (c: CodeComment): CommentDest => c.dest ?? 'agent'
+
+
+/** Drafts survive a restart: a half-written review is too much to lose. */
+function loadCodeComments(): Record<string, CodeComment[]> {
+  try {
+    return JSON.parse(localStorage.getItem('codeComments') ?? '{}') as Record<string, CodeComment[]>
+  } catch {
+    return {}
+  }
 }
 
 export function setCodeComments(wsId: string, fn: (list: CodeComment[]) => CodeComment[]) {
   const st = useStore.getState()
-  st.set({ codeComments: { ...st.codeComments, [wsId]: fn(st.codeComments[wsId] ?? []) } })
+  const all = { ...st.codeComments, [wsId]: fn(st.codeComments[wsId] ?? []) }
+  if (!all[wsId].length) delete all[wsId]
+  st.set({ codeComments: all })
+  try {
+    localStorage.setItem('codeComments', JSON.stringify(all))
+  } catch {
+    /* storage unavailable */
+  }
 }
 
-/** The message that sends queued code comments, followed by anything typed in the composer. */
-export function codeCommentsMessage(list: CodeComment[], text: string): string {
+/** Set when the workspace's open PR is someone else's: agent comments then ask for advice, not commits. */
+export function reviewTarget(r: { pr: PrInfo; info: PrReviewInfo } | null | undefined): { number: number; author: string } | undefined {
+  return r && r.pr.state === 'OPEN' && isTheirs(r.info) ? { number: r.pr.number, author: r.info.author } : undefined
+}
+
+/**
+ * The message that sends queued code comments, followed by anything typed in the composer. On someone
+ * else's PR the agent is told to advise only, since the branch isn't the person's to push to.
+ */
+export function codeCommentsMessage(list: CodeComment[], text: string, review?: { number: number; author: string }): string {
   const parts = list.map((c) => {
     const where = `${c.file}:${c.start === c.end ? c.start : `${c.start}-${c.end}`}${c.side === 'old' ? ' (removed lines)' : ''}`
     const code = c.code.split('\n').map((l) => `    ${l}`).join('\n')
     return `${where}\n${code}\n${c.text}`
   })
-  return [`Comments on the code (${list.length}):`, ...parts, ...(text ? [text] : [])].join('\n\n')
+  const head = review
+    ? `I'm reviewing @${review.author}'s PR #${review.number}, so don't commit or push. Answer each comment on the code (${list.length}); where a change is warranted, write it as a GitHub \`\`\`suggestion block I can post in my review.`
+    : `Comments on the code (${list.length}):`
+  return [head, ...parts, ...(text ? [text] : [])].join('\n\n')
 }
 
 /** Opens the workspace's Reflect tab, which runs the reflect agent with this feedback. */

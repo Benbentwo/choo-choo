@@ -2,8 +2,10 @@ import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
 import type { PrInbox } from './prInbox'
+import type { Automation, AutomationRun, GithubWatchState } from './automations'
 import type { Layout, SavedLayout } from './layout'
 import type { AddonActionContext, AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
+import type { PrDiffTarget, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
 export interface Repo {
   id: string
   name: string
@@ -33,6 +35,10 @@ export interface RepoGroup {
   name: string
   repoIds: string[]
   createdAt: number
+  /** Icon name from the project icon set (renderer ProjectIcon.tsx). Missing: the orchestrator mark. */
+  icon?: string
+  /** A PROJECT_COLORS id. Missing: the theme accent. */
+  color?: string
 }
 
 /** What a new workspace starts from, besides a fresh branch off the default branch. */
@@ -93,6 +99,11 @@ export interface Workspace {
   /** City name, also the worktree folder name. */
   name: string
   branch: string
+  /**
+   * The PR this workspace's branch belongs to, when known by number: opened from a PR, or the
+   * agent ran `gh pr checkout`. Fork PRs live on a local branch (pr-12) that GitHub can't find by name.
+   */
+  prNumber?: number
   baseRef: string
   path: string
   title: string
@@ -113,8 +124,12 @@ export interface Workspace {
   orchestratorId?: string
   /** Set on a project group's orchestrator. It runs in the first repo's checkout. */
   groupId?: string
+  /** The project thread (a chat on the project's orchestrator) that started this workspace. Its updates go there. */
+  threadId?: string
   /** The add-on that started this workspace, by plugin id. */
   addonId?: string
+  /** The automation whose run opened this workspace. */
+  automationId?: string
   /** Set while this workspace is shared with coworkers. */
   share?: { id: string; link: string; sharedAt: number; autoSync: boolean }
   /** Set when this workspace was opened from a coworker's share. */
@@ -297,6 +312,10 @@ export interface Chat {
   handoff?: string
   /** The sharer's chat id, so refreshing a share updates the right tab. */
   sharedChatId?: string
+  /** A thread in a project: one topic's conversation with the project's orchestrator. See docs/prd/projects.md. */
+  thread?: boolean
+  /** The automation whose runs post here: a thread on a project's orchestrator, or a chat on a repo's. */
+  automationId?: string
   /** Context window of the model, as Claude Code last reported it. */
   contextWindow?: number
   /** Fast mode: faster output on models that support it, at a higher price. */
@@ -351,6 +370,14 @@ export interface PrInfo {
   mergeStateStatus?: string
   /** The branch the pull request is made from. */
   headRefName?: string
+  /** The branch the pull request merges into. */
+  baseRefName?: string
+  isCrossRepository?: boolean
+  headRepositoryOwner?: { login: string }
+  /** Commits on the base branch that this branch doesn't have yet. Only filled for the PR button. */
+  behindBy?: number
+  /** The PR's head commit. */
+  headRefOid?: string
 }
 
 /** One piece of review feedback on a PR, ready to hand to the agent. */
@@ -358,6 +385,10 @@ export interface PrComment {
   id: string
   /** inline: an unresolved review thread on a line; review: a review's summary; comment: a conversation comment. */
   kind: 'inline' | 'review' | 'comment'
+  /** Inline only: the review thread, for replying and resolving. */
+  threadId?: string
+  /** Inline only: which side of the diff the thread is on. */
+  side?: 'new' | 'old'
   author: string
   body: string
   /** For threads, the time of the newest reply. */
@@ -494,6 +525,8 @@ export interface Settings extends AppearanceSettings {
   claudeBinary: 'bundled' | 'installed'
   /** Check GitHub Releases for new Choo Choo versions. Checking by hand still works when off. */
   checkAppUpdates: boolean
+  /** stable: published releases. beta: also the signed prerelease built from every merge to main. */
+  updateChannel: 'stable' | 'beta'
   /** Check npm for new Claude Code versions. Checking by hand still works when off. */
   checkClaudeUpdates: boolean
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
@@ -506,6 +539,8 @@ export interface Settings extends AppearanceSettings {
   telemetry: Telemetry
   /** Wake an idle orchestrator when a workspace it started finishes, so it checks and reports back. */
   orchestratorAutoUpdates: boolean
+  /** Experimental: project groups become projects, with threads and a repo › PR tree in the sidebar. */
+  experimentalProjects?: boolean
   /** Add-ons turned on in Choo Choo and the permissions agreed to, by plugin id. */
   addons?: Record<string, AddonGrant>
   /** Recommended add-ons the person said "not now" to, by project id. */
@@ -636,6 +671,7 @@ export const DEFAULT_SETTINGS: Settings = {
   orchestratorAutoUpdates: true,
   claudeBinary: 'bundled',
   checkAppUpdates: true,
+  updateChannel: 'stable',
   checkClaudeUpdates: true,
   extras: DEFAULT_EXTRAS,
   notionAgentTools: true,
@@ -655,6 +691,14 @@ export interface AppState {
   recentPaths?: string[]
   /** Workspace folders left on disk when a project was removed without cleanup; Settings > Projects can delete them. */
   leftovers?: Leftover[]
+  /** Checks that run on a schedule or a GitHub event. See shared/automations.ts. */
+  automations?: Automation[]
+  /** Recent automation runs, newest last. */
+  automationRuns?: AutomationRun[]
+  /** Finding ids each automation already opened a workspace for, by automation id. */
+  automationLedger?: Record<string, string[]>
+  /** Where the PR inbox stood at the last GitHub poll, for GitHub-event automations. */
+  githubWatch?: GithubWatchState
 }
 
 export interface Leftover {
@@ -838,9 +882,16 @@ export interface Api {
   /** Opens a project group's orchestrator, creating it the first time. */
   openGroupOrchestrator(groupId: string): Promise<{ workspace: Workspace; chat: Chat }>
   /** Creates or updates a project group. */
-  saveGroup(group: { id?: string; name: string; repoIds: string[] }): Promise<RepoGroup>
+  saveGroup(group: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }): Promise<RepoGroup>
   /** Deletes the group and hides its orchestrator. Workspaces and memory stay. */
   deleteGroup(groupId: string): Promise<void>
+  /** Creates or updates an automation. */
+  saveAutomation(a: Partial<Automation> & Pick<Automation, 'name' | 'prompt' | 'trigger' | 'target'>): Promise<Automation>
+  setAutomationEnabled(id: string, enabled: boolean): Promise<Automation>
+  /** Deletes an automation. Its chat, workspaces and run history stay. */
+  deleteAutomation(id: string): Promise<void>
+  /** Starts a run now, whatever the trigger. */
+  runAutomation(id: string): Promise<AutomationRun>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   /** Reviews the workspace's chats for friction and suggests agent-setup changes. Writes nothing. */
@@ -924,11 +975,23 @@ export interface Api {
   stopScript(workspaceId: string, kind: ScriptKind): void
   isScriptRunning(workspaceId: string, kind: ScriptKind): Promise<boolean>
   getPr(workspaceId: string): Promise<PrInfo | null>
+  /** The PR without the extra lookups the PR button needs: cheap enough for every sidebar row. */
+  getPrState(workspaceId: string): Promise<PrInfo | null>
   mergePr(workspaceId: string): Promise<void>
   /** Takes the workspace's draft PR out of draft. */
   markPrReady(workspaceId: string): Promise<void>
+  /** Merges the base branch into the PR's branch on GitHub, then pulls the result into the worktree. */
+  updatePrBranch(workspaceId: string): Promise<void>
   /** Unresolved review threads, reviews and comments on the workspace's PR. */
   getPrComments(workspaceId: string): Promise<PrComment[]>
+  /** The workspace's PR with its feedback, author, the signed-in gh user and their last review. */
+  getPrReview(workspaceId: string): Promise<{ pr: PrInfo; info: PrReviewInfo } | null>
+  /** Which lines of the PR can take review comments, and whether the worktree's line numbers match it. */
+  getPrDiffTarget(workspaceId: string): Promise<PrDiffTarget | null>
+  /** Posts a review on the workspace's PR. */
+  submitPrReview(workspaceId: string, drafts: ReviewDraft[], body: string, event: ReviewEvent): Promise<{ url: string }>
+  replyToPrThread(workspaceId: string, threadId: string, body: string): Promise<void>
+  resolvePrThread(workspaceId: string, threadId: string): Promise<void>
   stackStatus(workspaceId: string): Promise<StackStatus | null>
   /** Turns a workspace into a stack (if it isn't one) and adds a new branch on top of the top PR. */
   stackAddLayer(workspaceId: string): Promise<void>
@@ -957,6 +1020,8 @@ export interface Api {
   /** Clones into `dir` (default ~/choo-choo/repos); `~` is expanded. */
   cloneRepo(url: string, dir?: string): Promise<Repo>
   pickFolder(): Promise<string | null>
+  /** Plan limits for Claude and Codex, whichever are signed in. Cached for a minute unless force. */
+  subscriptionLimits(force?: boolean): Promise<SubscriptionLimits[]>
   /** Removes a project. With deleteFiles, its workspace folders (and archived copies) are deleted; otherwise they're kept as a leftover. */
   removeProject(repoId: string, opts: { deleteFiles: boolean }): Promise<void>
   /** Permanently deletes a workspace: its folder, archived copy and chats. The branch is kept. */
@@ -1037,4 +1102,30 @@ export interface ReviewFinding {
   severity: 'high' | 'medium' | 'low'
   message: string
   fix?: string
+}
+
+export interface LimitWindow {
+  /** Stable id across refreshes, e.g. claude:five_hour. */
+  key: string
+  /** e.g. 5h, Week, Opus week */
+  label: string
+  /** Percent of the window used, 0-100. */
+  percent: number
+  resetsAt?: number
+  /** Length of the window, when known (5 hours, 7 days). */
+  windowMs?: number
+  /** Readings recorded during the current window, oldest first. */
+  history?: { t: number; p: number }[]
+}
+
+/** Plan usage for one AI subscription, shown in the sidebar footer. */
+export interface SubscriptionLimits {
+  provider: 'claude' | 'codex'
+  name: string
+  /** pro, max, team, … when known. */
+  plan?: string
+  windows: LimitWindow[]
+  updatedAt: number
+  /** The tool said the limit is used up, and when it frees up again. */
+  capped?: { since: number; until?: number }
 }

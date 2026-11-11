@@ -32,6 +32,7 @@ Settings > MCP has a repo picker (it defaults to the current workspace's repo), 
 - The transport, the URL or command, and the tool count. Click the name to list the tools with their descriptions.
 - A switch that turns the server off or on for that repo. Claude Code remembers this in `~/.claude.json`, so the terminal follows it too.
 - **Retry** on failed servers, **Sign in…** on servers that need it (this opens Terminal on `claude /mcp`), and **Remove** for servers in user, project or local config (click twice to confirm).
+- A change locks only its own row. You can flip several switches in a row: each row shows "Turning off…" (or on, removing, reconnecting) and its switch shows where it is heading, while the changes run one after another, since each starts Claude Code and writes its config. Sign in… locks nothing.
 
 **Add server** asks for a name, the transport (HTTP, SSE or a stdio command), the scope (every repo, or this repo's `.mcp.json`), the URL or command line, and optional headers or environment lines. It runs `claude mcp add`, then refreshes the list.
 

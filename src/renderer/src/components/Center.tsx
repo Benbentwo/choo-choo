@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { Workspace } from '@shared/types'
+import { ProjectIcon } from './ProjectIcon'
 import * as L from '@shared/layout'
 import {
   useStore,
+  openGroupOrchestrator,
   newChatTab,
   closeChatTab,
   refreshState,
@@ -23,7 +25,7 @@ import {
   dropTab,
   type DragItem
 } from '../store'
-import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart, IconPhone, IconTerminal, IconSplitRight, IconBranch } from '../icons'
+import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart, IconPhone, IconTerminal, IconSplitRight, IconBranch, IconPR } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
@@ -35,6 +37,10 @@ import { StackSwitcher } from './Stack'
 import { TerminalView } from './TerminalView'
 import { Stats } from './Stats'
 import { PaneGrip, RepoChip, PaneMenuItems, DropOverlay, Dividers } from './Panes'
+import { ThreadsPanel } from './Projects'
+import { routerChat } from '@shared/projects'
+import { isTheirs, prOwnerLabel } from '@shared/prReview'
+import { usePrReview } from '../prReview'
 
 /**
  * One workspace in a pane: a header, then its groups of chat tabs. Alone in the window it looks
@@ -48,6 +54,17 @@ export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.L
   const [reflecting, setReflecting] = useState(false)
   const [cloudDialog, setCloudDialog] = useState(false)
   const view = leaf.view.kind === 'workspace' ? leaf.view : null
+  // A project's orchestrator: one chat at a time, picked from the Threads panel instead of tabs.
+  const project = isProject(ws)
+  const [threadsOpen, setThreadsOpen] = useState(() => localStorage.getItem('threads-panel') !== 'closed')
+  const toggleThreads = (open: boolean) => {
+    setThreadsOpen(open)
+    try {
+      localStorage.setItem('threads-panel', open ? 'open' : 'closed')
+    } catch {
+      /* storage unavailable */
+    }
+  }
 
   useEffect(() => {
     if (chats.length === 0) void newChatTab(ws.id)
@@ -62,9 +79,13 @@ export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.L
     <WorkspaceMenu ws={ws} close={close} onReflect={() => setReflecting(true)} onCloud={() => setCloudDialog(true)} leaf={leaf} framed={framed} multiGroup={multiGroup} />
   )
 
-  return (
+  const main = (
     <main className="flex h-full min-w-0 flex-1 flex-col bg-bg">
-      {framed ? <WorkspacePaneHeader ws={ws} leaf={leaf} focused={focused} menu={menu} /> : <ClassicHeader ws={ws} menu={menu} />}
+      {framed ? (
+        <WorkspacePaneHeader ws={ws} leaf={leaf} focused={focused} menu={menu} threads={project ? { open: threadsOpen, toggle: toggleThreads } : undefined} />
+      ) : (
+        <ClassicHeader ws={ws} menu={menu} threads={project ? { open: threadsOpen, toggle: toggleThreads } : undefined} />
+      )}
       <div className="relative min-h-0 flex-1">
         {groups.map((g) => {
           const b = boxes.get(g.id)!
@@ -85,12 +106,64 @@ export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.L
       {cloudDialog && active && <RunInCloudDialog chat={active} ws={ws} onClose={() => setCloudDialog(false)} />}
     </main>
   )
+  if (!project || !threadsOpen) return main
+  return (
+    <div className="flex h-full min-w-0 flex-1">
+      {main}
+      <ThreadsPanel ws={ws} activeId={active?.id} onClose={() => toggleThreads(false)} />
+    </div>
+  )
+}
+
+type ThreadsToggle = { open: boolean; toggle: (open: boolean) => void }
+const isProject = (ws: Workspace) => !!ws.orchestrator && !!ws.groupId && !!useStore.getState().settings.experimentalProjects
+
+/** A project orchestrator names the chat in view; other workspaces name their branch. */
+function useTitles(ws: Workspace) {
+  const s = useStore()
+  const project = !!ws.orchestrator && !!ws.groupId && !!s.settings.experimentalProjects
+  const chats = s.chats.filter((c) => c.workspaceId === ws.id)
+  const active = chats.find((c) => c.id === s.activeChat[ws.id]) ?? chats[0]
+  const isRouter = project && active?.id === routerChat(s.chats, ws.id)?.id
+  // A workspace a project started shows the project before its repo.
+  const partOf = s.settings.experimentalProjects && !ws.orchestrator ? s.groups.find((g) => g.id === ws.orchestratorId) : undefined
+  const sub = project ? (isRouter ? 'Orchestrator chat' : `# ${active?.title ?? ''}`) : ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch
+  return { project, partOf, sub, threadCount: chats.filter((c) => c.thread).length }
+}
+
+function PartOf({ ws }: { ws: Workspace }) {
+  const { partOf } = useTitles(ws)
+  if (!partOf) return null
+  return (
+    <>
+      <button className="no-drag shrink-0 text-muted hover:text-fg" onClick={() => void openGroupOrchestrator(partOf.id)} title="Open the project's orchestrator chat">
+        <ProjectIcon group={partOf} size={12} className="mr-1 inline align-[-1px]" />
+        {partOf.name}
+      </button>
+      <IconRight className="shrink-0 text-faint" />
+    </>
+  )
+}
+
+function ThreadsButton({ ws, threads }: { ws: Workspace; threads?: ThreadsToggle }) {
+  const { threadCount } = useTitles(ws)
+  if (!threads) return null
+  return (
+    <button
+      className={`no-drag flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-0.5 text-[12px] ${threads.open ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+      onClick={() => threads.toggle(!threads.open)}
+      title="Show this project's threads"
+    >
+      Threads <span className="text-faint">{threadCount}</span>
+    </button>
+  )
 }
 
 /** The header the center always had: breadcrumb, workspace menu, and the right panel toggle. It's the window's title bar, so it drags the window. */
-function ClassicHeader({ ws, menu }: { ws: Workspace; menu: (close: () => void) => ReactNode }) {
+function ClassicHeader({ ws, menu, threads }: { ws: Workspace; menu: (close: () => void) => ReactNode; threads?: ThreadsToggle }) {
   const s = useStore()
   const repo = s.repos.find((r) => r.id === ws.repoId)
+  const { project, sub } = useTitles(ws)
   return (
     <header className="drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
       {!s.sidebarOpen && (
@@ -98,7 +171,8 @@ function ClassicHeader({ ws, menu }: { ws: Workspace; menu: (close: () => void) 
           <IconSidebar width={16} height={16} />
         </button>
       )}
-      <span className="text-muted">{repo?.name}</span>
+      <PartOf ws={ws} />
+      <span className="text-muted">{project ? ws.title : repo?.name}</span>
       <IconRight className="text-faint" />
       {ws.stack ? (
         <>
@@ -107,11 +181,13 @@ function ClassicHeader({ ws, menu }: { ws: Workspace; menu: (close: () => void) 
           <StackSwitcher ws={ws} />
         </>
       ) : (
-        <span className="no-drag selectable truncate">{ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch}</span>
+        <span className="no-drag selectable truncate">{sub}</span>
       )}
       <DotsMenu menu={menu} />
+      {!ws.orchestrator && <PrOwnerPill ws={ws} />}
       <ShareBadges ws={ws} />
       <div className="flex-1" />
+      <ThreadsButton ws={ws} threads={threads} />
       <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => splitPane('right')} title="Split right (⌘\)">
         <IconSplitRight width={16} height={16} />
       </button>
@@ -123,15 +199,17 @@ function ClassicHeader({ ws, menu }: { ws: Workspace; menu: (close: () => void) 
 }
 
 /** A workspace pane's header beside other panes: repo chip / workspace name, then its branch, which gives way first when space is short. */
-function WorkspacePaneHeader({ ws, leaf, focused, menu }: { ws: Workspace; leaf: L.Leaf; focused: boolean; menu: (close: () => void) => ReactNode }) {
+function WorkspacePaneHeader({ ws, leaf, focused, menu, threads }: { ws: Workspace; leaf: L.Leaf; focused: boolean; menu: (close: () => void) => ReactNode; threads?: ThreadsToggle }) {
   const s = useStore()
   const repo = s.repos.find((r) => r.id === ws.repoId)
-  const name = ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.title
+  const { project, sub } = useTitles(ws)
+  const name = project ? sub : ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.title
   const showBranch = !ws.orchestrator && ws.branch && ws.branch !== ws.title
   return (
     <header className={`flex h-[42px] shrink-0 items-center gap-2 border-b border-line pr-1.5 pl-1 ${focused ? 'bg-accent/[0.07]' : 'bg-panel'}`}>
       <PaneGrip leafId={leaf.id} />
-      {repo && <RepoChip name={repo.name} />}
+      <PartOf ws={ws} />
+      {project ? <RepoChip name={ws.title} /> : repo && <RepoChip name={repo.name} />}
       <span className="shrink-0 text-[15px] text-faint">/</span>
       <StatusDot ws={ws} />
       <span className="shrink-0 text-[15px] font-bold whitespace-nowrap text-fg" title={name}>
@@ -144,8 +222,10 @@ function WorkspacePaneHeader({ ws, leaf, focused, menu }: { ws: Workspace; leaf:
           <span className="truncate">{ws.branch}</span>
         </span>
       )}
+      {!ws.orchestrator && <PrOwnerPill ws={ws} />}
       <ShareBadges ws={ws} />
       <div className="min-w-0 flex-1" />
+      <ThreadsButton ws={ws} threads={threads} />
       {!ws.orchestrator && (
         <span className="shrink-0">
           <Stats stats={s.stats[ws.id]} />
@@ -285,6 +365,7 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
   const showReflectTab = reflect && (doc?.kind === 'reflect' || (!groups.some((g) => g.doc?.kind === 'reflect') && groups[0].id === group.id))
   const drag = s.drag
   const tabDrag = drag?.kind === 'tab' && drag.leafId === leaf.id ? drag : null
+  const project = isProject(ws)
 
   useEffect(() => {
     if (active && !s.items[active.id]) {
@@ -311,7 +392,7 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div className="flex h-11 shrink-0 items-end gap-1 overflow-x-auto border-b border-line px-4 [scrollbar-width:none]">
-        {chats.map((c) => {
+        {(project ? chats.filter((c) => c.id === active?.id) : chats).map((c) => {
           const on = !doc && !activeTerm && c.id === active?.id
           return (
             <div
@@ -324,9 +405,9 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
               <button className="truncate" onClick={() => setGroupActive(leaf.id, group.id, c.id)}>
                 {c.status === 'running' && <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-add align-middle" />}
                 {c.status !== 'running' && c.unread && c.id !== active?.id && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-sky-400 align-middle" />}
-                {c.title}
+                {project && !c.thread ? 'Orchestrator chat' : c.title}
               </button>
-              {s.chats.filter((x) => x.workspaceId === ws.id).length > 1 && (
+              {s.chats.filter((x) => x.workspaceId === ws.id).length > 1 && !project && (
                 <button title="Close chat" className="invisible rounded text-faint group-hover:visible hover:text-fg" onClick={() => void closeChatTab(c.id)}>
                   <IconX width={12} height={12} />
                 </button>
@@ -383,7 +464,7 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
               focusGroup(leaf.id, group.id)
               void newChatTab(ws.id)
             }}
-            title="New chat (⌘T)"
+            title={project ? 'New thread' : 'New chat (⌘T)'}
           >
             <IconPlus />
           </button>
@@ -414,7 +495,7 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
 
       {/* An open diff or file takes the place of the chat history; the composer stays below it. */}
       {doc?.kind === 'diff' ? (
-        <DiffView ws={ws} file={doc.path} />
+        <DiffView ws={ws} file={doc.path} line={doc.line} />
       ) : doc?.kind === 'file' ? (
         <FileView ws={ws} file={doc.path} line={doc.line} />
       ) : doc?.kind === 'reflect' && reflect ? (
@@ -469,3 +550,18 @@ export function MenuItem(p: { label: string; title?: string; danger?: boolean; h
   )
 }
 
+/** Says whose PR this workspace is on, so someone else's code never looks like yours. */
+function PrOwnerPill({ ws }: { ws: Workspace }) {
+  const review = usePrReview(ws)
+  if (!review) return null
+  const theirs = isTheirs(review.info)
+  return (
+    <button
+      className={`no-drag flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[12px] ${theirs ? 'border-sky-400/40 bg-sky-400/10 text-sky-400 hover:bg-sky-400/20' : 'border-line text-muted hover:bg-hover hover:text-fg'}`}
+      title={theirs ? `${review.info.author}'s PR. Line comments go to your GitHub review by default.` : 'Your PR. Line comments go to the agent by default.'}
+      onClick={() => useStore.getState().set({ rightTab: 'review' })}
+    >
+      <IconPR width={12} height={12} /> {prOwnerLabel(review.pr, review.info)}
+    </button>
+  )
+}

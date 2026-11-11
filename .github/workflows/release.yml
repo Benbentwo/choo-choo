@@ -23,6 +23,8 @@ permissions:
   contents: write
 jobs:
   mac:
+    # Beta prereleases are built by the Beta workflow; never rebuild them or put them in the Homebrew cask.
+    if: github.event_name != 'release' || !github.event.release.prerelease
     runs-on: macos-latest
     outputs:
       tag: ${{ steps.rel.outputs.tag }}

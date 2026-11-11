@@ -53,6 +53,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Chat tabs per workspace, ⌘T / ⌘W
 - ✅ Model picker (Opus / Fable / Sonnet / Haiku) and effort (Low / Medium / High / Extra high / Max)
 - ✅ Streaming replies with markdown, collapsible tool calls, cost and duration
+- ✅ Code blocks in your own messages: text between ``` fences shows as a monospace block that keeps its spacing. While the cursor is inside an open fence the composer turns monospace and Enter adds a line; closing the fence or ⌘Enter sends.
 - ✅ Stop (button or Esc)
 - ✅ Send while Claude works: Steer (default, folded in at the next step) or Queue (sent after), set in Settings > General
 - ✅ `/clear` folds the messages before it behind a "Context cleared" divider, with Show earlier messages
@@ -72,10 +73,14 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Artifacts: files the agent wrote
 - ✅ Checks: PR check runs, re-run failed jobs
 - ✅ PR and check status stay fresh through ETag polling (free 304s), every 15s while focused; no webhook server needed
+- ✅ A workspace adopts the existing PR of whatever branch is checked out in it, including one the agent switched to itself (orchestrator-started workspaces) and fork PRs
 - ✅ Review: agent code review in a new tab
-- ✅ Create PR (agent commits, pushes, opens PR), draft option; PR status, open, squash merge
+- ✅ Create PR (agent commits, pushes, opens PR), draft option; PR status, open, squash merge, update a branch that is behind its base
+- ✅ Word-level highlights in the diff: within an edited line, the words that changed are shaded more strongly, as on GitHub
 - ✅ Review findings inline in the diff, with Fix buttons
+- ✅ Review findings in the chat as tiles (severity, file and line, what is wrong, the fix) instead of the raw JSON block; a tile opens the diff at that line, and each has Ask the agent to fix this
 - ✅ Add all PR comments to chat: unresolved review threads, change requests and comments, with file/line context; new-comment count in the header
+- ✅ Line comments pick Agent or GitHub review (default by who wrote the PR); submit a GitHub review with Comment, Approve or Request changes; findings into your review; GitHub threads inline with Reply, Resolve, Ask agent; header says whose PR it is
 
 ### Bottom panel
 - ✅ Terminal tabs (xterm + pty), persist across workspace switches
@@ -86,12 +91,15 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ macOS menus and shortcuts, desktop notifications
 - ✅ dmg/zip builds for Apple silicon and Intel, release workflow (signs and notarizes when secrets are set)
 - ✅ Auto-update from GitHub releases (signed builds install in place; unsigned ones offer brew upgrade or the download page)
+- ✅ Update channels: Stable (published releases) or Beta (a signed prerelease from every merge to main), in Settings > Updates. See [decision 0015](decisions/0015-beta-channel-uses-prereleases.md).
 - ✅ Claude Code version and update check (Settings > Updates; runs `claude update` for an installed copy)
 
 ### Beyond Conductor
 - ✅ Shared sessions: share a workspace (branch, uncommitted files, chats) with coworkers through the repo's own remote; they continue with their own Claude login
 - ✅ Orchestrator: one chat per repo that starts workspaces, briefs their agents, waits on them, follows up and keeps a memory file. It wakes itself with an automatic update when a workspace it started finishes, can run workspaces in a Claude Code cloud session, and watches each workspace's PR and CI checks. See [PRD](prd/orchestrator.md).
 - ✅ Project groups: several repos share one orchestrator and one memory; it starts each workspace in the repo the work belongs to.
+- 🧪 Projects (Settings › Experimental, choo-choo addition): a project's orchestrator chat forwards each message to the right thread or starts one; threads are listed in a panel like Claude desktop projects; the sidebar shows project › repos › PRs, all foldable. The orchestrator adds repos the work turns out to need (asking before it clones one), and each project can pick an icon and color. See [PRD](prd/projects.md).
+- 🧪 Automations (Settings › Experimental, choo-choo addition): checks that run on a schedule, a GitHub event (review requested, CI failed, PR reviewed, new issue or PR, optionally by label) or Run now, and open one workspace per finding in a project thread or a repo, capped per run and never twice for the same finding. See [PRD](prd/automations.md).
 
 ## Build sequence
 1. **Foundation**: app scaffold, layout, repos, worktree sessions, agent chat, Changes + diff, terminal.
