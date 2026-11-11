@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { Chat, PrInfo, RepoGroup, Workspace } from '@shared/types'
-import { foldKey, projectThreads, projectTree, routerChat, stripRouted } from '@shared/projects'
-import { useStore, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab } from '../store'
-import { IconDown, IconPlus, IconX } from '../icons'
+import { foldKey, projectArchived, projectThreads, projectTree, routerChat, stripRouted } from '@shared/projects'
+import { useStore, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, showView, viewFor } from '../store'
+import { IconArchive, IconBranch, IconDown, IconPlus, IconX } from '../icons'
+import { Menu, type MenuItem } from './Menu'
 import { ProjectIcon } from './ProjectIcon'
 
 /**
@@ -38,6 +39,8 @@ export function ProjectsSection() {
 function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string) => boolean }) {
   const s = useStore()
   const [showAll, setShowAll] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+  const archived = projectArchived(group, s.workspaces)
   const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === group.id && !w.archived)
   const chats = orch ? s.chats.filter((c) => c.workspaceId === orch.id) : []
   const running = chats.some((c) => c.status === 'running')
@@ -91,6 +94,24 @@ function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string
             )
           })}
           {tree.length === 0 && <div className="py-1 pr-2 pl-7 text-[12px] text-faint">No open work yet. Tell the orchestrator what you want.</div>}
+          {archived.length > 0 && (
+            <button className="block py-0.5 pl-7 text-[11px] text-faint hover:text-fg" onClick={() => setShowArchived(!showArchived)}>
+              {showArchived ? 'Hide archived' : `Archived (${archived.length})`}
+            </button>
+          )}
+          {showArchived &&
+            archived.map((w) => (
+              <div key={w.id} className="group flex h-8 items-center gap-2 rounded-md pr-2 pl-7 text-faint hover:bg-hover">
+                <IconBranch className="shrink-0" />
+                <span className="flex-1 truncate" title={w.branch}>
+                  {w.title}
+                </span>
+                <span className="shrink-0 font-mono text-[11px] group-hover:hidden">{s.repos.find((r) => r.id === w.repoId)?.name}</span>
+                <button className="hidden rounded px-1.5 text-[11px] text-muted group-hover:block hover:bg-raised hover:text-fg" onClick={() => void restoreWorkspace(w.id)}>
+                  Restore
+                </button>
+              </div>
+            ))}
           {(showAll || all.length > tree.length) && (
             <button className="py-0.5 pl-7 text-[11px] text-faint hover:text-fg" onClick={() => setShowAll(!showAll)}>
               {showAll ? 'Only repos with work' : `Show all repos (${all.length - tree.length} more)`}
@@ -108,6 +129,16 @@ const prCache = new Map<string, { version: number; branch: string; pr: PrInfo | 
 /** One piece of a project's work: its PR number and title once there is a PR, else the workspace name. */
 function ProjectWorkRow({ ws }: { ws: Workspace }) {
   const s = useStore()
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
+  // The same actions as a workspace row in the plain repo list.
+  const menuItems: MenuItem[] = [
+    { label: 'Open to the side', hint: '⌘-click', onClick: () => showView(viewFor(ws.id), 'right') },
+    { kind: 'sep' },
+    { label: 'Reveal in Finder', onClick: () => void window.api.revealInFinder(ws.path) },
+    { label: 'Copy branch name', onClick: () => void navigator.clipboard.writeText(ws.branch) },
+    { kind: 'sep' },
+    { label: 'Archive workspace', onClick: () => void archiveWorkspace(ws.id) }
+  ]
   const version = s.prVersion[ws.id] ?? 0
   const cached = prCache.get(ws.id)
   const [pr, setPr] = useState<PrInfo | null>(cached?.pr ?? null)
@@ -135,10 +166,14 @@ function ProjectWorkRow({ ws }: { ws: Workspace }) {
     <div
       role="button"
       tabIndex={0}
-      onClick={() => s.selectWorkspace(ws.id)}
+      onClick={(e) => (e.metaKey ? showView(viewFor(ws.id), 'right') : s.selectWorkspace(ws.id))}
       onKeyDown={(e) => e.key === 'Enter' && s.selectWorkspace(ws.id)}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setMenuAt({ x: e.clientX, y: e.clientY })
+      }}
       title={ws.branch}
-      className={`flex h-8 items-center gap-2 rounded-md pr-2 pl-10 ${selected ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+      className={`group flex h-8 items-center gap-2 rounded-md pr-2 pl-10 ${selected ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
     >
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${asking ? 'bg-amber-400' : running ? 'animate-pulse bg-add' : pr?.state === 'MERGED' ? 'bg-violet-400' : 'bg-faint'}`} />
       {pr && <span className="shrink-0 font-mono text-[11.5px] text-sky-400">#{pr.number}</span>}
@@ -149,6 +184,22 @@ function ProjectWorkRow({ ws }: { ws: Workspace }) {
         pr.state !== 'OPEN' && <span className="shrink-0 rounded bg-raised px-1 text-[10px] text-faint">{pr.state.toLowerCase()}</span>
       ) : (
         <span className="shrink-0 rounded bg-raised px-1 text-[10px] text-faint">no PR</span>
+      )}
+      <button
+        className="hidden shrink-0 rounded p-0.5 text-faint group-hover:block hover:bg-raised hover:text-fg"
+        title="Archive workspace"
+        onClick={(e) => {
+          e.stopPropagation()
+          void archiveWorkspace(ws.id)
+        }}
+      >
+        <IconArchive width={15} height={15} />
+      </button>
+      {/* React events bubble out of the portal; keep menu clicks from also selecting the row. */}
+      {menuAt && (
+        <span onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+          <Menu anchor={null} at={menuAt} items={menuItems} onClose={() => setMenuAt(null)} />
+        </span>
       )}
     </div>
   )

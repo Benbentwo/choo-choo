@@ -38,3 +38,20 @@ describe('projects', () => {
     expect(threadTitle('   ')).toBe('New thread')
   })
 })
+
+describe('projectArchived', () => {
+  it("lists the project's archived workspaces, last archived first", async () => {
+    const { projectArchived } = await import('../src/shared/projects')
+    const g = { id: 'g1', name: 'P', repoIds: ['r1'], createdAt: 1 }
+    const w = (id: string, extra: Partial<import('../src/shared/types').Workspace>) =>
+      ({ id, repoId: 'r1', name: id, branch: id, baseRef: 'main', path: `/${id}`, title: id, createdAt: 1, ...extra }) as import('../src/shared/types').Workspace
+    const list = [
+      w('a', { orchestratorId: 'g1', archived: true, archivedAt: 5 }),
+      w('b', { orchestratorId: 'g1', archived: true, archivedAt: 9 }),
+      w('c', { orchestratorId: 'g1' }),
+      w('d', { orchestratorId: 'g2', archived: true }),
+      w('e', { groupId: 'g1', orchestrator: true, orchestratorId: 'g1', archived: true })
+    ]
+    expect(projectArchived(g, list).map((x) => x.id)).toEqual(['b', 'a'])
+  })
+})
