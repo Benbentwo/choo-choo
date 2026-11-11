@@ -10,6 +10,10 @@ The app bundles [Manrope](https://github.com/sharanda/manrope) and [JetBrains Mo
 
 The Choo Choo name, logo and app icon in [docs/brand](docs/brand) and [resources](resources) are not covered by the MIT license. See [docs/brand/README.md](docs/brand/README.md).
 
+## Lucide icons
+
+Project icons come from [Lucide](https://lucide.dev) (`lucide-react`), under the ISC license, which is MIT-compatible. The license text ships in `node_modules/lucide-react/LICENSE`.
+
 ## Claude Agent SDK
 
 The app bundles [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) and the Claude Code binary it ships with. They are not MIT licensed: their use is governed by Anthropic's terms, linked from the package's README. Choo Choo does not modify them.

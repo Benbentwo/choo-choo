@@ -422,7 +422,79 @@ async function wsForPr(id: string) {
   return ws
 }
 
+/** Clones a git URL or GitHub owner/repo into the repos folder (or `dir`) and adds it to Choo Choo. */
+async function cloneAndAdd(url: string, dir?: string): Promise<Repo> {
+  url = url.trim()
+  const root = dir?.trim() ? resolve(dir.trim().replace(/^~(?=$|\/)/, homedir())) : REPOS_ROOT
+  // owner/repo shorthand (or a github.com URL) clones through gh, so private repos use the gh login.
+  const gh_ = url.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
+  if (!gh_ && !/^(https:\/\/|git@|ssh:\/\/)/.test(url)) throw new Error('Enter owner/repo, or an https or ssh git URL')
+  mkdirSync(root, { recursive: true })
+  let dest = join(root, git.repoNameFromUrl(url))
+  for (let n = 2; existsSync(dest); n++) dest = join(root, `${git.repoNameFromUrl(url)}-${n}`)
+  if (gh_) await gh.cloneRepo(gh_, dest)
+  else await git.clone(url, dest)
+  return addRepo(dest)
+}
+
+/** The GitHub owner/name of each repo in Choo Choo, looked up once per path. */
+const slugs = new Map<string, string>()
+async function repoSlug(r: Repo): Promise<string | undefined> {
+  if (!slugs.has(r.path)) slugs.set(r.path, (existsSync(r.path) && githubSlug(await originUrl(r.path).catch(() => ''))) || '')
+  return slugs.get(r.path) || undefined
+}
+
+let myRepos: { at: number; list: Promise<Awaited<ReturnType<typeof gh.listMyRepos>>> } | null = null
+
+/** Repos in Choo Choo and on GitHub that match a query, for a project's orchestrator. */
+async function findRepos(groupId: string, query: string) {
+  const s = store.get()
+  const group = s.groups?.find((g) => g.id === groupId)
+  const words = query.toLowerCase().split(/[\s,]+/).filter(Boolean)
+  const hit = (...fields: (string | undefined)[]) => !words.length || words.some((w) => fields.some((f) => f?.toLowerCase().includes(w)))
+  const local = await Promise.all(
+    s.repos.map(async (r) => ({ name: r.name, path: r.path, github: await repoSlug(r), inProject: !!group?.repoIds.includes(r.id) }))
+  )
+  if (!myRepos || Date.now() - myRepos.at > 10 * 60_000) myRepos = { at: Date.now(), list: gh.listMyRepos() }
+  const haveSlugs = new Set(local.map((l) => l.github?.toLowerCase()).filter(Boolean))
+  let github: { nameWithOwner: string; description?: string; private?: boolean }[] = []
+  try {
+    github = (await myRepos.list)
+      .filter((r) => !haveSlugs.has(r.nameWithOwner.toLowerCase()) && hit(r.nameWithOwner, r.description ?? undefined))
+      .slice(0, 20)
+      .map((r) => ({ nameWithOwner: r.nameWithOwner, description: r.description ?? undefined, private: r.private }))
+  } catch {
+    myRepos = null
+  }
+  return { local: local.filter((l) => hit(l.name, l.github)).slice(0, 30), github }
+}
+
+/** Adds a repo to a project: one in Choo Choo by name, path or owner/name, or (with clone) a GitHub repo it clones first. */
+async function addRepoToProject(groupId: string, ref: string, opts: { clone: boolean }): Promise<Repo> {
+  const s = store.get()
+  const group = s.groups?.find((g) => g.id === groupId)
+  if (!group) throw new Error('This project was deleted')
+  const want = ref.trim().replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '')
+  let repo = s.repos.find((r) => r.id === want || r.name === want || r.path === want) ?? s.repos.find((r) => r.name.toLowerCase() === want.toLowerCase())
+  if (!repo) for (const r of s.repos) if ((await repoSlug(r))?.toLowerCase() === want.toLowerCase()) repo = r
+  if (!repo) {
+    if (!opts.clone) throw new Error(`${ref} isn't in Choo Choo yet. Ask the person to clone it with clone_repo.`)
+    if (!/^[\w.-]+\/[\w.-]+$/.test(want)) throw new Error('Pass the GitHub repo as owner/name.')
+    repo = await cloneAndAdd(want)
+  }
+  if (!group.repoIds.includes(repo.id)) group.repoIds.push(repo.id)
+  // The project's chats can read it from their next turn.
+  const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === groupId)
+  if (orch && orch.repoId !== repo.id)
+    for (const c of s.chats.filter((c) => c.workspaceId === orch.id)) c.additionalDirectories = [...new Set([...(c.additionalDirectories ?? []), repo.path])]
+  store.save()
+  send('state:changed')
+  return repo
+}
+
 const orchestratorHost: orchestrator.Host = {
+  findRepos: (groupId, query) => findRepos(groupId, query),
+  addRepoToProject,
   createWorkspace: async (repoId, source) => {
     const r = await createWorkspace(repoId, source)
     send('state:changed')
@@ -566,7 +638,7 @@ async function openGroupOrchestrator(groupId: string) {
   return { workspace: ws, chat }
 }
 
-function saveGroup(input: { id?: string; name: string; repoIds: string[] }) {
+function saveGroup(input: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }) {
   const s = store.get()
   const name = String(input?.name ?? '').trim()
   const known = new Set(s.repos.map((r) => r.id))
@@ -584,6 +656,11 @@ function saveGroup(input: { id?: string; name: string; repoIds: string[] }) {
     group.name = name
     group.repoIds = repoIds
   }
+  // Short names only; the renderer falls back to the orchestrator mark for anything it doesn't know.
+  const icon = typeof input.icon === 'string' && /^[a-z0-9-]{1,40}$/.test(input.icon) ? input.icon : undefined
+  const color = typeof input.color === 'string' && /^[a-z]{1,20}$/.test(input.color) ? input.color : undefined
+  if (input.icon !== undefined) group.icon = icon
+  if (input.color !== undefined) group.color = color
   const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === group.id)
   if (orch) orch.title = name
   store.save()
@@ -924,7 +1001,7 @@ function registerIpc() {
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))
   h('group:orchestrator', (groupId: string) => openGroupOrchestrator(groupId))
-  h('group:save', (g: { id?: string; name: string; repoIds: string[] }) => saveGroup(g))
+  h('group:save', (g: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }) => saveGroup(g))
   h('group:delete', (groupId: string) => deleteGroup(groupId))
   h('automation:save', (a: Parameters<typeof automations.save>[0]) => automations.save(a))
   h('automation:enable', (id: string, on: boolean) => automations.setEnabled(id, on))
@@ -1135,19 +1212,7 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] })
     return r.canceled ? null : (r.filePaths[0] ?? null)
   })
-  h('repo:clone', async (url: string, dir?: string) => {
-    url = url.trim()
-    const root = dir?.trim() ? resolve(dir.trim().replace(/^~(?=$|\/)/, homedir())) : REPOS_ROOT
-    // owner/repo shorthand (or a github.com URL) clones through gh, so private repos use the gh login.
-    const gh_ = url.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
-    if (!gh_ && !/^(https:\/\/|git@|ssh:\/\/)/.test(url)) throw new Error('Enter owner/repo, or an https or ssh git URL')
-    mkdirSync(root, { recursive: true })
-    let dest = join(root, git.repoNameFromUrl(url))
-    for (let n = 2; existsSync(dest); n++) dest = join(root, `${git.repoNameFromUrl(url)}-${n}`)
-    if (gh_) await gh.cloneRepo(gh_, dest)
-    else await git.clone(url, dest)
-    return addRepo(dest)
-  })
+  h('repo:clone', (url: string, dir?: string) => cloneAndAdd(url, dir))
   h('gh:repos', () => gh.listMyRepos())
   h('prs:inbox', () => loadPrInbox())
   h('models:details', () => modelDetails())

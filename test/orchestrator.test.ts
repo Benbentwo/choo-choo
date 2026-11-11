@@ -210,3 +210,38 @@ describe('project threads', () => {
     expect(orch.systemPrompt(repo, '')).not.toContain('This chat:')
   })
 })
+
+describe('project repos', () => {
+  const sdk = {
+    tool: (name: string, description: string, shape: object, handler: (a: unknown) => Promise<{ content: { text: string }[] }>) => ({ name, description, shape, handler }),
+    createSdkMcpServer: (o: { name: string; tools: { name: string }[] }) => o
+  } as never
+  type Server = { mcpServers: Record<string, { tools: { name: string; handler(a: unknown): Promise<{ content: { text: string }[] }> }[] }>; alwaysAskTools: string[] }
+
+  it('lets a project find and add repos, and asks before cloning', async () => {
+    const scope = orch.groupScope({ id: 'g7', name: 'Launch', repoIds: ['a'], createdAt: 1 }, [{ id: 'a', name: 'api', path: '/a', defaultBranch: 'main' }])
+    const calls: [string, string, boolean][] = []
+    const host = {
+      findRepos: async () => ({ local: [{ name: 'web', path: '/w', inProject: false }], github: [{ nameWithOwner: 'acme/sdk' }] }),
+      addRepoToProject: async (g: string, ref: string, o: { clone: boolean }) => {
+        calls.push([g, ref, o.clone])
+        return { id: ref, name: ref.split('/').pop()!, path: `/${ref}`, defaultBranch: 'main' }
+      }
+    } as never
+    const o = orch.queryOptions(sdk, scope, host) as Server
+    const tool = (n: string) => o.mcpServers.choo.tools.find((t) => t.name === n)!
+    expect(JSON.parse((await tool('find_repos').handler({ query: 'web' })).content[0].text).github[0].nameWithOwner).toBe('acme/sdk')
+    await tool('add_repo_to_project').handler({ repo: 'web' })
+    await tool('clone_repo').handler({ repo: 'acme/sdk', reason: 'The doc says the client lives there' })
+    expect(calls).toEqual([
+      ['g7', 'web', false],
+      ['g7', 'acme/sdk', true]
+    ])
+    expect(scope.repos.map((r) => r.name)).toEqual(['api', 'web', 'sdk'])
+    expect(o.alwaysAskTools).toEqual(['mcp__choo__clone_repo'])
+    expect(needsApproval('full', [], 'mcp__choo__find_repos')).toBe(false)
+    // A single repo's orchestrator has none of these.
+    const single = orch.queryOptions(sdk, repo, host) as Server
+    expect(single.mcpServers.choo.tools.map((t) => t.name)).not.toContain('find_repos')
+  })
+})

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import type { Chat, PrInfo, RepoGroup, Workspace } from '@shared/types'
 import { foldKey, projectThreads, projectTree, routerChat, stripRouted } from '@shared/projects'
 import { useStore, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab } from '../store'
-import { IconDown, IconOrchestrator, IconPlus, IconX } from '../icons'
+import { IconDown, IconPlus, IconX } from '../icons'
+import { ProjectIcon } from './ProjectIcon'
 
 /**
  * Projects (Settings › Experimental): the sidebar tree project › active repos › workspaces, shown
@@ -59,7 +60,7 @@ function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string
         >
           <IconDown width={12} height={12} className={isFolded ? '-rotate-90' : ''} />
         </button>
-        {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : <IconOrchestrator className="shrink-0 text-accent" />}
+        {running ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" /> : <ProjectIcon group={group} />}
         <span className={`flex-1 truncate ${unread ? 'font-semibold' : 'font-medium'}`}>{group.name}</span>
         {unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
         {count > 0 && <span className="text-[11px] text-faint group-hover:hidden">{count}</span>}
@@ -182,7 +183,7 @@ export function ThreadsPanel({ ws, activeId, onClose }: { ws: Workspace; activeI
       </div>
       <div className="flex-1 overflow-y-auto p-1.5">
         {list.map((c) => (
-          <ThreadRow key={c.id} chat={c} router={c.id === router?.id} active={c.id === activeId} onClick={() => s.setActiveChat(ws.id, c.id)} />
+          <ThreadRow key={c.id} chat={c} group={s.groups.find((g) => g.id === ws.groupId)} router={c.id === router?.id} active={c.id === activeId} onClick={() => s.setActiveChat(ws.id, c.id)} />
         ))}
         {threads.length === 0 && <div className="px-2.5 py-3 text-[12px] text-faint">No threads yet. Messages to the orchestrator chat start them, or press New.</div>}
       </div>
@@ -190,13 +191,13 @@ export function ThreadsPanel({ ws, activeId, onClose }: { ws: Workspace; activeI
   )
 }
 
-function ThreadRow({ chat, router, active, onClick }: { chat: Chat; router: boolean; active: boolean; onClick: () => void }) {
+function ThreadRow({ chat, group, router, active, onClick }: { chat: Chat; group?: RepoGroup; router: boolean; active: boolean; onClick: () => void }) {
   const items = useStore((s) => s.items[chat.id])
   const last = lastLine(items)
   return (
     <button onClick={onClick} className={`mb-0.5 flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left ${active ? 'bg-raised' : 'hover:bg-hover'}`}>
       <span className="flex items-center gap-1.5">
-        {router ? <IconOrchestrator className="shrink-0 text-accent" width={13} height={13} /> : <span className="w-3 shrink-0 text-center text-faint">#</span>}
+        {router ? <ProjectIcon group={group} size={13} /> : <span className="w-3 shrink-0 text-center text-faint">#</span>}
         <span className={`flex-1 truncate ${chat.unread && !active ? 'font-semibold' : 'font-medium'}`}>{router ? 'Orchestrator chat' : chat.title}</span>
         {chat.status === 'running' && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-add" />}
         {chat.status !== 'running' && chat.unread && !active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />}

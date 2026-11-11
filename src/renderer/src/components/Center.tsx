@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Workspace } from '@shared/types'
+import { ProjectIcon } from './ProjectIcon'
 import { useStore, openGroupOrchestrator, openDoc, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread, closeReflect } from '../store'
 import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart, IconPhone } from '../icons'
 import { ChatView } from './ChatView'
@@ -84,6 +85,7 @@ export function Center({ ws }: { ws: Workspace }) {
         {partOf && (
           <>
             <button className="no-drag text-muted hover:text-fg" onClick={() => void openGroupOrchestrator(partOf.id)} title="Open the project's orchestrator chat">
+              <ProjectIcon group={partOf} size={12} className="mr-1 inline align-[-1px]" />
               {partOf.name}
             </button>
             <IconRight className="text-faint" />
