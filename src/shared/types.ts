@@ -34,6 +34,10 @@ export interface RepoGroup {
   name: string
   repoIds: string[]
   createdAt: number
+  /** Icon name from the project icon set (renderer ProjectIcon.tsx). Missing: the orchestrator mark. */
+  icon?: string
+  /** A PROJECT_COLORS id. Missing: the theme accent. */
+  color?: string
 }
 
 /** What a new workspace starts from, besides a fresh branch off the default branch. */
@@ -873,7 +877,7 @@ export interface Api {
   /** Opens a project group's orchestrator, creating it the first time. */
   openGroupOrchestrator(groupId: string): Promise<{ workspace: Workspace; chat: Chat }>
   /** Creates or updates a project group. */
-  saveGroup(group: { id?: string; name: string; repoIds: string[] }): Promise<RepoGroup>
+  saveGroup(group: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }): Promise<RepoGroup>
   /** Deletes the group and hides its orchestrator. Workspaces and memory stay. */
   deleteGroup(groupId: string): Promise<void>
   /** Creates or updates an automation. */

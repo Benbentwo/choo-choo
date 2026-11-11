@@ -306,8 +306,10 @@ export async function send(
     const extras = settings.extras
     const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, systemAppend(extras, !!chat.planMode))
     // `autoAllowTools` is ours, not the SDK's: tools the caller vouches for as read-only.
-    const { autoAllowTools, ...extra } = (extraOptions?.(sdkMod) ?? {}) as Record<string, unknown> & { autoAllowTools?: string[] }
+    // `alwaysAskTools`: tools that need the person's OK even when the chat allows everything.
+    const { autoAllowTools, alwaysAskTools, ...extra } = (extraOptions?.(sdkMod) ?? {}) as Record<string, unknown> & { autoAllowTools?: string[]; alwaysAskTools?: string[] }
     const autoAllow = new Set(autoAllowTools ?? [])
+    const alwaysAsk = new Set(alwaysAskTools ?? [])
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
       if (toolName === 'ExitPlanMode' && chat.planMode) {
         // The plan card asks the user; the agent must not start building on its own.
@@ -316,7 +318,7 @@ export async function send(
       // A question for the user always goes to the user, whatever the permission setting:
       // allowing it without answers makes Claude carry on as if nobody replied.
       const question = toolName === 'AskUserQuestion'
-      if (!question && (autoAllow.has(toolName) || !needsApproval(chat.permission, chat.alwaysAllow, toolName))) return { behavior: 'allow', updatedInput: input }
+      if (!question && !alwaysAsk.has(toolName) && (autoAllow.has(toolName) || !needsApproval(chat.permission, chat.alwaysAllow, toolName))) return { behavior: 'allow', updatedInput: input }
       const req: PermissionRequest = { id: randomUUID(), chatId: chat.id, toolName, input }
       const { decision, answers } = await new Promise<Answer>((resolve) => {
         pending.set(req.id, { req, resolve })

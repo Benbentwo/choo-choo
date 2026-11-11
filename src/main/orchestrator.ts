@@ -45,6 +45,10 @@ export interface Host {
   sendToCloud(chat: Chat, ws: Workspace, text: string): Promise<void>
   /** The pull request for the workspace's branch and its checks. */
   prStatus(ws: Workspace): Promise<{ pr: PrInfo | null; checks: CheckRun[] }>
+  /** Repos the person has in Choo Choo, and GitHub repos they can reach, matching a query. Projects only. */
+  findRepos?(groupId: string, query: string): Promise<{ local: { name: string; path: string; github?: string; inProject: boolean }[]; github: { nameWithOwner: string; description?: string; private?: boolean }[] }>
+  /** Adds a repo to the project: one already in Choo Choo by name, or a GitHub owner/name it clones. Projects only. */
+  addRepoToProject?(groupId: string, ref: string, opts: { clone: boolean }): Promise<Repo>
 }
 
 /**
@@ -125,7 +129,8 @@ export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[
     ? [
         `You are the orchestrator for the ${scope.name} project in Choo Choo. It spans these repositories:`,
         ...scope.repos.map((r) => `- ${r.name} at ${r.path}`),
-        'The person tells you what they want; you get it done by directing other agents. Pass `repo` to start_workspace to say which repository each piece of work belongs in. Work that spans repos gets one workspace per repo.'
+        'The person tells you what they want; you get it done by directing other agents. Pass `repo` to start_workspace to say which repository each piece of work belongs in. Work that spans repos gets one workspace per repo.',
+        "The project isn't limited to these. When the docs, the code or what the person tells you point at another repository (a service named in a doc, a shared library, a client of this API), call find_repos. If it is already in Choo Choo, add it with add_repo_to_project and say so. If it isn't, ask with clone_repo, which shows the person an approval card. Don't add repos on a hunch."
       ]
     : [`You are the orchestrator for the ${scope.name} repository in Choo Choo. The person tells you what they want; you get it done by directing other agents.`]
   return [
@@ -293,14 +298,14 @@ export function queryOptions(
   const { tool, createSdkMcpServer } = sdk
   const inScope = (w: Workspace) => scope.repos.some((r) => r.id === w.repoId)
   const live = () => store.get().workspaces.filter((w) => inScope(w) && !w.archived && !w.orchestrator)
-  const repoNames = scope.repos.map((r) => r.name)
+  const repoNames = () => scope.repos.map((r) => r.name)
   const pickRepo = (name?: string): Repo => {
     if (!name) {
       if (scope.repos.length === 1) return scope.repos[0]
-      throw new Error(`Say which repo with \`repo\`: one of ${repoNames.join(', ')}.`)
+      throw new Error(`Say which repo with \`repo\`: one of ${repoNames().join(', ')}.`)
     }
     const r = scope.repos.find((x) => x.name === name || x.id === name) ?? scope.repos.find((x) => x.name.toLowerCase() === name.toLowerCase())
-    if (!r) throw new Error(`No repo ${name} here. Use one of ${repoNames.join(', ')}.`)
+    if (!r) throw new Error(`No repo ${name} in this ${scope.group ? 'project' : 'repo'}. Use one of ${repoNames().join(', ')}${scope.group ? ', or add it with add_repo_to_project' : ''}.`)
     return r
   }
 
@@ -343,7 +348,7 @@ export function queryOptions(
       'Create a new workspace (worktree, branch and agent) and give its agent a task. Returns right away; the agent works in the background. To continue an existing pull request or branch, pass pr or branch so the workspace starts on it and shows that PR.',
       {
         task: z.string().describe('Complete instructions for the agent. It cannot see this conversation.'),
-        ...(scope.group ? { repo: z.string().describe(`Which repository: ${repoNames.join(', ')}.`) } : {}),
+        ...(scope.group ? { repo: z.string().describe(`Which repository: ${repoNames().join(', ')}, or one you added with add_repo_to_project.`) } : {}),
         where: z.enum(['local', 'cloud']).optional().describe('local (default) runs on this Mac. cloud runs in a Claude Code cloud session that keeps going with the Mac closed.'),
         model: z.enum(['opus', 'fable', 'sonnet', 'haiku', 'codex']).optional().describe('Defaults to the person\'s default model. Ignored in the cloud.'),
         plan_first: z.boolean().optional().describe('Start in plan mode: the agent proposes a plan and waits instead of editing. Local only.'),
@@ -508,8 +513,42 @@ export function queryOptions(
     )
   ]
 
+  // A project takes in more repos as docs or the person point at them. Cloning a new one asks first.
+  const find = scope.group ? host.findRepos : undefined
+  const add = scope.group ? host.addRepoToProject : undefined
+  const joined = (repo: Repo) => {
+    if (!scope.repos.some((r) => r.id === repo.id)) scope.repos.push(repo)
+    return text(JSON.stringify({ added: repo.name, path: repo.path, note: 'Pass this name as repo to start_workspace. You can read its files from the next turn on.' }))
+  }
+  const projectTools =
+    find && add
+      ? [
+          tool(
+            'find_repos',
+            'Find repositories outside this project: ones already in Choo Choo, and GitHub repos the person can access. Matches names and descriptions.',
+            { query: z.string().describe('Words from the repo name or description, or an owner/name.') },
+            async (a) => text(JSON.stringify(await find(scope.id, a.query), null, 2))
+          ),
+          tool(
+            'add_repo_to_project',
+            'Add a repository that is already in Choo Choo (find_repos lists it under local) to this project, so you can start workspaces in it.',
+            { repo: z.string().describe('The repo name from find_repos local.') },
+            async (a) => joined(await add(scope.id, a.repo, { clone: false }))
+          ),
+          tool(
+            'clone_repo',
+            'Ask the person to clone a GitHub repository they can access and add it to this project. They see an approval card with your reason. Only for a repo not yet in Choo Choo.',
+            {
+              repo: z.string().describe('owner/name on GitHub.'),
+              reason: z.string().describe('One sentence on why the work needs it, shown to the person.')
+            },
+            async (a) => joined(await add(scope.id, a.repo, { clone: true }))
+          )
+        ]
+      : []
+
   // The orchestrator chat routes; threads start the work.
-  const ownTools = role?.kind === 'router' ? [...tools.filter((t) => t.name !== 'start_workspace'), ...routerTools(tool, role)] : tools
+  const ownTools = [...(role?.kind === 'router' ? [...tools.filter((t) => t.name !== 'start_workspace'), ...routerTools(tool, role)] : tools), ...projectTools]
 
   const context = { repoIds: scope.repos.map((r) => r.id) }
   const addonServers = Object.fromEntries(
@@ -534,6 +573,8 @@ export function queryOptions(
     disallowedTools: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'],
     // Add-on tools that only read need no OK from the person, like the built-in ones below.
     // An automation's start_workspace is vouched for by the person who made it; the app caps it.
+    // Cloning a repo the person hasn't added always asks, whatever the chat's permission setting.
+    alwaysAskTools: projectTools.length ? ['mcp__choo__clone_repo'] : [],
     autoAllowTools: [...addons.flatMap((set) => set.tools.filter((t) => t.readOnly).map((t) => `mcp__${set.server}__${t.name}`)), ...(run ? ['mcp__choo__start_workspace'] : [])]
   }
 }
@@ -576,7 +617,7 @@ function routerTools(tool: typeof import('@anthropic-ai/claude-agent-sdk').tool,
 }
 
 /** Tools that only read, so they never need the person's OK. */
-export const READ_ONLY = ['list_workspaces', 'read_workspace', 'wait_for_workspaces', 'pr_status', 'list_threads'].map((t) => `mcp__choo__${t}`)
+export const READ_ONLY = ['list_workspaces', 'read_workspace', 'wait_for_workspaces', 'pr_status', 'list_threads', 'find_repos'].map((t) => `mcp__choo__${t}`)
 
 /** The message that wakes an idle orchestrator when workspaces it started finish. */
 export function autoUpdatePrompt(done: { title: string; id: string; state: 'finished' | 'error' | 'needs-approval' }[]): string {

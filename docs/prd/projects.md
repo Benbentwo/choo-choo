@@ -41,6 +41,13 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 
 ![A PR row opens its workspace](../media/projects/pr-row.png)
 
+- **More repos as the work needs them:** a project isn't fixed to the repos it started with. When docs, code or your messages point at another repo, the orchestrator looks it up (`find_repos`: repos in Choo Choo and GitHub repos you can access). A repo already in Choo Choo is added to the project on its own (`add_repo_to_project`) and the orchestrator says so. A repo you'd have to clone shows an approval card with the orchestrator's reason (`clone_repo`), whatever the chat's permission setting; approving clones it into the repos folder and adds it. Either way, the repo then shows under the project and workspaces can start in it.
+- **Icon and color:** Edit (hover the project) picks an icon from a set of about 50 Lucide icons and one of eleven colors, or the theme accent. It shows in the sidebar, the Threads panel and a workspace's project breadcrumb. Projects that never picked one keep the orchestrator mark.
+
+![Project icons in the sidebar](../media/projects/icons-sidebar.png)
+
+![Icon and color picker](../media/projects/icons-picker.png)
+
 ## Requirements
 
 1. Off by default (`Settings.experimentalProjects`). Off, everything behaves as before.
@@ -52,11 +59,15 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 7. New chat on a project orchestrator makes a thread. A thread named "New thread" takes its title from its first message.
 8. The sidebar tree lists open workspaces with `orchestratorId` equal to the project, by repo, newest first. PR numbers come from `getPr`, cached per workspace until the PR watcher reports a change.
 9. Fold state lives in `Settings.sidebarCollapsed` with keys `section:projects`, `project:<id>` and `project:<id>:<repoId>`.
+10. A project's orchestrator never clones a repo without the person's OK: `clone_repo` is in `alwaysAskTools`, which asks even when the chat allows everything. Adding a repo the person already has needs no OK.
+11. `RepoGroup.icon` is a name from the renderer's icon set and `RepoGroup.color` a `PROJECT_COLORS` id; the main process accepts only short lowercase names, and unknown ones fall back to the default mark.
 
 ## Design
 
 - `src/shared/projects.ts`: pure helpers (router chat, threads, update target, sidebar tree, thread titles, fold keys). Tested in `test/projects.test.ts`.
 - `src/main/orchestrator.ts`: `ProjectRole` (router or thread, with list/create/forward). `queryOptions` and `systemPrompt` take it; the router gets `routerTools`.
+- Repos: `Host.findRepos` and `Host.addRepoToProject` (`src/main/index.ts`, cloning through the same `cloneAndAdd` as Open GitHub project). Added repos join `group.repoIds`, and the orchestrator's chats get them as extra readable folders from the next turn. `alwaysAskTools` is a new `queryOptions` field `agent.ts` honors.
+- Icons: `components/ProjectIcon.tsx` (`lucide-react`, ISC; see THIRD_PARTY_NOTICES.md).
 - `src/main/index.ts`: `projectRole()` picks the role per chat, `newThread()` makes threads (also from `chat:create`), `noteForOrchestrator` uses `updateTarget`.
 - Renderer: `components/Projects.tsx` (sidebar section, PR rows, Threads panel, route chip), `Center.tsx` (Threads button, one chat at a time), `ChatView.tsx` (route chip, forwarded-message label), Settings › Experimental.
 
@@ -66,7 +77,7 @@ Runs on the Agent SDK with the person's own sign-in like every chat ([decision 0
 
 ## Testing
 
-`test/projects.test.ts`, `test/orchestrator.test.ts` (project threads). Screenshots above are from the built app with a seeded state and a stand-in `gh`.
+`test/projects.test.ts`, `test/orchestrator.test.ts` (project threads, project repos). Screenshots above are from the built app with a seeded state and a stand-in `gh`.
 
 ## Future work
 
