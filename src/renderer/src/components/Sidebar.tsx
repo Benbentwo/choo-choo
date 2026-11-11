@@ -275,7 +275,7 @@ export function Sidebar() {
           const orchHidden = rowHidden(orchestratorRowKey(repo.id))
           const showWs = (w: Workspace) => !w.orchestrator || !orchHidden || s.selectedWs === w.id || s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
           const wss = sortWs(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId && plain(w) && showWs(w))).sort((a, b) => Number(!!b.orchestrator) - Number(!!a.orchestrator))
-          const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived && !w.orchestrator).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
+          const archived = s.workspaces.filter((w) => w.repoId === repo.id && w.archived && !w.orchestrator && plain(w)).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           const wsIds = wss.filter((w) => !w.orchestrator).map((w) => w.id)
           const collapsed = (s.settings.sidebarCollapsed ?? []).includes(repo.id)
           const childIds = new Set(s.workspaces.filter((w) => w.repoId === repo.id && !w.archived && !w.groupId && plain(w)).map((w) => w.id))

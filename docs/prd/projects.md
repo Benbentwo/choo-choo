@@ -48,6 +48,12 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 
 ![Icon and color picker](../media/projects/icons-picker.png)
 
+- **Archiving:** project rows archive like plain workspace rows. Hover a row for the archive button, or right-click it for Open to the side, Reveal in Finder, Copy branch name and Archive workspace. Archived workspaces list under their project behind "Archived (N)", newest first, each with its repo and a Restore button on hover. They no longer show in the plain repo's archived list. Archiving keeps the branch and the transcript and follows "Delete archived workspaces after" in Settings, the same as any workspace.
+
+![Archived list under a project](../media/projects/archived-list.png)
+
+![Right-click menu on a project row](../media/projects/row-menu.png)
+
 ## Requirements
 
 1. Off by default (`Settings.experimentalProjects`). Off, everything behaves as before.

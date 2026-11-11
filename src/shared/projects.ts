@@ -45,6 +45,11 @@ export function projectWorkspaces(group: RepoGroup, workspaces: Workspace[]): Wo
   return workspaces.filter((w) => !w.archived && !w.orchestrator && w.orchestratorId === group.id)
 }
 
+/** A project's archived workspaces, most recently archived first, for its Archived list. */
+export function projectArchived(group: RepoGroup, workspaces: Workspace[]): Workspace[] {
+  return workspaces.filter((w) => w.archived && !w.orchestrator && w.orchestratorId === group.id).sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
+}
+
 /** Whether a workspace belongs to some project, so the plain repo list leaves it out. */
 export function inProject(ws: Workspace, groups: RepoGroup[]): boolean {
   return !!ws.orchestratorId && groups.some((g) => g.id === ws.orchestratorId)
