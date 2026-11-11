@@ -46,7 +46,8 @@ describe('GitHub stack helpers', () => {
 })
 
 // End to end against real git and a stand-in gh (test/fixtures/fake-gh.cjs): link, then merge through the middle PR.
-describe('link and merge through', () => {
+// Several hundred git and fake-gh process spawns, which can pass 5s on a busy macOS runner.
+describe('link and merge through', { timeout: 30_000 }, () => {
   const run = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
   let ws: Workspace
   let stateFile: string
