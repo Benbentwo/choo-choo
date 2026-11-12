@@ -15,7 +15,7 @@ import { AddonActions, AddonFrame, addonTabId, addonViews } from './Addons'
 import { StackTab } from './Stack'
 import { PrSyncBanner } from './ReviewFollowUp'
 import { SinceReviewToggle } from './SinceReview'
-import { useSinceReview } from '../sinceReview'
+import { useSinceReview, useViewed } from '../sinceReview'
 import { prBaseFor } from '@shared/stack'
 import * as L from '@shared/layout'
 
@@ -170,6 +170,7 @@ const STATUS_COLOR: Record<FileChange['status'], string> = {
 function ChangesList({ ws, changes: all }: { ws: Workspace; changes: FileChange[] }) {
   const s = useStore()
   const since = useSinceReview(ws)
+  const viewed = useViewed(ws)
   const changes: FileChange[] = since.on && since.data ? since.data.files : all
   const toggle = <SinceReviewToggle ws={ws} className="border-b border-line px-4 py-2" />
   const add = changes.reduce((n, c) => n + c.additions, 0)
@@ -187,6 +188,7 @@ function ChangesList({ ws, changes: all }: { ws: Workspace; changes: FileChange[
       <div className="flex items-center px-4 py-2 text-muted">
         <span className="flex-1">
           {changes.length} file{changes.length === 1 ? '' : 's'} changed
+          {viewed && viewed.count > 0 && <span className="ml-2 text-faint">{viewed.count} viewed</span>}
         </span>
         <span className="font-mono text-[11px]">
           <span className="text-add">+{fmt(add)}</span> <span className="text-del">-{fmt(del)}</span>
@@ -204,8 +206,13 @@ function ChangesList({ ws, changes: all }: { ws: Workspace; changes: FileChange[
           >
             <span className="min-w-0 flex-1 truncate">
               {slash >= 0 && <span className="text-faint">{c.path.slice(0, slash + 1)}</span>}
-              <span className={c.status === 'D' ? 'line-through' : ''}>{c.path.slice(slash + 1)}</span>
+              <span className={`${c.status === 'D' ? 'line-through' : ''} ${viewed?.isViewed(c.path) ? 'text-faint' : ''}`}>{c.path.slice(slash + 1)}</span>
             </span>
+            {viewed?.isViewed(c.path) && (
+              <span className="text-[11px] text-add" title="Viewed on GitHub">
+                ✓
+              </span>
+            )}
             <span className={`font-mono text-[11px] ${STATUS_COLOR[c.status]}`}>{c.status}</span>
             <span className="w-16 text-right font-mono text-[11px]">
               {c.additions > 0 && <span className="text-add">+{fmt(c.additions)}</span>}

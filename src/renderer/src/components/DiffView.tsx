@@ -6,7 +6,7 @@ import { useReview } from '../review'
 import { pairedSegs } from '../wordDiff'
 import { FindBar } from './FindBar'
 import { SinceReviewToggle } from './SinceReview'
-import { useSinceReview } from '../sinceReview'
+import { useSinceReview, useViewed } from '../sinceReview'
 import { usePrDiffTarget, usePrReview, sendToAgent, useWorkspaceMode } from '../prReview'
 import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import type { ReviewFinding } from '@shared/types'
@@ -101,6 +101,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   // an unchanged diff is the same string and doesn't re-render.
   // Since your review: only what the author changed in this file since then, base-branch changes left out.
   const since = useSinceReview(ws)
+  const viewed = useViewed(ws)
   const sinceOn = since.on && !!since.data
   const sinceHas = sinceOn && since.data!.files.some((f) => f.path === file)
   const sinceKey = sinceOn ? `${since.data!.from}:${since.data!.to}:${sinceHas}` : ''
@@ -380,6 +381,12 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     <div ref={box} className="selectable flex-1 overflow-auto font-mono text-[12px] leading-[20px] [container-type:inline-size]">
       <div className="sticky top-0 left-0 z-10 flex h-[34px] w-[100cqw] items-center gap-3 border-b border-line bg-panel px-4 text-muted">
         <span className="min-w-0 flex-1 truncate">{file}</span>
+        {viewed && (
+          <label className="flex shrink-0 cursor-pointer items-center gap-1.5 font-sans text-[12px]" title="GitHub's Viewed tick for this file. GitHub clears it when the file changes.">
+            <input type="checkbox" checked={viewed.isViewed(file)} onChange={() => void viewed.toggle(file).catch(reportError)} />
+            Viewed
+          </label>
+        )}
         <FindBar box={box} watch={diff} />
       </div>
       <SinceReviewToggle ws={ws} className="sticky left-0 w-[100cqw] border-b border-line bg-panel px-4 py-2" />

@@ -247,3 +247,30 @@ export function issueContext(number: number, issue: { title: string; body: strin
     `<issue_body>\n${esc(issue.body.trim())}\n</issue_body>`
   ].join('\n\n')
 }
+
+/** GitHub's per-file "Viewed" ticks on a PR, for the signed-in user, and the PR's node id for changing them. */
+export async function prViewed(cwd: string, number: number): Promise<{ prId: string; files: Record<string, 'VIEWED' | 'UNVIEWED' | 'DISMISSED'> }> {
+  const files: Record<string, 'VIEWED' | 'UNVIEWED' | 'DISMISSED'> = {}
+  let prId = ''
+  let after: string | null = null
+  // 100 files a page; PRs past 3000 files are rare and the rest just show unticked.
+  for (let page = 0; page < 30; page++) {
+    const query: string = `query($owner: String!, $name: String!, $number: Int!${after ? ', $after: String!' : ''}) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id files(first: 100${after ? ', after: $after' : ''}) { nodes { path viewerViewedState } pageInfo { hasNextPage endCursor } } } } }`
+    const args: string[] = ['api', 'graphql', '-F', 'owner={owner}', '-F', 'name={repo}', '-F', `number=${number}`, '-f', `query=${query}`]
+    if (after) args.push('-f', `after=${after}`)
+    const { stdout }: { stdout: string } = await exec('gh', args, { cwd, maxBuffer: 16 * 1024 * 1024, timeout: 30_000 })
+    const pr = JSON.parse(stdout).data?.repository?.pullRequest
+    if (!pr) break
+    prId = pr.id
+    for (const f of pr.files?.nodes ?? []) if (f?.path) files[f.path] = f.viewerViewedState
+    if (!pr.files?.pageInfo?.hasNextPage) break
+    after = pr.files.pageInfo.endCursor
+  }
+  return { prId, files }
+}
+
+/** Ticks or unticks a file's "Viewed" box on GitHub. */
+export async function setPrViewed(cwd: string, prId: string, path: string, viewed: boolean) {
+  const m = viewed ? 'markFileAsViewed' : 'unmarkFileAsViewed'
+  await graphql(cwd, `mutation($id: ID!, $path: String!) { ${m}(input: {pullRequestId: $id, path: $path}) { clientMutationId } }`, { id: prId, path })
+}

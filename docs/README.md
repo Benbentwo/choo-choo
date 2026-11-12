@@ -38,7 +38,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Plugins and skills](prd/plugins.md) | In review |
 | [Managing projects, and PR status](prd/projects-and-pr-status.md) | In review |
 | [PRs page](prd/pr-inbox.md) | Shipped |
-| [Review updates: notify on meaningful PR changes, Since your review](prd/review-updates.md) | In progress |
+| [Review updates: notify on meaningful PR changes, Since your review](prd/review-updates.md) | Shipped |
 | [Add-ons](prd/add-ons.md) | Shipped: views, background pages, orchestrator tools, project pins; Plan board next |
 | [Arranging and renaming workspaces](prd/sidebar-workspaces.md) | In review |
 | [Stacked PRs](prd/stacked-prs.md) | In review |

@@ -216,3 +216,13 @@ describe('GitHub details', () => {
     })
   })
 })
+
+describe('automations', () => {
+  it('turn review updates into events keyed by what changed', async () => {
+    const { reviewUpdateEvents, GITHUB_EVENTS, isReviewEvent } = await import('../src/shared/automations')
+    const [e] = reviewUpdateEvents([{ pr: pr(), reasons: [{ label: '2 files changed since your review', key: 'code:h2' }, { label: 'answered your comment', key: 'reply:t1:x' }] }])
+    expect(e).toMatchObject({ event: 'review_update', repo: 'example-org/web-app', number: 61, detail: 'changed for you since your review: 2 files changed since your review, answered your comment', key: 'review_update:example-org/web-app#61:code:h2|reply:t1:x' })
+    expect(GITHUB_EVENTS.some((x) => x.id === 'review_update')).toBe(true)
+    expect(isReviewEvent('review_update')).toBe(true)
+  })
+})

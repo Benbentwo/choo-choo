@@ -34,7 +34,7 @@ Some work starts the same way every time: a new bug lands in the tracker, CI goe
 ![Editor](../media/automations/editor.png)
 
 - **When**: every few hours, every day, weekdays, once a week (at a time), on a GitHub event, or only by hand.
-- **GitHub events**: a PR asks for my review, CI fails on my PR, my PR gets a review (approved or changes requested), a new issue is opened, a new PR is opened. The last two take an optional label, so only items with that label count. Checked every two minutes while the app is open, only in the target's repos.
+- **GitHub events**: a PR asks for my review, a PR I'm reviewing changed for me (from [Review updates](review-updates.md): the PR's own code changed, someone answered your comment, or you were asked again; merges from main don't count; checked on the Settings › Reviews interval), CI fails on my PR, my PR gets a review (approved or changes requested), a new issue is opened, a new PR is opened. The last two take an optional label, so only items with that label count. Checked every two minutes while the app is open, only in the target's repos.
 - **Results go to**:
   - a project: runs post in a thread named after the automation (it shows in the Threads panel), and their workspaces list under the project;
   - a repo: runs post in a chat on that repo's orchestrator, and their workspaces list under the repo.
