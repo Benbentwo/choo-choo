@@ -141,6 +141,17 @@ export function AppearanceSettings() {
         <Segmented value={a.density} options={DENSITIES.map((d) => ({ id: d, label: d[0].toUpperCase() + d.slice(1) }))} onChange={(v) => void save({ density: v })} />
       </Section>
 
+      <Section title="Chat format" hint="Compact folds each stretch of tool calls, and Claude's notes between them, into one Working row you can open. Claude's answer stays in view.">
+        <Segmented
+          value={s.chatFormat ?? 'full'}
+          options={[
+            { id: 'full', label: 'Full' },
+            { id: 'compact', label: 'Compact' }
+          ]}
+          onChange={(v) => void save({ chatFormat: v })}
+        />
+      </Section>
+
       <Section title="Fonts">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <label className="flex items-center gap-2 text-muted">
