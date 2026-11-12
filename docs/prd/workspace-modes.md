@@ -30,7 +30,7 @@ On a workspace with an open PR, the top right held a Review button, a comments p
 ![Reviewing a coworker's PR](../media/workspace-mode-review.png)
 
 - **Build | Review switch** in the workspace header, after the branch. It starts in Review on someone else's open PR and in Build everywhere else. Clicking the other side switches; clicking back to the automatic choice forgets the override. On a coworker's PR the switch is followed by "alex's PR" (Review) or "on alex's PR" (Build, for collaborating); its tooltip says whether you approved.
-- **Top right**: a PR chip (`#212`, a checks dot, a comment count) that opens the PR on GitHub, and one primary button.
+- **Top right**: a PR chip (`#212`, a checks dot, a comment count) that opens the PR on GitHub, and one primary button. Both stay empty until the workspace's PR has been looked up, so switching workspaces never flashes Create PR before showing the existing PR.
   - Build: Create PR, then Resolve conflicts, Fix checks, Address N comments, Merge, in that order of need. Otherwise it states where the PR is (Waiting for review, Checks running, Mark ready, Merged). Its menu holds Open on GitHub, Fix failing checks, Squash and merge, Add all comments to chat, Mark ready, Update branch and Stack a PR on top.
   - Review: **Submit review (N drafts)**, which opens the Review tab with your GitHub review. Merge, stacking and adding comments to chat are hidden.
 - **Right panel tabs**: Build shows Changes, Checks, Review (and Stack). Review shows Review, Files, Checks (and Stack). All files, Artifacts and Usage (was Graphs) are under **More**. Reviewing opens on the Review tab.

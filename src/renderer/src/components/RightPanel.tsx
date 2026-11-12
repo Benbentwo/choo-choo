@@ -221,7 +221,11 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const s = useStore()
   const stats = s.stats[ws.id]
   const repo = s.repos.find((r) => r.id === ws.repoId)
-  const [pr, setPr] = useState<PrInfo | null>(null)
+  // Which workspace `pr` was loaded for. Until it matches, the PR state is unknown and nothing renders,
+  // so switching workspaces never flashes "Create PR" (or the last workspace's PR) before GitHub answers.
+  const [loaded, setLoaded] = useState<{ wsId: string; pr: PrInfo | null } | null>(null)
+  const pr = loaded?.wsId === ws.id ? loaded.pr : null
+  const setPr = (p: PrInfo | null) => setLoaded({ wsId: ws.id, pr: p })
   const [menu, setMenu] = useState(false)
   const [busy, setBusy] = useState(false)
   const [comments, setComments] = useState<PrComment[]>([])
@@ -239,7 +243,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
     const load = () =>
       void window.api.getPr(ws.id).then((p) => {
         if (!live) return
-        setPr(p)
+        setLoaded({ wsId: ws.id, pr: p })
         const set = (v: { pr: PrInfo; info: PrReviewInfo } | null) => {
           const st = useStore.getState()
           st.set({ prReview: { ...st.prReview, [ws.id]: v } })
@@ -256,6 +260,9 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
         )
         if (p?.state !== 'OPEN') return setChecks([])
         window.api.getChecks(ws.id).then((c) => live && setChecks(c), () => {})
+      }, () => {
+        // GitHub unreachable: keep what this workspace last showed, or offer Create PR if it never loaded.
+        if (live) setLoaded((l) => (l?.wsId === ws.id ? l : { wsId: ws.id, pr: null }))
       })
     setAddedAt(localStorage.getItem(addedKey(ws.id)) ?? undefined)
     load()
@@ -362,6 +369,8 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const { mode } = useWorkspaceMode(ws)
   const drafts = (s.codeComments[ws.id] ?? []).filter((c) => destOf(c) === 'github').length
   const color = pr?.state === 'MERGED' ? 'text-violet-400' : pr?.state === 'CLOSED' ? 'text-del' : pr?.isDraft ? 'text-muted' : 'text-add'
+  // No default while the PR lookup is in flight: the chip and button appear once we know.
+  if (loaded?.wsId !== ws.id) return null
   return (
     <>
       {pr && (
