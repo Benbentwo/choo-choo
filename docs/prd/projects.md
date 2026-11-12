@@ -65,18 +65,9 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 5. Threads have the full orchestrator tool set plus `take_workspace`. A workspace started in a thread records `threadId`: that thread owns it and its PR, and its updates go there. In a thread, `list_workspaces` returns the thread's own workspaces unless `all` is set, and each entry names its owning thread.
 6. Every thread shares the project's memory and can see every workspace in the project. Its prompt tells it to leave other threads' workspaces alone unless the person asks ([decision 0017](../decisions/0017-threads-own-their-prs.md)).
 7. New chat on a project orchestrator makes a thread. A thread named "New thread" takes its title from its first message.
-<<<<<<< Updated upstream
 8. The sidebar tree lists open workspaces with `orchestratorId` equal to the project, by owning thread (newest thread first, unowned last), then repo, newest workspace first. PR numbers come from `getPr`, cached per workspace until the PR watcher reports a change.
-9. Fold state lives in `Settings.sidebarCollapsed` with keys `section:projects`, `project:<id>`, `project:<id>:thread:<threadId>` and `project:<id>:thread:<threadId>:<repoId>` (`none` for unowned work).
-10. A project's orchestrator never clones a repo without the person's OK: `clone_repo` is in `alwaysAskTools`, which asks even when the chat allows everything. Adding a repo the person already has needs no OK.
-=======
-8. The sidebar tree lists open workspaces with `orchestratorId` equal to the project, by repo, newest first. PR numbers come from `getPr`, cached per workspace until the PR watcher reports a change.
-9. Fold state lives in `Settings.sidebarCollapsed` with keys `section:projects`, `project:<id>` and `project:<id>:<repoId>`.
+9. Fold state lives in `Settings.sidebarCollapsed` with keys `section:projects`, `section:repos` (the Repos list below the projects), `project:<id>`, `project:<id>:thread:<threadId>` and `project:<id>:thread:<threadId>:<repoId>` (`none` for unowned work).
 10. A project's orchestrator never clones a repo without the person's OK: `clone_repo` is in `alwaysAskTools`, which asks even when the chat allows everything, until the person picks Always allow for it on a card in that chat. Adding a repo the person already has needs no OK.
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 11. `RepoGroup.icon` is a name from the renderer's icon set and `RepoGroup.color` a `PROJECT_COLORS` id; the main process accepts only short lowercase names, and unknown ones fall back to the default mark.
 
 ## Design

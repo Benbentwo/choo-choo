@@ -17,16 +17,8 @@ import { BrandMark } from './BrandMark'
 import { UpdateBanners } from './Updates'
 import { AddonActions, addonViews } from './Addons'
 import { ProjectsSection } from './Projects'
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-import { inProject } from '@shared/projects'
+import { foldKey, inProject } from '@shared/projects'
 import { buildLabel, sidebarVersion, type BuildInfo } from '@shared/uiComment'
-=======
-import { inProject, foldKey } from '@shared/projects'
->>>>>>> Stashed changes
-=======
-import { inProject, foldKey } from '@shared/projects'
->>>>>>> Stashed changes
 
 export function Sidebar() {
   const s = useStore()

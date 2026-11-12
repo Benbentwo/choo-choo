@@ -101,7 +101,6 @@ export function pendingPermissions(): PermissionRequest[] {
   return [...pending.values()].map((p) => p.req)
 }
 
-/** Whether a tool call needs the user's OK under a chat's permission setting. */
 /**
  * Whether a call to a tool on a chat's always-ask list still needs the person's OK. The list overrides
  * the chat's permission setting, but not the person's own "Always allow" for that tool in this chat:
@@ -111,6 +110,7 @@ export function alwaysAskNeedsOk(alwaysAllow: string[] | undefined, toolName: st
   return !alwaysAllow?.includes(toolName)
 }
 
+/** Whether a tool call needs the user's OK under a chat's permission setting. */
 export function needsApproval(permission: Chat['permission'], alwaysAllow: string[] | undefined, toolName: string): boolean {
   if (!permission || permission === 'full') return false
   if (READ_ONLY_TOOLS.has(toolName) || alwaysAllow?.includes(toolName)) return false
