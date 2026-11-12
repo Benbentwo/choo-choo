@@ -5,6 +5,8 @@ import { IconBot, IconGithub, IconX } from '../icons'
 import { useReview } from '../review'
 import { pairedSegs } from '../wordDiff'
 import { FindBar } from './FindBar'
+import { SinceReviewToggle } from './SinceReview'
+import { useSinceReview } from '../sinceReview'
 import { usePrDiffTarget, usePrReview, sendToAgent, useWorkspaceMode } from '../prReview'
 import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import type { ReviewFinding } from '@shared/types'
@@ -97,17 +99,23 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   // Another file: start from "Loading". The same file again (stats tick whenever the worktree is
   // re-read) reloads behind what is shown, so the view doesn't blank and lose its scroll position;
   // an unchanged diff is the same string and doesn't re-render.
-  useEffect(() => setDiff(null), [ws.id, file])
+  // Since your review: only what the author changed in this file since then, base-branch changes left out.
+  const since = useSinceReview(ws)
+  const sinceOn = since.on && !!since.data
+  const sinceHas = sinceOn && since.data!.files.some((f) => f.path === file)
+  const sinceKey = sinceOn ? `${since.data!.from}:${since.data!.to}:${sinceHas}` : ''
+  useEffect(() => setDiff(null), [ws.id, file, sinceKey])
   useEffect(() => {
     let live = true
-    void window.api.getFileDiff(ws.id, file).then(
+    const load = sinceOn ? (sinceHas ? window.api.getInterdiffFile(ws.id, since.since!, file) : Promise.resolve('')) : window.api.getFileDiff(ws.id, file)
+    void load.then(
       (d) => live && setDiff(d),
       (e) => live && setDiff(`error: ${e}`)
     )
     return () => {
       live = false
     }
-  }, [ws.id, file, stats])
+  }, [ws.id, file, stats, sinceKey])
 
   // Opened at a line (from a review finding): bring that row into view once the diff is in.
   useEffect(() => {
@@ -118,7 +126,26 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   const lines = useMemo(() => (diff === null ? [] : parseDiff(diff)), [diff])
   // The words that changed within an edited line, as GitHub shades them.
   const words = useMemo(() => pairedSegs(lines), [lines])
-  if (diff === null) return <div className="flex-1 p-6 text-faint">Loading diff…</div>
+  const sinceBar = <SinceReviewToggle ws={ws} className="sticky left-0 border-b border-line bg-panel px-4 py-2" />
+  if (diff === null)
+    return (
+      <div className="flex-1">
+        {sinceBar}
+        <div className="p-6 text-faint">Loading diff…</div>
+      </div>
+    )
+  if (sinceOn && !sinceHas)
+    return (
+      <div className="flex-1">
+        {sinceBar}
+        <div className="p-6 text-faint">
+          No changes to this file since your review.{' '}
+          <button className="text-sky-400 hover:underline" onClick={() => since.setOn(false)}>
+            Show all changes
+          </button>
+        </div>
+      </div>
+    )
   const shownLines = new Set(lines.map((l) => l.newNo).filter((n): n is number => n != null))
   const unplaced = mine.filter((f) => !f.line || !shownLines.has(f.line))
   // Thread lines are the PR head's. Outdated threads point at code that's gone, and a worktree behind the
@@ -152,7 +179,14 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     return { file, start: Math.min(...nums), end: Math.max(...nums), side, code }
   }
   const pending = selection()
-  const githubProblem = pending && open ? draftProblem({ ...pending, text: '' }, target) : open ? null : 'This workspace has no open PR.'
+  const githubProblem =
+    pending && sinceOn && pending.side === 'old'
+      ? 'Removed lines here are against your last review, not the PR. Switch to All changes to comment on them.'
+      : pending && open
+        ? draftProblem({ ...pending, text: '' }, target)
+        : open
+          ? null
+          : 'This workspace has no open PR.'
   const addComment = (to: CommentDest) => {
     const text = draft.trim()
     if (!pending || !text) return
@@ -348,6 +382,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
         <span className="min-w-0 flex-1 truncate">{file}</span>
         <FindBar box={box} watch={diff} />
       </div>
+      <SinceReviewToggle ws={ws} className="sticky left-0 w-[100cqw] border-b border-line bg-panel px-4 py-2" />
       {lines.length === 0 && <div className="p-6 font-sans text-faint">No textual changes (binary or empty file).</div>}
       {unplaced.map((f, i) => (
         <Comment key={`u${i}`} f={f} />

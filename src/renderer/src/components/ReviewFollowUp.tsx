@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
-import type { FileChange, PrComment, Workspace } from '@shared/types'
+import { useState } from 'react'
+import type { PrComment, Workspace } from '@shared/types'
+import { leftOutLabel } from '@shared/reviewUpdates'
+import { useSinceReview } from '../sinceReview'
 import { addressedPrompt, isTheirs, myOpenThreads, threadStatus, type ThreadStatus } from '@shared/prReview'
 import { useStore, openDoc, reportError } from '../store'
 import { dismissPrUpdated, sendToAgent, syncPrHead, usePrReview, useWorkspaceMode } from '../prReview'
@@ -87,22 +89,11 @@ const STATUS: Record<ThreadStatus, [string, string]> = {
 export function ReviewFollowUp({ ws }: { ws: Workspace }) {
   const review = usePrReview(ws)
   const { mode } = useWorkspaceMode(ws)
-  const head = useStore((s) => s.prSync[ws.id]?.sync?.head)
   const open = review?.pr.state === 'OPEN'
   const info = review?.info
-  const since = info?.myReviewCommit
-  const [changed, setChanged] = useState<{ commits: number; files: FileChange[] } | null>(null)
+  // What the author changed in the PR since your review, with the base branch's changes left out.
+  const { data: changed } = useSinceReview(ws)
   const [busy, setBusy] = useState<string | null>(null)
-
-  useEffect(() => {
-    setChanged(null)
-    if (!open || !since || !head || since === head) return
-    let live = true
-    void window.api.getChangedSince(ws.id, since).then((r) => live && setChanged(r), () => {})
-    return () => {
-      live = false
-    }
-  }, [ws.id, open, since, head])
 
   if (!review || !info || !open || mode !== 'review' || !isTheirs(info)) return null
   const threads = myOpenThreads(info)
@@ -129,9 +120,10 @@ export function ReviewFollowUp({ ws }: { ws: Workspace }) {
           <div className="px-3 pt-2 pb-1 font-medium">
             Since {verdict}
             <span className="ml-2 font-normal text-muted">
-              {plural(changed.commits, 'commit')}, {plural(changed.files.length, 'file')}
+              {plural(changed.commits, 'commit')}, {changed.files.length ? plural(changed.files.length, 'file') : 'no change to the PR itself'}
             </span>
           </div>
+          {leftOutLabel(changed, review.pr.baseRefName || 'main') && <div className="px-3 pb-1 text-[12px] text-faint">{leftOutLabel(changed, review.pr.baseRefName || 'main')}</div>}
           {changed.files.map((f) => (
             <button key={f.path} className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-hover" title={f.path} onClick={() => openDoc(ws.id, { kind: 'diff', path: f.path })}>
               <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">{f.path}</span>

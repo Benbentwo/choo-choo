@@ -14,6 +14,8 @@ import { UsageGraphs } from './UsageGraphs'
 import { AddonActions, AddonFrame, addonTabId, addonViews } from './Addons'
 import { StackTab } from './Stack'
 import { PrSyncBanner } from './ReviewFollowUp'
+import { SinceReviewToggle } from './SinceReview'
+import { useSinceReview } from '../sinceReview'
 import { prBaseFor } from '@shared/stack'
 import * as L from '@shared/layout'
 
@@ -165,13 +167,23 @@ const STATUS_COLOR: Record<FileChange['status'], string> = {
   D: 'text-del'
 }
 
-function ChangesList({ ws, changes }: { ws: Workspace; changes: FileChange[] }) {
+function ChangesList({ ws, changes: all }: { ws: Workspace; changes: FileChange[] }) {
   const s = useStore()
+  const since = useSinceReview(ws)
+  const changes: FileChange[] = since.on && since.data ? since.data.files : all
+  const toggle = <SinceReviewToggle ws={ws} className="border-b border-line px-4 py-2" />
   const add = changes.reduce((n, c) => n + c.additions, 0)
   const del = changes.reduce((n, c) => n + c.deletions, 0)
-  if (changes.length === 0) return <div className="p-6 text-center text-faint">No changes yet</div>
+  if (changes.length === 0)
+    return (
+      <div>
+        {toggle}
+        <div className="p-6 text-center text-faint">{since.on ? 'Nothing changed in the PR since your review' : 'No changes yet'}</div>
+      </div>
+    )
   return (
     <div>
+      {toggle}
       <div className="flex items-center px-4 py-2 text-muted">
         <span className="flex-1">
           {changes.length} file{changes.length === 1 ? '' : 's'} changed
