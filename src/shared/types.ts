@@ -5,7 +5,7 @@ import type { PrInbox } from './prInbox'
 import type { Automation, AutomationRun, GithubWatchState } from './automations'
 import type { Layout, SavedLayout } from './layout'
 import type { AddonActionContext, AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
-import type { PrDiffTarget, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
+import type { PrDiffTarget, PrHeadSync, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
 export interface Repo {
   id: string
   name: string
@@ -991,6 +991,12 @@ export interface Api {
   getPrReview(workspaceId: string): Promise<{ pr: PrInfo; info: PrReviewInfo } | null>
   /** Which lines of the PR can take review comments, and whether the worktree's line numbers match it. */
   getPrDiffTarget(workspaceId: string): Promise<PrDiffTarget | null>
+  /** Where the worktree stands against the PR's head; `ff` and `reset` also move it there. Null without an open PR. */
+  followPr(workspaceId: string, how: 'check' | 'ff' | 'reset'): Promise<PrHeadSync | null>
+  /** `git diff -U0` per file between two commits, for moving line comments to new line numbers. */
+  getRangeDiffs(workspaceId: string, from: string, to: string, files: string[]): Promise<Record<string, string>>
+  /** Commits and files between `sha` and HEAD; null when the commit can't be found. */
+  getChangedSince(workspaceId: string, sha: string): Promise<{ commits: number; files: FileChange[] } | null>
   /** Posts a review on the workspace's PR. */
   submitPrReview(workspaceId: string, drafts: ReviewDraft[], body: string, event: ReviewEvent): Promise<{ url: string }>
   replyToPrThread(workspaceId: string, threadId: string, body: string): Promise<void>

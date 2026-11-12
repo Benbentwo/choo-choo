@@ -81,6 +81,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Review findings in the chat as tiles (severity, file and line, what is wrong, the fix) instead of the raw JSON block; a tile opens the diff at that line, and each has Ask the agent to fix this
 - ✅ Add all PR comments to chat: unresolved review threads, change requests and comments, with file/line context; comment count on the PR chip
 - ✅ Line comments pick Agent or GitHub review (default by Build or Review mode); submit a GitHub review with Comment, Approve or Request changes; findings into your review; GitHub threads inline with Reply, Resolve, Ask agent; header says whose PR it is
+- ✅ Coming back to an updated PR: Review mode takes the author's new commits into the worktree (fast-forward, never over local commits), drafts move to their new lines or are flagged when the code under them changed, outdated threads leave the diff for a collapsed group, and the Review tab shows what changed since your review and your open threads with Resolve and "Which are addressed?" (choo-choo addition, [PRD](prd/review-comments.md#when-the-pr-is-updated))
 - ✅ Build | Review switch per workspace (defaults from PR ownership, switch to collaborate); top right is one PR chip and one next-step button (Create PR, Fix checks, Address comments, Merge, or Submit review); extra tabs under More (choo-choo addition, [PRD](prd/workspace-modes.md))
 
 ### Bottom panel

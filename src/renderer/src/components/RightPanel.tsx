@@ -4,7 +4,7 @@ import { canUpdateBranch, fixChecksPrompt, nextPrAction, resolveConflictsPrompt,
 import { newSince, prCommentsPrompt } from '@shared/prComments'
 import { isTheirs, type PrReviewInfo } from '@shared/prReview'
 import { useStore, reportError, openDoc, destOf, type RightTab } from '../store'
-import { useWorkspaceMode, type WsMode } from '../prReview'
+import { useFollowPrHead, useWorkspaceMode, type WsMode } from '../prReview'
 import { IconComment, IconDown, IconEye, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
 import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
@@ -13,6 +13,7 @@ import { MergedActions } from './Reflect'
 import { UsageGraphs } from './UsageGraphs'
 import { AddonActions, AddonFrame, addonTabId, addonViews } from './Addons'
 import { StackTab } from './Stack'
+import { PrSyncBanner } from './ReviewFollowUp'
 import { prBaseFor } from '@shared/stack'
 import * as L from '@shared/layout'
 
@@ -52,6 +53,8 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   const [more, setMore] = useState(false)
   const extra = MORE.find((t) => t.id === s.rightTab)
   const tabs = [...TABS[mode].filter((t) => !t.stack || ws.stack), ...(extra ? [extra] : [])]
+  // Reviewing: take the PR author's new commits as they're pushed, and move draft comments with them.
+  useFollowPrHead(ws)
 
   // The add-on behind the open tab was turned off: fall back to Changes.
   useEffect(() => {
@@ -132,6 +135,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
             className="mx-3 mb-2 rounded-md border border-line bg-bg px-2 py-1 outline-none focus:border-faint"
           />
         )}
+        <PrSyncBanner ws={ws} />
         {addonTab && (
           <div className="flex min-h-0 flex-1">
             <AddonFrame addon={addonTab.addon} view={addonTab.view} repoId={ws.repoId} workspaceId={ws.id} />

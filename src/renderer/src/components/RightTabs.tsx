@@ -3,6 +3,7 @@ import type { Artifact, CheckRun, ReviewFinding, Workspace } from '@shared/types
 import { useStore, openDoc, newChatTab, reportError, reviewTarget } from '../store'
 import { useWorkspaceMode } from '../prReview'
 import { ReviewDrafts } from './ReviewDrafts'
+import { ReviewFollowUp } from './ReviewFollowUp'
 import { IconDown, IconRight } from '../icons'
 import { CLAUDE_CODE_REVIEW_PROMPT, REVIEW_PROMPT, SECURITY_REVIEW_PROMPT, useReview } from '../review'
 
@@ -176,6 +177,7 @@ export async function sendFix(ws: Workspace, f: ReviewFinding) {
 export function ReviewTab({ ws }: { ws: Workspace }) {
   return (
     <div>
+      <ReviewFollowUp ws={ws} />
       <ReviewDrafts ws={ws} />
       <AgentReview ws={ws} />
     </div>

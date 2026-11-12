@@ -4,7 +4,7 @@ import { readCachedAppearance } from './appearanceCache'
 import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
 import type { Automation, AutomationRun } from '@shared/automations'
-import { isTheirs, type CommentDest, type PrReviewInfo } from '@shared/prReview'
+import { isTheirs, type CommentDest, type PrHeadSync, type PrReviewInfo } from '@shared/prReview'
 import * as L from '@shared/layout'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type PrInfo, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
 
@@ -85,6 +85,8 @@ interface UI {
   prReview: Record<string, { pr: PrInfo; info: PrReviewInfo } | null | undefined>
   /** Bumped when GitHub reports a change to a workspace's PR or checks; PR views reload on it. */
   prVersion: Record<string, number>
+  /** Where each worktree stands against its PR's head on GitHub, and how many commits the last automatic update took in. */
+  prSync: Record<string, { sync: PrHeadSync | null; updated?: number } | undefined>
   /** Last stack status per stacked workspace, for the Stack tab, the header switcher and the sidebar. */
   stacks: Record<string, StackStatus | null | undefined>
   /** A Reflect tab open in the workspace: the person's feedback, and whether to archive after. */
@@ -162,6 +164,7 @@ export const useStore = create<UI>((set, get) => ({
   codeComments: loadCodeComments(),
   prReview: {},
   prVersion: {},
+  prSync: {},
   stacks: {},
   reflects: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
@@ -788,6 +791,10 @@ export interface CodeComment {
   dest?: CommentDest
   /** Copied from a reviewer-agent finding. */
   fromFinding?: boolean
+  /** The worktree's commit the line numbers belong to; moved along when new commits come in. */
+  commit?: string
+  /** New commits changed the commented lines: shown for the person to check before it's posted. */
+  stale?: boolean
 }
 
 export const destOf = (c: CodeComment): CommentDest => c.dest ?? 'agent'
