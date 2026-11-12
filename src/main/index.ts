@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -33,6 +33,7 @@ import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
 import * as automations from './automations'
+import * as continueWork from './continueWork'
 import { projectThreads, routerChat, threadTitle, updateTarget } from '@shared/projects'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
@@ -340,6 +341,12 @@ function sendFromPerson(chat: Chat, text: string, images: string[]) {
   if (desktop.DESKTOP_COMMAND.test(text.trim()) && !images.length && chat.model !== 'codex') {
     const ws = findWs(chat.workspaceId)
     return desktop.openInDesktop(chat, ws, agentEnv(ws), emitChat).then(() => undefined)
+  }
+  // Out of usage: hold the message in Up next instead of sending it into a refused turn.
+  if (!agent.isRunning(chat.id) && continueWork.isLimited() && chat.model !== 'codex') {
+    const { position } = continueWork.add(chat.id, text, { top: !!chat.paused, images: images.slice(0, 10) })
+    emitChat(chat.id, { item: { id: randomUUID(), kind: 'note', text: `You're out of usage for this window. Your message is #${position} in Up next and will be sent when the window resets.`, ts: Date.now() } })
+    return
   }
   if (!agent.isRunning(chat.id)) return sendToChat(chat, text, images)
   if (agent.pushMessage(chat, text, images.slice(0, 10), store.get().settings.whileRunning ?? 'steer', emitChat)) return
@@ -796,6 +803,7 @@ function onChatDone(chat: Chat) {
   }
   notifyDone(chat)
   automations.onTurnDone(chat)
+  continueWork.onTurnDone(chat)
   noteForOrchestrator(chat)
   if (finished.has(chat.id)) scheduleWake(chat.id)
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
@@ -809,7 +817,7 @@ function notifyDone(chat: Chat) {
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   const n = new Notification({
     title: ws?.title ?? 'Choo Choo',
-    body: chat.status === 'error' ? 'The agent hit an error' : 'The agent finished and is waiting for you'
+    body: chat.paused ? continueWork.pauseText(chat) : chat.status === 'error' ? 'The agent hit an error' : 'The agent finished and is waiting for you'
   })
   n.on('click', () => {
     win?.show()
@@ -1020,6 +1028,11 @@ function registerIpc() {
   h('automation:enable', (id: string, on: boolean) => automations.setEnabled(id, on))
   h('automation:delete', (id: string) => automations.remove(id))
   h('automation:run', (id: string) => automations.runNow(id))
+  h('continue:add', (chatId: string, prompt: string, top?: boolean) => void continueWork.add(chatId, prompt, { top }))
+  h('continue:move', (id: string, to: number) => continueWork.move(id, to))
+  h('continue:edit', (id: string, prompt: string) => continueWork.edit(id, prompt))
+  h('continue:remove', (id: string) => continueWork.remove(id))
+  h('continue:run', (id: string) => continueWork.runNow(id))
   h('ws:restore', async (id: string) => {
     const ws = findWs(id)
     if (ws.orchestrator) {
@@ -1077,6 +1090,7 @@ function registerIpc() {
   })
   h('chat:close', async (id: string) => {
     await agent.stop(id)
+    continueWork.forgetChat(id)
     const closing = store.get().chats.find((c) => c.id === id)
     if (closing) {
       pty.kill(remote.phoneTerminalId(closing))
@@ -1704,6 +1718,40 @@ app.whenReady().then(async () => {
       send('state:changed')
     }
   })
+  let awake: number | null = null
+  continueWork.init({
+    send: (chat, text, images) => sendToChat(chat, text, images),
+    isRunning: (id) => agent.isRunning(id),
+    limits: async (force) => (await subscriptionLimits(store.get().settings.anthropicApiKey ?? '', force)).find((l) => l.provider === 'claude') ?? null,
+    projectOf: (chatId) => {
+      const chat = store.get().chats.find((c) => c.id === chatId)
+      const ws = chat && store.get().workspaces.find((w) => w.id === chat.workspaceId)
+      if (!ws) return undefined
+      return ws.groupId ?? (store.get().settings.experimentalProjects ? store.get().groups?.find((g) => g.repoIds.includes(ws.repoId))?.id : undefined) ?? ws.repoId
+    },
+    notify: (title, body) => {
+      if (!store.get().settings.notifications || !Notification.isSupported()) return
+      const n = new Notification({ title, body })
+      n.on('click', () => {
+        win?.show()
+        win?.focus()
+      })
+      n.show()
+    },
+    keepAwake: (on) => {
+      if (on && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension')
+      else if (!on && awake !== null) {
+        powerSaveBlocker.stop(awake)
+        awake = null
+      }
+    },
+    onReset: () => automations.onUsageReset(),
+    changed: () => {
+      store.save()
+      send('state:changed')
+    }
+  })
+  powerMonitor.on('resume', () => continueWork.onWake())
   updates.startUpdater(send)
   reviewWatch.start({
     loadInbox: loadPrInbox,

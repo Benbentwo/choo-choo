@@ -20,6 +20,8 @@ export type AutomationTrigger =
   | { kind: 'github'; event: GithubEvent; label?: string }
   /** Only when the person presses Run now. */
   | { kind: 'manual' }
+  /** Each time the plan's usage window resets after running out (Continue work). */
+  | { kind: 'usage_reset' }
 
 /** Where a run's conversation and workspaces go. */
 export type AutomationTarget = { kind: 'project'; groupId: string } | { kind: 'repo'; repoId: string }
@@ -126,6 +128,8 @@ export function describeTrigger(t: AutomationTrigger): string {
     }
     case 'manual':
       return 'Only when run by hand'
+    case 'usage_reset':
+      return 'When my usage window resets'
   }
 }
 

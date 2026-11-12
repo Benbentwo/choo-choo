@@ -45,6 +45,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Subscription limits in the sidebar](prd/subscription-limits.md) | In review |
 | [Split panels](prd/split-panels.md) | In review |
 | [Build and Review workspace modes](prd/workspace-modes.md) | In review |
+| [Continue work (resume at usage reset)](prd/continue-work.md) | In review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 
@@ -65,6 +66,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0013](decisions/0013-project-threads.md) | Projects: the orchestrator chat routes each message to a thread; the sidebar shows work by repo and PR, not by thread |
 | [0014](decisions/0014-automations-own-page-polled-events.md) | Automations get their own page and target a project or a repo; GitHub events are polled while the app is open, no webhooks |
 | [0015](decisions/0015-beta-channel-uses-prereleases.md) | The beta update channel is GitHub prereleases built and signed on every merge to main; stable stays manually published releases |
+| [0019](decisions/0019-resume-only-after-reset.md) | Stopped chats resume only after the server's reset time and once /usage shows the window open; a few at a time, never by retrying or switching accounts |
 | [0017](decisions/0017-threads-own-their-prs.md) | A project's threads own their workspaces and PRs; the sidebar shows project › thread › repo › PR (supersedes part of 0013) |
 | [0018](decisions/0018-add-on-dev-mode-reads-folders-in-place.md) | Add-ons under development are read from their folder and reload as it changes |
 

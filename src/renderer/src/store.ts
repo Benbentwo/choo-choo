@@ -4,6 +4,7 @@ import { readCachedAppearance } from './appearanceCache'
 import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
 import type { Automation, AutomationRun } from '@shared/automations'
+import type { QueueItem, ResetLog, UsageLimitState } from '@shared/continueWork'
 import { isTheirs, type CommentDest, type PrHeadSync, type PrReviewInfo } from '@shared/prReview'
 import type { Interdiff } from '@shared/reviewUpdates'
 import * as L from '@shared/layout'
@@ -73,6 +74,11 @@ interface UI {
   automationsPage: boolean
   automations: Automation[]
   automationRuns: AutomationRun[]
+  /** The Up next (Continue work) page is open. */
+  continuePage: boolean
+  continueQueue: QueueItem[]
+  usageLimit: UsageLimitState | null
+  resetLog: ResetLog[]
   /** Last load of the PRs page's list, and its error. */
   prInbox: PrInbox | null
   prInboxError: string | null
@@ -111,7 +117,7 @@ interface UI {
   usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'reviews' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance' | 'experimental'
+  settingsTab: 'general' | 'reviews' | 'projects' | 'continue' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance' | 'experimental'
   recentPaths: string[]
   modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */
@@ -160,8 +166,11 @@ export const useStore = create<UI>((set, get) => ({
   addonPage: null,
   addonPress: null,
   prsPage: false,
-  automationsPage: false,
+  automationsPage: false, continuePage: false,
   automations: [],
+  continueQueue: [],
+  usageLimit: null,
+  resetLog: [],
   automationRuns: [],
   prInbox: readInboxCache(),
   prInboxError: null,
@@ -200,7 +209,7 @@ export const useStore = create<UI>((set, get) => ({
   error: null,
 
   hydrate: (s) => {
-    set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [], automations: s.automations ?? [], automationRuns: s.automationRuns ?? [] })
+    set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [], automations: s.automations ?? [], automationRuns: s.automationRuns ?? [], continueQueue: s.continueQueue ?? [], usageLimit: s.usageLimit ?? null, resetLog: s.resetLog ?? [] })
     if (!layoutLoaded) {
       layoutLoaded = true
       const saved = L.isLayout(s.settings.layout) ? s.settings.layout : null
@@ -210,7 +219,7 @@ export const useStore = create<UI>((set, get) => ({
     reconcileLayout()
   },
   selectWorkspace: (id, fromHistory) => {
-    if (!id) return set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, panesShown: false })
+    if (!id) return set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: false, panesShown: false })
     showView(viewFor(id))
     if (fromHistory) return
     const { history, historyIndex } = get()
@@ -327,7 +336,7 @@ export function applyLayout(next: L.Layout | null, opts: { show?: boolean; save?
       openDoc[l.view.wsId] = g.doc
     }
     Object.assign(patch, { activeChat, openDoc })
-    if (opts.show !== false) Object.assign(patch, { panesShown: true, draftRepo: null, prsPage: false, automationsPage: false })
+    if (opts.show !== false) Object.assign(patch, { panesShown: true, draftRepo: null, prsPage: false, automationsPage: false, continuePage: false })
   }
   st.set(patch)
   if (opts.save !== false) saveLayoutSoon(next)
@@ -543,7 +552,7 @@ export function reportError(e: unknown) {
 
 /** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
 export function newWorkspace(repoId: string) {
-  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, automationsPage: false, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, automationsPage: false, continuePage: false, panesShown: false })
 }
 
 /** Shows an add-on's view in the center. */
@@ -573,13 +582,17 @@ export function runAddonAction(addon: AddonInfo, action: AddonAction, ctx: Addon
 
 /** Shows the PRs page in the center and reloads its list. */
 export function openPrsPage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, automationsPage: false, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, automationsPage: false, continuePage: false, panesShown: false })
   void refreshPrInbox()
 }
 
 /** Opens the Automations page. */
+export function openContinuePage() {
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: true, panesShown: false })
+}
+
 export function openAutomationsPage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: true, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: true, continuePage: false, panesShown: false })
 }
 
 let inboxLoad: Promise<void> | null = null

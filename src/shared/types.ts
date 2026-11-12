@@ -3,6 +3,7 @@ import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
 import type { InboxPr, PrInbox } from './prInbox'
 import type { Automation, AutomationRun, GithubWatchState } from './automations'
+import type { ChatPause, ContinueSettings, QueueItem, ResetLog, UsageLimitState } from './continueWork'
 import type { Layout, SavedLayout } from './layout'
 import type { AddonActionContext, AddonCallResult, AddonContext, AddonDevResult, AddonGrant, AddonInfo, AddonReloaded, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
 import type { PrDiffTarget, PrHeadSync, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
@@ -332,6 +333,8 @@ export interface Chat {
   goal?: ChatGoal
   /** Set while the session continues somewhere else, such as on your phone through Remote Control. */
   remote?: ChatRemote
+  /** The last turn stopped on a plan usage limit. See shared/continueWork.ts. */
+  paused?: ChatPause
   createdAt: number
 }
 
@@ -561,6 +564,8 @@ export interface Settings extends AppearanceSettings {
   orchestratorAutoUpdates: boolean
   /** Experimental: project groups become projects, with threads and a repo › PR tree in the sidebar. */
   experimentalProjects?: boolean
+  /** Continue work: resuming chats when the usage window resets. See shared/continueWork.ts. */
+  continueWork?: Partial<ContinueSettings>
   /** Add-ons turned on in Choo Choo and the permissions agreed to, by plugin id. */
   addons?: Record<string, AddonGrant>
   /** Review updates: notifications for PRs you review, and the since-your-review diff (shared/reviewUpdates.ts). */
@@ -724,6 +729,12 @@ export interface AppState {
   reviewWatch?: ReviewWatchState
   /** Where the PR inbox stood at the last GitHub poll, for GitHub-event automations. */
   githubWatch?: GithubWatchState
+  /** Up next: what starts, in order, when the usage window resets. */
+  continueQueue?: QueueItem[]
+  /** Set while the plan is out of usage. */
+  usageLimit?: UsageLimitState
+  /** The last window resets and what the queue did, newest last. */
+  resetLog?: ResetLog[]
 }
 
 export interface Leftover {
@@ -917,6 +928,16 @@ export interface Api {
   deleteAutomation(id: string): Promise<void>
   /** Starts a run now, whatever the trigger. */
   runAutomation(id: string): Promise<AutomationRun>
+  /** Adds work to Up next for a chat. `top` puts it first. */
+  continueAdd(chatId: string, prompt: string, top?: boolean): Promise<void>
+  /** Moves an Up next item to a new position. */
+  continueMove(itemId: string, to: number): Promise<void>
+  /** Changes what an Up next item sends. Empty means the continue prompt. */
+  continueEdit(itemId: string, prompt: string): Promise<void>
+  /** Takes an item off Up next. A paused chat stays paused until you send something. */
+  continueRemove(itemId: string): Promise<void>
+  /** Starts an Up next item now, ignoring the reset time and the caps. */
+  continueRunNow(itemId: string): Promise<void>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   /** Reviews the workspace's chats for friction and suggests agent-setup changes. Writes nothing. */

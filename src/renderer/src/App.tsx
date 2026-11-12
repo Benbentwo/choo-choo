@@ -7,6 +7,7 @@ import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
 import { PrInboxPage } from './components/PrInbox'
 import { AutomationsPage } from './components/Automations'
+import { ContinueWorkPage } from './components/ContinueWork'
 import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
 import { TitleTips } from './components/Tip'
@@ -157,6 +158,8 @@ export function App() {
           <PrInboxPage />
         ) : s.automationsPage && s.settings.experimentalProjects ? (
           <AutomationsPage />
+        ) : s.continuePage ? (
+          <ContinueWorkPage />
         ) : s.draftRepo ? (
           <NewWorkspace repoId={s.draftRepo} />
         ) : (

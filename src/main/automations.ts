@@ -75,6 +75,8 @@ function cleanTrigger(t: AutomationTrigger): AutomationTrigger {
       return { kind: 'daily', at: /^\d{1,2}:\d{2}$/.test(t.at) ? t.at : '09:00', ...(t.weekdaysOnly ? { weekdaysOnly: true } : {}) }
     case 'weekly':
       return { kind: 'weekly', day: Math.max(0, Math.min(6, Math.round(Number(t.day)) || 0)), at: /^\d{1,2}:\d{2}$/.test(t.at) ? t.at : '09:00' }
+    case 'usage_reset':
+      return { kind: 'usage_reset' }
     case 'github':
       if (!GITHUB_EVENTS.some((e) => e.id === t.event)) throw new Error('Pick a GitHub event')
       return { kind: 'github', event: t.event, ...(isRepoEvent(t.event) && t.label?.trim() ? { label: t.label.trim() } : {}) }
@@ -334,5 +336,15 @@ export async function pollGithub() {
     // gh missing or offline: try again next poll.
   } finally {
     polling = false
+  }
+}
+
+/** The usage window reset and Up next started: run each "When my usage window resets" automation once. */
+export function onUsageReset() {
+  if (!deps) return
+  for (const a of list()) {
+    if (!a.enabled || a.trigger.kind !== 'usage_reset') continue
+    if (runs().some((r) => r.automationId === a.id && r.status === 'running')) continue
+    void fire(a, 'Usage window reset').catch(() => {})
   }
 }
