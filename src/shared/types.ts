@@ -318,6 +318,8 @@ export interface Chat {
   automationId?: string
   /** Context window of the model, as Claude Code last reported it. */
   contextWindow?: number
+  /** The model Claude Code last reported running this chat on (e.g. claude-opus-5-5). */
+  reportedModel?: string
   /** Fast mode: faster output on models that support it, at a higher price. */
   fast?: boolean
   /** Stop a message's run once it has cost this many dollars. Missing uses the Settings default. */
@@ -430,6 +432,17 @@ export type ChatItem =
       sentWhileRunning?: 'steer' | 'queue'
     }
   | { id: string; kind: 'note'; text: string; ts: number }
+  | {
+      id: string
+      kind: 'model'
+      /** The model the chat switched to. */
+      model: ModelId
+      /** The model before the switch, when the person picked it. */
+      from?: ModelId
+      /** The model Claude Code reported running the next turn on (e.g. claude-sonnet-5-5). */
+      resolved?: string
+      ts: number
+    }
   | { id: string; kind: 'assistant'; text: string; streaming?: boolean; ts: number }
   | {
       id: string
