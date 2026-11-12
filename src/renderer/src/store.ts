@@ -697,11 +697,12 @@ export async function openOrchestrator(repoId: string) {
 }
 
 /** Opens a project group's orchestrator, which directs workspaces across all of its repos. */
-export async function openGroupOrchestrator(groupId: string) {
+/** Opens a project's orchestrator workspace on one chat: `chatId` (a thread), or the orchestrator chat. */
+export async function openGroupOrchestrator(groupId: string, chatId?: string) {
   try {
     const { workspace, chat } = await window.api.openGroupOrchestrator(groupId)
     await refreshState()
-    useStore.getState().setActiveChat(workspace.id, chat.id)
+    useStore.getState().setActiveChat(workspace.id, chatId ?? chat.id)
     useStore.getState().selectWorkspace(workspace.id)
   } catch (e) {
     reportError(e)

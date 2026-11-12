@@ -500,6 +500,7 @@ async function addRepoToProject(groupId: string, ref: string, opts: { clone: boo
 }
 
 const orchestratorHost: orchestrator.Host = {
+  changed: () => send('state:changed'),
   findRepos: (groupId, query) => findRepos(groupId, query),
   addRepoToProject,
   createWorkspace: async (repoId, source) => {

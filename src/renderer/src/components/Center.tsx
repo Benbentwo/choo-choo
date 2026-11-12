@@ -38,7 +38,7 @@ import { TerminalView } from './TerminalView'
 import { Stats } from './Stats'
 import { PaneGrip, RepoChip, PaneMenuItems, DropOverlay, Dividers } from './Panes'
 import { ThreadsPanel } from './Projects'
-import { routerChat } from '@shared/projects'
+import { routerChat, workspaceThread } from '@shared/projects'
 import { isTheirs, prOwnerLabel } from '@shared/prReview'
 import { usePrReview, useWorkspaceMode, type WsMode } from '../prReview'
 
@@ -127,12 +127,15 @@ function useTitles(ws: Workspace) {
   const isRouter = project && active?.id === routerChat(s.chats, ws.id)?.id
   // A workspace a project started shows the project before its repo.
   const partOf = s.settings.experimentalProjects && !ws.orchestrator ? s.groups.find((g) => g.id === ws.orchestratorId) : undefined
-  const sub = project ? (isRouter ? 'Orchestrator chat' : `# ${active?.title ?? ''}`) : ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch
-  return { project, partOf, sub, threadCount: chats.filter((c) => c.thread).length }
+  // …and the thread that owns it.
+  const orchId = partOf ? s.workspaces.find((w) => w.orchestrator && w.groupId === partOf.id && !w.archived)?.id : undefined
+  const ownerThread = partOf ? workspaceThread(ws, s.chats, orchId) : undefined
+  const sub =project ? (isRouter ? 'Orchestrator chat' : `# ${active?.title ?? ''}`) : ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch
+  return { project, partOf, ownerThread, sub, threadCount: chats.filter((c) => c.thread).length }
 }
 
 function PartOf({ ws }: { ws: Workspace }) {
-  const { partOf } = useTitles(ws)
+  const { partOf, ownerThread } = useTitles(ws)
   if (!partOf) return null
   return (
     <>
@@ -141,6 +144,14 @@ function PartOf({ ws }: { ws: Workspace }) {
         {partOf.name}
       </button>
       <IconRight className="shrink-0 text-faint" />
+      {ownerThread && (
+        <>
+          <button className="no-drag max-w-[200px] shrink-0 truncate text-muted hover:text-fg" onClick={() => void openGroupOrchestrator(partOf.id, ownerThread.id)} title="Open the thread that owns this work">
+            # {ownerThread.title}
+          </button>
+          <IconRight className="shrink-0 text-faint" />
+        </>
+      )}
     </>
   )
 }
