@@ -6,7 +6,7 @@ import type { Chat, ChatItem, CheckRun, PrInfo, Repo, RepoGroup, Workspace, Work
 import * as store from './store'
 import * as git from './git'
 import { toolShape } from './addons'
-import { ROUTED_PREFIX } from '@shared/projects'
+import { AUTO_UPDATE_PREFIX, ROUTED_PREFIX, autoUpdateLine, type AutoUpdateEntry } from '@shared/projects'
 
 /**
  * The orchestrator is a chat that lives in the repo's main checkout. The person tells it what
@@ -620,11 +620,10 @@ function routerTools(tool: typeof import('@anthropic-ai/claude-agent-sdk').tool,
 export const READ_ONLY = ['list_workspaces', 'read_workspace', 'wait_for_workspaces', 'pr_status', 'list_threads', 'find_repos'].map((t) => `mcp__choo__${t}`)
 
 /** The message that wakes an idle orchestrator when workspaces it started finish. */
-export function autoUpdatePrompt(done: { title: string; id: string; state: 'finished' | 'error' | 'needs-approval' }[]): string {
-  const what = (s: string) => (s === 'error' ? 'hit an error' : s === 'needs-approval' ? 'is waiting for the person to approve a tool call' : 'finished')
+export function autoUpdatePrompt(done: AutoUpdateEntry[]): string {
   return [
-    '[Automatic update from Choo Choo, not from the person]',
-    ...done.map((d) => `- ${d.title} (${d.id}) ${what(d.state)}.`),
+    AUTO_UPDATE_PREFIX,
+    ...done.map(autoUpdateLine),
     '',
     'Check on them with read_workspace, send next steps if the work is not done, and tell the person briefly where things stand. Do not message the person if nothing changed for them.'
   ].join('\n')

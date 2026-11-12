@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Chat, PrInfo, RepoGroup, Workspace } from '@shared/types'
-import { foldKey, projectArchived, projectThreads, projectTree, routerChat, stripRouted } from '@shared/projects'
+import { foldKey, parseAutoUpdate, projectArchived, projectThreads, projectTree, routerChat, stripRouted } from '@shared/projects'
 import { useStore, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, showView, viewFor } from '../store'
 import { IconArchive, IconBranch, IconDown, IconPlus, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
@@ -263,6 +263,8 @@ function lastLine(items: ReturnType<typeof useStore.getState>['items'][string] |
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i]
     if (it.kind === 'assistant' && it.text.trim()) return plain(it.text)
+    const auto = it.kind === 'user' ? parseAutoUpdate(it.text) : null
+    if (auto) return `Update: ${auto.map((d) => d.title).join(', ') || 'workspaces finished'}`
     if (it.kind === 'user' && it.text.trim()) return `You: ${plain(stripRouted(it.text).text)}`
   }
   return ''

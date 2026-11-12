@@ -11,7 +11,7 @@ import { MARKDOWN_COMPONENTS } from './CodeBlock'
 import { API_PRICE_NOTE } from './UsageGraphs'
 import { IconDown, IconRight, IconTool } from '../icons'
 import { RouteItem } from './Projects'
-import { stripRouted } from '@shared/projects'
+import { parseAutoUpdate, stripRouted, type AutoUpdateEntry } from '@shared/projects'
 import { stripRunMarker } from '@shared/automations'
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -165,7 +165,9 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
               Revert to here
             </button>
           )}
-          {buttonAction(item.text) ? (
+          {parseAutoUpdate(item.text) ? (
+            <AutoUpdateItem entries={parseAutoUpdate(item.text)!} text={item.text} />
+          ) : buttonAction(item.text) ? (
             <ActionItem label={buttonAction(item.text)!} text={item.text} />
           ) : (
             <div
@@ -374,6 +376,51 @@ function ActionItem({ label, text }: { label: string; text: string }) {
         <span className="font-medium">{label}</span>
         <span className="flex-1 truncate text-[11px] text-faint">sent from the button</span>
       </button>
+      {open && <pre className="max-h-60 overflow-auto border-t border-line px-3 py-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{text}</pre>}
+    </div>
+  )
+}
+
+const AUTO_UPDATE_STATE: Record<AutoUpdateEntry['state'], { label: string; className: string }> = {
+  finished: { label: 'finished', className: 'text-faint' },
+  error: { label: 'hit an error', className: 'text-del' },
+  'needs-approval': { label: 'needs approval', className: 'text-muted' }
+}
+
+/**
+ * The message Choo Choo sends an orchestrator when workspaces it started finish: a compact card
+ * listing them, each opening its workspace, that expands to the prompt the orchestrator got.
+ */
+function AutoUpdateItem({ entries, text }: { entries: AutoUpdateEntry[]; text: string }) {
+  const [open, setOpen] = useState(false)
+  const s = useStore()
+  return (
+    <div className="w-[min(85%,420px)] rounded-lg border border-line bg-panel">
+      <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px]" onClick={() => setOpen(!open)} title="Show the message the orchestrator got">
+        {open ? <IconDown className="text-faint" /> : <IconRight className="text-faint" />}
+        <span className="font-medium">Automatic update</span>
+        <span className="flex-1 truncate text-[11px] text-faint">from Choo Choo</span>
+      </button>
+      {entries.length > 0 && (
+        <ul className="px-3 pb-2 text-[12.5px]">
+          {entries.map((e) => {
+            const ws = s.workspaces.find((w) => w.id === e.id)
+            const st = AUTO_UPDATE_STATE[e.state]
+            return (
+              <li key={e.id} className="flex items-baseline gap-2 pl-[18px]">
+                {ws ? (
+                  <button className="truncate text-left hover:underline" title="Open this workspace" onClick={() => s.selectWorkspace(ws.id)}>
+                    {ws.title || e.title}
+                  </button>
+                ) : (
+                  <span className="truncate">{e.title}</span>
+                )}
+                <span className={`shrink-0 text-[11px] ${st.className}`}>{st.label}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
       {open && <pre className="max-h-60 overflow-auto border-t border-line px-3 py-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{text}</pre>}
     </div>
   )
