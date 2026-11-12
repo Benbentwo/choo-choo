@@ -109,7 +109,7 @@ interface UI {
   usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance' | 'experimental'
+  settingsTab: 'general' | 'reviews' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance' | 'experimental'
   recentPaths: string[]
   modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */
@@ -601,14 +601,24 @@ function writeInboxCache(inbox: PrInbox) {
   }
 }
 
+/** A fresh PRs list, from a load here or a background check in the main process. */
+export function applyPrInbox(inbox: PrInbox) {
+  writeInboxCache(inbox)
+  useStore.getState().set({ prInbox: inbox, prInboxError: null })
+}
+
+/** Clears the "changed for you" mark on a PR and looks at GitHub again if it's been a while. */
+export function reviewingPr(pr: InboxPr) {
+  if (pr.update?.fresh) void window.api.reviewsSeen([`${pr.repo}#${pr.number}`]).catch(() => {})
+  void window.api.reviewsCheckSoon().catch(() => {})
+}
+
 /** Reloads the PRs list. Calls made while a load is running share it. */
 export function refreshPrInbox(): Promise<void> {
   inboxLoad ??= (async () => {
     useStore.getState().set({ prInboxLoading: true })
     try {
-      const inbox = await window.api.prInbox()
-      writeInboxCache(inbox)
-      useStore.getState().set({ prInbox: inbox, prInboxError: null })
+      applyPrInbox(await window.api.prInbox())
     } catch (e) {
       useStore.getState().set({ prInboxError: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e) })
     } finally {
@@ -625,6 +635,7 @@ export function refreshPrInbox(): Promise<void> {
  */
 export async function openPrWorkspace(pr: InboxPr) {
   const st = useStore.getState()
+  reviewingPr(pr)
   if (pr.workspaceId && st.workspaces.some((w) => w.id === pr.workspaceId && !w.archived)) {
     st.set({ rightOpen: true, rightTab: 'review' })
     st.selectWorkspace(pr.workspaceId)

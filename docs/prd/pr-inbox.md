@@ -5,7 +5,7 @@
 | Status | Shipped |
 | Owner | Choo Choo maintainers |
 | Requested by | Ben, 2026-11-09 |
-| Last updated | 2026-11-09 |
+| Last updated | 2026-11-12 |
 
 ## Problem
 
@@ -22,7 +22,7 @@ Today, reviewing someone's PR means finding it on GitHub, then starting a worksp
 ## Non-goals
 
 - Reviewing on GitHub from the app (approve, request changes). The Review tab's findings and the PR page cover that.
-- Notifications for new review requests. The sidebar count is the signal for now.
+- Notifications for new review requests. The sidebar count is the signal for now. PRs you already reviewed notify when they change for you ([Review updates](review-updates.md)).
 - GitHub Enterprise hosts other than the one gh is signed in to.
 
 ## User experience
@@ -31,6 +31,7 @@ Today, reviewing someone's PR means finding it on GitHub, then starting a worksp
 
 - The sidebar's top list has **PRs** under Search, with a count of PRs waiting on your review.
 - Clicking it shows the PRs page in the center. Filters: **To review** (default), **Mine**, **All**, each with a count. The choice is remembered.
+- **To review** also lists open PRs you already reviewed, since GitHub drops the request once you review. Those carry review updates: bold with a dot and reasons when they changed for you, a grey line when an update didn't matter, and an **Updated for you** filter ([Review updates](review-updates.md)).
 - PRs are grouped by repo; repos are ordered by their most recently updated PR. Each row shows title, number, author, last update, lines added and removed, a checks dot (green, red, amber), Approved or Changes requested, and Draft.
 - Click selects a row (arrow keys move, Enter opens). The **Open →** button opens a workspace on the PR's branch and switches the right panel to **Review**, where Start review runs the reviewer. Double-click does the same. The GitHub icon opens the PR in the browser.
 - If a workspace is already on that branch, the row says "workspace open" and the button reads **Go →**.

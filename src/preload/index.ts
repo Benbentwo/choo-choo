@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { Api, ChatEvent } from '@shared/types'
 import type { UpdateStatus } from '@shared/updates'
 import type { AddonAppEvent, AddonReloaded, AddonToolCall } from '@shared/addons'
+import type { InboxPr, PrInbox } from '@shared/prInbox'
 
 const inv = (ch: string) => (...a: unknown[]) => ipcRenderer.invoke(ch, ...a)
 function on<T extends unknown[]>(ch: string, cb: (...a: T) => void) {
@@ -155,6 +156,10 @@ const api: Api = {
   importFromConductor: inv('conductor:import') as Api['importFromConductor'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
   prInbox: inv('prs:inbox') as Api['prInbox'],
+  reviewsCheckSoon: inv('reviews:checkSoon') as Api['reviewsCheckSoon'],
+  reviewsSeen: inv('reviews:seen') as Api['reviewsSeen'],
+  onPrInbox: (cb) => on<[PrInbox]>('prs:inbox', cb),
+  onReviewOpen: (cb) => on<[InboxPr]>('reviews:open', cb),
   quickStart: inv('repo:quickstart') as Api['quickStart'],
   listSources: inv('ws:sources') as Api['listSources'],
   listIntegrations: inv('integrations:list') as Api['listIntegrations'],

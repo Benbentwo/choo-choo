@@ -3,8 +3,23 @@
  * Read through the signed-in gh CLI, like every other GitHub call in the app.
  */
 
-/** Why a PR is in the list. A PR can be both (someone re-requested a review of your own PR is rare, but possible). */
-export type PrRole = 'review' | 'mine'
+/**
+ * Why a PR is in the list. `review`: your review is requested now. `reviewed`: you reviewed it
+ * (GitHub drops the request once you do). A PR can have several.
+ */
+export type PrRole = 'review' | 'reviewed' | 'mine'
+
+/** What changed for you on a PR you review (shared/reviewWatch.ts). */
+export interface PrUpdate {
+  /** Changed for you since you last looked: bold with a dot, and counted as new. */
+  fresh: boolean
+  /** Why it matters, e.g. "3 files changed since your review". */
+  reasons: { kind: string; label: string }[]
+  /** What the last update was when it didn't matter, e.g. "merged main, the PR's own changes are the same". */
+  quiet?: string
+  /** Your latest review: APPROVED, CHANGES_REQUESTED or COMMENTED. */
+  myReview?: string
+}
 
 export interface InboxPr {
   /** owner/repo */
@@ -24,6 +39,12 @@ export interface InboxPr {
   /** SUCCESS, FAILURE, PENDING, ERROR, EXPECTED, or null when there are no checks. */
   checks: string | null
   roles: PrRole[]
+  /** The PR's head commit. */
+  headRefOid?: string
+  /** The branch it merges into. */
+  baseRefName?: string
+  /** Review updates for PRs you review; missing when there is nothing to say. */
+  update?: PrUpdate
   /** The local project for this repo, when it has been added to Choo Choo. */
   repoId?: string
   /** An open workspace already checked out on this PR's branch. */
@@ -36,7 +57,7 @@ export interface PrInbox {
 }
 
 const FIELDS = `... on PullRequest {
-        number title url isDraft headRefName isCrossRepository updatedAt additions deletions reviewDecision
+        number title url isDraft headRefName headRefOid baseRefName isCrossRepository updatedAt additions deletions reviewDecision
         author { login }
         repository { nameWithOwner }
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -44,6 +65,7 @@ const FIELDS = `... on PullRequest {
 
 const SEARCH: Record<PrRole, string> = {
   review: 'is:open is:pr archived:false review-requested:@me',
+  reviewed: 'is:open is:pr archived:false reviewed-by:@me -author:@me',
   mine: 'is:open is:pr archived:false author:@me'
 }
 
@@ -64,6 +86,8 @@ interface RawPr {
   url: string
   isDraft: boolean
   headRefName: string
+  headRefOid?: string
+  baseRefName?: string
   isCrossRepository: boolean
   updatedAt: string
   additions: number
@@ -74,7 +98,8 @@ interface RawPr {
   commits?: { nodes: ({ commit: { statusCheckRollup: { state: string } | null } } | null)[] | null }
 }
 
-type Raw = { data?: { review?: { nodes: (RawPr | null)[] | null }; mine?: { nodes: (RawPr | null)[] | null } } }
+type Nodes = { nodes: (RawPr | null)[] | null }
+type Raw = { data?: { review?: Nodes; reviewed?: Nodes; mine?: Nodes } }
 
 /** Merges the two searches into one list, newest activity first, with each PR once. */
 export function parsePrInbox(raw: Raw): InboxPr[] {
@@ -96,6 +121,8 @@ export function parsePrInbox(raw: Raw): InboxPr[] {
         author: n.author?.login ?? 'ghost',
         isDraft: n.isDraft,
         headRefName: n.headRefName,
+        ...(n.headRefOid ? { headRefOid: n.headRefOid } : {}),
+        ...(n.baseRefName ? { baseRefName: n.baseRefName } : {}),
         isCrossRepository: n.isCrossRepository,
         updatedAt: n.updatedAt,
         additions: n.additions ?? 0,
@@ -107,11 +134,22 @@ export function parsePrInbox(raw: Raw): InboxPr[] {
     }
   }
   add(raw.data?.review?.nodes, 'review')
+  add(raw.data?.reviewed?.nodes, 'reviewed')
   add(raw.data?.mine?.nodes, 'mine')
   return [...byKey.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
-export type PrFilter = 'review' | 'mine' | 'all'
+export type PrFilter = 'review' | 'updated' | 'mine' | 'all'
+
+/** On the To review list: your review is asked for, or you've reviewed it and it's still open. */
+export const isReviewing = (p: Pick<InboxPr, 'roles'>) => p.roles.includes('review') || p.roles.includes('reviewed')
+
+export function matchesFilter(p: InboxPr, filter: PrFilter): boolean {
+  if (filter === 'all') return true
+  if (filter === 'review') return isReviewing(p)
+  if (filter === 'updated') return !!p.update?.fresh
+  return p.roles.includes('mine')
+}
 
 /** PRs not hidden by the PRs page filter: an entry is an org ("owner") or a repo ("owner/repo"), any case. */
 export function visiblePrs(prs: InboxPr[], hidden: string[] | undefined): InboxPr[] {
@@ -141,7 +179,7 @@ export function orgsAndRepos(prs: InboxPr[]): { org: string; count: number; repo
 export function groupByRepo(prs: InboxPr[], filter: PrFilter): { repo: string; prs: InboxPr[] }[] {
   const groups = new Map<string, InboxPr[]>()
   for (const p of prs) {
-    if (filter !== 'all' && !p.roles.includes(filter)) continue
+    if (!matchesFilter(p, filter)) continue
     const list = groups.get(p.repo) ?? []
     list.push(p)
     groups.set(p.repo, list)

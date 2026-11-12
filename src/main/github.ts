@@ -182,8 +182,9 @@ export async function prInbox(): Promise<InboxPr[]> {
         return run(20)
       }
     }
-    const [review, mine] = await Promise.all([search('review'), search('mine')])
-    return parsePrInbox({ data: { review, mine } })
+    // PRs you reviewed drop out of "review requested"; a failed third search shouldn't lose the other two.
+    const [review, mine, reviewed] = await Promise.all([search('review'), search('mine'), search('reviewed').catch(() => undefined)])
+    return parsePrInbox({ data: { review, reviewed, mine } })
   } catch (e) {
     const err = e as { code?: string; stderr?: string; message?: string }
     if (err.code === 'ENOENT') throw new Error('The GitHub CLI (gh) isn\'t installed. Install it with `brew install gh`, then run `gh auth login`.')

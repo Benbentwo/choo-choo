@@ -1,12 +1,13 @@
 import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
-import type { PrInbox } from './prInbox'
+import type { InboxPr, PrInbox } from './prInbox'
 import type { Automation, AutomationRun, GithubWatchState } from './automations'
 import type { Layout, SavedLayout } from './layout'
 import type { AddonActionContext, AddonCallResult, AddonContext, AddonDevResult, AddonGrant, AddonInfo, AddonReloaded, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
 import type { PrDiffTarget, PrHeadSync, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
 import type { Interdiff, ReviewSettings } from './reviewUpdates'
+import type { ReviewWatchState } from './reviewWatch'
 export interface Repo {
   id: string
   name: string
@@ -719,6 +720,8 @@ export interface AppState {
   automationRuns?: AutomationRun[]
   /** Finding ids each automation already opened a workspace for, by automation id. */
   automationLedger?: Record<string, string[]>
+  /** Review updates: where each PR you review stood at the last look (shared/reviewWatch.ts). */
+  reviewWatch?: ReviewWatchState
   /** Where the PR inbox stood at the last GitHub poll, for GitHub-event automations. */
   githubWatch?: GithubWatchState
 }
@@ -1075,6 +1078,14 @@ export interface Api {
   listGithubRepos(): Promise<GithubRepo[]>
   /** Open PRs across GitHub that wait on the person's review, or that they opened. */
   prInbox(): Promise<PrInbox>
+  /** Looks at GitHub for review updates unless it just did; the list, or null when it can't. */
+  reviewsCheckSoon(): Promise<PrInbox | null>
+  /** Marks PRs (owner/repo#n) as looked at. */
+  reviewsSeen(keys: string[]): Promise<void>
+  /** The PRs list after each background check. */
+  onPrInbox(cb: (inbox: PrInbox) => void): () => void
+  /** A review-update notification was clicked. */
+  onReviewOpen(cb: (pr: InboxPr) => void): () => void
   quickStart(name: string): Promise<Repo>
   /** `beside`: an add-on page asked to show the workspace next to itself (choo.ui.openWorkspace with beside). */
   onNavigate(cb: (workspaceId: string, chatId: string, beside?: { key: string; viewId: string; repoId?: string }) => void): () => void

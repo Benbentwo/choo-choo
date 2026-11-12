@@ -52,6 +52,8 @@ Keep quiet about: merges from the base branch (on), rebases that leave the chang
 
 On someone else's PR in Review mode, once you've reviewed and the author pushed, the Files list and the diff get **All changes | Since your review · N files**. Since your review lists only the files the author changed and shows only those hunks, with a line saying what was left out ("Left out: changes from main (41 files) and package-lock.json") and **Show them**. The choice is remembered per workspace; Settings › Reviews › "Open reviewed PRs on Since your review" sets the default (on). Removed lines in this view are against your last review, not the PR, so commenting on them asks you to switch to All changes. The Review tab's "Since your review" card uses the same interdiff.
 
+![Settings › Reviews](../media/review-updates-settings.png)
+
 **Automations.** A new GitHub event, "A PR I'm reviewing changed for me", starts an automation with the PR and the reasons, so an agent can summarise the new changes before you look.
 
 **Viewed files.** With "Sync viewed ticks with GitHub" on, each file in the diff has a Viewed tick that is GitHub's own per-file viewed state. GitHub clears it when the file changes.
