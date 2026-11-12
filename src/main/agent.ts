@@ -10,6 +10,7 @@ import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
 import * as notion from './integrations/notion'
 import { buildSystemPrompt } from '@shared/systemPrompt'
 import { onModelReported } from '@shared/modelSwitch'
+import { limitFromEvent, limitFromText, type ChatPause } from '@shared/continueWork'
 import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, questionReply, runningTasks } from './claudeOptions'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[] }) => void
@@ -263,6 +264,10 @@ export async function send(
   chat.status = 'running'
   chat.unread = false
   chat.advisorBlocker = false
+  // A new turn ends a pause; if this one stops on the limit too, it counts as a retry.
+  const prevPause = chat.paused
+  chat.paused = undefined
+  let limitHit: ChatPause | null = null
   if (chat.model !== 'codex') {
     const g = goalCommand(text)
     if (g === null) chat.goal = undefined
@@ -403,6 +408,9 @@ export async function send(
       if ((msg.type === 'assistant' || msg.type === 'user') && msg.uuid) lastUuid = msg.uuid
       if (applyTaskEvent(tasks, msg)) emit(chat.id, { tasks: runningTasks(tasks) })
       switch (msg.type) {
+        case 'rate_limit_event':
+          limitHit = limitFromEvent(msg, Date.now()) ?? limitHit
+          break
         case 'active_goal':
           chat.goal = goalFrom(msg.value)
           store.save()
@@ -437,6 +445,10 @@ export async function send(
         }
         case 'assistant': {
           const parentId: string | undefined = msg.parent_tool_use_id ?? undefined
+          if (msg.error === 'rate_limit' && !parentId && !limitHit) {
+            const text = (msg.message?.content ?? []).map((b: { type?: string; text?: string }) => (b.type === 'text' ? b.text : '')).join('')
+            limitHit = limitFromText(text, Date.now())
+          }
           for (const block of msg.message?.content ?? []) {
             if (block.type === 'text' && block.text) {
               if (parentId) continue
@@ -501,6 +513,7 @@ export async function send(
           // Claude Code only ends a turn under an active /goal once the goal is met or cleared.
           if (turnOk && chat.goal) chat.goal = undefined
           if (!turnOk) {
+            limitHit ??= limitFromText(typeof msg.result === 'string' ? msg.result : (msg.errors ?? []).join('\n'), Date.now())
             const hint = authHint(typeof msg.result === 'string' ? msg.result : (msg.errors ?? []).join('\n'))
             if (hint) put({ id: randomUUID(), kind: 'error', text: hint, ts: Date.now() })
             if (msg.subtype === 'error_max_budget_usd' && budget)
@@ -528,7 +541,8 @@ export async function send(
     chat.status = 'idle'
   } catch (e) {
     const aborted = abort.signal.aborted
-    chat.status = aborted ? 'idle' : 'error'
+    if (!aborted) limitHit ??= limitFromText((e as Error).message, Date.now())
+    chat.status = aborted || limitHit ? 'idle' : 'error'
     put({
       id: randomUUID(),
       kind: 'error',
@@ -541,6 +555,8 @@ export async function send(
     for (const [id, p] of pending) if (p.req.chatId === chat.id) respondPermission(id, 'deny')
     if (streamItem) put({ ...streamItem, streaming: false })
     running.delete(chat.id)
+    // Stopped on a plan usage limit: Continue work queues it to resume after the reset.
+    if (limitHit && !turnOk && !abort.signal.aborted) chat.paused = { ...limitHit, ...(prevPause ? { retries: (prevPause.retries ?? 0) + 1 } : {}) }
     if (lastUuid) chat.lastUuid = lastUuid
     chat.unread = true
     store.save()

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { PausedBanner } from './ContinueWork'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Chat, ChatItem, ReviewFinding } from '@shared/types'
@@ -93,6 +94,7 @@ export function ChatView({ chat }: { chat: Chat }) {
           </>
         )}
         {renderItems(current)}
+        <PausedBanner chat={chat} />
         <PermissionCards chat={chat} />
         {chat.status === 'running' && !pendingCount && !endsInLiveWork && (
           <div className="mt-3 flex items-center gap-2 text-faint">

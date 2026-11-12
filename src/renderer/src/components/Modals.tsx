@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReviewSettingsSection } from './ReviewSettings'
+import { ContinueSettingsSection } from './ContinueWork'
 import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, PromptCustom, Settings, Telemetry } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, openGroupOrchestrator, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
@@ -201,6 +202,7 @@ const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'appearance', label: 'Appearance', hint: 'Theme, accent color, text size, density and fonts.' },
   { id: 'reviews', label: 'Reviews', hint: 'When a PR you review changes for you, and how you catch up on it.' },
   { id: 'projects', label: 'Projects', hint: 'Your projects and their workspaces.' },
+  { id: 'continue', label: 'Continue work', hint: 'What happens when a chat hits your plan\'s usage limit, and what starts when the window resets.' },
   { id: 'agents', label: 'Agents', hint: 'Extra agents and the advisor.' },
   { id: 'prompts', label: 'Prompts', hint: 'Custom instructions added to chats, for every project or one.' },
   { id: 'mcp', label: 'MCP', hint: 'MCP servers Claude Code loads for each project.' },
@@ -247,6 +249,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'projects' ? (
           <ProjectsSettings />
+        ) : tab === 'continue' ? (
+          <ContinueSettingsSection />
         ) : tab === 'appearance' ? (
           <AppearanceSettings />
         ) : tab === 'reviews' ? (

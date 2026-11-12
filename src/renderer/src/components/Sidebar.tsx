@@ -7,9 +7,9 @@ import { Menu, type MenuItem } from './Menu'
 import { LimitsFooter } from './LimitsFooter'
 import { addProjectItems } from './AddProject'
 import * as L from '@shared/layout'
-import { useStore, showView, viewFor, openAddonPage, type DragItem, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, openAutomationsPage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
+import { useStore, showView, viewFor, openAddonPage, type DragItem, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, openAutomationsPage, openContinuePage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
-import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconMerged, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
+import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconMerged, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack, IconUpNext } from '../icons'
 import { StackRows } from './Stack'
 import { Stats } from './Stats'
 import { prMenuItems, usePrState } from '../prState'
@@ -181,7 +181,7 @@ export function Sidebar() {
       </div>
 
       <nav className="px-2 pb-3">
-        <NavItem icon={<IconHome />} label="Home" active={!s.panesShown && !s.draftRepo && !s.prsPage && !s.automationsPage} onClick={() => s.selectWorkspace(null)} />
+        <NavItem icon={<IconHome />} label="Home" active={!s.panesShown && !s.draftRepo && !s.prsPage && !s.automationsPage && !s.continuePage} onClick={() => s.selectWorkspace(null)} />
         <NavItem icon={<IconPlus />} label="Create" onClick={() => s.set({ modal: 'create' })} />
         <NavItem icon={<IconSearch />} label="Search" onClick={() => openPalette()} hint="⌘K" />
         <NavItem
@@ -192,6 +192,14 @@ export function Sidebar() {
           onClick={openPrsPage}
           badge={toReview || undefined}
           actions={freshPrs ? <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold text-[#1a1b20]" title="PRs you review that changed for you">{freshPrs} new</span> : undefined}
+        />
+        <NavItem
+          icon={<IconUpNext />}
+          label="Up next"
+          title="Continue work: what starts when your usage window resets"
+          active={s.continuePage && !s.selectedWs}
+          onClick={openContinuePage}
+          badge={s.continueQueue.length || undefined}
         />
         {projectsOn && (
           <NavItem
@@ -562,6 +570,9 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
   const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
   const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
   const blocker = s.chats.some((c) => c.workspaceId === w.id && c.advisorBlocker)
+  // Place in Up next (Continue work), for the first queued chat of this workspace.
+  const queuedAt = s.continueQueue.findIndex((q) => s.chats.some((c) => c.id === q.chatId && c.workspaceId === w.id))
+  const queued = queuedAt >= 0 ? s.continueQueue[queuedAt] : undefined
   const pr = usePrState(w, s.repos.find((r) => r.id === w.repoId))
   const slot = usePaneSlot(w.id)
   return (
@@ -642,6 +653,10 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
       {slot && <PaneSlotIcon slot={slot} />}
       {asking ? (
         <span className="anim-glow shrink-0 rounded bg-accent/20 px-1 text-[10px] text-accent">needs you</span>
+      ) : queued && !running ? (
+        <span className={`shrink-0 text-[10.5px] ${queued.source === 'paused' ? 'text-amber-400' : 'text-[#60a5fa]'}`} title={queued.source === 'paused' ? `Paused at the usage limit · #${queuedAt + 1} in Up next` : `#${queuedAt + 1} in Up next`}>
+          {queued.source === 'paused' ? '❚❚' : '◷'} #{queuedAt + 1}
+        </span>
       ) : blocker ? (
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-del" title="The advisor raised a blocker" />
       ) : (
