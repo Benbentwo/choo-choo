@@ -246,11 +246,17 @@ A project can name the add-ons its team should have in the `choo-choo.json` at i
 
 ## Trying yours
 
-1. Settings › Add-ons › Add source: paste the path to your marketplace folder.
-2. Install it and turn it on.
-3. With a folder as the source, Choo Choo reads the add-on straight from it: edit a file, then reopen the view. After changing the manifest, press Check again in Settings › Add-ons.
+1. Settings › Add-ons › **Develop add-on…**: pick your add-on's folder, or the root of a marketplace repo holding several. A single add-on needs no `marketplace.json`; Choo Choo puts it in a marketplace of its own called `choo-choo-dev`.
+2. Turn it on. It shows a **Dev** badge.
+3. Edit and save. Choo Choo reads the add-on straight from the folder and watches it: a save reloads its open views and restarts its background page, and a save of `choo-choo.addon.json` reads the manifest again. If the manifest is broken, or asks for new permissions, the app says so and the add-on pauses until it's fixed or reviewed.
 
-With a git repo as the source, push your change and update the plugin (`claude plugin update <name>@<source>`).
+**Reload** and **Inspect** sit on a dev add-on's row in Settings, and the ⌘K palette has "Reload <add-on>" and "Inspect <add-on>". Inspect opens DevTools for the app window, where views run as frames (pick the frame in the console's context menu), and a DevTools window for the background page. Your Claude Code parts (skills, commands, hooks) load from the folder too, in new sessions.
+
+A reload starts the add-on's frames over, so a view loses whatever it kept in memory. Keep what should survive in `choo.store`. If your add-on has a build step, run its watcher (for example `vite build --watch`) into the folder your manifest points at; each rebuild is a save.
+
+If the folder's marketplace is already added from GitHub, Choo Choo offers to swap that source for the folder. The ids stay the same, so your permissions and the add-on's data carry over. To go back, remove the source and add the repo again.
+
+Without Develop add-on, Add source also takes a folder path, and add-ons from a folder are watched the same way. With a git repo as the source, push your change and update the plugin (`claude plugin update <name>@<source>`).
 
 ## Compatibility
 

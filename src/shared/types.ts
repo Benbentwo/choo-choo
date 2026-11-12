@@ -4,7 +4,7 @@ import type { UpdateStatus } from './updates'
 import type { PrInbox } from './prInbox'
 import type { Automation, AutomationRun, GithubWatchState } from './automations'
 import type { Layout, SavedLayout } from './layout'
-import type { AddonActionContext, AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
+import type { AddonActionContext, AddonCallResult, AddonContext, AddonDevResult, AddonGrant, AddonInfo, AddonReloaded, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
 import type { PrDiffTarget, PrHeadSync, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
 export interface Repo {
   id: string
@@ -964,6 +964,13 @@ export interface Api {
   addonRemoveSource(name: string): Promise<void>
   addonInstall(id: string, acceptSha?: string): Promise<PluginInstallResult>
   addonUninstall(id: string): Promise<void>
+  /** Loads a folder holding one add-on or a marketplace, read in place and reloaded as it changes. Opens a folder picker without `folder`. */
+  addonDevelop(folder?: string, replace?: boolean): Promise<AddonDevResult>
+  /** Starts an add-on's frames over (every add-on that is on without a key), reading manifests again. */
+  addonReload(key?: string): Promise<void>
+  /** Opens DevTools for an add-on's views and its background page. */
+  addonInspect(key: string): Promise<void>
+  onAddonReloaded(cb: (r: AddonReloaded) => void): () => void
   /** Turns an add-on on or off. Turning on needs the permissions the person was shown; it fails if the add-on now asks for others. */
   addonSetEnabled(id: string, enabled: boolean, permissions?: string[]): Promise<AddonInfo[]>
   /** One host API call from an add-on's view. The main process checks the add-on's permissions. */

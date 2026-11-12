@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons, refreshPrInbox, loadStack, splitPane, closePane, toggleMaximize, focusDir, openWorkspaceBeside } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons, refreshPrInbox, loadStack, splitPane, closePane, toggleMaximize, focusDir, openWorkspaceBeside, reportError } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Panes } from './components/Panes'
 import { RightPanel } from './components/RightPanel'
@@ -34,6 +34,11 @@ export function App() {
     void refreshPrInbox()
     const prTimer = setInterval(() => void refreshPrInbox(), 5 * 60_000)
     const offAddons = window.api.onAddonsChanged(() => void refreshAddons())
+    // A dev add-on reloads quietly when its files change. Only a reload that broke it is worth interrupting for.
+    const offReloaded = window.api.onAddonReloaded((r) => {
+      if (r.errors.length) reportError(new Error(`${r.name} didn't reload: ${r.errors.join('; ')}`))
+      else if (r.state === 'review') reportError(new Error(`${r.name} now asks for new permissions. Review them in Settings › Add-ons to turn it back on.`))
+    })
     void refreshState().then(() => {
       for (const w of useStore.getState().workspaces) if (!w.archived) void refreshStats(w.id)
     })
@@ -119,6 +124,7 @@ export function App() {
       offStack()
       clearInterval(prTimer)
       offAddons()
+      offReloaded()
       offLink()
       offState()
       offPr()

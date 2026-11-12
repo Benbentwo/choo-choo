@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { describePermission, missingGrants, type AddonActionPlace, type AddonInfo, type AddonManifest, type AddonSlot, type AddonSource, type AvailableAddon, type PinStatus, type PinnedAddon } from '@shared/addons'
+import { describePermission, missingGrants, type AddonActionPlace, type AddonDevResult, type AddonInfo, type AddonManifest, type AddonSlot, type AddonSource, type AvailableAddon, type PinStatus, type PinnedAddon } from '@shared/addons'
 import { pinsToSetUp, reportError, useStore } from '../store'
 
 const field = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
@@ -141,6 +141,9 @@ export function AddonSettings() {
   const [asking, setAsking] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<{ id: string; repoId?: string; command: string; sha256: string } | null>(null)
+  /** Develop add-on found a source of the same name added from elsewhere: waiting for Replace. */
+  const [replacing, setReplacing] = useState<{ folder: string; name: string; from: string } | null>(null)
+  const [developed, setDeveloped] = useState<AddonDevResult | null>(null)
 
   const load = async () => {
     try {
@@ -199,6 +202,18 @@ export function AddonSettings() {
       const settings = await window.api.saveSettings({ addonPinsDismissed: { ...s.settings.addonPinsDismissed, [repoId]: [...new Set([...(s.settings.addonPinsDismissed?.[repoId] ?? []), id])] } })
       s.set({ settings })
     })
+  const develop = (folder?: string, replace?: boolean) =>
+    run('develop', async () => {
+      const r = await window.api.addonDevelop(folder, replace)
+      if (r.canceled) return
+      if (r.replace && r.folder) return setReplacing({ folder: r.folder, ...r.replace })
+      setReplacing(null)
+      setDeveloped(r)
+      await load()
+      // A new add-on still needs turning on: show what it asks for.
+      const fresh = useStore.getState().addons.find((a) => r.ids?.includes(a.id) && a.state === 'off')
+      if (fresh) setAsking(fresh.id)
+    })
   const pinned = pins.map((pin) => ({ pin, repo: repos.find((r) => r.id === pin.repoId), todo: pinsToSetUp(pin, addons, dismissed?.[pin.repoId]) })).filter((p) => p.repo && p.todo.length)
 
   return (
@@ -210,10 +225,53 @@ export function AddonSettings() {
             Write your own
           </button>
         </span>
+        <button
+          className="rounded-md border border-line px-2 py-0.5 text-muted hover:bg-hover hover:text-fg disabled:opacity-40"
+          disabled={!!busy}
+          title="Load an add-on or a marketplace from a folder on this Mac. It reloads as you save."
+          onClick={() => void develop()}
+        >
+          {busy === 'develop' ? 'Loading…' : 'Develop add-on…'}
+        </button>
         <button className="rounded-md border border-line px-2 py-0.5 text-muted hover:bg-hover hover:text-fg disabled:opacity-40" disabled={!!busy} onClick={() => void run('refresh', load)}>
           {busy === 'refresh' ? 'Checking…' : 'Check again'}
         </button>
       </div>
+
+      {replacing && (
+        <div className="border-b border-amber-500/40 bg-amber-500/5 px-5 py-3 text-[12px]">
+          <div className="mb-1 font-medium text-amber-400">The source {replacing.name} is already added from {replacing.from}</div>
+          <div className="mb-2 text-faint">
+            Replace it with {replacing.folder}? Its add-ons are reinstalled from the folder. Settings, permissions and add-on data stay, since the ids don't change. To go back later, remove the source and add {replacing.from} again.
+          </div>
+          <div className="flex gap-2">
+            <button className="rounded-md bg-fg px-2.5 py-1 font-medium text-bg disabled:opacity-40" disabled={!!busy} onClick={() => void develop(replacing.folder, true)}>
+              Replace with the folder
+            </button>
+            <button className="text-muted hover:text-fg" onClick={() => setReplacing(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {developed && (
+        <div className="flex items-start gap-2 border-b border-line bg-accent/5 px-5 py-2.5 text-[12px]">
+          <div className="flex-1">
+            <div>
+              Loaded {developed.folder}. {developed.ids?.length ? `${developed.ids.length === 1 ? 'Its add-on reloads' : `Its ${developed.ids.length} add-ons reload`} as you save files there.` : 'It has no add-ons yet.'}
+            </div>
+            {developed.skipped?.map((x) => (
+              <div key={x.id} className="text-del">
+                {x.id}: {x.reason}
+              </div>
+            ))}
+          </div>
+          <button className="text-faint hover:text-fg" title="Dismiss" onClick={() => setDeveloped(null)}>
+            ×
+          </button>
+        </div>
+      )}
 
       {confirm && (
         <div className="border-b border-amber-500/40 bg-amber-500/5 px-5 py-3 text-[12px]">
@@ -252,9 +310,26 @@ export function AddonSettings() {
                 {a.version && `v${a.version} · `}
                 {a.marketplace}
               </span>
+              {a.dev && (
+                <span className="rounded bg-accent/15 px-1.5 py-px text-[11px] text-accent" title="Read from a folder on this Mac. Saving a file there reloads it.">
+                  Dev
+                </span>
+              )}
               {STATE_NOTE[a.state] && <span className={`rounded px-1.5 py-px text-[11px] ${a.state === 'invalid' ? 'bg-del/15 text-del' : 'bg-amber-500/15 text-amber-400'}`}>{STATE_NOTE[a.state]}</span>}
               <div className="flex-1" />
               {busy === a.id && <span className="text-[12px] text-faint">Working…</span>}
+              {a.dev && (
+                <>
+                  <button className="text-[12px] text-faint hover:text-fg disabled:opacity-40" disabled={!!busy} title="Read the manifest again and restart its views and background page" onClick={() => void run(a.id, () => window.api.addonReload(a.key))}>
+                    Reload
+                  </button>
+                  {on && (
+                    <button className="text-[12px] text-faint hover:text-fg" title="Open DevTools for its views and its background page" onClick={() => void window.api.addonInspect(a.key).catch(reportError)}>
+                      Inspect
+                    </button>
+                  )}
+                </>
+              )}
               {a.manifest && (
                 <button className="text-[12px] text-faint hover:text-fg" onClick={() => setOpen(open === a.id ? null : a.id)}>
                   Permissions
@@ -367,7 +442,7 @@ export function AddonSettings() {
         ))}
         <input
           className={`${field} min-w-0 flex-1 py-0.5`}
-          placeholder="owner/repo or git URL, public or private"
+          placeholder="owner/repo, git URL or folder path"
           value={source}
           onChange={(e) => setSource(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && source.trim() && void addSource()}
