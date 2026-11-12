@@ -18,6 +18,7 @@ import { UpdateBanners } from './Updates'
 import { AddonActions, addonViews } from './Addons'
 import { ProjectsSection } from './Projects'
 import { inProject } from '@shared/projects'
+import { buildLabel, sidebarVersion, type BuildInfo } from '@shared/uiComment'
 
 export function Sidebar() {
   const s = useStore()
@@ -406,12 +407,27 @@ export function Sidebar() {
       </div>
       <div className="flex items-center gap-2 px-3 py-2 text-faint">
         <BrandMark size={14} />
-        <span className="flex-1 text-[11px]">Choo Choo</span>
+        <span className="text-[11px]">Choo Choo</span>
+        <AppVersion />
         <button className="rounded p-1 hover:bg-hover hover:text-fg" title="Settings (⌘,)" onClick={() => s.set({ modal: 'settings' })}>
           <IconGear />
         </button>
       </div>
     </aside>
+  )
+}
+
+/** The app version (packaged) or `<sha>-dev` (npm run dev), from the same build info comment mode uses. */
+function AppVersion() {
+  const [info, setInfo] = useState<BuildInfo | null>(null)
+  useEffect(() => {
+    const bridge = (window as unknown as { uiComment?: { info(): Promise<BuildInfo> } }).uiComment
+    void bridge?.info().then(setInfo, () => {})
+  }, [])
+  return (
+    <span className="flex-1 truncate text-[11px] opacity-70" title={info ? buildLabel(info) : undefined}>
+      {info ? sidebarVersion(info) : ''}
+    </span>
   )
 }
 
