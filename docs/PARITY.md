@@ -71,6 +71,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Changes: committed, uncommitted and untracked vs merge base, with diff view
 - ✅ Code comments: click, drag or shift-click line numbers in the diff to comment; comments wait as chips in the composer (which stays below an open diff or file) and go to the agent together, each with its file, lines and code
 - ✅ All files tree with file preview, filter
+- ✅ Find in a file or diff: ⌘F or the magnifier in the file's header, Enter and ⇧Enter step through matches, Esc closes
 - ✅ Artifacts: files the agent wrote
 - ✅ Checks: PR check runs, re-run failed jobs
 - ✅ PR and check status stay fresh through ETag polling (free 304s), every 15s while focused; no webhook server needed

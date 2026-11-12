@@ -47,3 +47,13 @@ export function usePrState(ws: Workspace, repo: Repo | undefined): PrInfo | null
   }, [ws.id, ws.branch, version, can])
   return pr
 }
+
+/** Right-click menu entries for a workspace row whose branch has a PR: copy its link, open it. */
+export function prMenuItems(pr: PrInfo | null | undefined): ({ label: string; onClick: () => void } | { kind: 'sep' })[] {
+  if (!pr?.url) return []
+  return [
+    { label: `Copy link to #${pr.number}`, onClick: () => void navigator.clipboard.writeText(pr.url) },
+    { label: `Open #${pr.number} on GitHub`, onClick: () => void window.api.openExternal(pr.url) },
+    { kind: 'sep' }
+  ]
+}

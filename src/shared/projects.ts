@@ -94,6 +94,8 @@ function byRepo(group: RepoGroup, repos: Repo[], list: Workspace[]): { repo: Rep
     .filter((n) => n.workspaces.length > 0)
 }
 
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
 /** The thread a workspace belongs to: the thread that started it, if it is still one of the project's threads. */
 export function workspaceThread(ws: Workspace, chats: Chat[], orchWsId: string | undefined): Chat | undefined {
   if (!ws.threadId || !orchWsId) return undefined
@@ -130,8 +132,16 @@ export function projectTree(group: RepoGroup, repos: Repo[], workspaces: Workspa
 export const threadKey = (n: ThreadNode) => n.thread?.id ?? 'none'
 
 /** Keys in Settings.sidebarCollapsed for folding the Projects section, a project, a thread in it, or a repo in a thread. */
+=======
+/** Keys in Settings.sidebarCollapsed for folding a project, a repo inside it, the Projects section, or the Repos list. */
+>>>>>>> Stashed changes
+=======
+/** Keys in Settings.sidebarCollapsed for folding a project, a repo inside it, the Projects section, or the Repos list. */
+>>>>>>> Stashed changes
 export const foldKey = {
   section: 'section:projects',
+  /** The Repos list below the Projects section. */
+  repos: 'section:repos',
   project: (groupId: string) => `project:${groupId}`,
   projectThread: (groupId: string, threadId: string) => `project:${groupId}:thread:${threadId}`,
   projectRepo: (groupId: string, threadId: string, repoId: string) => `project:${groupId}:thread:${threadId}:${repoId}`

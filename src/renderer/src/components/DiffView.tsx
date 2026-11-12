@@ -4,6 +4,7 @@ import { useStore, setCodeComments, destOf, reportError, type CodeComment } from
 import { IconBot, IconGithub, IconX } from '../icons'
 import { useReview } from '../review'
 import { pairedSegs } from '../wordDiff'
+import { FindBar } from './FindBar'
 import { usePrDiffTarget, usePrReview, sendToAgent, useWorkspaceMode } from '../prReview'
 import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import type { ReviewFinding } from '@shared/types'
@@ -93,9 +94,19 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     return () => window.removeEventListener('mouseup', up)
   }, [])
 
+  // Another file: start from "Loading". The same file again (stats tick whenever the worktree is
+  // re-read) reloads behind what is shown, so the view doesn't blank and lose its scroll position;
+  // an unchanged diff is the same string and doesn't re-render.
+  useEffect(() => setDiff(null), [ws.id, file])
   useEffect(() => {
-    setDiff(null)
-    void window.api.getFileDiff(ws.id, file).then(setDiff, (e) => setDiff(`error: ${e}`))
+    let live = true
+    void window.api.getFileDiff(ws.id, file).then(
+      (d) => live && setDiff(d),
+      (e) => live && setDiff(`error: ${e}`)
+    )
+    return () => {
+      live = false
+    }
   }, [ws.id, file, stats])
 
   // Opened at a line (from a review finding): bring that row into view once the diff is in.
@@ -333,7 +344,10 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   )
   return (
     <div ref={box} className="selectable flex-1 overflow-auto font-mono text-[12px] leading-[20px] [container-type:inline-size]">
-      <div className="sticky top-0 z-10 border-b border-line bg-panel px-4 py-2 text-muted">{file}</div>
+      <div className="sticky top-0 left-0 z-10 flex h-[34px] w-[100cqw] items-center gap-3 border-b border-line bg-panel px-4 text-muted">
+        <span className="min-w-0 flex-1 truncate">{file}</span>
+        <FindBar box={box} watch={diff} />
+      </div>
       {lines.length === 0 && <div className="p-6 font-sans text-faint">No textual changes (binary or empty file).</div>}
       {unplaced.map((f, i) => (
         <Comment key={`u${i}`} f={f} />
@@ -371,7 +385,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
               <td className={`w-4 select-none ${l.kind === 'add' ? 'text-add' : l.kind === 'del' ? 'text-del' : 'text-faint'}`}>
                 {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ''}
               </td>
-              <td className="pr-4 whitespace-pre">
+              <td data-find className="pr-4 whitespace-pre">
                 {words.get(i)?.map((w, k) =>
                   w.changed ? (
                     <span key={k} className={`rounded-[3px] ${l.kind === 'add' ? 'bg-add/35' : 'bg-del/35'}`}>

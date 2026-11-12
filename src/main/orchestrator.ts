@@ -614,7 +614,7 @@ export function queryOptions(
     disallowedTools: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'],
     // Add-on tools that only read need no OK from the person, like the built-in ones below.
     // An automation's start_workspace is vouched for by the person who made it; the app caps it.
-    // Cloning a repo the person hasn't added always asks, whatever the chat's permission setting.
+    // Cloning a repo the person hasn't added asks whatever the chat's permission setting, until they pick Always allow on a card.
     alwaysAskTools: projectTools.length ? ['mcp__choo__clone_repo'] : [],
     autoAllowTools: [...addons.flatMap((set) => set.tools.filter((t) => t.readOnly).map((t) => `mcp__${set.server}__${t.name}`)), ...(run ? ['mcp__choo__start_workspace'] : [])]
   }
