@@ -65,6 +65,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0014](decisions/0014-automations-own-page-polled-events.md) | Automations get their own page and target a project or a repo; GitHub events are polled while the app is open, no webhooks |
 | [0015](decisions/0015-beta-channel-uses-prereleases.md) | The beta update channel is GitHub prereleases built and signed on every merge to main; stable stays manually published releases |
 | [0017](decisions/0017-threads-own-their-prs.md) | A project's threads own their workspaces and PRs; the sidebar shows project › thread › repo › PR (supersedes part of 0013) |
+| [0018](decisions/0018-add-on-dev-mode-reads-folders-in-place.md) | Add-ons under development are read from their folder and reload as it changes |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 

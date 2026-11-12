@@ -584,7 +584,8 @@ const addonDeps: addonHost.Deps = {
     const key = store.get().settings.anthropicApiKey.trim()
     return key ? { ANTHROPIC_API_KEY: key } : ({} as Record<string, string>)
   },
-  send
+  send,
+  inspectViews: () => win?.webContents.openDevTools({ mode: 'detach' })
 }
 
 function orchestratorChat(ws: Workspace, title: string): Chat {

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { Api, ChatEvent } from '@shared/types'
 import type { UpdateStatus } from '@shared/updates'
-import type { AddonAppEvent, AddonToolCall } from '@shared/addons'
+import type { AddonAppEvent, AddonReloaded, AddonToolCall } from '@shared/addons'
 
 const inv = (ch: string) => (...a: unknown[]) => ipcRenderer.invoke(ch, ...a)
 function on<T extends unknown[]>(ch: string, cb: (...a: T) => void) {
@@ -77,6 +77,10 @@ const api: Api = {
   addonCall: inv('addons:call') as Api['addonCall'],
   addonAction: inv('addons:action') as Api['addonAction'],
   onAddonsChanged: (cb) => on<[]>('addons:changed', cb),
+  addonDevelop: inv('addons:develop') as Api['addonDevelop'],
+  addonReload: inv('addons:reload') as Api['addonReload'],
+  addonInspect: inv('addons:inspect') as Api['addonInspect'],
+  onAddonReloaded: (cb) => on<[AddonReloaded]>('addons:reloaded', cb),
   addonPins: inv('addons:pins') as Api['addonPins'],
   addonInstallPinned: inv('addons:installPinned') as Api['addonInstallPinned'],
   onAddonEvent: (cb) => on<[AddonAppEvent]>('addons:event', cb),

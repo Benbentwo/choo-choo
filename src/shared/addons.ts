@@ -112,6 +112,33 @@ export interface AddonInfo {
   manifest?: AddonManifest
   errors: string[]
   granted: string[]
+  /** Read straight from a folder on this Mac (a folder source), so Choo Choo reloads it as its files change. */
+  dev?: boolean
+  /** Goes up each time the add-on is reloaded; its frames start over when it changes. */
+  rev?: number
+}
+
+/** What happened when a folder was loaded with Develop add-on. */
+export interface AddonDevResult {
+  canceled?: boolean
+  folder?: string
+  /** A source with the folder's marketplace name is already added from somewhere else. Ask before replacing it. */
+  replace?: { name: string; from: string }
+  /** Add-on ids that were installed or reinstalled from the folder. */
+  installed?: string[]
+  /** Add-on ids in the folder, installed or not. */
+  ids?: string[]
+  /** Ids that couldn't be installed, with why. */
+  skipped?: { id: string; reason: string }[]
+}
+
+/** Sent when a dev add-on reloaded because its files changed. */
+export interface AddonReloaded {
+  key: string
+  name: string
+  files: string[]
+  state: AddonState
+  errors: string[]
 }
 
 /** An add-on a source offers that isn't installed yet. */

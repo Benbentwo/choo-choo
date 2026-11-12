@@ -18,6 +18,8 @@ export interface PluginEntry {
   /** user, project, local, or a scope Claude Code manages for you. */
   scope: string
   installPath: string
+  /** Read from a folder source in place rather than from Claude Code's cache. */
+  fromFolder?: boolean
 }
 
 /** An add-on plus where its files are. The folder never leaves the main process. */
@@ -46,14 +48,18 @@ export async function listPlugins(cwd: string, env: Record<string, string>): Pro
   const rows: any[] = Array.isArray(list) ? list : (list?.installed ?? [])
   return rows
     .filter((p) => typeof p?.id === 'string' && typeof p.installPath === 'string')
-    .map((p) => ({
-      id: p.id,
-      version: String(p.version ?? ''),
-      enabled: !!p.enabled,
-      scope: String(p.scope ?? 'user'),
+    .map((p) => {
       // A plugin from a local folder source is read from that folder, as Claude Code does, so edits show without reinstalling.
-      installPath: typeof p.readFromFolder === 'string' && existsSync(p.readFromFolder) ? p.readFromFolder : p.installPath
-    }))
+      const fromFolder = typeof p.readFromFolder === 'string' && existsSync(p.readFromFolder)
+      return {
+        id: p.id,
+        version: String(p.version ?? ''),
+        enabled: !!p.enabled,
+        scope: String(p.scope ?? 'user'),
+        installPath: fromFolder ? p.readFromFolder : p.installPath,
+        ...(fromFolder ? { fromFolder: true } : {})
+      }
+    })
 }
 
 export async function listSources(cwd: string, env: Record<string, string>): Promise<SourceEntry[]> {
@@ -142,6 +148,7 @@ export function describeAddons(plugins: PluginEntry[], grants: Record<string, Ad
       manifest: read.manifest,
       errors: read.errors,
       granted: grant?.granted ?? [],
+      ...(p.fromFolder ? { dev: true } : {}),
       dir: p.installPath,
       pluginScope: p.scope
     })
