@@ -4,10 +4,10 @@ import { useStore, setCodeComments, destOf, reportError, type CodeComment } from
 import { IconBot, IconGithub, IconX } from '../icons'
 import { useReview } from '../review'
 import { pairedSegs } from '../wordDiff'
-import { usePrDiffTarget, usePrReview, sendToAgent } from '../prReview'
+import { usePrDiffTarget, usePrReview, sendToAgent, useWorkspaceMode } from '../prReview'
 import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import type { ReviewFinding } from '@shared/types'
-import { defaultDest, draftProblem, isTheirs, threadPrompt, type CommentDest } from '@shared/prReview'
+import { draftProblem, modeDest, threadPrompt, type CommentDest } from '@shared/prReview'
 
 interface Line {
   kind: 'add' | 'del' | 'ctx' | 'hunk' | 'meta'
@@ -68,8 +68,10 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   const queuedHere = queued.filter((c) => c.file === file)
   const review = usePrReview(ws)
   const open = review?.pr.state === 'OPEN'
-  const theirs = open && isTheirs(review?.info)
-  const fallback = defaultDest(review?.info, review?.pr)
+  const { mode } = useWorkspaceMode(ws)
+  // Reviewing: comments default to your GitHub review and the agent only advises. Follows the header's Build/Review switch.
+  const theirs = open && mode === 'review'
+  const fallback = modeDest(mode, review?.pr)
   const target = usePrDiffTarget(ws, open)
   const threads = open ? (review?.info.feedback ?? []).filter((c) => c.kind === 'inline' && c.path === file) : []
   // Selected rows (indexes into lines) for a new comment: click or drag the line numbers, shift-click to extend.
@@ -309,7 +311,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
           </button>
           <span className="flex-1" />
           <span className="truncate text-faint">
-            {dest === 'github' && githubProblem ? githubProblem : theirs ? `Default here: GitHub, since this is ${review?.info.author}'s PR` : 'Default here: the agent, since this is your branch'}
+            {dest === 'github' && githubProblem ? githubProblem : theirs ? 'Default here: GitHub, since you are reviewing' : 'Default here: the agent, since you are building'}
           </span>
         </div>
       </div>

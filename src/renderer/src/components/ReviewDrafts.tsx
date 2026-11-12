@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { Workspace } from '@shared/types'
 import { draftProblem, isTheirs, type ReviewEvent } from '@shared/prReview'
 import { useStore, openDoc, setCodeComments, destOf, codeCommentsMessage, reviewTarget, reportError, type CodeComment } from '../store'
-import { usePrDiffTarget, usePrReview, sendToAgent } from '../prReview'
+import { usePrDiffTarget, usePrReview, sendToAgent, useWorkspaceMode } from '../prReview'
 import { IconBot, IconGithub, IconX } from '../icons'
 
 const EVENTS: { id: ReviewEvent; label: string; theirsOnly?: boolean }[] = [
@@ -19,6 +19,8 @@ export function ReviewDrafts({ ws }: { ws: Workspace }) {
   const review = usePrReview(ws)
   const open = review?.pr.state === 'OPEN'
   const theirs = open && isTheirs(review?.info)
+  const { mode } = useWorkspaceMode(ws)
+  const reviewing = open && mode === 'review'
   const github = all.filter((c) => destOf(c) === 'github')
   const agent = all.filter((c) => destOf(c) === 'agent')
   const target = usePrDiffTarget(ws, open && github.length > 0)
@@ -45,7 +47,7 @@ export function ReviewDrafts({ ws }: { ws: Workspace }) {
     }
   }
   const sendAgent = async () => {
-    await sendToAgent(ws, codeCommentsMessage(agent, '', reviewTarget(review)))
+    await sendToAgent(ws, codeCommentsMessage(agent, '', reviewTarget(review, mode)))
     setCodeComments(ws.id, (list) => list.filter((c) => destOf(c) !== 'agent'))
   }
   const remove = (id: string) => setCodeComments(ws.id, (list) => list.filter((x) => x.id !== id))
@@ -136,7 +138,7 @@ export function ReviewDrafts({ ws }: { ws: Workspace }) {
             <button className="rounded-md bg-violet-400 px-2.5 py-1 text-[12.5px] font-medium text-[#16121f]" onClick={() => void sendAgent()}>
               Send to agent
             </button>
-            <span className="text-[12px] text-faint">{theirs ? 'It answers and suggests changes; it won\'t push.' : 'or press ↵ in the chat'}</span>
+            <span className="text-[12px] text-faint">{reviewing ? 'It answers and suggests changes; it won\'t push.' : 'or press ↵ in the chat'}</span>
           </div>
         </div>
       )}

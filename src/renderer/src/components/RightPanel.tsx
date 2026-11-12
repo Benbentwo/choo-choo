@@ -3,7 +3,8 @@ import type { CheckRun, FileChange, PrComment, PrInfo, Workspace } from '@shared
 import { canUpdateBranch, fixChecksPrompt, nextPrAction, resolveConflictsPrompt, summarizeChecks } from '@shared/prStatus'
 import { newSince, prCommentsPrompt } from '@shared/prComments'
 import { isTheirs, type PrReviewInfo } from '@shared/prReview'
-import { useStore, reportError, openDoc, type RightTab } from '../store'
+import { useStore, reportError, openDoc, destOf, type RightTab } from '../store'
+import { useWorkspaceMode, type WsMode } from '../prReview'
 import { IconComment, IconDown, IconEye, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
 import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
@@ -15,13 +16,26 @@ import { StackTab } from './Stack'
 import { prBaseFor } from '@shared/stack'
 import * as L from '@shared/layout'
 
-const TABS: { id: RightTab; label: string; stack?: boolean }[] = [
-  { id: 'stack', label: 'Stack', stack: true },
-  { id: 'artifacts', label: 'Artifacts' },
+type TabDef = { id: RightTab; label: string; stack?: boolean }
+/** The tabs that matter for what you're doing; the rest wait under More. */
+const TABS: Record<WsMode, TabDef[]> = {
+  build: [
+    { id: 'changes', label: 'Changes' },
+    { id: 'checks', label: 'Checks' },
+    { id: 'review', label: 'Review' },
+    { id: 'stack', label: 'Stack', stack: true }
+  ],
+  review: [
+    { id: 'review', label: 'Review' },
+    { id: 'changes', label: 'Files' },
+    { id: 'checks', label: 'Checks' },
+    { id: 'stack', label: 'Stack', stack: true }
+  ]
+}
+const MORE: TabDef[] = [
   { id: 'files', label: 'All files' },
-  { id: 'changes', label: 'Changes' },
-  { id: 'checks', label: 'Checks' },
-  { id: 'graphs', label: 'Graphs' }
+  { id: 'artifacts', label: 'Artifacts' },
+  { id: 'graphs', label: 'Usage' }
 ]
 
 export function RightPanel({ ws }: { ws: Workspace }) {
@@ -33,12 +47,24 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   const addonTabs = addonViews(s.addons, 'workspace')
   const addonTab = addonTabs.find((t) => addonTabId(t.addon, t.view) === s.rightTab)
   const split = !!s.layout && L.leaves(s.layout).length > 1
+  const { mode } = useWorkspaceMode(ws)
+  const reviewCount = (s.codeComments[ws.id] ?? []).length
+  const [more, setMore] = useState(false)
+  const extra = MORE.find((t) => t.id === s.rightTab)
+  const tabs = [...TABS[mode].filter((t) => !t.stack || ws.stack), ...(extra ? [extra] : [])]
 
   // The add-on behind the open tab was turned off: fall back to Changes.
   useEffect(() => {
     if (s.rightTab.startsWith('addon:') && !addonTab) s.set({ rightTab: 'changes' })
     if (s.rightTab === 'stack' && !ws.stack) s.set({ rightTab: 'changes' })
   }, [s.rightTab, !!addonTab, !!ws.stack])
+
+  // Reviewing opens on the Review tab. Building keeps the tab you were on unless this mode doesn't show it.
+  useEffect(() => {
+    const cur = useStore.getState().rightTab
+    if (mode === 'review') s.set({ rightTab: 'review' })
+    else if (!TABS.build.some((t) => t.id === cur) && !cur.startsWith('addon:') && !MORE.some((t) => t.id === cur)) s.set({ rightTab: 'changes' })
+  }, [ws.id, mode])
 
   useEffect(() => {
     void window.api.getChanges(ws.id).then(setChanges, () => setChanges([]))
@@ -53,12 +79,6 @@ export function RightPanel({ ws }: { ws: Workspace }) {
             <span className="truncate font-semibold">{ws.orchestrator ? 'Orchestrator' : ws.title}</span>
           </span>
         )}
-        <button
-          onClick={() => s.set({ rightTab: 'review' })}
-          className={`no-drag flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 hover:bg-hover ${s.rightTab === 'review' ? 'bg-raised text-fg' : 'text-muted hover:text-fg'}`}
-        >
-          <IconEye /> Review
-        </button>
         {!ws.orchestrator && <AddonActions place="workspace-header" repoId={ws.repoId} workspaceId={ws.id} className="rounded-md border border-line p-[7px] text-muted hover:bg-hover" />}
         <PrButton ws={ws} hasChanges={changes.length > 0} />
         <MergedActions ws={ws} />
@@ -66,13 +86,14 @@ export function RightPanel({ ws }: { ws: Workspace }) {
 
       <div className={`flex min-h-0 flex-col ${s.bottomOpen ? 'flex-[1_1_50%]' : 'flex-1'}`}>
         <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto px-2 whitespace-nowrap [scrollbar-width:none]">
-          {TABS.filter((t) => !t.stack || ws.stack).map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => s.set({ rightTab: t.id })}
               className={`rounded-md px-2.5 py-1 ${s.rightTab === t.id ? 'bg-raised text-fg' : 'text-muted hover:text-fg'}`}
             >
               {t.label}
+              {t.id === 'review' && reviewCount > 0 && <span className="ml-1.5 text-faint">{reviewCount}</span>}
               {t.id === 'changes' && changes.length > 0 && <span className="ml-1.5 text-faint">{changes.length}</span>}
             </button>
           ))}
@@ -84,6 +105,18 @@ export function RightPanel({ ws }: { ws: Workspace }) {
               </button>
             )
           })}
+          <div className="relative">
+            <button className={`flex items-center gap-1 rounded-md px-2 py-1 ${more ? 'text-fg' : 'text-faint hover:text-fg'}`} onClick={() => setMore(!more)}>
+              More <IconDown width={11} height={11} />
+            </button>
+            {more && (
+              <div className="absolute top-8 left-0 z-30 w-40 rounded-lg border border-line bg-raised p-1 shadow-xl" onMouseLeave={() => setMore(false)}>
+                {MORE.map((t) => (
+                  <MenuBtn key={t.id} label={t.label} onClick={() => { setMore(false); s.set({ rightTab: t.id }) }} />
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex-1" />
           <button className="rounded p-1 text-faint hover:text-fg" onClick={() => { setSearching(!searching); setFilter('') }} title="Filter files">
             <IconSearch />
@@ -198,7 +231,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const chatId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
   const agentBusy = chats.some((c) => c.status === 'running')
   const prVersion = s.prVersion[ws.id] ?? 0
-  // On someone else's PR the header pill already says it needs your review.
+  // Building on someone else's PR: waiting for review is theirs to chase, so the button doesn't say so.
   const theirs = isTheirs(s.prReview[ws.id]?.info)
 
   useEffect(() => {
@@ -326,39 +359,46 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       reportError(e)
     }
   }
+  const { mode } = useWorkspaceMode(ws)
+  const drafts = (s.codeComments[ws.id] ?? []).filter((c) => destOf(c) === 'github').length
   const color = pr?.state === 'MERGED' ? 'text-violet-400' : pr?.state === 'CLOSED' ? 'text-del' : pr?.isDraft ? 'text-muted' : 'text-add'
   return (
     <>
-      {pr?.state === 'OPEN' && comments.length > 0 && (
+      {pr && (
         <button
-          className={`no-drag flex items-center gap-1.5 rounded-md border px-2 py-1 disabled:opacity-40 ${fresh.length ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25' : 'border-line text-muted hover:bg-hover hover:text-fg'}`}
-          disabled={agentBusy}
-          onClick={() => void addComments()}
-          title={
-            agentBusy
-              ? 'Wait for the agent to finish'
-              : `Add all ${comments.length} PR comment${comments.length === 1 ? '' : 's'} to chat${fresh.length && addedAt ? ` (${fresh.length} new)` : ''}`
-          }
+          className={`no-drag flex items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover ${color}`}
+          onClick={() => void window.api.openExternal(pr.url)}
+          title={[
+            `${pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : 'Open'}: ${pr.title}`,
+            sum.total ? (sum.failed.length ? `Failing: ${sum.failed.map((c) => c.name).join(', ')}` : sum.pending ? `${sum.pending} checks running` : 'All checks passed') : '',
+            comments.length ? `${comments.length} open comment${comments.length === 1 ? '' : 's'}` : '',
+            'Click to open on GitHub'
+          ].filter(Boolean).join('\n')}
         >
-          <IconComment /> {fresh.length && addedAt ? `${fresh.length} new` : comments.length}
-        </button>
-      )}
-      {pr?.state === 'OPEN' && sum.total > 0 && (
-        <button
-          className={`no-drag flex items-center gap-1.5 rounded-md border border-line px-2 py-1 hover:bg-hover ${sum.failed.length ? 'text-del' : sum.pending ? 'text-muted' : 'text-add'}`}
-          onClick={() => s.set({ rightTab: 'checks' })}
-          title={sum.failed.length ? `Failing: ${sum.failed.map((c) => c.name).join(', ')}` : sum.pending ? `${sum.pending} checks running` : 'All checks passed'}
-        >
-          {sum.pending && !sum.failed.length ? (
-            <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-faint border-t-fg" />
-          ) : (
-            <span className={`h-2 w-2 rounded-full ${sum.failed.length ? 'bg-del' : 'bg-add'}`} />
+          <IconPR /> #{pr.number}
+          {pr.state === 'OPEN' && sum.total > 0 &&
+            (sum.pending && !sum.failed.length ? (
+              <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-faint border-t-fg" />
+            ) : (
+              <span className={`h-2 w-2 rounded-full ${sum.failed.length ? 'bg-del' : 'bg-add'}`} />
+            ))}
+          {pr.state === 'OPEN' && comments.length > 0 && (
+            <span className={`flex items-center gap-0.5 ${fresh.length && addedAt ? 'text-accent' : 'text-muted'}`}>
+              <IconComment width={12} height={12} /> {comments.length}
+            </span>
           )}
-          {sum.failed.length ? `${sum.failed.length} failed` : sum.pending ? `${sum.passed}/${sum.total}` : 'Checks'}
         </button>
       )}
       <div className="no-drag relative flex items-center rounded-md border border-line">
-        {pr && action === 'resolve' ? (
+        {pr && mode === 'review' ? (
+          <button
+            className="flex items-center gap-1.5 bg-sky-400/15 px-2.5 py-1 text-sky-400 hover:bg-sky-400/25"
+            onClick={() => s.set({ rightTab: 'review' })}
+            title="Approve, request changes or comment, with your line comments, in one GitHub review"
+          >
+            <IconEye /> Submit review{drafts > 0 ? ` (${drafts})` : ''}
+          </button>
+        ) : pr && action === 'resolve' ? (
           <button className="flex items-center gap-1.5 px-2.5 py-1 text-amber-400 hover:bg-hover disabled:opacity-40" disabled={agentBusy} onClick={() => void ask(resolveConflictsPrompt(pr, repo?.defaultBranch ?? 'main'))} title="Ask the agent to merge the base branch and resolve conflicts">
             <IconPR /> Resolve conflicts
           </button>
@@ -366,13 +406,17 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
           <button className="flex items-center gap-1.5 px-2.5 py-1 text-del hover:bg-hover disabled:opacity-40" disabled={agentBusy} onClick={() => void ask(fixChecksPrompt(pr, sum.failed))} title="Ask the agent to fix the failing checks">
             <IconPR /> Fix checks
           </button>
+        ) : pr && pr.state === 'OPEN' && fresh.length > 0 && action !== 'merge' ? (
+          <button className="flex items-center gap-1.5 bg-accent/15 px-2.5 py-1 text-accent hover:bg-accent/25 disabled:opacity-40" disabled={agentBusy} onClick={() => void addComments()} title="Hand the open review comments to the agent">
+            <IconComment /> Address {fresh.length} comment{fresh.length === 1 ? '' : 's'}
+          </button>
         ) : pr && action === 'merge' ? (
           <button className="flex items-center gap-1.5 bg-add/15 px-2.5 py-1 text-add hover:bg-add/25 disabled:opacity-40" disabled={busy} onClick={() => void merge()} title={`Squash and merge #${pr.number}`}>
             <IconPR /> {busy ? 'Merging…' : 'Merge'}
           </button>
         ) : pr ? (
-          <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => void window.api.openExternal(pr.url)} title={action === 'review' ? 'Waiting for an approving review' : action === 'waiting' ? 'Checks are running' : pr.title}>
-            <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Draft' : action === 'review' && !theirs ? 'Needs review' : 'Open'} #{pr.number}
+          <button className={`flex items-center gap-1.5 px-2.5 py-1 hover:bg-hover ${color}`} onClick={() => (pr.isDraft && pr.state === 'OPEN' ? void markReady() : void window.api.openExternal(pr.url))} title={action === 'review' ? 'Waiting for an approving review' : action === 'waiting' ? 'Checks are running' : pr.title}>
+            <IconPR /> {pr.state === 'MERGED' ? 'Merged' : pr.state === 'CLOSED' ? 'Closed' : pr.isDraft ? 'Mark ready' : action === 'review' && !theirs ? 'Waiting for review' : action === 'waiting' ? 'Checks running' : 'View on GitHub'}
           </button>
         ) : (
           <button
@@ -392,13 +436,14 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
             {pr ? (
               <>
                 <MenuBtn label={`Open #${pr.number} on GitHub`} onClick={() => { setMenu(false); void window.api.openExternal(pr.url) }} />
-                {pr.state === 'OPEN' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
-                {pr.state === 'OPEN' && comments.length > 0 && <MenuBtn label={`Add all comments to chat (${comments.length})`} onClick={() => void addComments()} />}
+                {pr.state === 'OPEN' && sum.total > 0 && <MenuBtn label={sum.failed.length ? `Fix ${sum.failed.length} failing check${sum.failed.length === 1 ? '' : 's'}` : 'Show checks'} onClick={() => { setMenu(false); if (sum.failed.length && mode === 'build') void ask(fixChecksPrompt(pr, sum.failed)); else s.set({ rightTab: 'checks' }) }} />}
+                {pr.state === 'OPEN' && mode === 'build' && <MenuBtn label={busy ? 'Merging…' : 'Squash and merge'} onClick={() => void merge()} />}
+                {pr.state === 'OPEN' && mode === 'build' && comments.length > 0 && <MenuBtn label={`Add all comments to chat (${comments.length})`} onClick={() => void addComments()} />}
                 {pr.state === 'OPEN' && pr.isDraft && <MenuBtn label={busy ? 'Marking ready…' : 'Mark ready for review'} onClick={() => void markReady()} />}
                 {canUpdateBranch(pr) && !agentBusy && (
                   <MenuBtn label={busy ? 'Updating…' : `Update branch${pr.behindBy ? ` (${pr.behindBy} behind ${pr.baseRefName ?? 'base'})` : ''}`} onClick={() => void updateBranch()} />
                 )}
-                {pr.state === 'OPEN' && <MenuBtn label={ws.stack ? 'Add a PR on top of the stack' : 'Stack a new PR on top'} onClick={() => void stackOnTop()} />}
+                {pr.state === 'OPEN' && mode === 'build' && <MenuBtn label={ws.stack ? 'Add a PR on top of the stack' : 'Stack a new PR on top'} onClick={() => void stackOnTop()} />}
               </>
             ) : (
               <>

@@ -30,8 +30,17 @@ export function isTheirs(info: Pick<PrReviewInfo, 'author' | 'viewer'> | null | 
   return !!info?.author && !!info.viewer && info.author.toLowerCase() !== info.viewer.toLowerCase()
 }
 
-export function defaultDest(info: Pick<PrReviewInfo, 'author' | 'viewer'> | null | undefined, pr: Pick<PrInfo, 'state'> | null | undefined): CommentDest {
-  return pr?.state === 'OPEN' && isTheirs(info) ? 'github' : 'agent'
+/** Building: your branch, the agent commits and pushes. Reviewing: someone else's PR, comments go to your GitHub review. */
+export type WorkspaceMode = 'build' | 'review'
+
+/** The mode a workspace starts in: Review on someone else's open PR, Build everywhere else. */
+export function defaultMode(info: Pick<PrReviewInfo, 'author' | 'viewer'> | null | undefined, pr: Pick<PrInfo, 'state'> | null | undefined): WorkspaceMode {
+  return pr?.state === 'OPEN' && isTheirs(info) ? 'review' : 'build'
+}
+
+/** Where a new line comment goes by default: your GitHub review while reviewing an open PR, else the agent. */
+export function modeDest(mode: WorkspaceMode, pr: Pick<PrInfo, 'state'> | null | undefined): CommentDest {
+  return mode === 'review' && pr?.state === 'OPEN' ? 'github' : 'agent'
 }
 
 /** The words on the header pill that say whose PR this is. */

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Workspace } from '@shared/types'
-import type { PrDiffTarget } from '@shared/prReview'
+import { defaultMode, type PrDiffTarget, type WorkspaceMode } from '@shared/prReview'
 import { useStore, reportError } from './store'
 
 /** Loads at most once per workspace and PR change, however many views ask. */
@@ -56,4 +56,26 @@ export async function sendToAgent(ws: Workspace, text: string) {
   } catch (e) {
     reportError(e)
   }
+}
+
+export type WsMode = WorkspaceMode
+
+/**
+ * Whether the person is building in this workspace (their own branch: the agent commits and pushes)
+ * or reviewing someone else's PR (line comments go to a GitHub review, the agent only explains).
+ * Follows PR ownership until the person switches it, e.g. to push fixes on a coworker's PR.
+ */
+export function useWorkspaceMode(ws: Workspace): { mode: WsMode; auto: WsMode; set: (m: WsMode) => void } {
+  const review = usePrReview(ws)
+  const override = useStore((s) => s.wsMode[ws.id])
+  const auto = defaultMode(review?.info, review?.pr)
+  const set = (m: WsMode) => {
+    const st = useStore.getState()
+    const next = { ...st.wsMode }
+    if (m === auto) delete next[ws.id]
+    else next[ws.id] = m
+    st.set({ wsMode: next, rightTab: m === 'review' ? 'review' : 'changes' })
+    localStorage.setItem('wsMode', JSON.stringify(next))
+  }
+  return { mode: override ?? auto, auto, set }
 }

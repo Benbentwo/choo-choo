@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parsePrReviewInfo, type PrFeedbackResponse } from '../src/shared/prComments'
-import { defaultDest, draftProblem, isTheirs, latestReviewBy, patchLines, prOwnerLabel, reviewPayload, threadPrompt, type PrDiffTarget } from '../src/shared/prReview'
+import { defaultMode, draftProblem, modeDest, isTheirs, latestReviewBy, patchLines, prOwnerLabel, reviewPayload, threadPrompt, type PrDiffTarget } from '../src/shared/prReview'
 
 const res: PrFeedbackResponse = {
   data: {
@@ -55,11 +55,18 @@ describe('ownership', () => {
     expect(isTheirs({ author: 'alex', viewer: 'me' })).toBe(true)
     expect(isTheirs({ author: '', viewer: 'me' })).toBe(false)
   })
-  it('defaults to a GitHub review only on someone else\'s open PR', () => {
-    expect(defaultDest({ author: 'alex', viewer: 'me' }, { state: 'OPEN' })).toBe('github')
-    expect(defaultDest({ author: 'alex', viewer: 'me' }, { state: 'MERGED' })).toBe('agent')
-    expect(defaultDest({ author: 'me', viewer: 'me' }, { state: 'OPEN' })).toBe('agent')
-    expect(defaultDest(null, null)).toBe('agent')
+  it('starts in Review only on someone else\'s open PR', () => {
+    expect(defaultMode({ author: 'alex', viewer: 'me' }, { state: 'OPEN' })).toBe('review')
+    expect(defaultMode({ author: 'alex', viewer: 'me' }, { state: 'MERGED' })).toBe('build')
+    expect(defaultMode({ author: 'me', viewer: 'me' }, { state: 'OPEN' })).toBe('build')
+    expect(defaultMode(null, null)).toBe('build')
+  })
+  it('sends line comments to a GitHub review only while reviewing an open PR', () => {
+    expect(modeDest('review', { state: 'OPEN' })).toBe('github')
+    expect(modeDest('review', { state: 'MERGED' })).toBe('agent')
+    expect(modeDest('review', null)).toBe('agent')
+    // Building on a coworker's PR: comments go to the agent, which may push.
+    expect(modeDest('build', { state: 'OPEN' })).toBe('agent')
   })
   it('labels the header pill', () => {
     const pr = { number: 214, state: 'OPEN' as const }
