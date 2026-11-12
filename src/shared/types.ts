@@ -6,6 +6,7 @@ import type { Automation, AutomationRun, GithubWatchState } from './automations'
 import type { Layout, SavedLayout } from './layout'
 import type { AddonActionContext, AddonCallResult, AddonContext, AddonDevResult, AddonGrant, AddonInfo, AddonReloaded, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
 import type { PrDiffTarget, PrHeadSync, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
+import type { Interdiff, ReviewSettings } from './reviewUpdates'
 export interface Repo {
   id: string
   name: string
@@ -561,6 +562,8 @@ export interface Settings extends AppearanceSettings {
   experimentalProjects?: boolean
   /** Add-ons turned on in Choo Choo and the permissions agreed to, by plugin id. */
   addons?: Record<string, AddonGrant>
+  /** Review updates: notifications for PRs you review, and the since-your-review diff (shared/reviewUpdates.ts). */
+  reviews?: Partial<ReviewSettings>
   /** Recommended add-ons the person said "not now" to, by project id. */
   addonPinsDismissed?: Record<string, string[]>
 }
@@ -1020,6 +1023,9 @@ export interface Api {
   getRangeDiffs(workspaceId: string, from: string, to: string, files: string[]): Promise<Record<string, string>>
   /** Commits and files between `sha` and HEAD; null when the commit can't be found. */
   getChangedSince(workspaceId: string, sha: string): Promise<{ commits: number; files: FileChange[] } | null>
+  /** What the author changed in the PR since `sha`, leaving out what came from the base branch. */
+  getInterdiff(workspaceId: string, sha: string): Promise<Interdiff | null>
+  getInterdiffFile(workspaceId: string, sha: string, file: string): Promise<string>
   /** Posts a review on the workspace's PR. */
   submitPrReview(workspaceId: string, drafts: ReviewDraft[], body: string, event: ReviewEvent): Promise<{ url: string }>
   replyToPrThread(workspaceId: string, threadId: string, body: string): Promise<void>

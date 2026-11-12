@@ -5,6 +5,7 @@ import { actionTarget, type AddonAction, type AddonActionContext, type AddonActi
 import type { InboxPr, PrInbox } from '@shared/prInbox'
 import type { Automation, AutomationRun } from '@shared/automations'
 import { isTheirs, type CommentDest, type PrHeadSync, type PrReviewInfo } from '@shared/prReview'
+import type { Interdiff } from '@shared/reviewUpdates'
 import * as L from '@shared/layout'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type PrInfo, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
 
@@ -87,6 +88,10 @@ interface UI {
   prVersion: Record<string, number>
   /** Where each worktree stands against its PR's head on GitHub, and how many commits the last automatic update took in. */
   prSync: Record<string, { sync: PrHeadSync | null; updated?: number } | undefined>
+  /** Since your review: the interdiff from your last review's commit to the worktree, per workspace. */
+  sinceReview: Record<string, Interdiff | null | undefined>
+  /** The All changes | Since your review toggle, per workspace; unset follows Settings › Reviews. */
+  sinceReviewOn: Record<string, boolean | undefined>
   /** Last stack status per stacked workspace, for the Stack tab, the header switcher and the sidebar. */
   stacks: Record<string, StackStatus | null | undefined>
   /** A Reflect tab open in the workspace: the person's feedback, and whether to archive after. */
@@ -165,6 +170,8 @@ export const useStore = create<UI>((set, get) => ({
   prReview: {},
   prVersion: {},
   prSync: {},
+  sinceReview: {},
+  sinceReviewOn: loadSinceReviewOn(),
   stacks: {},
   reflects: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
@@ -802,6 +809,14 @@ export const destOf = (c: CodeComment): CommentDest => c.dest ?? 'agent'
 
 
 /** Drafts survive a restart: a half-written review is too much to lose. */
+function loadSinceReviewOn(): Record<string, boolean | undefined> {
+  try {
+    return JSON.parse(localStorage.getItem('sinceReviewOn') ?? '{}') as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
+
 function loadCodeComments(): Record<string, CodeComment[]> {
   try {
     return JSON.parse(localStorage.getItem('codeComments') ?? '{}') as Record<string, CodeComment[]>

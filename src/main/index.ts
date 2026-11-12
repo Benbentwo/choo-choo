@@ -46,6 +46,8 @@ import * as notion from './integrations/notion'
 import * as addonHost from './addonHost'
 import { originUrl, githubSlug } from './share'
 import { prBranch, type PrInbox } from '@shared/prInbox'
+import { activeGlobs, normalizeReviewSettings } from '@shared/reviewUpdates'
+import * as interdiff from './interdiff'
 import { prRef, syncWorkspaceBranch } from './workspacePr'
 
 let win: BrowserWindow | null = null
@@ -1188,6 +1190,22 @@ function registerIpc() {
     const ws = findWs(id)
     const pr = await gh.prForBranch(ws.path, prRef(ws))
     return pr ? git.changedSince(ws.path, sha, pr.number) : null
+  })
+  // Since your review: what the author changed in the PR since `sha`, with the base branch's changes left out.
+  h('pr:interdiff', async (id: string, sha: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) return null
+    const to = (await git.git(ws.path, ['rev-parse', 'HEAD'])).trim()
+    const ignore = activeGlobs(normalizeReviewSettings(store.get().settings.reviews))
+    return interdiff.interdiff(ws.path, { from: sha, to, base: pr.baseRefName || 'main', prNumber: pr.number, ignore })
+  })
+  h('pr:interdiffFile', async (id: string, sha: string, file: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) return ''
+    const to = (await git.git(ws.path, ['rev-parse', 'HEAD'])).trim()
+    return interdiff.interdiffFile(ws.path, { from: sha, to, base: pr.baseRefName || 'main', prNumber: pr.number, file })
   })
   h('pr:submitReview', async (id: string, drafts: ReviewDraft[], body: string, event: ReviewEvent) => {
     const ws = findWs(id)
