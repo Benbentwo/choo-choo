@@ -134,8 +134,8 @@ export async function qrFor(url: string): Promise<string | undefined> {
 /** The claude binary Choo Choo runs for Remote Control and cloud sessions. */
 export const claudeCommand = () => claudeExecutable() ?? installedExecutable() ?? 'claude'
 
-/** Copies the turns made on the phone into the chat. */
-async function importPhoneTurns(chat: Chat, ws: Workspace, emit: Emit) {
+/** Copies the turns made elsewhere (your phone, Claude desktop) into the chat. */
+export async function importTurns(chat: Chat, ws: Workspace, emit: Emit, where = 'your phone') {
   if (!chat.sdkSessionId) return
   let messages: TranscriptMessage[] = []
   try {
@@ -152,7 +152,7 @@ async function importPhoneTurns(chat: Chat, ws: Workspace, emit: Emit) {
   const note: ChatItem = {
     id: randomUUID(),
     kind: 'note',
-    text: items.length ? 'Back from your phone' : 'Back from your phone (nothing new was sent there)',
+    text: items.length ? `Back from ${where}` : `Back from ${where} (nothing new was sent there)`,
     ts: Date.now()
   }
   store.upsertItem(chat.id, note)
@@ -169,7 +169,7 @@ async function finish(chat: Chat, ws: Workspace, emit: Emit, failure?: string) {
       const item: ChatItem = { id: randomUUID(), kind: 'error', text: failure, ts: Date.now() }
       store.upsertItem(chat.id, item)
       emit(chat.id, { item })
-    } else await importPhoneTurns(chat, ws, emit)
+    } else await importTurns(chat, ws, emit)
   } finally {
     chat.remote = undefined
     finishing.delete(chat.id)

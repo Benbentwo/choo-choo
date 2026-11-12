@@ -85,6 +85,8 @@ const api: Api = {
   revealPath: inv('shell:reveal') as Api['revealPath'],
   continueOnPhone: inv('chat:phone') as Api['continueOnPhone'],
   bringBackFromPhone: inv('chat:phoneBack') as Api['bringBackFromPhone'],
+  openInDesktop: inv('chat:desktop') as Api['openInDesktop'],
+  bringBackFromDesktop: inv('chat:desktopBack') as Api['bringBackFromDesktop'],
   runInCloud: inv('chat:cloud') as Api['runInCloud'],
   sendToCloud: inv('chat:cloudSend') as Api['sendToCloud'],
   bringBackFromCloud: inv('chat:cloudBack') as Api['bringBackFromCloud'],

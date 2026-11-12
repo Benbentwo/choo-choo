@@ -25,13 +25,14 @@ import {
   dropTab,
   type DragItem
 } from '../store'
-import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart, IconPhone, IconTerminal, IconSplitRight, IconBranch, IconPR } from '../icons'
+import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart, IconPhone, IconDesktop, IconTerminal, IconSplitRight, IconBranch, IconPR } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
 import { FileView } from './FileView'
 import { ReflectView, SessionFeedback } from './Reflect'
 import { PhonePanel } from './PhonePanel'
+import { DesktopPanel } from './DesktopPanel'
 import { CloudPanel, RunInCloudDialog } from './CloudPanel'
 import { StackSwitcher } from './Stack'
 import { TerminalView } from './TerminalView'
@@ -341,6 +342,9 @@ function WorkspaceMenu(p: { ws: Workspace; leaf: L.Leaf; framed: boolean; multiG
       )}
       <MenuItem label="Reflect on this session…" onClick={run(p.onReflect)} />
       <MenuItem label={ws.share ? 'Sharing with coworkers…' : 'Share with coworkers…'} onClick={run(() => s.set({ modal: 'share' }))} />
+      {!ws.orchestrator && active && !active.remote && active.status !== 'running' && active.model !== 'codex' && active.sdkSessionId && (
+        <MenuItem label="Open in Claude desktop" hint="/desktop" onClick={run(() => void openInDesktop(active.id))} />
+      )}
       {!ws.orchestrator && active && !active.remote && active.status !== 'running' && <MenuItem label="Run in the cloud…" onClick={run(p.onCloud)} />}
       <MenuItem label="Open a terminal here" onClick={run(() => addTerminalTab(p.leaf.id))} />
       {p.multiGroup && <MenuItem label="Merge chats into one pane" onClick={run(() => mergeGroups(p.leaf.id))} />}
@@ -486,6 +490,22 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
             <IconPhone />
           </button>
         )}
+        {active && !activeTerm && active.model !== 'codex' && !ws.orchestrator && !active.remote && (
+          <button
+            className="mb-2.5 shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent"
+            disabled={!active.sdkSessionId || active.status === 'running'}
+            onClick={() => void openInDesktop(active.id)}
+            title={
+              !active.sdkSessionId
+                ? 'Send a message first, then open this chat in Claude desktop'
+                : active.status === 'running'
+                  ? 'Wait for the agent to finish, then open it in Claude desktop'
+                  : 'Open in Claude desktop (/desktop): continue this chat in the Claude app'
+            }
+          >
+            <IconDesktop />
+          </button>
+        )}
         {active && !activeTerm && active.model !== 'codex' && (
           <button className="mb-2.5 shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ modal: 'usage', usageChat: active.id })} title="Usage and context graphs">
             <IconChart />
@@ -522,6 +542,8 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
             <PhonePanel chat={active} ws={ws} />
           ) : active.remote?.kind === 'cloud' ? (
             <CloudPanel chat={active} ws={ws} />
+          ) : active.remote?.kind === 'desktop' ? (
+            <DesktopPanel chat={active} />
           ) : (
             <Composer chat={active} ws={ws} />
           )}
@@ -530,6 +552,14 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
       {tabDrag && <DropOverlay inner onDrop={(side) => dropTab(leaf.id, tabDrag.tabId, group.id, side)} canDrop={(side) => side !== undefined || L.groupOf(leaf.view.kind === 'workspace' ? leaf.view.inner : group, tabDrag.tabId)?.id !== group.id} />}
     </div>
   )
+}
+
+async function openInDesktop(chatId: string) {
+  try {
+    useStore.getState().upsertChat(await window.api.openInDesktop(chatId))
+  } catch (e) {
+    reportError(e)
+  }
 }
 
 async function continueOnPhone(chatId: string) {

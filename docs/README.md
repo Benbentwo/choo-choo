@@ -31,7 +31,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Integrations](prd/integrations.md) | Planned |
 | [Add PR comments to chat](prd/pr-comments.md) | In review |
 | [Line comments to the agent or a GitHub review](prd/review-comments.md) | In review |
-| [Remote sessions (phone and cloud)](prd/remote-sessions.md) | Phone shipped; cloud in review |
+| [Remote sessions (phone, cloud and Claude desktop)](prd/remote-sessions.md) | Phone and cloud shipped; Claude desktop in review |
 | [Update checks](prd/update-checks.md) | Shipped |
 | [Claude Code session controls](prd/claude-code-controls.md) | Shipped (PR #49) |
 | [MCP servers](prd/mcp-servers.md) | Shipped (PR #50) |
