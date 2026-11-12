@@ -121,6 +121,8 @@ const api: Api = {
   getChangedSince: inv('pr:changedSince') as Api['getChangedSince'],
   getInterdiff: inv('pr:interdiff') as Api['getInterdiff'],
   getInterdiffFile: inv('pr:interdiffFile') as Api['getInterdiffFile'],
+  getPrViewed: inv('pr:viewed') as Api['getPrViewed'],
+  setPrViewed: inv('pr:setViewed') as Api['setPrViewed'],
   submitPrReview: inv('pr:submitReview') as Api['submitPrReview'],
   replyToPrThread: inv('pr:replyThread') as Api['replyToPrThread'],
   resolvePrThread: inv('pr:resolveThread') as Api['resolvePrThread'],

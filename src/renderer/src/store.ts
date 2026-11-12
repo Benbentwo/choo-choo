@@ -92,6 +92,8 @@ interface UI {
   sinceReview: Record<string, Interdiff | null | undefined>
   /** The All changes | Since your review toggle, per workspace; unset follows Settings › Reviews. */
   sinceReviewOn: Record<string, boolean | undefined>
+  /** GitHub's per-file Viewed ticks on the workspace's PR, when Settings › Reviews syncs them. */
+  prViewed: Record<string, { prId: string; files: Record<string, string> } | null | undefined>
   /** Last stack status per stacked workspace, for the Stack tab, the header switcher and the sidebar. */
   stacks: Record<string, StackStatus | null | undefined>
   /** A Reflect tab open in the workspace: the person's feedback, and whether to archive after. */
@@ -172,6 +174,7 @@ export const useStore = create<UI>((set, get) => ({
   prSync: {},
   sinceReview: {},
   sinceReviewOn: loadSinceReviewOn(),
+  prViewed: {},
   stacks: {},
   reflects: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },

@@ -1029,6 +1029,9 @@ export interface Api {
   /** What the author changed in the PR since `sha`, leaving out what came from the base branch. */
   getInterdiff(workspaceId: string, sha: string): Promise<Interdiff | null>
   getInterdiffFile(workspaceId: string, sha: string, file: string): Promise<string>
+  /** GitHub's per-file Viewed ticks on the workspace's PR. */
+  getPrViewed(workspaceId: string): Promise<{ prId: string; files: Record<string, 'VIEWED' | 'UNVIEWED' | 'DISMISSED'> } | null>
+  setPrViewed(workspaceId: string, prId: string, path: string, viewed: boolean): Promise<void>
   /** Posts a review on the workspace's PR. */
   submitPrReview(workspaceId: string, drafts: ReviewDraft[], body: string, event: ReviewEvent): Promise<{ url: string }>
   replyToPrThread(workspaceId: string, threadId: string, body: string): Promise<void>

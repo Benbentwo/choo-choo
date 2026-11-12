@@ -3,14 +3,17 @@ import type { Chat, Workspace } from '@shared/types'
 import type { InboxPr } from '@shared/prInbox'
 import {
   DEFAULT_MAX_FINDINGS,
+  GITHUB_EVENTS,
   LEDGER_LIMIT,
   RUNS_LIMIT,
   diffInbox,
   diffRepoItems,
   isRepoEvent,
+  isReviewEvent,
   isSchedule,
   labelMatches,
   nextRun,
+  reviewUpdateEvents,
   runPrompt,
   type Automation,
   type AutomationRun,
@@ -73,7 +76,7 @@ function cleanTrigger(t: AutomationTrigger): AutomationTrigger {
     case 'weekly':
       return { kind: 'weekly', day: Math.max(0, Math.min(6, Math.round(Number(t.day)) || 0)), at: /^\d{1,2}:\d{2}$/.test(t.at) ? t.at : '09:00' }
     case 'github':
-      if (!['review_requested', 'checks_failed', 'reviewed', 'issue_opened', 'pr_opened'].includes(t.event)) throw new Error('Pick a GitHub event')
+      if (!GITHUB_EVENTS.some((e) => e.id === t.event)) throw new Error('Pick a GitHub event')
       return { kind: 'github', event: t.event, ...(isRepoEvent(t.event) && t.label?.trim() ? { label: t.label.trim() } : {}) }
     default:
       return { kind: 'manual' }
@@ -260,6 +263,21 @@ async function tick() {
   if (now - lastGithubPoll >= GITHUB_POLL_MS) await pollGithub()
 }
 
+/** PRs you review changed for you: start the automations listening for that, for PRs in their repos. */
+export async function onReviewUpdates(updates: { pr: InboxPr; reasons: { label: string; key: string }[] }[]) {
+  const watching = list().filter((a) => a.enabled && a.trigger.kind === 'github' && a.trigger.event === 'review_update')
+  if (!deps || !watching.length || !store.get().settings.experimentalProjects) return
+  const events = reviewUpdateEvents(updates)
+  const repoOf = new Map(updates.map((u) => [`${u.pr.repo}#${u.pr.number}`, u.pr.repoId]))
+  for (const a of watching) {
+    const repos = targetRepoIds(a)
+    const mine = events.filter((e) => repos.includes(repoOf.get(`${e.repo}#${e.number}`) ?? ''))
+    if (!mine.length) continue
+    const reason = mine.length === 1 ? `${mine[0].repo}#${mine[0].number} ${mine[0].detail}` : `${mine.length} PRs changed for you`
+    await fire(a, reason, mine).catch(() => {})
+  }
+}
+
 /** Looks at GitHub and starts the GitHub-event automations that match what changed. */
 export async function pollGithub() {
   const watching = list().filter((a) => a.enabled && a.trigger.kind === 'github')
@@ -268,7 +286,8 @@ export async function pollGithub() {
   lastGithubPoll = Date.now()
   try {
     const event = (a: Automation) => (a.trigger.kind === 'github' ? a.trigger : undefined)
-    const fromInbox = watching.filter((a) => !isRepoEvent(event(a)!.event))
+    // Review updates arrive from reviewWatch (onReviewUpdates), not from comparing two polls.
+    const fromInbox = watching.filter((a) => !isRepoEvent(event(a)!.event) && !isReviewEvent(event(a)!.event))
     const fromRepos = watching.filter((a) => isRepoEvent(event(a)!.event))
     const found: { a: Automation; events: PrEvent[] }[] = []
 

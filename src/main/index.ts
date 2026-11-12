@@ -1201,6 +1201,13 @@ function registerIpc() {
     const ignore = activeGlobs(normalizeReviewSettings(store.get().settings.reviews))
     return interdiff.interdiff(ws.path, { from: sha, to, base: pr.baseRefName || 'main', prNumber: pr.number, ignore })
   })
+  // GitHub's per-file Viewed ticks (Settings › Reviews › Sync "Viewed" ticks with GitHub).
+  h('pr:viewed', async (id: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return pr ? gh.prViewed(ws.path, pr.number) : null
+  })
+  h('pr:setViewed', (id: string, prId: string, path: string, viewed: boolean) => gh.setPrViewed(findWs(id).path, prId, path, viewed))
   h('pr:interdiffFile', async (id: string, sha: string, file: string) => {
     const ws = findWs(id)
     const pr = await gh.prForBranch(ws.path, prRef(ws))
@@ -1701,6 +1708,7 @@ app.whenReady().then(async () => {
   reviewWatch.start({
     loadInbox: loadPrInbox,
     broadcast: (inbox) => send('prs:inbox', inbox),
+    onUpdates: (updates) => void automations.onReviewUpdates(updates),
     notify: (pr, title, body) => {
       if (!Notification.isSupported()) return
       const n = new Notification({ title, body })
