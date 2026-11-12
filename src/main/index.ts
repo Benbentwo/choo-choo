@@ -48,6 +48,7 @@ import { originUrl, githubSlug } from './share'
 import { prBranch, type PrInbox } from '@shared/prInbox'
 import { activeGlobs, normalizeReviewSettings } from '@shared/reviewUpdates'
 import * as interdiff from './interdiff'
+import * as reviewWatch from './reviewWatch'
 import { prRef, syncWorkspaceBranch } from './workspacePr'
 
 let win: BrowserWindow | null = null
@@ -1260,6 +1261,7 @@ function registerIpc() {
     if ('theme' in patch) applyNativeTheme(s.settings)
     if ('archiveRetentionDays' in patch) void archive.cleanupArchives()
     updates.onSettingsChanged(Object.keys(patch))
+    if ('reviews' in patch) reviewWatch.reschedule()
     return s.settings
   })
   h('folder:pick', async () => {
@@ -1268,7 +1270,11 @@ function registerIpc() {
   })
   h('repo:clone', (url: string, dir?: string) => cloneAndAdd(url, dir))
   h('gh:repos', () => gh.listMyRepos())
-  h('prs:inbox', () => loadPrInbox())
+  // The PRs list, with review updates on the PRs you review (src/main/reviewWatch.ts).
+  h('prs:inbox', () => reviewWatch.check())
+  // Opening a PR you review, or the PRs page: look at GitHub unless it was just looked at.
+  h('reviews:checkSoon', () => reviewWatch.checkSoon())
+  h('reviews:seen', (keys: string[]) => reviewWatch.seen(keys))
   h('models:details', () => modelDetails())
   h('limits:get', (force?: boolean) => subscriptionLimits(store.get().settings.anthropicApiKey ?? '', !!force))
   h('conductor:preview', () => previewConductor())
@@ -1692,6 +1698,20 @@ app.whenReady().then(async () => {
     }
   })
   updates.startUpdater(send)
+  reviewWatch.start({
+    loadInbox: loadPrInbox,
+    broadcast: (inbox) => send('prs:inbox', inbox),
+    notify: (pr, title, body) => {
+      if (!Notification.isSupported()) return
+      const n = new Notification({ title, body })
+      n.on('click', () => {
+        win?.show()
+        win?.focus()
+        send('reviews:open', pr)
+      })
+      n.show()
+    }
+  })
   // PR and check changes: cheap ETag probes, and the UI refetches only when one reports a change.
   const prWatch = startPrWatch({
     // Agents switch branches on their own (gh pr checkout); follow them before probing GitHub.

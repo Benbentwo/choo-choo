@@ -157,7 +157,10 @@ export function Sidebar() {
     { label: 'New project group…', icon: <IconOrchestrator />, onClick: () => editGroup(null) }
   ]
   const hiddenCount = s.repos.filter((r) => r.hidden).length
-  const toReview = visiblePrs(s.prInbox?.prs ?? [], s.settings.prsHidden).filter((p) => p.roles.includes('review')).length
+  const shownPrs = visiblePrs(s.prInbox?.prs ?? [], s.settings.prsHidden)
+  const toReview = shownPrs.filter((p) => p.roles.includes('review')).length
+  // PRs you review that changed for you since you last looked.
+  const freshPrs = shownPrs.filter((p) => p.update?.fresh).length
   // A hidden row still shows while it's the open page, so the page you're on never vanishes.
   const appViews = addonViews(s.addons, 'app').filter(({ addon, view }) => !rowHidden(viewRowKey(addon.key, view.id)) || (s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && !s.addonPage.repoId))
   const repoViews = addonViews(s.addons, 'repo')
@@ -188,6 +191,7 @@ export function Sidebar() {
           active={s.prsPage && !s.selectedWs}
           onClick={openPrsPage}
           badge={toReview || undefined}
+          actions={freshPrs ? <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold text-[#1a1b20]" title="PRs you review that changed for you">{freshPrs} new</span> : undefined}
         />
         {projectsOn && (
           <NavItem

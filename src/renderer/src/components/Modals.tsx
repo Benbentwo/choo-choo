@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ReviewSettingsSection } from './ReviewSettings'
 import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, PromptCustom, Settings, Telemetry } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, openGroupOrchestrator, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
@@ -198,6 +199,7 @@ type SettingsTab = ReturnType<typeof useStore.getState>['settingsTab']
 const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'general', label: 'General', hint: 'Default model, effort and permissions, notifications, branches and archiving.' },
   { id: 'appearance', label: 'Appearance', hint: 'Theme, accent color, text size, density and fonts.' },
+  { id: 'reviews', label: 'Reviews', hint: 'When a PR you review changes for you, and how you catch up on it.' },
   { id: 'projects', label: 'Projects', hint: 'Your projects and their workspaces.' },
   { id: 'agents', label: 'Agents', hint: 'Extra agents and the advisor.' },
   { id: 'prompts', label: 'Prompts', hint: 'Custom instructions added to chats, for every project or one.' },
@@ -247,6 +249,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <ProjectsSettings />
         ) : tab === 'appearance' ? (
           <AppearanceSettings />
+        ) : tab === 'reviews' ? (
+          <ReviewSettingsSection settings={settings} save={(patch) => void save(patch)} />
         ) : tab === 'updates' ? (
           <UpdatesSettings settings={settings} save={(patch) => void save(patch)} />
         ) : tab === 'integrations' ? (
