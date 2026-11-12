@@ -74,7 +74,9 @@ function QueueList({ limit, compact }: { limit?: number; compact?: boolean }) {
   const [over, setOver] = useState<number | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
-  const running = useStore((s) => new Set(s.chats.filter((c) => c.status === 'running').map((c) => c.id)))
+  // A string, so the selector stays equal between renders; a new Set each time would loop.
+  const runningKey = useStore((s) => s.chats.filter((c) => c.status === 'running').map((c) => c.id).join(','))
+  const running = useMemo(() => new Set(runningKey.split(',').filter(Boolean)), [runningKey])
   const shown = limit ? rows.slice(0, limit) : rows
   const drop = (to: number) => {
     if (drag) void window.api.continueMove(drag, to).catch(reportError)
