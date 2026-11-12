@@ -114,6 +114,8 @@ interface UI {
   sidebarOpen: boolean
   rightOpen: boolean
   bottomOpen: boolean
+  /** Per workspace: the person switched between building and reviewing by hand. */
+  wsMode: Record<string, 'build' | 'review'>
   rightTab: RightTab
   error: string | null
 
@@ -180,6 +182,7 @@ export const useStore = create<UI>((set, get) => ({
   sidebarOpen: true,
   rightOpen: true,
   bottomOpen: true,
+  wsMode: (() => { try { return JSON.parse(localStorage.getItem('wsMode') ?? '{}') } catch { return {} } })(),
   rightTab: 'changes',
   error: null,
 
@@ -811,9 +814,13 @@ export function setCodeComments(wsId: string, fn: (list: CodeComment[]) => CodeC
   }
 }
 
-/** Set when the workspace's open PR is someone else's: agent comments then ask for advice, not commits. */
-export function reviewTarget(r: { pr: PrInfo; info: PrReviewInfo } | null | undefined): { number: number; author: string } | undefined {
-  return r && r.pr.state === 'OPEN' && isTheirs(r.info) ? { number: r.pr.number, author: r.info.author } : undefined
+/**
+ * Set while reviewing an open PR: agent comments then ask for advice, not commits. Follows the workspace's
+ * Build/Review mode when given, else PR ownership.
+ */
+export function reviewTarget(r: { pr: PrInfo; info: PrReviewInfo } | null | undefined, mode?: 'build' | 'review'): { number: number; author: string } | undefined {
+  const reviewing = mode ? mode === 'review' : isTheirs(r?.info)
+  return r && r.pr.state === 'OPEN' && reviewing ? { number: r.pr.number, author: r.info.author } : undefined
 }
 
 /**

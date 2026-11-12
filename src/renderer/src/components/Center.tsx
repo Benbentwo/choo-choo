@@ -20,12 +20,11 @@ import {
   addTerminalTab,
   closeTerminalTab,
   mergeGroups,
-  splitPane,
   closePane,
   dropTab,
   type DragItem
 } from '../store'
-import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart, IconPhone, IconDesktop, IconTerminal, IconSplitRight, IconBranch, IconPR } from '../icons'
+import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconTerminal, IconSplitRight, IconBranch, IconTool, IconEye } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
@@ -41,7 +40,7 @@ import { PaneGrip, RepoChip, PaneMenuItems, DropOverlay, Dividers } from './Pane
 import { ThreadsPanel } from './Projects'
 import { routerChat } from '@shared/projects'
 import { isTheirs, prOwnerLabel } from '@shared/prReview'
-import { usePrReview } from '../prReview'
+import { usePrReview, useWorkspaceMode, type WsMode } from '../prReview'
 
 /**
  * One workspace in a pane: a header, then its groups of chat tabs. Alone in the window it looks
@@ -185,13 +184,10 @@ function ClassicHeader({ ws, menu, threads }: { ws: Workspace; menu: (close: () 
         <span className="no-drag selectable truncate">{sub}</span>
       )}
       <DotsMenu menu={menu} />
-      {!ws.orchestrator && <PrOwnerPill ws={ws} />}
+      {!ws.orchestrator && <ModeSwitch ws={ws} />}
       <ShareBadges ws={ws} />
       <div className="flex-1" />
       <ThreadsButton ws={ws} threads={threads} />
-      <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => splitPane('right')} title="Split right (⌘\)">
-        <IconSplitRight width={16} height={16} />
-      </button>
       <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ rightOpen: !s.rightOpen })} title="Toggle right panel">
         <IconPanelRight width={16} height={16} />
       </button>
@@ -223,7 +219,7 @@ function WorkspacePaneHeader({ ws, leaf, focused, menu, threads }: { ws: Workspa
           <span className="truncate">{ws.branch}</span>
         </span>
       )}
-      {!ws.orchestrator && <PrOwnerPill ws={ws} />}
+      {!ws.orchestrator && <ModeSwitch ws={ws} />}
       <ShareBadges ws={ws} />
       <div className="min-w-0 flex-1" />
       <ThreadsButton ws={ws} threads={threads} />
@@ -340,8 +336,12 @@ function WorkspaceMenu(p: { ws: Workspace; leaf: L.Leaf; framed: boolean; multiG
           onClick={run(() => void navigator.clipboard.writeText(`cd '${ws.path.replace(/'/g, `'\\''`)}' && claude --resume ${active.sdkSessionId}`))}
         />
       )}
+      {active && active.model !== 'codex' && <MenuItem label="Usage and context" onClick={run(() => s.set({ modal: 'usage', usageChat: active.id }))} />}
       <MenuItem label="Reflect on this session…" onClick={run(p.onReflect)} />
       <MenuItem label={ws.share ? 'Sharing with coworkers…' : 'Share with coworkers…'} onClick={run(() => s.set({ modal: 'share' }))} />
+      {active && active.model !== 'codex' && !ws.orchestrator && !active.remote && active.sdkSessionId && active.status !== 'running' && (
+        <MenuItem label="Continue on phone" onClick={run(() => void continueOnPhone(active.id))} />
+      )}
       {!ws.orchestrator && active && !active.remote && active.status !== 'running' && active.model !== 'codex' && active.sdkSessionId && (
         <MenuItem label="Open in Claude desktop" hint="/desktop" onClick={run(() => void openInDesktop(active.id))} />
       )}
@@ -474,43 +474,6 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
           </button>
         )}
         <div className="flex-1" />
-        {active && !activeTerm && active.model !== 'codex' && !ws.orchestrator && !active.remote && (
-          <button
-            className="mb-2.5 shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent"
-            disabled={!active.sdkSessionId || active.status === 'running'}
-            onClick={() => void continueOnPhone(active.id)}
-            title={
-              !active.sdkSessionId
-                ? 'Send a message first, then continue this chat on your phone'
-                : active.status === 'running'
-                  ? 'Wait for the agent to finish, then continue on your phone'
-                  : 'Continue on phone: steer this chat from the Claude app or claude.ai/code'
-            }
-          >
-            <IconPhone />
-          </button>
-        )}
-        {active && !activeTerm && active.model !== 'codex' && !ws.orchestrator && !active.remote && (
-          <button
-            className="mb-2.5 shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent"
-            disabled={!active.sdkSessionId || active.status === 'running'}
-            onClick={() => void openInDesktop(active.id)}
-            title={
-              !active.sdkSessionId
-                ? 'Send a message first, then open this chat in Claude desktop'
-                : active.status === 'running'
-                  ? 'Wait for the agent to finish, then open it in Claude desktop'
-                  : 'Open in Claude desktop (/desktop): continue this chat in the Claude app'
-            }
-          >
-            <IconDesktop />
-          </button>
-        )}
-        {active && !activeTerm && active.model !== 'codex' && (
-          <button className="mb-2.5 shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ modal: 'usage', usageChat: active.id })} title="Usage and context graphs">
-            <IconChart />
-          </button>
-        )}
       </div>
 
       {/* An open diff or file takes the place of the chat history; the composer stays below it. */}
@@ -580,18 +543,32 @@ export function MenuItem(p: { label: string; title?: string; danger?: boolean; h
   )
 }
 
-/** Says whose PR this workspace is on, so someone else's code never looks like yours. */
-function PrOwnerPill({ ws }: { ws: Workspace }) {
+/** Building (your branch: the agent commits and pushes) or Reviewing (someone else's PR: comments go to your GitHub review). */
+function ModeSwitch({ ws }: { ws: Workspace }) {
   const review = usePrReview(ws)
-  if (!review) return null
-  const theirs = isTheirs(review.info)
-  return (
+  const { mode, set } = useWorkspaceMode(ws)
+  const theirs = !!review && review.pr.state === 'OPEN' && isTheirs(review.info)
+  const seg = (m: WsMode, label: string, icon: ReactNode, tip: string) => (
     <button
-      className={`no-drag flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[12px] ${theirs ? 'border-sky-400/40 bg-sky-400/10 text-sky-400 hover:bg-sky-400/20' : 'border-line text-muted hover:bg-hover hover:text-fg'}`}
-      title={theirs ? `${review.info.author}'s PR. Line comments go to your GitHub review by default.` : 'Your PR. Line comments go to the agent by default.'}
-      onClick={() => useStore.getState().set({ rightTab: 'review' })}
+      title={tip}
+      onClick={() => set(m)}
+      className={`flex items-center gap-1 rounded-[5px] px-2 py-[1px] ${mode === m ? (m === 'review' ? 'bg-sky-400/15 text-sky-400' : 'bg-raised text-fg') : 'text-faint hover:text-fg'}`}
     >
-      <IconPR width={12} height={12} /> {prOwnerLabel(review.pr, review.info)}
+      {icon} {label}
     </button>
+  )
+  return (
+    <span className="no-drag flex shrink-0 items-center gap-2 text-[12px]">
+      <span className="flex items-center rounded-md border border-line p-[2px]">
+        {seg('build', 'Build', <IconTool width={12} height={12} />, 'Building: the agent edits, commits and pushes. Line comments go to the agent.')}
+        {seg('review', 'Review', <IconEye width={12} height={12} />, 'Reviewing: line comments go to your GitHub review, and the agent explains but never pushes.')}
+      </span>
+      {theirs && (
+        <span className="text-muted" title={prOwnerLabel(review.pr, review.info)}>
+          {mode === 'build' ? 'on ' : ''}
+          {review.info.author}&apos;s PR
+        </span>
+      )}
+    </span>
   )
 }

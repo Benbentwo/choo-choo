@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Artifact, CheckRun, ReviewFinding, Workspace } from '@shared/types'
 import { useStore, openDoc, newChatTab, reportError, reviewTarget } from '../store'
+import { useWorkspaceMode } from '../prReview'
 import { ReviewDrafts } from './ReviewDrafts'
 import { IconDown, IconRight } from '../icons'
 import { CLAUDE_CODE_REVIEW_PROMPT, REVIEW_PROMPT, SECURITY_REVIEW_PROMPT, useReview } from '../review'
@@ -182,7 +183,8 @@ export function ReviewTab({ ws }: { ws: Workspace }) {
 }
 
 function AgentReview({ ws }: { ws: Workspace }) {
-  const theirs = useStore((s) => !!reviewTarget(s.prReview[ws.id]))
+  const { mode } = useWorkspaceMode(ws)
+  const theirs = useStore((s) => !!reviewTarget(s.prReview[ws.id], mode))
   const repo = useStore((s) => s.repos.find((r) => r.id === ws.repoId))
   const extras = useStore((s) => s.settings.extras)
   const { chat, code, security, findings, running } = useReview(ws.id)

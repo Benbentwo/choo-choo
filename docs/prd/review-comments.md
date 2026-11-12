@@ -37,7 +37,7 @@ Three cases:
 
 ![Your GitHub review](../media/review-comments.png)
 
-- **Default destination.** On someone else's open PR, comments go to your GitHub review. On your own branch or PR, or with no PR, they go to the agent.
+- **Default destination.** In Review mode on an open PR, comments go to your GitHub review; in Build mode they go to the agent. The mode starts as Review on someone else's open PR and can be switched in the header ([Build and Review modes](workspace-modes.md)).
 - **Comment box.** Click or drag line numbers as before. The box has a "Send to: GitHub review | Agent" switch. ⌘↵ sends to the chosen one; ⌘⇧↵ sends to the other. The hint on the right says why the default was picked.
 - **Drafts in the diff.** A saved comment shows on its line tagged "Pending in your GitHub review" or "Queued for the agent", with Edit, Move to the other destination, and remove.
 - **Review tab.** "Your GitHub review" lists the drafts, takes an optional summary and Comment, Approve or Request changes (Approve and Request changes only on someone else's PR), and has Submit review to GitHub and Discard. After posting it shows "Review posted to GitHub" with a link. "Queued for the agent" lists agent comments with Send to agent; the chat box sends them too.
@@ -57,7 +57,7 @@ Three cases:
 
 ## Design
 
-- `src/shared/prReview.ts`: ownership (`isTheirs`, `defaultDest`, `prOwnerLabel`), `patchLines`, `draftProblem`, `reviewPayload`, `threadPrompt`.
+- `src/shared/prReview.ts`: ownership (`isTheirs`, `defaultMode`, `modeDest`, `prOwnerLabel`), `patchLines`, `draftProblem`, `reviewPayload`, `threadPrompt`.
 - `src/shared/prComments.ts`: the feedback query also asks for `viewer`, thread ids and sides; `parsePrReviewInfo` adds author, viewer and the viewer's last review.
 - `src/main/github.ts`: `prReview`, `prDiffLines` (PR files API), `submitReview` (gh api with the body on stdin), `replyToThread`, `resolveThread`. IPC `pr:review`, `pr:diffTarget`, `pr:submitReview`, `pr:replyThread`, `pr:resolveThread`.
 - Renderer: `CodeComment.dest` in the store; `prReview` per workspace, loaded by the PR button and `usePrReview`; `DiffView.tsx` comment box, drafts and threads; `ReviewDrafts.tsx` at the top of the Review tab; `PrOwnerPill` in `Center.tsx`.

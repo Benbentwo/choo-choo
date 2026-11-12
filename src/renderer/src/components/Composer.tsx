@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useWorkspaceMode } from '../prReview'
 import { inOpenFence } from '../markdown'
 import type { Chat, Effort, ExtraAgentId, ModelId, OutputStyleInfo, Permission, SlashCommandInfo, Workspace } from '@shared/types'
 import { useStore, reportError, modelLabel, setCodeComments, codeCommentsMessage, destOf, reviewTarget, openDoc } from '../store'
@@ -38,6 +39,7 @@ export function setDraft(chatId: string, text: string) {
 }
 
 export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
+  const { mode } = useWorkspaceMode(ws)
   const [text, setTextState] = useState(drafts[chat.id] ?? '')
   const [picker, setPicker] = useState(false)
   const [trigger, setTrigger] = useState<Trigger | null>(null)
@@ -149,7 +151,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
 
   const submit = async () => {
     const typed = text.trim() || (images.length && !codeComments.length ? 'See the attached image.' : '')
-    const t = codeComments.length ? codeCommentsMessage(codeComments, typed, reviewTarget(prReview)) : typed
+    const t = codeComments.length ? codeCommentsMessage(codeComments, typed, reviewTarget(prReview, mode)) : typed
     if (!t) return
     const imgs = images
     setText('')
@@ -367,7 +369,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
             if (e.key === 'Escape' && running) void window.api.stopChat(chat.id)
           }}
           rows={3}
-          placeholder="Ask to make changes, @mention files, run /commands"
+          placeholder={mode === 'review' ? "Ask about this PR, or click a line in a diff to comment" : 'Ask to make changes, @mention files, run /commands'}
           className={`selectable block max-h-72 w-full resize-none bg-transparent px-4 pt-3 text-[13px] outline-none placeholder:text-faint ${inCode ? 'font-mono text-[12px]' : ''}`}
         />
         {inCode && <div className="px-4 pt-1 text-[11px] text-faint">Code block · Enter adds a line · close it with ``` or press ⌘Enter to send</div>}
