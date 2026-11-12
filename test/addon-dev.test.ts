@@ -120,7 +120,9 @@ describe('develop add-on: reloading', () => {
     mkdirSync(join(dir, 'ui'))
     const seen: string[][] = []
     const stop = watchFolder(dir, (files) => seen.push(files.sort()), 100)
-    await new Promise((r) => setTimeout(r, 100))
+    // macOS FSEvents can report files written just before the watch started; let those pass first.
+    await new Promise((r) => setTimeout(r, 600))
+    seen.length = 0
     writeFileSync(join(dir, 'ui', 'index.html'), '<p>1</p>')
     writeFileSync(join(dir, 'ui', 'index.html'), '<p>2</p>')
     writeFileSync(join(dir, 'choo-choo.addon.json'), JSON.stringify(manifest))
