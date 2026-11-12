@@ -13,6 +13,7 @@ import { IconDown, IconRight, IconTool } from '../icons'
 import { RouteItem } from './Projects'
 import { parseAutoUpdate, stripRouted, type AutoUpdateEntry } from '@shared/projects'
 import { stripRunMarker } from '@shared/automations'
+import { groupWork, type ChatEntry } from '../chatGroups'
 
 export function ChatView({ chat }: { chat: Chat }) {
   const all = useStore((s) => s.items[chat.id])
@@ -27,6 +28,7 @@ export function ChatView({ chat }: { chat: Chat }) {
     return { items, children }
   }, [all])
   const pendingCount = useStore((s) => s.permissions[chat.id]?.length ?? 0)
+  const compact = useStore((s) => s.settings.chatFormat === 'compact')
   // /clear empties Claude's context, so everything before the latest one folds away behind a divider.
   const [showEarlier, setShowEarlier] = useState(false)
   const clearAt = useMemo(() => lastClear(items), [items])
@@ -38,6 +40,26 @@ export function ChatView({ chat }: { chat: Chat }) {
     const el = ref.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [items, pendingCount])
+
+  const current = useMemo(
+    () => items.slice(clearAt >= 0 ? clearAt + 1 : 0).filter((it, i) => !(clearAt >= 0 && i === 0 && it.kind === 'result' && !it.turns)),
+    [items, clearAt]
+  )
+  const currentEntries = useMemo(() => (compact ? groupWork(current) : null), [compact, current])
+  const running = chat.status === 'running'
+  // The last Working row shows its own spinner, so the one under the chat would repeat it.
+  const endsInLiveWork = running && currentEntries?.at(-1)?.kind === 'work'
+  const renderItems = (list: ChatItem[]) => {
+    const entries: ChatEntry[] | null = list === current ? currentEntries : compact ? groupWork(list) : null
+    if (!entries) return list.map((it) => <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />)
+    return entries.map((e, i) =>
+      e.kind === 'item' ? (
+        <Item key={e.item.id} item={e.item} chat={chat} children={children.get(e.item.id)} />
+      ) : (
+        <WorkGroup key={e.id} entry={e} chat={chat} children={children} live={running && list === current && i === entries.length - 1} />
+      )
+    )
+  }
 
   return (
     <div
@@ -57,8 +79,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         )}
         {clearAt >= 0 && (
           <>
-            {showEarlier &&
-              items.slice(0, clearAt).map((it) => <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />)}
+            {showEarlier && renderItems(items.slice(0, clearAt))}
             <div className="my-4 flex items-center gap-3 text-[11px] text-faint">
               <div className="h-px flex-1 bg-line" />
               <span>Context cleared</span>
@@ -71,11 +92,9 @@ export function ChatView({ chat }: { chat: Chat }) {
             </div>
           </>
         )}
-        {items.slice(clearAt >= 0 ? clearAt + 1 : 0).filter((it, i) => !(clearAt >= 0 && i === 0 && it.kind === 'result' && !it.turns)).map((it) => (
-          <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />
-        ))}
+        {renderItems(current)}
         <PermissionCards chat={chat} />
-        {chat.status === 'running' && !pendingCount && (
+        {chat.status === 'running' && !pendingCount && !endsInLiveWork && (
           <div className="mt-3 flex items-center gap-2 text-faint">
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-faint border-t-fg" /> Working…
           </div>
@@ -443,6 +462,50 @@ function AutoUpdateItem({ entries, text }: { entries: AutoUpdateEntry[]; text: s
         </ul>
       )}
       {open && <pre className="max-h-60 overflow-auto border-t border-line px-3 py-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{text}</pre>}
+    </div>
+  )
+}
+
+/** The compact format's single row for a stretch of Claude's work: its tool calls and in-between notes, collapsed until opened. */
+function WorkGroup({
+  entry,
+  chat,
+  children,
+  live
+}: {
+  entry: Extract<ChatEntry, { kind: 'work' }>
+  chat: Chat
+  children: Map<string, Extract<ChatItem, { kind: 'tool' }>[]>
+  live: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const { tools } = entry
+  const failed = tools.filter((t) => t.isError).length
+  const latest = tools[tools.length - 1]
+  // A call left without a result by a stopped turn shouldn't spin forever.
+  const working = live || (chat.status === 'running' && tools.some((t) => t.result === undefined))
+  return (
+    <div className="my-1.5 rounded-lg border border-line bg-panel" data-testid="work-group">
+      <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px]" onClick={() => setOpen(!open)} title={open ? 'Hide the steps' : 'Show the steps'}>
+        {open ? <IconDown className="text-faint" /> : <IconRight className="text-faint" />}
+        <IconTool className={failed ? 'text-del' : 'text-faint'} />
+        <span className="font-medium">{working ? 'Working' : 'Worked'}</span>
+        <span className="shrink-0 text-[11px] text-faint">
+          {tools.length} tool call{tools.length === 1 ? '' : 's'}
+        </span>
+        {failed > 0 && <span className="shrink-0 text-[11px] text-del">{failed} failed</span>}
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">
+          {working && !open ? `${latest.name} ${toolSummary(latest.name, latest.input)}`.trim() : ''}
+        </span>
+        {working && <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-faint border-t-fg" />}
+      </button>
+      {open && (
+        <div className="border-t border-line px-3 py-1">
+          {entry.items.map((it) => (
+            <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
