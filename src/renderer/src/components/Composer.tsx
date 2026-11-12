@@ -184,6 +184,8 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
 
   const update = async (patch: Partial<Pick<Chat, 'model' | 'effort' | 'planMode' | 'permission' | 'advisor' | 'fast' | 'budgetUsd' | 'outputStyle'>>) => {
     useStore.getState().upsertChat(await window.api.updateChat(chat.id, patch))
+    // A model change adds, updates or drops the "switched to model" divider.
+    if (patch.model) useStore.getState().setItems(chat.id, await window.api.getChatItems(chat.id))
   }
   const addFolder = async () => useStore.getState().upsertChat(await window.api.addChatFolder(chat.id))
   const removeFolder = async (d: string) => useStore.getState().upsertChat(await window.api.removeChatFolder(chat.id, d))

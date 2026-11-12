@@ -9,6 +9,7 @@ import * as orchestrator from './orchestrator'
 import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
 import * as notion from './integrations/notion'
 import { buildSystemPrompt } from '@shared/systemPrompt'
+import { onModelReported } from '@shared/modelSwitch'
 import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, questionReply, runningTasks } from './claudeOptions'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[] }) => void
@@ -399,6 +400,11 @@ export async function send(
           if (msg.subtype === 'init') {
             if (msg.session_id) chat.sdkSessionId = msg.session_id
             if (Array.isArray(msg.slash_commands)) reportedCommands.set(ws.id, msg.slash_commands)
+            if (typeof msg.model === 'string' && msg.model) {
+              const change = onModelReported(store.chatItems(chat.id), chat.model, msg.model, chat.reportedModel, randomUUID(), Date.now())
+              if (change && 'put' in change) put(change.put)
+              chat.reportedModel = msg.model
+            }
             store.save()
           } else if (msg.subtype === 'commands_changed' && Array.isArray(msg.commands)) {
             reportedCommands.set(ws.id, msg.commands.map((c: { name: string }) => c.name))

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Chat, ChatItem, ReviewFinding } from '@shared/types'
-import { useStore, reportError, removePermission, openDoc } from '../store'
+import { useStore, reportError, removePermission, openDoc, modelLabel } from '../store'
 import { splitFindingsBlock } from '../review'
 import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import { setDraft } from './Composer'
@@ -201,6 +201,8 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
       )
     case 'note':
       return <div className="my-3 text-center text-[11px] text-faint">{item.text}</div>
+    case 'model':
+      return <ModelSwitch item={item} />
     case 'assistant':
       return <AssistantText text={item.text} chat={chat} />
     case 'tool':
@@ -231,6 +233,25 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
     case 'advisor':
       return <AdvisorItem item={item} chat={chat} />
   }
+}
+
+/** A rule across the chat where the model changed; shows the model Claude Code confirmed once the next turn starts. */
+function ModelSwitch({ item }: { item: Extract<ChatItem, { kind: 'model' }> }) {
+  const details = useStore((s) => s.modelDetails)
+  return (
+    <div
+      className="my-4 flex items-center gap-3 text-[11px] text-faint"
+      title={item.resolved ? `Claude Code confirmed ${item.resolved}` : 'Takes effect with your next message'}
+      data-testid="model-switch"
+    >
+      <div className="h-px flex-1 bg-line" />
+      <span>
+        Switched to model {modelLabel(item.model, details)}
+        {item.resolved && <span className="font-mono"> · {item.resolved}</span>}
+      </span>
+      <div className="h-px flex-1 bg-line" />
+    </div>
+  )
 }
 
 function AdvisorItem({ item, chat }: { item: Extract<ChatItem, { kind: 'advisor' }>; chat: Chat }) {

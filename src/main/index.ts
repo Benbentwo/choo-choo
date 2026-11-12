@@ -36,6 +36,7 @@ import * as automations from './automations'
 import { projectThreads, routerChat, threadTitle, updateTarget } from '@shared/projects'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
+import { onModelPicked } from '@shared/modelSwitch'
 import * as archive from './archive'
 import * as remote from './remote'
 import * as desktop from './desktop'
@@ -1092,7 +1093,17 @@ function registerIpc() {
   })
   h('chat:update', (id: string, patch: Partial<Chat>) => {
     const c = findChat(id)
-    if (patch.model) c.model = patch.model
+    if (patch.model) {
+      const change = onModelPicked(store.chatItems(id), c.model, patch.model, randomUUID(), Date.now())
+      if (change && 'put' in change) {
+        store.upsertItem(id, change.put)
+        emitChat(id, { item: change.put })
+      } else if (change) {
+        // The renderer reloads the chat's items after a model change, so it drops this too.
+        store.replaceItems(id, store.chatItems(id).filter((x) => x.id !== change.remove))
+      }
+      c.model = patch.model
+    }
     if (patch.effort) c.effort = patch.effort
     if (patch.title) c.title = patch.title
     if (patch.unread !== undefined) c.unread = patch.unread
