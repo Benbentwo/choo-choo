@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { Chat, PrInfo, RepoGroup, Workspace } from '@shared/types'
-import { foldKey, parseAutoUpdate, projectArchived, projectThreads, projectTree, routerChat, stripRouted } from '@shared/projects'
+import { foldKey, parseAutoUpdate, projectArchived, projectThreads, projectTree, routerChat, stripRouted, threadKey, type ThreadNode } from '@shared/projects'
 import { useStore, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, showView, viewFor } from '../store'
 import { IconArchive, IconBranch, IconDown, IconPlus, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
 import { ProjectIcon } from './ProjectIcon'
 
 /**
- * Projects (Settings › Experimental): the sidebar tree project › active repos › workspaces, shown
- * by PR once one exists, and the Threads panel beside a project's orchestrator. See docs/prd/projects.md.
+ * Projects (Settings › Experimental): the sidebar tree project › thread › repo › workspace, each
+ * workspace shown by its PR once one exists, and the Threads panel beside a project's orchestrator. See docs/prd/projects.md.
  */
 
 export function ProjectsSection() {
@@ -38,17 +38,16 @@ export function ProjectsSection() {
 
 function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string) => boolean }) {
   const s = useStore()
-  const [showAll, setShowAll] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const archived = projectArchived(group, s.workspaces)
   const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === group.id && !w.archived)
   const chats = orch ? s.chats.filter((c) => c.workspaceId === orch.id) : []
   const running = chats.some((c) => c.status === 'running')
   const unread = chats.some((c) => c.unread)
-  const active = !!orch && s.selectedWs === orch.id
-  const tree = projectTree(group, s.repos, s.workspaces, showAll)
-  const all = projectTree(group, s.repos, s.workspaces, true)
-  const count = tree.reduce((n, t) => n + t.workspaces.length, 0)
+  const router = orch ? routerChat(s.chats, orch.id) : undefined
+  const active = !!orch && s.selectedWs === orch.id && (s.activeChat[orch.id] ?? router?.id) === router?.id
+  const tree = projectTree(group, s.repos, s.workspaces, s.chats, orch?.id)
+  const count = tree.reduce((n, t) => n + t.repos.reduce((m, r) => m + r.workspaces.length, 0), 0)
   const isFolded = folded(foldKey.project(group.id))
   return (
     <div>
@@ -79,20 +78,9 @@ function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string
       </div>
       {!isFolded && (
         <div>
-          {tree.map(({ repo, workspaces }) => {
-            const key = foldKey.projectRepo(group.id, repo.id)
-            const repoFolded = folded(key)
-            return (
-              <div key={repo.id}>
-                <button className="flex h-7 w-full items-center gap-1.5 rounded-md pr-2 pl-6 text-left text-[12px] text-muted hover:bg-hover hover:text-fg" onClick={() => setRepoCollapsed(key, !repoFolded)}>
-                  <IconDown width={11} height={11} className={`text-faint ${repoFolded ? '-rotate-90' : ''}`} />
-                  <span className="flex-1 truncate font-mono">{repo.name}</span>
-                  {repoFolded && workspaces.length > 0 && <span className="text-[11px] text-faint">{workspaces.length}</span>}
-                </button>
-                {!repoFolded && workspaces.map((w) => <ProjectWorkRow key={w.id} ws={w} />)}
-              </div>
-            )
-          })}
+          {tree.map((node) => (
+            <ThreadNodeView key={threadKey(node)} group={group} node={node} orchId={orch?.id} folded={folded} />
+          ))}
           {tree.length === 0 && <div className="py-1 pr-2 pl-7 text-[12px] text-faint">No open work yet. Tell the orchestrator what you want.</div>}
           {archived.length > 0 && (
             <button className="block py-0.5 pl-7 text-[11px] text-faint hover:text-fg" onClick={() => setShowArchived(!showArchived)}>
@@ -112,13 +100,62 @@ function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string
                 </button>
               </div>
             ))}
-          {(showAll || all.length > tree.length) && (
-            <button className="py-0.5 pl-7 text-[11px] text-faint hover:text-fg" onClick={() => setShowAll(!showAll)}>
-              {showAll ? 'Only repos with work' : `Show all repos (${all.length - tree.length} more)`}
-            </button>
-          )}
         </div>
       )}
+    </div>
+  )
+}
+
+/** A thread and the work it owns, by repo. Clicking the thread opens it; work no thread owns sits under "No thread". */
+function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; node: ThreadNode; orchId?: string; folded: (key: string) => boolean }) {
+  const s = useStore()
+  const { thread, repos } = node
+  const tKey = foldKey.projectThread(group.id, threadKey(node))
+  const isFolded = folded(tKey)
+  const count = repos.reduce((n, r) => n + r.workspaces.length, 0)
+  const active = !!thread && !!orchId && s.selectedWs === orchId && s.activeChat[orchId] === thread.id
+  const unread = !!thread?.unread && !active
+  const toggle = () => setRepoCollapsed(tKey, !isFolded)
+  return (
+    <div>
+      <div
+        role="button"
+        tabIndex={0}
+        className={`group flex h-8 cursor-pointer items-center gap-1.5 rounded-md pr-2 pl-5 ${active ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+        onClick={() => (thread ? void openGroupOrchestrator(group.id, thread.id) : toggle())}
+        onKeyDown={(e) => e.key === 'Enter' && (thread ? void openGroupOrchestrator(group.id, thread.id) : toggle())}
+        title={thread ? 'Open this thread' : 'Work no thread owns: started before threads, or its thread was deleted'}
+      >
+        <button
+          className="rounded p-0.5 text-faint hover:text-fg"
+          title={isFolded ? 'Unfold' : 'Fold'}
+          onClick={(e) => {
+            e.stopPropagation()
+            toggle()
+          }}
+        >
+          <IconDown width={11} height={11} className={isFolded ? '-rotate-90' : ''} />
+        </button>
+        <span className="w-3 shrink-0 text-center text-faint">#</span>
+        <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''} ${thread ? '' : 'italic'}`}>{thread?.title ?? 'No thread'}</span>
+        {thread?.status === 'running' ? <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-add" /> : unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />}
+        {isFolded && <span className="text-[11px] text-faint">{count}</span>}
+      </div>
+      {!isFolded &&
+        repos.map(({ repo, workspaces }) => {
+          const key = foldKey.projectRepo(group.id, threadKey(node), repo.id)
+          const repoFolded = folded(key)
+          return (
+            <div key={repo.id}>
+              <button className="flex h-7 w-full items-center gap-1.5 rounded-md pr-2 pl-10 text-left text-[12px] text-muted hover:bg-hover hover:text-fg" onClick={() => setRepoCollapsed(key, !repoFolded)}>
+                <IconDown width={11} height={11} className={`text-faint ${repoFolded ? '-rotate-90' : ''}`} />
+                <span className="flex-1 truncate font-mono">{repo.name}</span>
+                {repoFolded && <span className="text-[11px] text-faint">{workspaces.length}</span>}
+              </button>
+              {!repoFolded && workspaces.map((w) => <ProjectWorkRow key={w.id} ws={w} />)}
+            </div>
+          )
+        })}
     </div>
   )
 }
@@ -173,7 +210,7 @@ function ProjectWorkRow({ ws }: { ws: Workspace }) {
         setMenuAt({ x: e.clientX, y: e.clientY })
       }}
       title={ws.branch}
-      className={`group flex h-8 items-center gap-2 rounded-md pr-2 pl-10 ${selected ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+      className={`group flex h-8 items-center gap-2 rounded-md pr-2 pl-14 ${selected ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
     >
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${asking ? 'bg-amber-400' : running ? 'animate-pulse bg-add' : pr?.state === 'MERGED' ? 'bg-violet-400' : 'bg-faint'}`} />
       {pr && <span className="shrink-0 font-mono text-[11.5px] text-sky-400">#{pr.number}</span>}

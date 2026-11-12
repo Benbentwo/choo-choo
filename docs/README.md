@@ -18,7 +18,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 |---|---|
 | [Import from Conductor](prd/conductor-import.md) | Shipped |
 | [Orchestrator](prd/orchestrator.md) | Shipped |
-| [Projects](prd/projects.md) | Experimental: threads and the repo › PR sidebar |
+| [Projects](prd/projects.md) | Experimental: threads own their PRs; thread › repo › PR sidebar in review |
 | [Automations](prd/automations.md) | Experimental: shipped (PR #80); new issue and PR triggers in review |
 | [Shared sessions](prd/shared-sessions.md) | Shipped |
 | [Archive and reflect](prd/archive-and-reflect.md) | Shipped |
@@ -64,6 +64,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0013](decisions/0013-project-threads.md) | Projects: the orchestrator chat routes each message to a thread; the sidebar shows work by repo and PR, not by thread |
 | [0014](decisions/0014-automations-own-page-polled-events.md) | Automations get their own page and target a project or a repo; GitHub events are polled while the app is open, no webhooks |
 | [0015](decisions/0015-beta-channel-uses-prereleases.md) | The beta update channel is GitHub prereleases built and signed on every merge to main; stable stays manually published releases |
+| [0017](decisions/0017-threads-own-their-prs.md) | A project's threads own their workspaces and PRs; the sidebar shows project › thread › repo › PR (supersedes part of 0013) |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 
