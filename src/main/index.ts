@@ -1159,7 +1159,22 @@ function registerIpc() {
     ])
     // -z: "XY path\0", with a second path after renames.
     const dirty = status.split('\0').filter((e) => e.length > 3).map((e) => e.slice(3))
-    return { lines, headMatches: !!pr.headRefOid && head.trim() === pr.headRefOid, dirty }
+    return { lines, headMatches: !!pr.headRefOid && head.trim() === pr.headRefOid, dirty, head: head.trim() || undefined }
+  })
+  // The PR's author pushed: check, fast-forward, or (after a force-push) switch the worktree to the PR's head.
+  h('pr:follow', async (id: string, how: 'check' | 'ff' | 'reset') => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr || pr.state !== 'OPEN' || !pr.headRefOid) return null
+    const r = await git.followPrHead(ws.path, pr.number, pr.headRefOid, how === 'reset' || how === 'ff' ? how : 'check')
+    if (r.state === 'updated') send('pr:changed', ws.id)
+    return r
+  })
+  h('pr:rangeDiffs', (id: string, from: string, to: string, files: string[]) => git.rangeDiffs(findWs(id).path, from, to, files))
+  h('pr:changedSince', async (id: string, sha: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return pr ? git.changedSince(ws.path, sha, pr.number) : null
   })
   h('pr:submitReview', async (id: string, drafts: ReviewDraft[], body: string, event: ReviewEvent) => {
     const ws = findWs(id)

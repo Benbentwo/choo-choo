@@ -110,9 +110,13 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   if (diff === null) return <div className="flex-1 p-6 text-faint">Loading diff…</div>
   const shownLines = new Set(lines.map((l) => l.newNo).filter((n): n is number => n != null))
   const unplaced = mine.filter((f) => !f.line || !shownLines.has(f.line))
-  const threadAt = (l: Line) => threads.filter((t) => (t.side === 'old' ? l.kind === 'del' && l.oldNo === t.line : l.kind !== 'del' && l.newNo === t.line))
+  // Thread lines are the PR head's. Outdated threads point at code that's gone, and a worktree behind the
+  // PR has other line numbers, so those go above the diff instead of on a line that isn't theirs.
+  const placeable = threads.filter((t) => !t.outdated && (target?.headMatches ?? true))
+  const threadAt = (l: Line) => placeable.filter((t) => (t.side === 'old' ? l.kind === 'del' && l.oldNo === t.line : l.kind !== 'del' && l.newNo === t.line))
   const placedThreads = new Set(lines.flatMap((l) => threadAt(l)))
-  const unplacedThreads = threads.filter((t) => !placedThreads.has(t))
+  const unplacedThreads = threads.filter((t) => !placedThreads.has(t) && !t.outdated)
+  const outdatedThreads = threads.filter((t) => t.outdated)
   const numbered = (i: number) => lines[i] && (lines[i].kind === 'add' || lines[i].kind === 'del' || lines[i].kind === 'ctx')
   const lo = sel ? Math.min(sel.a, sel.b) : -1
   const hi = sel ? Math.max(sel.a, sel.b) : -1
@@ -142,7 +146,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     const text = draft.trim()
     if (!pending || !text) return
     if (to === 'github' && githubProblem) return
-    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), ...pending, text, dest: to }])
+    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), ...pending, text, dest: to, commit: target?.head }])
     setSel(null)
     setDraft('')
   }
@@ -150,7 +154,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     if (!f.line) return
     const l = lines.find((x) => x.kind !== 'del' && x.newNo === f.line)
     const text = f.fix ? `${f.message}\n\n${f.fix}` : f.message
-    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), file, start: f.line!, end: f.line!, side: 'new', code: l ? `${l.kind === 'add' ? '+' : ' '} ${l.text}` : '', text, dest: 'github', fromFinding: true }])
+    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), file, start: f.line!, end: f.line!, side: 'new', code: l ? `${l.kind === 'add' ? '+' : ' '} ${l.text}` : '', text, dest: 'github', fromFinding: true, commit: target?.head }])
   }
   const findingAdded = (f: ReviewFinding) => queuedHere.some((c) => c.fromFinding && c.start === f.line && c.text.startsWith(f.message))
   /** Queued comments that end on this row. */
@@ -192,7 +196,17 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
         <div className="mb-1 flex items-center gap-2">
           <span className="text-[12px] font-medium">You</span>
           <DestTag dest={d} label={d === 'github' ? 'Pending in your GitHub review' : undefined} />
+          {c.stale && (
+            <span className="text-[11px] text-amber-400" title="New commits changed the lines this comment is on. Check it still applies.">
+              code changed
+            </span>
+          )}
           <span className="flex-1" />
+          {c.stale && (
+            <button className="text-[12px] text-amber-400 hover:text-fg" title="It still applies: post it on these lines" onClick={() => setCodeComments(ws.id, (list) => list.map((x) => (x.id === c.id ? { ...x, stale: false } : x)))}>
+              Keep
+            </button>
+          )}
           {!isEditing && (
             <button className="text-[12px] text-faint hover:text-fg" onClick={() => setEditing({ id: c.id, text: c.text })}>
               Edit
@@ -325,6 +339,16 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
         <Comment key={`u${i}`} f={f} />
       ))}
       {review && unplacedThreads.map((t) => <Thread key={t.id} ws={ws} c={t} pr={review.pr} theirs={theirs} />)}
+      {review && outdatedThreads.length > 0 && (
+        <details className="mx-4 my-1 font-sans">
+          <summary className="cursor-pointer text-[12px] text-faint hover:text-fg">
+            {outdatedThreads.length} outdated thread{outdatedThreads.length === 1 ? '' : 's'}: the code {outdatedThreads.length === 1 ? 'it was' : 'they were'} on has changed
+          </summary>
+          {outdatedThreads.map((t) => (
+            <Thread key={t.id} ws={ws} c={t} pr={review.pr} theirs={theirs} />
+          ))}
+        </details>
+      )}
       <table className="w-full border-collapse">
         <tbody>
           {lines.flatMap((l, i) => [
@@ -402,6 +426,11 @@ function Thread({ ws, c, pr, theirs }: { ws: Workspace; c: PrComment; pr: { numb
           Open on GitHub
         </button>
       </div>
+      {c.outdated && c.diffHunk && (
+        <pre className="mb-1.5 overflow-x-auto rounded border border-line/60 bg-bg px-2 py-1 font-mono text-[11px] leading-[16px] text-faint" title="The code when this was written">
+          {c.diffHunk.split('\n').slice(-4).join('\n')}
+        </pre>
+      )}
       <div className="whitespace-pre-wrap">{c.body}</div>
       {(c.replies ?? []).map((r, i) => (
         <div key={i} className="mt-1.5 border-l-2 border-line pl-2">

@@ -70,4 +70,4 @@ On for everyone. No migration: workspaces start in the mode their PR implies.
 
 ## Future work
 
-- Review-mode extras from the Gnosis comparison: guided walkthrough, viewed files and "changed since your last review".
+- Review-mode extras from the Gnosis comparison: guided walkthrough and viewed files. "Changed since your last review" is in the Review tab ([Line comments PRD](review-comments.md#when-the-pr-is-updated)).
