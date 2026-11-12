@@ -16,6 +16,35 @@ export function stripRouted(text: string): { routed: boolean; text: string } {
   return { routed: true, text: text.slice(ROUTED_PREFIX.length).replace(/^\s*\n/, '') }
 }
 
+/** First line of the message that wakes an orchestrator when workspaces it started finish. */
+export const AUTO_UPDATE_PREFIX = '[Automatic update from Choo Choo, not from the person]'
+
+export type AutoUpdateState = 'finished' | 'error' | 'needs-approval'
+export type AutoUpdateEntry = { title: string; id: string; state: AutoUpdateState }
+
+const AUTO_UPDATE_WORDS: Record<AutoUpdateState, string> = {
+  finished: 'finished',
+  error: 'hit an error',
+  'needs-approval': 'is waiting for the person to approve a tool call'
+}
+
+/** One workspace's line in an automatic update, as the orchestrator reads it. */
+export function autoUpdateLine(d: AutoUpdateEntry): string {
+  return `- ${d.title} (${d.id}) ${AUTO_UPDATE_WORDS[d.state]}.`
+}
+
+/** The workspaces an automatic update reported, or null when the message isn't one. */
+export function parseAutoUpdate(text: string): AutoUpdateEntry[] | null {
+  if (!text.startsWith(AUTO_UPDATE_PREFIX)) return null
+  const out: AutoUpdateEntry[] = []
+  for (const line of text.split('\n')) {
+    const m = /^- (.*) \(([^()\s]+)\) (.+)\.$/.exec(line)
+    const state = m && (Object.keys(AUTO_UPDATE_WORDS) as AutoUpdateState[]).find((s) => AUTO_UPDATE_WORDS[s] === m[3])
+    if (m && state) out.push({ title: m[1], id: m[2], state })
+  }
+  return out
+}
+
 /** The orchestrator chat: the first chat on the orchestrator workspace that isn't a thread. */
 export function routerChat(chats: Chat[], orchWsId: string): Chat | undefined {
   return chats.find((c) => c.workspaceId === orchWsId && !c.thread)

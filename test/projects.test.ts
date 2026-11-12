@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { Chat, Repo, RepoGroup, Workspace } from '../src/shared/types'
-import { inProject, projectThreads, projectTree, routerChat, stripRouted, threadTitle, updateTarget, ROUTED_PREFIX } from '../src/shared/projects'
+import { inProject, parseAutoUpdate, projectThreads, projectTree, routerChat, stripRouted, threadTitle, updateTarget, ROUTED_PREFIX } from '../src/shared/projects'
+import { autoUpdatePrompt } from '../src/main/orchestrator'
 
 const repo = (id: string): Repo => ({ id, name: id, path: `/r/${id}`, defaultBranch: 'main' })
 const ws = (id: string, repoId: string, extra: Partial<Workspace> = {}): Workspace => ({ id, repoId, name: id, branch: id, baseRef: 'main', path: `/w/${id}`, title: id, createdAt: 1, ...extra })
@@ -36,6 +37,15 @@ describe('projects', () => {
     expect(threadTitle(`${ROUTED_PREFIX}\nStart dark mode\nmore`)).toBe('Start dark mode')
     expect(threadTitle('Rework the signup flow into three steps on web and mobile')).toBe('Rework the signup flow into three steps…')
     expect(threadTitle('   ')).toBe('New thread')
+  })
+  it('reads back the workspaces an automatic update reported', () => {
+    const entries = [
+      { title: 'Upgrade libxml2 (CVE fix)', id: 'w1', state: 'finished' as const },
+      { title: 'Add tests', id: 'w2', state: 'error' as const },
+      { title: 'Deploy', id: 'w3', state: 'needs-approval' as const }
+    ]
+    expect(parseAutoUpdate(autoUpdatePrompt(entries))).toEqual(entries)
+    expect(parseAutoUpdate('- Fix login (w1) finished.')).toBeNull()
   })
 })
 
