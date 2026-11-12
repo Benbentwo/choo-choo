@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { prMenuItems } from '../prState'
 import type { Chat, PrInfo, RepoGroup, Workspace } from '@shared/types'
 import { foldKey, parseAutoUpdate, projectArchived, projectThreads, projectTree, routerChat, stripRouted, threadKey, type ThreadNode } from '@shared/projects'
 import { useStore, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, showView, viewFor } from '../store'
@@ -235,7 +236,7 @@ function ProjectWorkRow({ ws }: { ws: Workspace }) {
       {/* React events bubble out of the portal; keep menu clicks from also selecting the row. */}
       {menuAt && (
         <span onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
-          <Menu anchor={null} at={menuAt} items={menuItems} onClose={() => setMenuAt(null)} />
+          <Menu anchor={null} at={menuAt} items={[...prMenuItems(pr), ...menuItems]} onClose={() => setMenuAt(null)} />
         </span>
       )}
     </div>

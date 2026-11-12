@@ -43,7 +43,7 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 
 ![A PR row opens its workspace](../media/projects/pr-row.png)
 
-- **More repos as the work needs them:** a project isn't fixed to the repos it started with. When docs, code or your messages point at another repo, the orchestrator looks it up (`find_repos`: repos in Choo Choo and GitHub repos you can access). A repo already in Choo Choo is added to the project on its own (`add_repo_to_project`) and the orchestrator says so. A repo you'd have to clone shows an approval card with the orchestrator's reason (`clone_repo`), whatever the chat's permission setting; approving clones it into the repos folder and adds it. Either way, the repo then shows under the project and workspaces can start in it.
+- **More repos as the work needs them:** a project isn't fixed to the repos it started with. When docs, code or your messages point at another repo, the orchestrator looks it up (`find_repos`: repos in Choo Choo and GitHub repos you can access). A repo already in Choo Choo is added to the project on its own (`add_repo_to_project`) and the orchestrator says so. A repo you'd have to clone shows an approval card with the orchestrator's reason (`clone_repo`), whatever the chat's permission setting. **Always allow** on that card covers the rest of that chat's clones, including cards already waiting, so a run of repos asks once (Ben, 2026-11-10: "This prompt has been asked like five times now"); approving clones it into the repos folder and adds it. Either way, the repo then shows under the project and workspaces can start in it.
 - **Icon and color:** Edit (hover the project) picks an icon from a set of about 50 Lucide icons and one of eleven colors, or the theme accent. It shows in the sidebar, the Threads panel and a workspace's project breadcrumb. Projects that never picked one keep the orchestrator mark.
 
 ![Project icons in the sidebar](../media/projects/icons-sidebar.png)
@@ -66,8 +66,8 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 6. Every thread shares the project's memory and can see every workspace in the project. Its prompt tells it to leave other threads' workspaces alone unless the person asks ([decision 0017](../decisions/0017-threads-own-their-prs.md)).
 7. New chat on a project orchestrator makes a thread. A thread named "New thread" takes its title from its first message.
 8. The sidebar tree lists open workspaces with `orchestratorId` equal to the project, by owning thread (newest thread first, unowned last), then repo, newest workspace first. PR numbers come from `getPr`, cached per workspace until the PR watcher reports a change.
-9. Fold state lives in `Settings.sidebarCollapsed` with keys `section:projects`, `project:<id>`, `project:<id>:thread:<threadId>` and `project:<id>:thread:<threadId>:<repoId>` (`none` for unowned work).
-10. A project's orchestrator never clones a repo without the person's OK: `clone_repo` is in `alwaysAskTools`, which asks even when the chat allows everything. Adding a repo the person already has needs no OK.
+9. Fold state lives in `Settings.sidebarCollapsed` with keys `section:projects`, `section:repos` (the Repos list below the projects), `project:<id>`, `project:<id>:thread:<threadId>` and `project:<id>:thread:<threadId>:<repoId>` (`none` for unowned work).
+10. A project's orchestrator never clones a repo without the person's OK: `clone_repo` is in `alwaysAskTools`, which asks even when the chat allows everything, until the person picks Always allow for it on a card in that chat. Adding a repo the person already has needs no OK.
 11. `RepoGroup.icon` is a name from the renderer's icon set and `RepoGroup.color` a `PROJECT_COLORS` id; the main process accepts only short lowercase names, and unknown ones fall back to the default mark.
 
 ## Design

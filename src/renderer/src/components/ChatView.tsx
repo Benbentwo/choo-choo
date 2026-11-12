@@ -284,6 +284,16 @@ function AdvisorItem({ item, chat }: { item: Extract<ChatItem, { kind: 'advisor'
         <span className={plan ? '' : 'text-advisor'}>{who}</span>: {item.text}
       </div>
     )
+  // Sent notes appear in full in the message that follows, so the card folds to one line instead of showing them twice.
+  if (item.resolved === 'sent') {
+    const notes = item.text.split('\n').filter((l) => l.trim()).length
+    return (
+      <div className="my-3 text-[11px] text-faint">
+        <span className={plan ? '' : 'text-advisor'}>{who}</span>: {notes} note{notes === 1 ? '' : 's'}
+        {item.blocker ? ', with a blocker,' : ''} sent to the agent
+      </div>
+    )
+  }
   const act = (action: 'send' | 'dismiss') => window.api.actOnAdvice(chat.id, item.id, action).catch(reportError)
   return (
     <div
@@ -294,7 +304,6 @@ function AdvisorItem({ item, chat }: { item: Extract<ChatItem, { kind: 'advisor'
         {plan && <span className="text-faint">from reviewers who only saw the plan</span>}
         {item.blocker && <span className="rounded bg-del/15 px-1 text-del">blocker</span>}
         <span className="flex-1" />
-        {item.resolved === 'sent' && <span className="text-faint">Sent to the agent</span>}
         {item.resolved === 'dismissed' && <span className="text-faint">Dismissed</span>}
       </div>
       <div className="space-y-1 text-[13px] whitespace-pre-wrap">

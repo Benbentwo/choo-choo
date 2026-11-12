@@ -129,9 +129,11 @@ export function projectTree(group: RepoGroup, repos: Repo[], workspaces: Workspa
 /** Fold-key id for a thread node; `none` for work no thread owns. */
 export const threadKey = (n: ThreadNode) => n.thread?.id ?? 'none'
 
-/** Keys in Settings.sidebarCollapsed for folding the Projects section, a project, a thread in it, or a repo in a thread. */
+/** Keys in Settings.sidebarCollapsed for folding the Projects section, the Repos list, a project, a thread in it, or a repo in a thread. */
 export const foldKey = {
   section: 'section:projects',
+  /** The Repos list below the Projects section. */
+  repos: 'section:repos',
   project: (groupId: string) => `project:${groupId}`,
   projectThread: (groupId: string, threadId: string) => `project:${groupId}:thread:${threadId}`,
   projectRepo: (groupId: string, threadId: string, repoId: string) => `project:${groupId}:thread:${threadId}:${repoId}`

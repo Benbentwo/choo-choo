@@ -12,12 +12,12 @@ import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
 import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconMerged, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
 import { StackRows } from './Stack'
 import { Stats } from './Stats'
-import { usePrState } from '../prState'
+import { prMenuItems, usePrState } from '../prState'
 import { BrandMark } from './BrandMark'
 import { UpdateBanners } from './Updates'
 import { AddonActions, addonViews } from './Addons'
 import { ProjectsSection } from './Projects'
-import { inProject } from '@shared/projects'
+import { foldKey, inProject } from '@shared/projects'
 import { buildLabel, sidebarVersion, type BuildInfo } from '@shared/uiComment'
 
 export function Sidebar() {
@@ -73,6 +73,9 @@ export function Sidebar() {
     void window.api.reorderRepos(ids)
   }
   const headerRef = useRef<HTMLDivElement>(null)
+  // The whole list under the Repos header folds, like the Projects section above it.
+  const reposFolded = (s.settings.sidebarCollapsed ?? []).includes(foldKey.repos)
+  const reposWaiting = s.chats.some((c) => (c.unread || (s.permissions[c.id]?.length ?? 0) > 0) && s.workspaces.some((w) => w.id === c.workspaceId && !w.archived))
   const updateView = (p: Partial<View>) => {
     const v = { ...view, ...p }
     setView(v)
@@ -216,7 +219,15 @@ export function Sidebar() {
       <div className="flex-1 overflow-y-auto px-2 py-3">
         {projectsOn && <ProjectsSection />}
         <div ref={headerRef} className="mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
-          <span className="flex-1">{projectsOn ? 'Repos' : 'My workspaces'}</span>
+          <button
+            className="flex flex-1 items-center gap-1 text-left hover:text-fg"
+            onClick={() => setRepoCollapsed(foldKey.repos, !reposFolded)}
+            title={reposFolded ? 'Show repos' : 'Fold repos'}
+          >
+            <IconDown width={12} height={12} className={reposFolded ? '-rotate-90' : ''} />
+            {projectsOn ? 'Repos' : 'My workspaces'}
+            {reposFolded && reposWaiting && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-accent" title="A workspace is unread or waiting on you" />}
+          </button>
           <button className="rounded p-0.5 hover:bg-hover hover:text-fg" title="View options" onClick={() => setMenu(menu ? null : 'view')}>
             <IconDots />
           </button>
@@ -227,6 +238,8 @@ export function Sidebar() {
           {menu && <Menu anchor={headerRef.current} items={menu === 'view' ? viewItems : addProjectItems()} onClose={() => setMenu(null)} />}
           {rowMenu && <Menu anchor={null} at={rowMenu} items={[{ label: 'Hide from sidebar', onClick: () => setSidebarRowHidden(rowMenu.key, true) }]} onClose={() => setRowMenu(null)} />}
         </div>
+        {!reposFolded && (
+          <>
         {!projectsOn && s.groups.length > 0 && (
           <div className="mb-3">
             <div className="mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
@@ -398,6 +411,8 @@ export function Sidebar() {
           <button className="mt-2 px-2 text-[12px] text-faint hover:text-fg" onClick={() => setShowHidden(!showHidden)}>
             {showHidden ? 'Hide hidden repositories' : 'Show hidden repositories'}
           </button>
+        )}
+          </>
         )}
       </div>
 
@@ -651,7 +666,7 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
       {/* React events bubble out of the portal; keep menu clicks from also selecting the row. */}
       {menuAt && (
         <span onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
-          <Menu anchor={null} at={menuAt} items={menuItems} onClose={() => setMenuAt(null)} />
+          <Menu anchor={null} at={menuAt} items={w.orchestrator ? menuItems : [...prMenuItems(pr), ...menuItems]} onClose={() => setMenuAt(null)} />
         </span>
       )}
     </div>

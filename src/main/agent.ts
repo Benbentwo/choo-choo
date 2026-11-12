@@ -101,6 +101,15 @@ export function pendingPermissions(): PermissionRequest[] {
   return [...pending.values()].map((p) => p.req)
 }
 
+/**
+ * Whether a call to a tool on a chat's always-ask list still needs the person's OK. The list overrides
+ * the chat's permission setting, but not the person's own "Always allow" for that tool in this chat:
+ * without that, a run of the same call (cloning eight repos) asks eight times.
+ */
+export function alwaysAskNeedsOk(alwaysAllow: string[] | undefined, toolName: string): boolean {
+  return !alwaysAllow?.includes(toolName)
+}
+
 /** Whether a tool call needs the user's OK under a chat's permission setting. */
 export function needsApproval(permission: Chat['permission'], alwaysAllow: string[] | undefined, toolName: string): boolean {
   if (!permission || permission === 'full') return false
@@ -326,7 +335,8 @@ export async function send(
       // A question for the user always goes to the user, whatever the permission setting:
       // allowing it without answers makes Claude carry on as if nobody replied.
       const question = toolName === 'AskUserQuestion'
-      if (!question && !alwaysAsk.has(toolName) && (autoAllow.has(toolName) || !needsApproval(chat.permission, chat.alwaysAllow, toolName))) return { behavior: 'allow', updatedInput: input }
+      const ok = alwaysAsk.has(toolName) ? !alwaysAskNeedsOk(chat.alwaysAllow, toolName) : autoAllow.has(toolName) || !needsApproval(chat.permission, chat.alwaysAllow, toolName)
+      if (!question && ok) return { behavior: 'allow', updatedInput: input }
       const req: PermissionRequest = { id: randomUUID(), chatId: chat.id, toolName, input }
       const { decision, answers } = await new Promise<Answer>((resolve) => {
         pending.set(req.id, { req, resolve })
@@ -342,6 +352,8 @@ export async function send(
       if (decision === 'always') {
         chat.alwaysAllow = [...new Set([...(chat.alwaysAllow ?? []), toolName])]
         store.save()
+        // Calls made side by side are already waiting on their own cards: this answers them too.
+        for (const p of [...pending.values()]) if (p.req.chatId === chat.id && p.req.toolName === toolName) respondPermission(p.req.id, 'allow')
       }
       return { behavior: 'allow', updatedInput: input }
     }
