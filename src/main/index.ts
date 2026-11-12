@@ -6,7 +6,8 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } 
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
 import type { Automation } from '@shared/automations'
-import type { Artifact, Chat, FeedbackOptions, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
+import type { Artifact, Chat, FeedbackOptions, FilePreview, PrInfo, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
+import { diffBase } from '@shared/stack'
 import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import { sessionUsage } from './usage'
@@ -45,7 +46,7 @@ import * as notion from './integrations/notion'
 import * as addonHost from './addonHost'
 import { originUrl, githubSlug } from './share'
 import { prBranch, type PrInbox } from '@shared/prInbox'
-import { prRef, syncWorkspaceBranch } from './workspacePr'
+import { followPrBase, prRef, syncWorkspaceBranch } from './workspacePr'
 
 let win: BrowserWindow | null = null
 
@@ -156,7 +157,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
   if (!repo) throw new Error('Unknown repo')
   const taken = new Set(s.workspaces.filter((w) => w.repoId === repoId).map((w) => w.name))
   const name = pickCityName(taken)
-  const baseRef = opts.baseRef ?? (await git.baseRefFor(repo.path, repo.defaultBranch))
+  let baseRef = opts.baseRef ?? (await git.baseRefFor(repo.path, repo.defaultBranch))
   const dir = join(workspacesRoot(), repo.name)
   mkdirSync(dir, { recursive: true })
   const path = join(dir, name)
@@ -178,6 +179,8 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     title = `#${source.number} ${pr.title}`
     named = true
     prNumber = source.number
+    // Compare with the branch the PR merges into, which isn't always the default branch.
+    if (pr.baseRefName && !opts.baseRef) baseRef = await git.baseRefFor(repo.path, pr.baseRefName)
   } else {
     const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
     branch = opts.branch ?? `${prefix}/${name}`
@@ -421,6 +424,14 @@ async function catchUpBranch(ws: Workspace) {
   send('pr:changed', ws.id)
 }
 
+/** Moves the workspace's diff base to the branch its open PR merges into, when they differ. */
+async function followPr(ws: Workspace, pr: PrInfo | null) {
+  const repo = store.get().repos.find((r) => r.id === ws.repoId)
+  if (!repo || !(await followPrBase(ws, repo.path, pr).catch(() => false))) return
+  store.save()
+  send('state:changed')
+}
+
 /** The workspace, caught up with the branch checked out in it, for looking up its PR. */
 async function wsForPr(id: string) {
   const ws = findWs(id)
@@ -521,6 +532,7 @@ const orchestratorHost: orchestrator.Host = {
   prStatus: async (ws) => {
     await catchUpBranch(ws)
     const pr = await gh.prForBranch(ws.path, prRef(ws))
+    await followPr(ws, pr)
     return { pr, checks: pr ? await gh.checks(ws.path, prRef(ws)).catch(() => []) : [] }
   }
 }
@@ -1130,13 +1142,16 @@ function registerIpc() {
   h('pr:get', async (id: string) => {
     const ws = await wsForPr(id)
     const pr = await gh.prForBranch(ws.path, prRef(ws))
+    await followPr(ws, pr)
     if (pr?.state === 'OPEN') pr.behindBy = await gh.prBehindBy(ws.path, pr)
     return pr
   })
   // For sidebar rows: no catching up on the branch and no compare call. The PR watch keeps the branch current.
-  h('pr:state', (id: string) => {
+  h('pr:state', async (id: string) => {
     const ws = findWs(id)
-    return gh.prForBranch(ws.path, prRef(ws))
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    await followPr(ws, pr)
+    return pr
   })
   h('pr:comments', async (id: string) => {
     const ws = await wsForPr(id)
@@ -1398,19 +1413,19 @@ function registerIpc() {
   h('permission:pending', () => agent.pendingPermissions())
   h('git:changes', (wsId: string) => {
     const ws = findWs(wsId)
-    return git.changes(ws.path, ws.baseRef)
+    return git.changes(ws.path, diffBase(ws))
   })
   h('git:stats', async (wsId: string) => {
     const ws = findWs(wsId)
     try {
-      return git.summarize(await git.changes(ws.path, ws.baseRef))
+      return git.summarize(await git.changes(ws.path, diffBase(ws)))
     } catch {
       return { additions: 0, deletions: 0, files: 0 }
     }
   })
   h('git:fileDiff', (wsId: string, file: string) => {
     const ws = findWs(wsId)
-    return git.fileDiff(ws.path, ws.baseRef, file)
+    return git.fileDiff(ws.path, diffBase(ws), file)
   })
   h('pty:create', (id: string, wsId: string) => {
     const ws = findWs(wsId)

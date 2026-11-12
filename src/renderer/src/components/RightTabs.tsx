@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Artifact, CheckRun, ReviewFinding, Workspace } from '@shared/types'
+import { diffBase } from '@shared/stack'
 import { useStore, openDoc, newChatTab, reportError, reviewTarget } from '../store'
 import { useWorkspaceMode } from '../prReview'
 import { ReviewDrafts } from './ReviewDrafts'
@@ -185,10 +186,9 @@ export function ReviewTab({ ws }: { ws: Workspace }) {
 function AgentReview({ ws }: { ws: Workspace }) {
   const { mode } = useWorkspaceMode(ws)
   const theirs = useStore((s) => !!reviewTarget(s.prReview[ws.id], mode))
-  const repo = useStore((s) => s.repos.find((r) => r.id === ws.repoId))
   const extras = useStore((s) => s.settings.extras)
   const { chat, code, security, findings, running } = useReview(ws.id)
-  const base = repo?.defaultBranch ?? 'main'
+  const base = diffBase(ws)
   const start = async (kind: 'code' | 'security' | 'claude') => {
     await newChatTab(ws.id)
     const s = useStore.getState()

@@ -6,6 +6,7 @@ import type { InboxPr, PrInbox } from '@shared/prInbox'
 import type { Automation, AutomationRun } from '@shared/automations'
 import { isTheirs, type CommentDest, type PrReviewInfo } from '@shared/prReview'
 import * as L from '@shared/layout'
+import { diffBase } from '@shared/stack'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type PrInfo, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
 
 export type Doc = L.Doc
@@ -187,6 +188,9 @@ export const useStore = create<UI>((set, get) => ({
   error: null,
 
   hydrate: (s) => {
+    // A workspace whose diff base moved (its PR was retargeted, or it switched stack layer) needs new stats.
+    const before = new Map(get().workspaces.map((w) => [w.id, diffBase(w)]))
+    for (const w of s.workspaces) if (before.has(w.id) && before.get(w.id) !== diffBase(w) && !w.archived) void refreshStats(w.id)
     set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [], automations: s.automations ?? [], automationRuns: s.automationRuns ?? [] })
     if (!layoutLoaded) {
       layoutLoaded = true

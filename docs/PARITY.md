@@ -67,7 +67,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Clickable question cards when Claude asks the user something (`AskUserQuestion`), in every permission mode
 
 ### Right panel
-- ✅ Changes: committed, uncommitted and untracked vs merge base, with diff view
+- ✅ Changes: committed, uncommitted and untracked vs merge base with the target branch (the branch the workspace's PR merges into, or the one below it in a stack; else the branch it started from), with diff view
 - ✅ Code comments: click, drag or shift-click line numbers in the diff to comment; comments wait as chips in the composer (which stays below an open diff or file) and go to the agent together, each with its file, lines and code
 - ✅ All files tree with file preview, filter
 - ✅ Artifacts: files the agent wrote

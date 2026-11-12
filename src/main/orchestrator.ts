@@ -7,6 +7,7 @@ import * as store from './store'
 import * as git from './git'
 import { toolShape } from './addons'
 import { ROUTED_PREFIX } from '@shared/projects'
+import { diffBase } from '@shared/stack'
 
 /**
  * The orchestrator is a chat that lives in the repo's main checkout. The person tells it what
@@ -403,7 +404,7 @@ export function queryOptions(
         markSeen(ws)
         let changes = ''
         try {
-          const files = await git.changes(ws.path, ws.baseRef)
+          const files = await git.changes(ws.path, diffBase(ws))
           const s = git.summarize(files)
           changes = `${s.files} files, +${s.additions} -${s.deletions}\n${files.map((f) => `${f.status} ${f.path} +${f.additions} -${f.deletions}`).join('\n')}`
         } catch (e) {
