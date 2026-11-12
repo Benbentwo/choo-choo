@@ -1,11 +1,11 @@
-# PRD: Remote sessions (phone and cloud)
+# PRD: Remote sessions (phone, cloud and Claude desktop)
 
 | | |
 |---|---|
-| Status | Shipped: Continue on phone (PR #41). In review: Run in cloud / Bring back |
+| Status | Shipped: Continue on phone (PR #41), Run in cloud (PR #42). In review: Open in Claude desktop |
 | Owner | Claude (project thread "Continue workspaces from phone and cloud") |
 | Requested by | Ben, 2026-11-06 ("How can we use Claude Code remote sessions?") |
-| Last updated | 2026-11-06 |
+| Last updated | 2026-11-12 |
 
 ## Problem
 
@@ -15,6 +15,7 @@ A choo-choo chat only moves forward while you sit at the Mac. Claude Code alread
 
 - Pick up a chat on your phone in two clicks, and see what happened there when you bring it back.
 - Send a workspace to a cloud session so it keeps going with the laptop closed, and pull it back into its worktree.
+- Move a chat to the Claude desktop app, as Claude Code's `/desktop` does, and bring it back.
 
 ## Non-goals
 
@@ -41,6 +42,13 @@ A choo-choo chat only moves forward while you sit at the Mac. Claude Code alread
 - **Stop following** leaves the cloud session running and returns the chat to normal.
 - If `claude --cloud` quits before printing a session link, the chat shows why and stays local.
 
+**Open in Claude desktop.** Asked for by Ben on 2026-11-12 ("add `/desktop` support"). Three ways in, all doing the same thing: a monitor button on the chat tab row (next to the phone button), **Open in Claude desktop** in the workspace's ⋯ menu, and typing `/desktop` (or `/app`) in the composer, which also shows in the `/` menu.
+
+- Choo Choo runs `claude --desktop --resume <session>` in the worktree. That is Claude Code's own handoff: it checks Claude desktop is installed and new enough, refuses if the session is open in another terminal, and opens the app on the session through its `claude://resume?session=<id>` link. Choo Choo never opens that link itself.
+- When it succeeds the composer becomes a panel, "Continuing in Claude desktop", with **Bring back** and **Open Claude desktop again**. The chat gets an "Opened in Claude desktop" note.
+- **Bring back** copies the turns made in the app into the chat (same import as the phone) and returns the composer. Choo Choo's next turn resumes the same session.
+- If Claude Code refuses (app missing or too old, not signed in with a Claude account, Linux), the error shows Claude Code's reason with a hint, and the chat stays here.
+
 ## Requirements
 
 1. The handoff runs `claude --resume <session> --remote-control <chat title>` in the workspace, with the chat's model, effort and permission mode.
@@ -51,6 +59,8 @@ A choo-choo chat only moves forward while you sit at the Mac. Claude Code alread
 6. Run in cloud never loses local work: it commits and pushes before starting, and the cloud prompt carries the conversation with secrets redacted.
 7. While a chat is in the cloud, Choo Choo refuses local turns. Follow-ups go to the cloud session.
 8. Bring back from the cloud switches the workspace to the branch teleport checked out, and the chat continues the teleported session.
+9. Open in Claude desktop runs only `claude --desktop --resume <session>` (an unmodified Claude Code), with `ANTHROPIC_API_KEY` cleared. It needs a session, an idle agent, a Claude chat outside the orchestrator, and no pending revert.
+10. While a chat is in Claude desktop, Choo Choo refuses local turns until you bring it back. Archiving the workspace brings it back.
 
 ## Design
 
@@ -62,21 +72,28 @@ A choo-choo chat only moves forward while you sit at the Mac. Claude Code alread
 - `agent.send` throws while `chat.remote` is set.
 - `src/main/cloud.ts`: `runInCloud`, `sendToCloud`, `teleportBack`, `forgetCloud`, plus pure helpers (`cloudPrompt`, `sessionIdFromUrl`, `parseSendResult`) covered by `test/cloud.test.ts`. It uses terminal id `<workspace>:cloud-<chat>`. Teleport is detected by polling the SDK's `listSessions({ dir })` for a new session in the worktree. IPC: `chat:cloud`, `chat:cloudSend`, `chat:cloudBack`, `chat:cloudForget`. UI: `CloudPanel.tsx`.
 
+- `src/main/desktop.ts`: `openInDesktop`, `bringBackFromDesktop`, plus pure helpers (`desktopArgs`, `DESKTOP_COMMAND`, `desktopFailure`) covered by `test/desktop.test.ts`. Claude Code's `--desktop` insists on a terminal (it refuses redirected input or output), so it runs in a hidden node-pty terminal `<workspace>:desktop-<chat>` that is killed when it exits, with a 60 second timeout. IPC: `chat:desktop`, `chat:desktopBack` (`Api.openInDesktop`, `Api.bringBackFromDesktop`). `chat:send` treats a bare `/desktop` or `/app` as the handoff. UI: `DesktopPanel.tsx`. `ChatRemote.kind` gains `'desktop'`.
+- How `/desktop` works was confirmed from Claude Code 2.1.322 itself: `--desktop` with `--resume <id>`, `--continue` or nothing; it builds `claude://resume?session=<id>` (or `claude://code/new?folder=<path>`) and opens it with `open` on macOS. It needs Claude desktop 1.1.9669 or later and a claude.ai sign-in, and works on macOS and Windows x64.
+
 ## Compliance, privacy and security
 
 - Uses only the official Claude Code binary with the person's own claude.ai sign-in ([decision 0001](../decisions/0001-official-claude-access-only.md)). Choo Choo never reads or sends Claude tokens and never calls claude.ai itself.
 - `ANTHROPIC_API_KEY` is cleared for this process, because Remote Control doesn't work with API keys.
 - What leaves the machine is what Remote Control sends to claude.ai for that session, under the person's account. Remote Control is available on Pro, Max, Team and Enterprise plans.
 
+- Open in Claude desktop sends nothing anywhere itself: Claude Code opens the local app, which then runs the session under the person's own account.
+
 ## Testing
 
-`test/remote.test.ts` covers arguments, quoting, link detection and transcript import. `test/cloud.test.ts` covers the cloud prompt, link parsing and follow-up results. The live handoffs need a Mac signed in to claude.ai, so check it by hand in `npm run dev`: start a chat, click the phone button, send a message from the Claude app, bring it back.
+`test/remote.test.ts` covers arguments, quoting, link detection and transcript import. `test/cloud.test.ts` covers the cloud prompt, link parsing and follow-up results. `test/desktop.test.ts` covers the desktop arguments, the `/desktop` match and failure messages. The live handoffs need a Mac signed in to claude.ai, so check it by hand in `npm run dev`: start a chat, click the phone button, send a message from the Claude app, bring it back.
 
 ## Rollout
 
 On for everyone; the button only appears on Claude chats outside the orchestrator. Older saves have no `remote` field, which means "here".
 
 ## Open questions
+
+- Whether Claude desktop keeps writing to the same session id after `claude://resume`. If it forks to a new id, Bring back finds nothing new to copy and says so; the work in the worktree is still there.
 
 - The Agent SDK has no switch to turn on Remote Control for an SDK session, so the chat is handed over instead of shared live. If the SDK gains one, Choo Choo could stay live while the phone is connected.
 - Turns made on the phone have no file checkpoint, so reverting to one of them rewinds the conversation but not files.

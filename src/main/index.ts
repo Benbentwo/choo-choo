@@ -38,6 +38,7 @@ import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import * as archive from './archive'
 import * as remote from './remote'
+import * as desktop from './desktop'
 import * as cloud from './cloud'
 import { registerIntegrationsIpc } from './integrations'
 import * as notion from './integrations/notion'
@@ -331,6 +332,11 @@ const afterTurn = new Map<string, { text: string; images: string[] }[]>()
  * or queued per Settings; when the turn can't take it, it waits and is sent when the turn ends.
  */
 function sendFromPerson(chat: Chat, text: string, images: string[]) {
+  // `/desktop` (or `/app`) hands the chat to Claude desktop, as it does in Claude Code's terminal.
+  if (desktop.DESKTOP_COMMAND.test(text.trim()) && !images.length && chat.model !== 'codex') {
+    const ws = findWs(chat.workspaceId)
+    return desktop.openInDesktop(chat, ws, agentEnv(ws), emitChat).then(() => undefined)
+  }
   if (!agent.isRunning(chat.id)) return sendToChat(chat, text, images)
   if (agent.pushMessage(chat, text, images.slice(0, 10), store.get().settings.whileRunning ?? 'steer', emitChat)) return
   afterTurn.set(chat.id, [...(afterTurn.get(chat.id) ?? []), { text, images }])
@@ -858,6 +864,7 @@ async function archiveWorkspace(id: string) {
   for (const c of store.get().chats.filter((c) => c.workspaceId === id)) {
     await agent.stop(c.id)
     await remote.bringBack(c, ws, emitChat)
+    await desktop.bringBackFromDesktop(c, ws, emitChat)
   }
   if (ws.orchestrator) {
     // Lives in the main checkout: never remove that.
@@ -1068,6 +1075,7 @@ function registerIpc() {
     if (closing) {
       pty.kill(remote.phoneTerminalId(closing))
       pty.kill(cloud.cloudTerminalId(closing))
+      pty.kill(desktop.desktopTerminalId(closing))
     }
     const s = store.get()
     s.chats = s.chats.filter((c) => c.id !== id)
@@ -1373,6 +1381,15 @@ function registerIpc() {
     return cloud.teleportBack(chat, ws, agentEnv(ws), emitChat, cloudOut)
   })
   h('chat:cloudForget', (id: string) => cloud.forgetCloud(findChat(id), emitChat))
+  h('chat:desktop', (id: string) => {
+    const chat = findChat(id)
+    const ws = findWs(chat.workspaceId)
+    return desktop.openInDesktop(chat, ws, agentEnv(ws), emitChat)
+  })
+  h('chat:desktopBack', (id: string) => {
+    const chat = findChat(id)
+    return desktop.bringBackFromDesktop(chat, findWs(chat.workspaceId), emitChat)
+  })
   h('chat:phoneBack', (id: string) => {
     const chat = findChat(id)
     return remote.bringBack(chat, findWs(chat.workspaceId), emitChat)

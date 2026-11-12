@@ -332,8 +332,11 @@ export interface Chat {
 }
 
 export interface ChatRemote {
-  /** phone: Remote Control on this Mac. cloud: a Claude Code cloud session on Anthropic's machines. */
-  kind: 'phone' | 'cloud'
+  /**
+   * phone: Remote Control on this Mac. cloud: a Claude Code cloud session on Anthropic's machines.
+   * desktop: handed to the Claude desktop app with `claude --desktop --resume`.
+   */
+  kind: 'phone' | 'cloud' | 'desktop'
   startedAt: number
   /** Cloud session id (session_…), for follow-ups and teleport. */
   sessionId?: string
@@ -1046,6 +1049,10 @@ export interface Api {
   continueOnPhone(chatId: string): Promise<Chat>
   /** Stops Remote Control and copies the turns made there into the chat. */
   bringBackFromPhone(chatId: string): Promise<Chat>
+  /** Opens the chat's session in the Claude desktop app with `claude --desktop --resume` (Claude Code's /desktop). */
+  openInDesktop(chatId: string): Promise<Chat>
+  /** Takes the chat back from Claude desktop and copies the turns made there into the chat. */
+  bringBackFromDesktop(chatId: string): Promise<Chat>
   /** Commits and pushes the workspace, then starts a Claude Code cloud session on its branch with `task`. */
   runInCloud(chatId: string, task: string): Promise<Chat>
   /** Queues a follow-up message into the chat's cloud session. */
