@@ -10,6 +10,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [PRDs](prd/) | One per feature area: problem, requirements, design, open questions |
 | [Decision records](decisions/) | Choices we don't want to relitigate, with the reasons |
 | [Writing an add-on](addon-api.md) | The add-on manifest, the sandbox and the host API |
+| [Releasing](releasing.md) | Stable releases, betas, signing secrets and the Homebrew cask |
 | [Brand](brand/) | Logo, palette and guidelines |
 
 ## PRDs
