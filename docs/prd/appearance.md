@@ -4,7 +4,7 @@
 |---|---|
 | Status | Shipped (PR #15; brand kit PR #17) |
 | Requested by | Ben, 2026-11-06 |
-| Last updated | 2026-11-06 |
+| Last updated | 2026-11-12 |
 
 ## Problem
 
@@ -24,12 +24,14 @@ Settings > Appearance:
 - **Size** (interface zoom), **density** (comfortable or compact).
 - **UI font**: Manrope (bundled, default), System, Inter, Rounded, Serif. **Code font**: JetBrains Mono (bundled, default), SF Mono, Fira Code, Menlo.
 - **Reduce motion**.
+- **Chat format**: Full (default) shows every tool call as its own row. Compact folds each stretch of Claude's work (the tool calls up to the last one before Claude answers, and Claude's notes between them) into one collapsed Working row with a count of tool calls and failures; while it runs, the row shows the latest call and a spinner. Opening it shows the steps as in Full. Claude's answer, plan approvals and orchestrator routing stay in view. Not to be confused with Claude Code's output styles.
 
 ## Requirements
 
 1. All colors and font stacks live in `src/shared/themes.ts`. Re-skin there, not in `styles.css`.
 2. Appearance is cached so the first paint uses the saved theme (no flash).
 3. Each accent has a dark and a light variant with readable contrast.
+4. The chat format only changes how the chat is drawn, never what Claude sees. Grouping lives in `src/renderer/src/chatGroups.ts`.
 
 ## Design
 
@@ -37,7 +39,7 @@ Settings > Appearance:
 
 ## Testing
 
-`test/themes.test.ts`.
+`test/themes.test.ts`, `test/chatGroups.test.ts`.
 
 ## Future work
 

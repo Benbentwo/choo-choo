@@ -29,7 +29,7 @@ Agents run the real Claude Code binary. By default it's the copy bundled with th
 
 ## User experience
 
-Settings > Updates has an **Update channel** menu (Stable or Beta, Stable by default), a toggle for each check (both on by default), the current versions, the result of the last check, "Check now" buttons that work even with a toggle off, and an install or update button when one applies. The sidebar shows a card when a Choo Choo update is available or downloaded, and a dismissible card for a new Claude Code. The app menu's "Check for Updates…" uses the same paths.
+Settings > Updates has an **Update channel** menu (Stable or Beta, Stable by default), a toggle for each check (both on by default), the current versions, the result of the last check, "Check now" buttons that work even with a toggle off, and an install or update button when one applies. The sidebar shows a card when a Choo Choo update is available or downloaded, and a dismissible card for a new Claude Code. The app menu's "Check for Updates…" uses the same paths. The sidebar footer shows the running version next to "Choo Choo": `v<version>` in a packaged build, `<short sha>-dev` under `npm run dev` (hover for version and commit).
 
 ## Requirements
 

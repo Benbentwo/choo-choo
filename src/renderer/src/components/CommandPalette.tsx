@@ -4,7 +4,7 @@ import { addonActions } from '@shared/addons'
 import { ACTION_ICON } from './Addons'
 import { useStore, runAddonAction, ago, archiveWorkspace, goToNextUnread, newChatTab, newWorkspace, openDoc, openOrchestrator, openGroupOrchestrator, editGroup, openPalette, restoreWorkspace, reportError, type PaletteMode } from '../store'
 import { rank } from '../autocomplete'
-import { IconArchive, IconFile, IconFileDiff, IconFileSearch, IconFolder, IconGear, IconHome, IconOrchestrator, IconPlus, IconRepo, IconSearch, IconTerminal } from '../icons'
+import { IconArchive, IconFile, IconFileDiff, IconFileSearch, IconFolder, IconGear, IconHome, IconOrchestrator, IconPlus, IconRefresh, IconRepo, IconSearch, IconTerminal } from '../icons'
 
 type Tab = 'all' | 'workspaces' | 'projects' | 'actions' | 'settings'
 const TABS: [Tab, string][] = [
@@ -116,6 +116,12 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     for (const { addon, action } of addonActions(s.addons, 'palette', here)) {
       const Icon = ACTION_ICON[action.icon]
       out.push({ id: `addon:${addon.key}/${action.id}`, tab: 'actions', section: 'Add-ons', label: action.title, keywords: `${addon.name} add-on`, icon: <Icon />, hint: addon.name, run: () => runAddonAction(addon, action, here) })
+    }
+    // Developing an add-on: load one from a folder, reload it, and open DevTools on its frames.
+    out.push({ id: 'addon-develop', tab: 'actions', section: 'Add-ons', label: 'Develop add-on…', keywords: 'addon plugin folder local dev load unpacked', icon: <IconFolder />, run: () => useStore.getState().set({ modal: 'settings', settingsTab: 'addons' }) })
+    for (const a of s.addons.filter((x) => x.state === 'on' || x.dev)) {
+      out.push({ id: `addon-reload:${a.key}`, tab: 'actions', section: 'Add-ons', label: `Reload ${a.name}`, keywords: 'addon add-on refresh restart dev', icon: <IconRefresh />, hint: a.dev ? 'Dev add-on' : 'Add-on', run: () => void window.api.addonReload(a.key).catch(reportError) })
+      if (a.state === 'on') out.push({ id: `addon-inspect:${a.key}`, tab: 'actions', section: 'Add-ons', label: `Inspect ${a.name}`, keywords: 'addon add-on devtools debug console dev', icon: <IconSearch />, hint: 'DevTools', run: () => void window.api.addonInspect(a.key).catch(reportError) })
     }
 
     const a = 'Actions'

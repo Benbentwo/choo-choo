@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { PausedBanner } from './ContinueWork'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Chat, ChatItem, ReviewFinding } from '@shared/types'
-import { useStore, reportError, removePermission, openDoc } from '../store'
+import { useStore, reportError, removePermission, openDoc, modelLabel } from '../store'
 import { splitFindingsBlock } from '../review'
 import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import { setDraft } from './Composer'
@@ -11,8 +12,9 @@ import { MARKDOWN_COMPONENTS } from './CodeBlock'
 import { API_PRICE_NOTE } from './UsageGraphs'
 import { IconDown, IconRight, IconTool } from '../icons'
 import { RouteItem } from './Projects'
-import { stripRouted } from '@shared/projects'
+import { parseAutoUpdate, stripRouted, type AutoUpdateEntry } from '@shared/projects'
 import { stripRunMarker } from '@shared/automations'
+import { groupWork, type ChatEntry } from '../chatGroups'
 
 export function ChatView({ chat }: { chat: Chat }) {
   const all = useStore((s) => s.items[chat.id])
@@ -27,6 +29,7 @@ export function ChatView({ chat }: { chat: Chat }) {
     return { items, children }
   }, [all])
   const pendingCount = useStore((s) => s.permissions[chat.id]?.length ?? 0)
+  const compact = useStore((s) => s.settings.chatFormat === 'compact')
   // /clear empties Claude's context, so everything before the latest one folds away behind a divider.
   const [showEarlier, setShowEarlier] = useState(false)
   const clearAt = useMemo(() => lastClear(items), [items])
@@ -38,6 +41,26 @@ export function ChatView({ chat }: { chat: Chat }) {
     const el = ref.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [items, pendingCount])
+
+  const current = useMemo(
+    () => items.slice(clearAt >= 0 ? clearAt + 1 : 0).filter((it, i) => !(clearAt >= 0 && i === 0 && it.kind === 'result' && !it.turns)),
+    [items, clearAt]
+  )
+  const currentEntries = useMemo(() => (compact ? groupWork(current) : null), [compact, current])
+  const running = chat.status === 'running'
+  // The last Working row shows its own spinner, so the one under the chat would repeat it.
+  const endsInLiveWork = running && currentEntries?.at(-1)?.kind === 'work'
+  const renderItems = (list: ChatItem[]) => {
+    const entries: ChatEntry[] | null = list === current ? currentEntries : compact ? groupWork(list) : null
+    if (!entries) return list.map((it) => <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />)
+    return entries.map((e, i) =>
+      e.kind === 'item' ? (
+        <Item key={e.item.id} item={e.item} chat={chat} children={children.get(e.item.id)} />
+      ) : (
+        <WorkGroup key={e.id} entry={e} chat={chat} children={children} live={running && list === current && i === entries.length - 1} />
+      )
+    )
+  }
 
   return (
     <div
@@ -57,8 +80,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         )}
         {clearAt >= 0 && (
           <>
-            {showEarlier &&
-              items.slice(0, clearAt).map((it) => <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />)}
+            {showEarlier && renderItems(items.slice(0, clearAt))}
             <div className="my-4 flex items-center gap-3 text-[11px] text-faint">
               <div className="h-px flex-1 bg-line" />
               <span>Context cleared</span>
@@ -71,11 +93,10 @@ export function ChatView({ chat }: { chat: Chat }) {
             </div>
           </>
         )}
-        {items.slice(clearAt >= 0 ? clearAt + 1 : 0).filter((it, i) => !(clearAt >= 0 && i === 0 && it.kind === 'result' && !it.turns)).map((it) => (
-          <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />
-        ))}
+        {renderItems(current)}
+        <PausedBanner chat={chat} />
         <PermissionCards chat={chat} />
-        {chat.status === 'running' && !pendingCount && (
+        {chat.status === 'running' && !pendingCount && !endsInLiveWork && (
           <div className="mt-3 flex items-center gap-2 text-faint">
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-faint border-t-fg" /> Working…
           </div>
@@ -165,7 +186,9 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
               Revert to here
             </button>
           )}
-          {buttonAction(item.text) ? (
+          {parseAutoUpdate(item.text) ? (
+            <AutoUpdateItem entries={parseAutoUpdate(item.text)!} text={item.text} />
+          ) : buttonAction(item.text) ? (
             <ActionItem label={buttonAction(item.text)!} text={item.text} />
           ) : (
             <div
@@ -199,6 +222,8 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
       )
     case 'note':
       return <div className="my-3 text-center text-[11px] text-faint">{item.text}</div>
+    case 'model':
+      return <ModelSwitch item={item} />
     case 'assistant':
       return <AssistantText text={item.text} chat={chat} />
     case 'tool':
@@ -231,6 +256,25 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
   }
 }
 
+/** A rule across the chat where the model changed; shows the model Claude Code confirmed once the next turn starts. */
+function ModelSwitch({ item }: { item: Extract<ChatItem, { kind: 'model' }> }) {
+  const details = useStore((s) => s.modelDetails)
+  return (
+    <div
+      className="my-4 flex items-center gap-3 text-[11px] text-faint"
+      title={item.resolved ? `Claude Code confirmed ${item.resolved}` : 'Takes effect with your next message'}
+      data-testid="model-switch"
+    >
+      <div className="h-px flex-1 bg-line" />
+      <span>
+        Switched to model {modelLabel(item.model, details)}
+        {item.resolved && <span className="font-mono"> · {item.resolved}</span>}
+      </span>
+      <div className="h-px flex-1 bg-line" />
+    </div>
+  )
+}
+
 function AdvisorItem({ item, chat }: { item: Extract<ChatItem, { kind: 'advisor' }>; chat: Chat }) {
   const plan = item.source === 'planReview'
   const who = plan ? 'Plan review' : 'Advisor'
@@ -242,6 +286,16 @@ function AdvisorItem({ item, chat }: { item: Extract<ChatItem, { kind: 'advisor'
         <span className={plan ? '' : 'text-advisor'}>{who}</span>: {item.text}
       </div>
     )
+  // Sent notes appear in full in the message that follows, so the card folds to one line instead of showing them twice.
+  if (item.resolved === 'sent') {
+    const notes = item.text.split('\n').filter((l) => l.trim()).length
+    return (
+      <div className="my-3 text-[11px] text-faint">
+        <span className={plan ? '' : 'text-advisor'}>{who}</span>: {notes} note{notes === 1 ? '' : 's'}
+        {item.blocker ? ', with a blocker,' : ''} sent to the agent
+      </div>
+    )
+  }
   const act = (action: 'send' | 'dismiss') => window.api.actOnAdvice(chat.id, item.id, action).catch(reportError)
   return (
     <div
@@ -252,7 +306,6 @@ function AdvisorItem({ item, chat }: { item: Extract<ChatItem, { kind: 'advisor'
         {plan && <span className="text-faint">from reviewers who only saw the plan</span>}
         {item.blocker && <span className="rounded bg-del/15 px-1 text-del">blocker</span>}
         <span className="flex-1" />
-        {item.resolved === 'sent' && <span className="text-faint">Sent to the agent</span>}
         {item.resolved === 'dismissed' && <span className="text-faint">Dismissed</span>}
       </div>
       <div className="space-y-1 text-[13px] whitespace-pre-wrap">
@@ -375,6 +428,95 @@ function ActionItem({ label, text }: { label: string; text: string }) {
         <span className="flex-1 truncate text-[11px] text-faint">sent from the button</span>
       </button>
       {open && <pre className="max-h-60 overflow-auto border-t border-line px-3 py-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{text}</pre>}
+    </div>
+  )
+}
+
+const AUTO_UPDATE_STATE: Record<AutoUpdateEntry['state'], { label: string; className: string }> = {
+  finished: { label: 'finished', className: 'text-faint' },
+  error: { label: 'hit an error', className: 'text-del' },
+  'needs-approval': { label: 'needs approval', className: 'text-muted' }
+}
+
+/**
+ * The message Choo Choo sends an orchestrator when workspaces it started finish: a compact card
+ * listing them, each opening its workspace, that expands to the prompt the orchestrator got.
+ */
+function AutoUpdateItem({ entries, text }: { entries: AutoUpdateEntry[]; text: string }) {
+  const [open, setOpen] = useState(false)
+  const s = useStore()
+  return (
+    <div className="w-[min(85%,420px)] rounded-lg border border-line bg-panel">
+      <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px]" onClick={() => setOpen(!open)} title="Show the message the orchestrator got">
+        {open ? <IconDown className="text-faint" /> : <IconRight className="text-faint" />}
+        <span className="font-medium">Automatic update</span>
+        <span className="flex-1 truncate text-[11px] text-faint">from Choo Choo</span>
+      </button>
+      {entries.length > 0 && (
+        <ul className="px-3 pb-2 text-[12.5px]">
+          {entries.map((e) => {
+            const ws = s.workspaces.find((w) => w.id === e.id)
+            const st = AUTO_UPDATE_STATE[e.state]
+            return (
+              <li key={e.id} className="flex items-baseline gap-2 pl-[18px]">
+                {ws ? (
+                  <button className="truncate text-left hover:underline" title="Open this workspace" onClick={() => s.selectWorkspace(ws.id)}>
+                    {ws.title || e.title}
+                  </button>
+                ) : (
+                  <span className="truncate">{e.title}</span>
+                )}
+                <span className={`shrink-0 text-[11px] ${st.className}`}>{st.label}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {open && <pre className="max-h-60 overflow-auto border-t border-line px-3 py-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{text}</pre>}
+    </div>
+  )
+}
+
+/** The compact format's single row for a stretch of Claude's work: its tool calls and in-between notes, collapsed until opened. */
+function WorkGroup({
+  entry,
+  chat,
+  children,
+  live
+}: {
+  entry: Extract<ChatEntry, { kind: 'work' }>
+  chat: Chat
+  children: Map<string, Extract<ChatItem, { kind: 'tool' }>[]>
+  live: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const { tools } = entry
+  const failed = tools.filter((t) => t.isError).length
+  const latest = tools[tools.length - 1]
+  // A call left without a result by a stopped turn shouldn't spin forever.
+  const working = live || (chat.status === 'running' && tools.some((t) => t.result === undefined))
+  return (
+    <div className="my-1.5 rounded-lg border border-line bg-panel" data-testid="work-group">
+      <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px]" onClick={() => setOpen(!open)} title={open ? 'Hide the steps' : 'Show the steps'}>
+        {open ? <IconDown className="text-faint" /> : <IconRight className="text-faint" />}
+        <IconTool className={failed ? 'text-del' : 'text-faint'} />
+        <span className="font-medium">{working ? 'Working' : 'Worked'}</span>
+        <span className="shrink-0 text-[11px] text-faint">
+          {tools.length} tool call{tools.length === 1 ? '' : 's'}
+        </span>
+        {failed > 0 && <span className="shrink-0 text-[11px] text-del">{failed} failed</span>}
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">
+          {working && !open ? `${latest.name} ${toolSummary(latest.name, latest.input)}`.trim() : ''}
+        </span>
+        {working && <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-faint border-t-fg" />}
+      </button>
+      {open && (
+        <div className="border-t border-line px-3 py-1">
+          {entry.items.map((it) => (
+            <Item key={it.id} item={it} chat={chat} children={children.get(it.id)} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

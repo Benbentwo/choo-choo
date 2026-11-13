@@ -4,6 +4,9 @@ import { useStore, setCodeComments, destOf, reportError, type CodeComment } from
 import { IconBot, IconGithub, IconX } from '../icons'
 import { useReview } from '../review'
 import { pairedSegs } from '../wordDiff'
+import { FindBar } from './FindBar'
+import { SinceReviewToggle } from './SinceReview'
+import { useSinceReview, useViewed } from '../sinceReview'
 import { usePrDiffTarget, usePrReview, sendToAgent, useWorkspaceMode } from '../prReview'
 import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import type { ReviewFinding } from '@shared/types'
@@ -93,10 +96,27 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     return () => window.removeEventListener('mouseup', up)
   }, [])
 
+  // Another file: start from "Loading". The same file again (stats tick whenever the worktree is
+  // re-read) reloads behind what is shown, so the view doesn't blank and lose its scroll position;
+  // an unchanged diff is the same string and doesn't re-render.
+  // Since your review: only what the author changed in this file since then, base-branch changes left out.
+  const since = useSinceReview(ws)
+  const viewed = useViewed(ws)
+  const sinceOn = since.on && !!since.data
+  const sinceHas = sinceOn && since.data!.files.some((f) => f.path === file)
+  const sinceKey = sinceOn ? `${since.data!.from}:${since.data!.to}:${sinceHas}` : ''
+  useEffect(() => setDiff(null), [ws.id, file, sinceKey])
   useEffect(() => {
-    setDiff(null)
-    void window.api.getFileDiff(ws.id, file).then(setDiff, (e) => setDiff(`error: ${e}`))
-  }, [ws.id, file, stats])
+    let live = true
+    const load = sinceOn ? (sinceHas ? window.api.getInterdiffFile(ws.id, since.since!, file) : Promise.resolve('')) : window.api.getFileDiff(ws.id, file)
+    void load.then(
+      (d) => live && setDiff(d),
+      (e) => live && setDiff(`error: ${e}`)
+    )
+    return () => {
+      live = false
+    }
+  }, [ws.id, file, stats, sinceKey])
 
   // Opened at a line (from a review finding): bring that row into view once the diff is in.
   useEffect(() => {
@@ -107,12 +127,35 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   const lines = useMemo(() => (diff === null ? [] : parseDiff(diff)), [diff])
   // The words that changed within an edited line, as GitHub shades them.
   const words = useMemo(() => pairedSegs(lines), [lines])
-  if (diff === null) return <div className="flex-1 p-6 text-faint">Loading diff…</div>
+  const sinceBar = <SinceReviewToggle ws={ws} className="sticky left-0 border-b border-line bg-panel px-4 py-2" />
+  if (diff === null)
+    return (
+      <div className="flex-1">
+        {sinceBar}
+        <div className="p-6 text-faint">Loading diff…</div>
+      </div>
+    )
+  if (sinceOn && !sinceHas)
+    return (
+      <div className="flex-1">
+        {sinceBar}
+        <div className="p-6 text-faint">
+          No changes to this file since your review.{' '}
+          <button className="text-sky-400 hover:underline" onClick={() => since.setOn(false)}>
+            Show all changes
+          </button>
+        </div>
+      </div>
+    )
   const shownLines = new Set(lines.map((l) => l.newNo).filter((n): n is number => n != null))
   const unplaced = mine.filter((f) => !f.line || !shownLines.has(f.line))
-  const threadAt = (l: Line) => threads.filter((t) => (t.side === 'old' ? l.kind === 'del' && l.oldNo === t.line : l.kind !== 'del' && l.newNo === t.line))
+  // Thread lines are the PR head's. Outdated threads point at code that's gone, and a worktree behind the
+  // PR has other line numbers, so those go above the diff instead of on a line that isn't theirs.
+  const placeable = threads.filter((t) => !t.outdated && (target?.headMatches ?? true))
+  const threadAt = (l: Line) => placeable.filter((t) => (t.side === 'old' ? l.kind === 'del' && l.oldNo === t.line : l.kind !== 'del' && l.newNo === t.line))
   const placedThreads = new Set(lines.flatMap((l) => threadAt(l)))
-  const unplacedThreads = threads.filter((t) => !placedThreads.has(t))
+  const unplacedThreads = threads.filter((t) => !placedThreads.has(t) && !t.outdated)
+  const outdatedThreads = threads.filter((t) => t.outdated)
   const numbered = (i: number) => lines[i] && (lines[i].kind === 'add' || lines[i].kind === 'del' || lines[i].kind === 'ctx')
   const lo = sel ? Math.min(sel.a, sel.b) : -1
   const hi = sel ? Math.max(sel.a, sel.b) : -1
@@ -137,12 +180,19 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     return { file, start: Math.min(...nums), end: Math.max(...nums), side, code }
   }
   const pending = selection()
-  const githubProblem = pending && open ? draftProblem({ ...pending, text: '' }, target) : open ? null : 'This workspace has no open PR.'
+  const githubProblem =
+    pending && sinceOn && pending.side === 'old'
+      ? 'Removed lines here are against your last review, not the PR. Switch to All changes to comment on them.'
+      : pending && open
+        ? draftProblem({ ...pending, text: '' }, target)
+        : open
+          ? null
+          : 'This workspace has no open PR.'
   const addComment = (to: CommentDest) => {
     const text = draft.trim()
     if (!pending || !text) return
     if (to === 'github' && githubProblem) return
-    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), ...pending, text, dest: to }])
+    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), ...pending, text, dest: to, commit: target?.head }])
     setSel(null)
     setDraft('')
   }
@@ -150,7 +200,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     if (!f.line) return
     const l = lines.find((x) => x.kind !== 'del' && x.newNo === f.line)
     const text = f.fix ? `${f.message}\n\n${f.fix}` : f.message
-    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), file, start: f.line!, end: f.line!, side: 'new', code: l ? `${l.kind === 'add' ? '+' : ' '} ${l.text}` : '', text, dest: 'github', fromFinding: true }])
+    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), file, start: f.line!, end: f.line!, side: 'new', code: l ? `${l.kind === 'add' ? '+' : ' '} ${l.text}` : '', text, dest: 'github', fromFinding: true, commit: target?.head }])
   }
   const findingAdded = (f: ReviewFinding) => queuedHere.some((c) => c.fromFinding && c.start === f.line && c.text.startsWith(f.message))
   /** Queued comments that end on this row. */
@@ -192,7 +242,17 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
         <div className="mb-1 flex items-center gap-2">
           <span className="text-[12px] font-medium">You</span>
           <DestTag dest={d} label={d === 'github' ? 'Pending in your GitHub review' : undefined} />
+          {c.stale && (
+            <span className="text-[11px] text-amber-400" title="New commits changed the lines this comment is on. Check it still applies.">
+              code changed
+            </span>
+          )}
           <span className="flex-1" />
+          {c.stale && (
+            <button className="text-[12px] text-amber-400 hover:text-fg" title="It still applies: post it on these lines" onClick={() => setCodeComments(ws.id, (list) => list.map((x) => (x.id === c.id ? { ...x, stale: false } : x)))}>
+              Keep
+            </button>
+          )}
           {!isEditing && (
             <button className="text-[12px] text-faint hover:text-fg" onClick={() => setEditing({ id: c.id, text: c.text })}>
               Edit
@@ -319,12 +379,32 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   )
   return (
     <div ref={box} className="selectable flex-1 overflow-auto font-mono text-[12px] leading-[20px] [container-type:inline-size]">
-      <div className="sticky top-0 z-10 border-b border-line bg-panel px-4 py-2 text-muted">{file}</div>
+      <div className="sticky top-0 left-0 z-10 flex h-[34px] w-[100cqw] items-center gap-3 border-b border-line bg-panel px-4 text-muted">
+        <span className="min-w-0 flex-1 truncate">{file}</span>
+        {viewed && (
+          <label className="flex shrink-0 cursor-pointer items-center gap-1.5 font-sans text-[12px]" title="GitHub's Viewed tick for this file. GitHub clears it when the file changes.">
+            <input type="checkbox" checked={viewed.isViewed(file)} onChange={() => void viewed.toggle(file).catch(reportError)} />
+            Viewed
+          </label>
+        )}
+        <FindBar box={box} watch={diff} />
+      </div>
+      <SinceReviewToggle ws={ws} className="sticky left-0 w-[100cqw] border-b border-line bg-panel px-4 py-2" />
       {lines.length === 0 && <div className="p-6 font-sans text-faint">No textual changes (binary or empty file).</div>}
       {unplaced.map((f, i) => (
         <Comment key={`u${i}`} f={f} />
       ))}
       {review && unplacedThreads.map((t) => <Thread key={t.id} ws={ws} c={t} pr={review.pr} theirs={theirs} />)}
+      {review && outdatedThreads.length > 0 && (
+        <details className="mx-4 my-1 font-sans">
+          <summary className="cursor-pointer text-[12px] text-faint hover:text-fg">
+            {outdatedThreads.length} outdated thread{outdatedThreads.length === 1 ? '' : 's'}: the code {outdatedThreads.length === 1 ? 'it was' : 'they were'} on has changed
+          </summary>
+          {outdatedThreads.map((t) => (
+            <Thread key={t.id} ws={ws} c={t} pr={review.pr} theirs={theirs} />
+          ))}
+        </details>
+      )}
       <table className="w-full border-collapse">
         <tbody>
           {lines.flatMap((l, i) => [
@@ -347,7 +427,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
               <td className={`w-4 select-none ${l.kind === 'add' ? 'text-add' : l.kind === 'del' ? 'text-del' : 'text-faint'}`}>
                 {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ''}
               </td>
-              <td className="pr-4 whitespace-pre">
+              <td data-find className="pr-4 whitespace-pre">
                 {words.get(i)?.map((w, k) =>
                   w.changed ? (
                     <span key={k} className={`rounded-[3px] ${l.kind === 'add' ? 'bg-add/35' : 'bg-del/35'}`}>
@@ -402,6 +482,11 @@ function Thread({ ws, c, pr, theirs }: { ws: Workspace; c: PrComment; pr: { numb
           Open on GitHub
         </button>
       </div>
+      {c.outdated && c.diffHunk && (
+        <pre className="mb-1.5 overflow-x-auto rounded border border-line/60 bg-bg px-2 py-1 font-mono text-[11px] leading-[16px] text-faint" title="The code when this was written">
+          {c.diffHunk.split('\n').slice(-4).join('\n')}
+        </pre>
+      )}
       <div className="whitespace-pre-wrap">{c.body}</div>
       {(c.replies ?? []).map((r, i) => (
         <div key={i} className="mt-1.5 border-l-2 border-line pl-2">

@@ -61,7 +61,13 @@ export function ReviewDrafts({ ws }: { ws: Workspace }) {
         </div>
         <div className="line-clamp-2">{c.text}</div>
         {problems.get(c.id) && destOf(c) === 'github' && <div className="mt-0.5 text-[11.5px] text-amber-400">{problems.get(c.id)}</div>}
+        {c.stale && destOf(c) === 'agent' && <div className="mt-0.5 text-[11.5px] text-amber-400">New commits changed these lines.</div>}
       </button>
+      {c.stale && (
+        <button className="mt-0.5 text-[12px] text-amber-400 hover:text-fg" title="It still applies: keep it on these lines" onClick={() => setCodeComments(ws.id, (list) => list.map((x) => (x.id === c.id ? { ...x, stale: false } : x)))}>
+          Keep
+        </button>
+      )}
       <button title="Remove comment" className="mt-0.5 hidden text-faint group-hover:block hover:text-fg" onClick={() => remove(c.id)}>
         <IconX width={11} height={11} />
       </button>

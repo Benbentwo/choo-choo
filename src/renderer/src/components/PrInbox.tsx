@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { groupByRepo, orgsAndRepos, visiblePrs, type InboxPr, type PrFilter } from '@shared/prInbox'
+import { groupByRepo, isReviewing, matchesFilter, orgsAndRepos, visiblePrs, type InboxPr, type PrFilter } from '@shared/prInbox'
 import { useStore, refreshPrInbox, openPrWorkspace, reportError } from '../store'
 import { IconGithub, IconPR, IconRight, IconSidebar } from '../icons'
 
 const FILTER_KEY = 'prs-filter'
 const FILTERS: { id: PrFilter; label: string }[] = [
   { id: 'review', label: 'To review' },
+  { id: 'updated', label: 'Updated for you' },
   { id: 'mine', label: 'Mine' },
   { id: 'all', label: 'All' }
 ]
@@ -29,10 +30,12 @@ export function PrInboxPage() {
   const groups = useMemo(() => groupByRepo(prs, filter), [prs, filter])
   const flat = groups.flatMap((g) => g.prs)
   const key = (p: InboxPr) => `${p.repo}#${p.number}`
-  const counts = { review: prs.filter((p) => p.roles.includes('review')).length, mine: prs.filter((p) => p.roles.includes('mine')).length, all: prs.length }
+  const counts: Record<PrFilter, number> = { review: prs.filter(isReviewing).length, updated: prs.filter((p) => matchesFilter(p, 'updated')).length, mine: prs.filter((p) => p.roles.includes('mine')).length, all: prs.length }
+  const fresh = prs.filter((p) => p.update?.fresh)
 
-  // Keep the list live while the page is open.
+  // Keep the list live while the page is open, and look at GitHub as soon as it opens.
   useEffect(() => {
+    void refreshPrInbox()
     const t = setInterval(() => void refreshPrInbox(), 60_000)
     const onFocus = () => void refreshPrInbox()
     window.addEventListener('focus', onFocus)
@@ -85,17 +88,22 @@ export function PrInboxPage() {
           </button>
         )}
       </div>
-      <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-6 pt-6">
+      <div className="mx-auto flex min-h-0 w-full max-w-[52rem] flex-1 flex-col px-6 pt-6">
         <div className="mb-4 flex items-center gap-3">
-          <h1 className="flex-1 text-[20px] font-[650] tracking-[-0.02em]">Pull requests</h1>
-          <div className="flex rounded-md border border-line text-[12px]">
+          <h1 className="flex-1 text-[20px] font-[650] tracking-[-0.02em] whitespace-nowrap">Pull requests</h1>
+          <div className="flex shrink-0 rounded-md border border-line text-[12px] whitespace-nowrap">
             {FILTERS.map((f) => (
               <button key={f.id} onClick={() => pick(f.id)} className={`px-2.5 py-1 first:rounded-l-md last:rounded-r-md ${filter === f.id ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}>
                 {f.label}
-                <span className="ml-1.5 text-faint">{counts[f.id]}</span>
+                <span className={`ml-1.5 ${f.id === 'updated' && counts.updated ? 'text-accent' : 'text-faint'}`}>{counts[f.id]}</span>
               </button>
             ))}
           </div>
+          {fresh.length > 0 && (
+            <button className="shrink-0 rounded-md border border-line px-2.5 py-1 text-[12px] whitespace-nowrap text-muted hover:bg-hover hover:text-fg" title="Clear the marks on PRs that changed for you" onClick={() => void markSeen(fresh)}>
+              Mark all seen
+            </button>
+          )}
           <div className="relative">
             <button
               className={`rounded-md border px-2.5 py-1 text-[12px] hover:bg-hover hover:text-fg ${hidden.length ? 'border-accent/50 text-accent' : 'border-line text-muted'}`}
@@ -119,7 +127,7 @@ export function PrInboxPage() {
         <div className="-mx-2 min-h-0 flex-1 overflow-y-auto px-2 pb-8 outline-none" tabIndex={0} onKeyDown={onKey}>
           {!s.prInbox && s.prInboxLoading && <div className="py-10 text-center text-muted">Loading pull requests…</div>}
           {s.prInbox && groups.length === 0 && (
-            <div className="py-10 text-center text-muted">{filter === 'review' ? 'Nothing waiting on your review.' : filter === 'mine' ? 'You have no open pull requests.' : 'No open pull requests.'}</div>
+            <div className="py-10 text-center text-muted">{filter === 'review' ? 'Nothing waiting on your review.' : filter === 'updated' ? 'Nothing changed for you since you last looked.' : filter === 'mine' ? 'You have no open pull requests.' : 'No open pull requests.'}</div>
           )}
           {groups.map((g) => (
             <section key={g.repo} className="mb-5">
@@ -143,6 +151,9 @@ export function PrInboxPage() {
 function PrRow({ pr, selected, opening, onSelect, onOpen }: { pr: InboxPr; selected: boolean; opening: boolean; onSelect: () => void; onOpen: () => void }) {
   const ws = useStore((s) => (pr.workspaceId ? s.workspaces.find((w) => w.id === pr.workspaceId) : undefined))
   const openLabel = ws ? `Go to workspace ${ws.title}` : pr.repoId ? 'Open a workspace on this PR' : `Clone ${pr.repo} and open a workspace on this PR`
+  const u = pr.update
+  const fresh = !!u?.fresh
+  const quiet = !!u && !u.reasons.length && !!u.quiet
   return (
     <div
       id={`pr-${pr.repo}#${pr.number}`}
@@ -150,12 +161,13 @@ function PrRow({ pr, selected, opening, onSelect, onOpen }: { pr: InboxPr; selec
       tabIndex={-1}
       onClick={onSelect}
       onDoubleClick={onOpen}
-      className={`group flex items-center gap-3 rounded-md px-2 py-2 ${selected ? 'bg-raised' : 'hover:bg-hover'}`}
+      className={`group relative flex items-center gap-3 rounded-md px-2 py-2 ${selected ? 'bg-raised' : 'hover:bg-hover'}`}
     >
+      {fresh && <span className="absolute top-[13px] -left-2.5 h-1.5 w-1.5 rounded-full bg-accent" title="Changed for you since you last looked" />}
       <IconPR className={`shrink-0 ${pr.isDraft ? 'text-faint' : 'text-add'}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate">{pr.title}</span>
+          <span className={`truncate ${fresh ? 'font-semibold' : quiet ? 'text-muted' : ''}`}>{pr.title}</span>
           {pr.isDraft && <span className="shrink-0 rounded border border-line px-1 text-[10px] text-faint">Draft</span>}
         </div>
         <div className="flex items-center gap-1.5 overflow-hidden text-[11px] whitespace-nowrap text-faint">
@@ -169,6 +181,7 @@ function PrRow({ pr, selected, opening, onSelect, onOpen }: { pr: InboxPr; selec
           <span className="text-del">−{pr.deletions}</span>
           <Checks state={pr.checks} />
           <Decision value={pr.reviewDecision} />
+          {u?.myReview && <span>· {MY_REVIEW[u.myReview] ?? 'You reviewed'}</span>}
           {pr.roles.includes('review') && pr.roles.includes('mine') && <span>· yours, review requested</span>}
           {ws && (
             <span className="text-accent" title={`Open in workspace ${ws.title}`}>
@@ -176,6 +189,16 @@ function PrRow({ pr, selected, opening, onSelect, onOpen }: { pr: InboxPr; selec
             </span>
           )}
         </div>
+        {u && (u.reasons.length > 0 || u.quiet) && (
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {u.reasons.map((r) => (
+              <span key={r.kind} className={`rounded-full px-2 text-[11px] leading-[18px] ${r.kind === 'reply' ? 'bg-sky-400/15 text-sky-400' : 'bg-accent/15 text-accent'}`}>
+                {r.label}
+              </span>
+            ))}
+            {!u.reasons.length && u.quiet && <span className="rounded-full bg-raised px-2 text-[11px] leading-[18px] text-faint">quiet update: {u.quiet}</span>}
+          </div>
+        )}
       </div>
       <button
         className={`shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg ${selected ? '' : 'invisible group-hover:visible'}`}
@@ -188,7 +211,7 @@ function PrRow({ pr, selected, opening, onSelect, onOpen }: { pr: InboxPr; selec
         <IconGithub />
       </button>
       <button
-        className={`flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 text-[12px] hover:bg-hover disabled:opacity-50 ${selected || opening ? 'text-fg' : 'invisible text-muted group-hover:visible'}`}
+        className={`flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[12px] disabled:opacity-50 ${fresh ? 'border-fg bg-fg font-semibold text-bg hover:opacity-90' : `border-line hover:bg-hover ${selected || opening ? 'text-fg' : 'invisible text-muted group-hover:visible'}`}`}
         title={openLabel}
         disabled={opening}
         onClick={(e) => {
@@ -196,11 +219,22 @@ function PrRow({ pr, selected, opening, onSelect, onOpen }: { pr: InboxPr; selec
           onOpen()
         }}
       >
-        {opening ? 'Opening…' : ws ? 'Go' : 'Open'}
+        {opening ? 'Opening…' : fresh ? 'Review changes' : ws ? 'Go' : 'Open'}
         <IconRight width={14} height={14} />
       </button>
     </div>
   )
+}
+
+const MY_REVIEW: Record<string, string> = { APPROVED: 'You approved', CHANGES_REQUESTED: 'You requested changes', COMMENTED: 'You commented', DISMISSED: 'Your review was dismissed' }
+
+/** Clears the "changed for you" mark on these PRs. */
+async function markSeen(prs: InboxPr[]) {
+  try {
+    await window.api.reviewsSeen(prs.map((p) => `${p.repo}#${p.number}`))
+  } catch (e) {
+    reportError(e)
+  }
 }
 
 function Checks({ state }: { state: string | null }) {

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted |
+| Status | Accepted; sidebar and ownership superseded by [0017](0017-threads-own-their-prs.md) |
 | Date | 2026-11-10 |
 | Decided by | Ben |
 

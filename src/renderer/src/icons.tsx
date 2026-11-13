@@ -160,3 +160,10 @@ export const IconSingle = (p: SVGProps<SVGSVGElement>) => (
 export const IconGrip = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base({ fill: 'currentColor', stroke: 'none', ...p })}><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" /></svg>
 )
+/** Up next: a list with an arrow, for work that starts when the usage window resets. */
+export const IconUpNext = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 6h11M4 12h11M4 18h7M17 15l3 3-3 3M20 18h-6" /></svg>
+)
+export const IconPause = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M9 5v14M15 5v14" /></svg>
+)

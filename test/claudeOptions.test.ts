@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, listOutputStyles, permissionMode, questionReply, runningTasks } from '../src/main/claudeOptions'
-import { needsApproval } from '../src/main/agent'
+import { alwaysAskNeedsOk, needsApproval } from '../src/main/agent'
 import { codexEffort } from '../src/main/codex'
 import { reportedFindings, findingsFromItems } from '../src/renderer/src/review'
 import { DEFAULT_EXTRAS, type BackgroundTask, type ChatItem } from '../src/shared/types'
@@ -114,5 +114,13 @@ describe('AskUserQuestion answers', () => {
   it('tells Claude the question was skipped', () => {
     expect(questionReply(input, 'deny', undefined).behavior).toBe('deny')
     expect(questionReply(input, 'allow', { 'Which color?': '  ' }).behavior).toBe('deny')
+  })
+})
+
+describe('always-ask tools', () => {
+  it('ask until the person picks Always allow for that tool in the chat', () => {
+    expect(alwaysAskNeedsOk(undefined, 'mcp__choo__clone_repo')).toBe(true)
+    expect(alwaysAskNeedsOk(['Bash'], 'mcp__choo__clone_repo')).toBe(true)
+    expect(alwaysAskNeedsOk(['mcp__choo__clone_repo'], 'mcp__choo__clone_repo')).toBe(false)
   })
 })

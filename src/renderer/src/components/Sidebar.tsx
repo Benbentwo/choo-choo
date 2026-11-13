@@ -7,17 +7,18 @@ import { Menu, type MenuItem } from './Menu'
 import { LimitsFooter } from './LimitsFooter'
 import { addProjectItems } from './AddProject'
 import * as L from '@shared/layout'
-import { useStore, showView, viewFor, openAddonPage, type DragItem, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, openAutomationsPage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
+import { useStore, showView, viewFor, openAddonPage, type DragItem, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, openAutomationsPage, openContinuePage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
-import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconMerged, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack } from '../icons'
+import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconMerged, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack, IconUpNext } from '../icons'
 import { StackRows } from './Stack'
 import { Stats } from './Stats'
-import { usePrState } from '../prState'
+import { prMenuItems, usePrState } from '../prState'
 import { BrandMark } from './BrandMark'
 import { UpdateBanners } from './Updates'
 import { AddonActions, addonViews } from './Addons'
 import { ProjectsSection } from './Projects'
-import { inProject } from '@shared/projects'
+import { foldKey, inProject } from '@shared/projects'
+import { buildLabel, sidebarVersion, type BuildInfo } from '@shared/uiComment'
 
 export function Sidebar() {
   const s = useStore()
@@ -72,6 +73,9 @@ export function Sidebar() {
     void window.api.reorderRepos(ids)
   }
   const headerRef = useRef<HTMLDivElement>(null)
+  // The whole list under the Repos header folds, like the Projects section above it.
+  const reposFolded = (s.settings.sidebarCollapsed ?? []).includes(foldKey.repos)
+  const reposWaiting = s.chats.some((c) => (c.unread || (s.permissions[c.id]?.length ?? 0) > 0) && s.workspaces.some((w) => w.id === c.workspaceId && !w.archived))
   const updateView = (p: Partial<View>) => {
     const v = { ...view, ...p }
     setView(v)
@@ -153,7 +157,10 @@ export function Sidebar() {
     { label: 'New project group…', icon: <IconOrchestrator />, onClick: () => editGroup(null) }
   ]
   const hiddenCount = s.repos.filter((r) => r.hidden).length
-  const toReview = visiblePrs(s.prInbox?.prs ?? [], s.settings.prsHidden).filter((p) => p.roles.includes('review')).length
+  const shownPrs = visiblePrs(s.prInbox?.prs ?? [], s.settings.prsHidden)
+  const toReview = shownPrs.filter((p) => p.roles.includes('review')).length
+  // PRs you review that changed for you since you last looked.
+  const freshPrs = shownPrs.filter((p) => p.update?.fresh).length
   // A hidden row still shows while it's the open page, so the page you're on never vanishes.
   const appViews = addonViews(s.addons, 'app').filter(({ addon, view }) => !rowHidden(viewRowKey(addon.key, view.id)) || (s.addonPage?.key === addon.key && s.addonPage.viewId === view.id && !s.addonPage.repoId))
   const repoViews = addonViews(s.addons, 'repo')
@@ -174,7 +181,7 @@ export function Sidebar() {
       </div>
 
       <nav className="px-2 pb-3">
-        <NavItem icon={<IconHome />} label="Home" active={!s.panesShown && !s.draftRepo && !s.prsPage && !s.automationsPage} onClick={() => s.selectWorkspace(null)} />
+        <NavItem icon={<IconHome />} label="Home" active={!s.panesShown && !s.draftRepo && !s.prsPage && !s.automationsPage && !s.continuePage} onClick={() => s.selectWorkspace(null)} />
         <NavItem icon={<IconPlus />} label="Create" onClick={() => s.set({ modal: 'create' })} />
         <NavItem icon={<IconSearch />} label="Search" onClick={() => openPalette()} hint="⌘K" />
         <NavItem
@@ -184,6 +191,15 @@ export function Sidebar() {
           active={s.prsPage && !s.selectedWs}
           onClick={openPrsPage}
           badge={toReview || undefined}
+          actions={freshPrs ? <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold text-[#1a1b20]" title="PRs you review that changed for you">{freshPrs} new</span> : undefined}
+        />
+        <NavItem
+          icon={<IconUpNext />}
+          label="Up next"
+          title="Continue work: what starts when your usage window resets"
+          active={s.continuePage && !s.selectedWs}
+          onClick={openContinuePage}
+          badge={s.continueQueue.length || undefined}
         />
         {projectsOn && (
           <NavItem
@@ -215,7 +231,15 @@ export function Sidebar() {
       <div className="flex-1 overflow-y-auto px-2 py-3">
         {projectsOn && <ProjectsSection />}
         <div ref={headerRef} className="mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
-          <span className="flex-1">{projectsOn ? 'Repos' : 'My workspaces'}</span>
+          <button
+            className="flex flex-1 items-center gap-1 text-left hover:text-fg"
+            onClick={() => setRepoCollapsed(foldKey.repos, !reposFolded)}
+            title={reposFolded ? 'Show repos' : 'Fold repos'}
+          >
+            <IconDown width={12} height={12} className={reposFolded ? '-rotate-90' : ''} />
+            {projectsOn ? 'Repos' : 'My workspaces'}
+            {reposFolded && reposWaiting && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-accent" title="A workspace is unread or waiting on you" />}
+          </button>
           <button className="rounded p-0.5 hover:bg-hover hover:text-fg" title="View options" onClick={() => setMenu(menu ? null : 'view')}>
             <IconDots />
           </button>
@@ -226,6 +250,8 @@ export function Sidebar() {
           {menu && <Menu anchor={headerRef.current} items={menu === 'view' ? viewItems : addProjectItems()} onClose={() => setMenu(null)} />}
           {rowMenu && <Menu anchor={null} at={rowMenu} items={[{ label: 'Hide from sidebar', onClick: () => setSidebarRowHidden(rowMenu.key, true) }]} onClose={() => setRowMenu(null)} />}
         </div>
+        {!reposFolded && (
+          <>
         {!projectsOn && s.groups.length > 0 && (
           <div className="mb-3">
             <div className="mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
@@ -398,6 +424,8 @@ export function Sidebar() {
             {showHidden ? 'Hide hidden repositories' : 'Show hidden repositories'}
           </button>
         )}
+          </>
+        )}
       </div>
 
       <UpdateBanners openSettings={() => s.set({ modal: 'settings', settingsTab: 'updates' })} />
@@ -406,12 +434,27 @@ export function Sidebar() {
       </div>
       <div className="flex items-center gap-2 px-3 py-2 text-faint">
         <BrandMark size={14} />
-        <span className="flex-1 text-[11px]">Choo Choo</span>
+        <span className="text-[11px]">Choo Choo</span>
+        <AppVersion />
         <button className="rounded p-1 hover:bg-hover hover:text-fg" title="Settings (⌘,)" onClick={() => s.set({ modal: 'settings' })}>
           <IconGear />
         </button>
       </div>
     </aside>
+  )
+}
+
+/** The app version (packaged) or `<sha>-dev` (npm run dev), from the same build info comment mode uses. */
+function AppVersion() {
+  const [info, setInfo] = useState<BuildInfo | null>(null)
+  useEffect(() => {
+    const bridge = (window as unknown as { uiComment?: { info(): Promise<BuildInfo> } }).uiComment
+    void bridge?.info().then(setInfo, () => {})
+  }, [])
+  return (
+    <span className="flex-1 truncate text-[11px] opacity-70" title={info ? buildLabel(info) : undefined}>
+      {info ? sidebarVersion(info) : ''}
+    </span>
   )
 }
 
@@ -527,6 +570,9 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
   const unread = s.chats.some((c) => c.workspaceId === w.id && c.unread)
   const asking = s.chats.some((c) => c.workspaceId === w.id && (s.permissions[c.id]?.length ?? 0) > 0)
   const blocker = s.chats.some((c) => c.workspaceId === w.id && c.advisorBlocker)
+  // Place in Up next (Continue work), for the first queued chat of this workspace.
+  const queuedAt = s.continueQueue.findIndex((q) => s.chats.some((c) => c.id === q.chatId && c.workspaceId === w.id))
+  const queued = queuedAt >= 0 ? s.continueQueue[queuedAt] : undefined
   const pr = usePrState(w, s.repos.find((r) => r.id === w.repoId))
   const slot = usePaneSlot(w.id)
   return (
@@ -607,6 +653,10 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
       {slot && <PaneSlotIcon slot={slot} />}
       {asking ? (
         <span className="anim-glow shrink-0 rounded bg-accent/20 px-1 text-[10px] text-accent">needs you</span>
+      ) : queued && !running ? (
+        <span className={`shrink-0 text-[10.5px] ${queued.source === 'paused' ? 'text-amber-400' : 'text-[#60a5fa]'}`} title={queued.source === 'paused' ? `Paused at the usage limit · #${queuedAt + 1} in Up next` : `#${queuedAt + 1} in Up next`}>
+          {queued.source === 'paused' ? '❚❚' : '◷'} #{queuedAt + 1}
+        </span>
       ) : blocker ? (
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-del" title="The advisor raised a blocker" />
       ) : (
@@ -635,7 +685,7 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
       {/* React events bubble out of the portal; keep menu clicks from also selecting the row. */}
       {menuAt && (
         <span onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
-          <Menu anchor={null} at={menuAt} items={menuItems} onClose={() => setMenuAt(null)} />
+          <Menu anchor={null} at={menuAt} items={w.orchestrator ? menuItems : [...prMenuItems(pr), ...menuItems]} onClose={() => setMenuAt(null)} />
         </span>
       )}
     </div>

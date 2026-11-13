@@ -4,7 +4,9 @@ import { readCachedAppearance } from './appearanceCache'
 import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
 import type { Automation, AutomationRun } from '@shared/automations'
-import { isTheirs, type CommentDest, type PrReviewInfo } from '@shared/prReview'
+import type { QueueItem, ResetLog, UsageLimitState } from '@shared/continueWork'
+import { isTheirs, type CommentDest, type PrHeadSync, type PrReviewInfo } from '@shared/prReview'
+import type { Interdiff } from '@shared/reviewUpdates'
 import * as L from '@shared/layout'
 import { diffBase } from '@shared/stack'
 import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type ModelDetails, type WorkspaceSource, type PermissionRequest, type AppState, type Chat, type ChatItem, type DiffStats, type Repo, type RepoGroup, type PrInfo, type Settings, type Workspace, type Leftover, type StackStatus } from '@shared/types'
@@ -73,6 +75,11 @@ interface UI {
   automationsPage: boolean
   automations: Automation[]
   automationRuns: AutomationRun[]
+  /** The Up next (Continue work) page is open. */
+  continuePage: boolean
+  continueQueue: QueueItem[]
+  usageLimit: UsageLimitState | null
+  resetLog: ResetLog[]
   /** Last load of the PRs page's list, and its error. */
   prInbox: PrInbox | null
   prInboxError: string | null
@@ -86,6 +93,14 @@ interface UI {
   prReview: Record<string, { pr: PrInfo; info: PrReviewInfo } | null | undefined>
   /** Bumped when GitHub reports a change to a workspace's PR or checks; PR views reload on it. */
   prVersion: Record<string, number>
+  /** Where each worktree stands against its PR's head on GitHub, and how many commits the last automatic update took in. */
+  prSync: Record<string, { sync: PrHeadSync | null; updated?: number } | undefined>
+  /** Since your review: the interdiff from your last review's commit to the worktree, per workspace. */
+  sinceReview: Record<string, Interdiff | null | undefined>
+  /** The All changes | Since your review toggle, per workspace; unset follows Settings › Reviews. */
+  sinceReviewOn: Record<string, boolean | undefined>
+  /** GitHub's per-file Viewed ticks on the workspace's PR, when Settings › Reviews syncs them. */
+  prViewed: Record<string, { prId: string; files: Record<string, string> } | null | undefined>
   /** Last stack status per stacked workspace, for the Stack tab, the header switcher and the sidebar. */
   stacks: Record<string, StackStatus | null | undefined>
   /** A Reflect tab open in the workspace: the person's feedback, and whether to archive after. */
@@ -103,7 +118,7 @@ interface UI {
   usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance' | 'experimental'
+  settingsTab: 'general' | 'reviews' | 'projects' | 'continue' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance' | 'experimental'
   recentPaths: string[]
   modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */
@@ -152,8 +167,11 @@ export const useStore = create<UI>((set, get) => ({
   addonPage: null,
   addonPress: null,
   prsPage: false,
-  automationsPage: false,
+  automationsPage: false, continuePage: false,
   automations: [],
+  continueQueue: [],
+  usageLimit: null,
+  resetLog: [],
   automationRuns: [],
   prInbox: readInboxCache(),
   prInboxError: null,
@@ -163,6 +181,10 @@ export const useStore = create<UI>((set, get) => ({
   codeComments: loadCodeComments(),
   prReview: {},
   prVersion: {},
+  prSync: {},
+  sinceReview: {},
+  sinceReviewOn: loadSinceReviewOn(),
+  prViewed: {},
   stacks: {},
   reflects: {},
   settings: { ...DEFAULT_SETTINGS, ...readCachedAppearance() },
@@ -191,7 +213,7 @@ export const useStore = create<UI>((set, get) => ({
     // A workspace whose diff base moved (its PR was retargeted, or it switched stack layer) needs new stats.
     const before = new Map(get().workspaces.map((w) => [w.id, diffBase(w)]))
     for (const w of s.workspaces) if (before.has(w.id) && before.get(w.id) !== diffBase(w) && !w.archived) void refreshStats(w.id)
-    set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [], automations: s.automations ?? [], automationRuns: s.automationRuns ?? [] })
+    set({ repos: s.repos, workspaces: s.workspaces, chats: s.chats, settings: s.settings, recentPaths: s.recentPaths ?? [], groups: s.groups ?? [], leftovers: s.leftovers ?? [], automations: s.automations ?? [], automationRuns: s.automationRuns ?? [], continueQueue: s.continueQueue ?? [], usageLimit: s.usageLimit ?? null, resetLog: s.resetLog ?? [] })
     if (!layoutLoaded) {
       layoutLoaded = true
       const saved = L.isLayout(s.settings.layout) ? s.settings.layout : null
@@ -201,7 +223,7 @@ export const useStore = create<UI>((set, get) => ({
     reconcileLayout()
   },
   selectWorkspace: (id, fromHistory) => {
-    if (!id) return set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, panesShown: false })
+    if (!id) return set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: false, panesShown: false })
     showView(viewFor(id))
     if (fromHistory) return
     const { history, historyIndex } = get()
@@ -318,7 +340,7 @@ export function applyLayout(next: L.Layout | null, opts: { show?: boolean; save?
       openDoc[l.view.wsId] = g.doc
     }
     Object.assign(patch, { activeChat, openDoc })
-    if (opts.show !== false) Object.assign(patch, { panesShown: true, draftRepo: null, prsPage: false, automationsPage: false })
+    if (opts.show !== false) Object.assign(patch, { panesShown: true, draftRepo: null, prsPage: false, automationsPage: false, continuePage: false })
   }
   st.set(patch)
   if (opts.save !== false) saveLayoutSoon(next)
@@ -534,7 +556,7 @@ export function reportError(e: unknown) {
 
 /** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
 export function newWorkspace(repoId: string) {
-  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, automationsPage: false, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, automationsPage: false, continuePage: false, panesShown: false })
 }
 
 /** Shows an add-on's view in the center. */
@@ -564,13 +586,17 @@ export function runAddonAction(addon: AddonInfo, action: AddonAction, ctx: Addon
 
 /** Shows the PRs page in the center and reloads its list. */
 export function openPrsPage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, automationsPage: false, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, automationsPage: false, continuePage: false, panesShown: false })
   void refreshPrInbox()
 }
 
 /** Opens the Automations page. */
+export function openContinuePage() {
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: true, panesShown: false })
+}
+
 export function openAutomationsPage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: true, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: true, continuePage: false, panesShown: false })
 }
 
 let inboxLoad: Promise<void> | null = null
@@ -595,14 +621,24 @@ function writeInboxCache(inbox: PrInbox) {
   }
 }
 
+/** A fresh PRs list, from a load here or a background check in the main process. */
+export function applyPrInbox(inbox: PrInbox) {
+  writeInboxCache(inbox)
+  useStore.getState().set({ prInbox: inbox, prInboxError: null })
+}
+
+/** Clears the "changed for you" mark on a PR and looks at GitHub again if it's been a while. */
+export function reviewingPr(pr: InboxPr) {
+  if (pr.update?.fresh) void window.api.reviewsSeen([`${pr.repo}#${pr.number}`]).catch(() => {})
+  void window.api.reviewsCheckSoon().catch(() => {})
+}
+
 /** Reloads the PRs list. Calls made while a load is running share it. */
 export function refreshPrInbox(): Promise<void> {
   inboxLoad ??= (async () => {
     useStore.getState().set({ prInboxLoading: true })
     try {
-      const inbox = await window.api.prInbox()
-      writeInboxCache(inbox)
-      useStore.getState().set({ prInbox: inbox, prInboxError: null })
+      applyPrInbox(await window.api.prInbox())
     } catch (e) {
       useStore.getState().set({ prInboxError: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e) })
     } finally {
@@ -619,6 +655,7 @@ export function refreshPrInbox(): Promise<void> {
  */
 export async function openPrWorkspace(pr: InboxPr) {
   const st = useStore.getState()
+  reviewingPr(pr)
   if (pr.workspaceId && st.workspaces.some((w) => w.id === pr.workspaceId && !w.archived)) {
     st.set({ rightOpen: true, rightTab: 'review' })
     st.selectWorkspace(pr.workspaceId)
@@ -698,11 +735,12 @@ export async function openOrchestrator(repoId: string) {
 }
 
 /** Opens a project group's orchestrator, which directs workspaces across all of its repos. */
-export async function openGroupOrchestrator(groupId: string) {
+/** Opens a project's orchestrator workspace on one chat: `chatId` (a thread), or the orchestrator chat. */
+export async function openGroupOrchestrator(groupId: string, chatId?: string) {
   try {
     const { workspace, chat } = await window.api.openGroupOrchestrator(groupId)
     await refreshState()
-    useStore.getState().setActiveChat(workspace.id, chat.id)
+    useStore.getState().setActiveChat(workspace.id, chatId ?? chat.id)
     useStore.getState().selectWorkspace(workspace.id)
   } catch (e) {
     reportError(e)
@@ -792,12 +830,24 @@ export interface CodeComment {
   dest?: CommentDest
   /** Copied from a reviewer-agent finding. */
   fromFinding?: boolean
+  /** The worktree's commit the line numbers belong to; moved along when new commits come in. */
+  commit?: string
+  /** New commits changed the commented lines: shown for the person to check before it's posted. */
+  stale?: boolean
 }
 
 export const destOf = (c: CodeComment): CommentDest => c.dest ?? 'agent'
 
 
 /** Drafts survive a restart: a half-written review is too much to lose. */
+function loadSinceReviewOn(): Record<string, boolean | undefined> {
+  try {
+    return JSON.parse(localStorage.getItem('sinceReviewOn') ?? '{}') as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
+
 function loadCodeComments(): Record<string, CodeComment[]> {
   try {
     return JSON.parse(localStorage.getItem('codeComments') ?? '{}') as Record<string, CodeComment[]>

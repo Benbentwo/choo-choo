@@ -1,11 +1,14 @@
 import { DEFAULT_APPEARANCE, type AppearanceSettings } from './themes'
 import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
-import type { PrInbox } from './prInbox'
+import type { InboxPr, PrInbox } from './prInbox'
 import type { Automation, AutomationRun, GithubWatchState } from './automations'
+import type { ChatPause, ContinueSettings, QueueItem, ResetLog, UsageLimitState } from './continueWork'
 import type { Layout, SavedLayout } from './layout'
-import type { AddonActionContext, AddonCallResult, AddonContext, AddonGrant, AddonInfo, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
-import type { PrDiffTarget, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
+import type { AddonActionContext, AddonCallResult, AddonContext, AddonDevResult, AddonGrant, AddonInfo, AddonReloaded, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
+import type { PrDiffTarget, PrHeadSync, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
+import type { Interdiff, ReviewSettings } from './reviewUpdates'
+import type { ReviewWatchState } from './reviewWatch'
 export interface Repo {
   id: string
   name: string
@@ -318,6 +321,8 @@ export interface Chat {
   automationId?: string
   /** Context window of the model, as Claude Code last reported it. */
   contextWindow?: number
+  /** The model Claude Code last reported running this chat on (e.g. claude-opus-5-5). */
+  reportedModel?: string
   /** Fast mode: faster output on models that support it, at a higher price. */
   fast?: boolean
   /** Stop a message's run once it has cost this many dollars. Missing uses the Settings default. */
@@ -328,6 +333,8 @@ export interface Chat {
   goal?: ChatGoal
   /** Set while the session continues somewhere else, such as on your phone through Remote Control. */
   remote?: ChatRemote
+  /** The last turn stopped on a plan usage limit. See shared/continueWork.ts. */
+  paused?: ChatPause
   createdAt: number
 }
 
@@ -430,6 +437,17 @@ export type ChatItem =
       sentWhileRunning?: 'steer' | 'queue'
     }
   | { id: string; kind: 'note'; text: string; ts: number }
+  | {
+      id: string
+      kind: 'model'
+      /** The model the chat switched to. */
+      model: ModelId
+      /** The model before the switch, when the person picked it. */
+      from?: ModelId
+      /** The model Claude Code reported running the next turn on (e.g. claude-sonnet-5-5). */
+      resolved?: string
+      ts: number
+    }
   | { id: string; kind: 'assistant'; text: string; streaming?: boolean; ts: number }
   | {
       id: string
@@ -503,6 +521,8 @@ export interface Settings extends AppearanceSettings {
   defaultPermission: Permission
   /** A message sent while Claude is working: steer folds it into the running turn, queue sends it after. */
   whileRunning?: 'steer' | 'queue'
+  /** How chats show Claude's work. Compact folds each stretch of tool calls into one collapsed Working row. */
+  chatFormat?: 'full' | 'compact'
   /** Orgs ("owner") or repos ("owner/repo") left off the PRs page on this machine. */
   prsHidden?: string[]
   /** Sidebar rows hidden with right-click > Hide from sidebar (keys from shared/sidebarHidden.ts). */
@@ -544,8 +564,12 @@ export interface Settings extends AppearanceSettings {
   orchestratorAutoUpdates: boolean
   /** Experimental: project groups become projects, with threads and a repo › PR tree in the sidebar. */
   experimentalProjects?: boolean
+  /** Continue work: resuming chats when the usage window resets. See shared/continueWork.ts. */
+  continueWork?: Partial<ContinueSettings>
   /** Add-ons turned on in Choo Choo and the permissions agreed to, by plugin id. */
   addons?: Record<string, AddonGrant>
+  /** Review updates: notifications for PRs you review, and the since-your-review diff (shared/reviewUpdates.ts). */
+  reviews?: Partial<ReviewSettings>
   /** Recommended add-ons the person said "not now" to, by project id. */
   addonPinsDismissed?: Record<string, string[]>
 }
@@ -668,6 +692,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultEffort: 'high',
   defaultPermission: 'full',
   whileRunning: 'steer',
+  chatFormat: 'full',
   branchPrefix: '',
   anthropicApiKey: '',
   notifications: true,
@@ -700,8 +725,16 @@ export interface AppState {
   automationRuns?: AutomationRun[]
   /** Finding ids each automation already opened a workspace for, by automation id. */
   automationLedger?: Record<string, string[]>
+  /** Review updates: where each PR you review stood at the last look (shared/reviewWatch.ts). */
+  reviewWatch?: ReviewWatchState
   /** Where the PR inbox stood at the last GitHub poll, for GitHub-event automations. */
   githubWatch?: GithubWatchState
+  /** Up next: what starts, in order, when the usage window resets. */
+  continueQueue?: QueueItem[]
+  /** Set while the plan is out of usage. */
+  usageLimit?: UsageLimitState
+  /** The last window resets and what the queue did, newest last. */
+  resetLog?: ResetLog[]
 }
 
 export interface Leftover {
@@ -895,6 +928,16 @@ export interface Api {
   deleteAutomation(id: string): Promise<void>
   /** Starts a run now, whatever the trigger. */
   runAutomation(id: string): Promise<AutomationRun>
+  /** Adds work to Up next for a chat. `top` puts it first. */
+  continueAdd(chatId: string, prompt: string, top?: boolean): Promise<void>
+  /** Moves an Up next item to a new position. */
+  continueMove(itemId: string, to: number): Promise<void>
+  /** Changes what an Up next item sends. Empty means the continue prompt. */
+  continueEdit(itemId: string, prompt: string): Promise<void>
+  /** Takes an item off Up next. A paused chat stays paused until you send something. */
+  continueRemove(itemId: string): Promise<void>
+  /** Starts an Up next item now, ignoring the reset time and the caps. */
+  continueRunNow(itemId: string): Promise<void>
   archiveWorkspace(workspaceId: string): Promise<void>
   restoreWorkspace(workspaceId: string): Promise<void>
   /** Reviews the workspace's chats for friction and suggests agent-setup changes. Writes nothing. */
@@ -948,6 +991,13 @@ export interface Api {
   addonRemoveSource(name: string): Promise<void>
   addonInstall(id: string, acceptSha?: string): Promise<PluginInstallResult>
   addonUninstall(id: string): Promise<void>
+  /** Loads a folder holding one add-on or a marketplace, read in place and reloaded as it changes. Opens a folder picker without `folder`. */
+  addonDevelop(folder?: string, replace?: boolean): Promise<AddonDevResult>
+  /** Starts an add-on's frames over (every add-on that is on without a key), reading manifests again. */
+  addonReload(key?: string): Promise<void>
+  /** Opens DevTools for an add-on's views and its background page. */
+  addonInspect(key: string): Promise<void>
+  onAddonReloaded(cb: (r: AddonReloaded) => void): () => void
   /** Turns an add-on on or off. Turning on needs the permissions the person was shown; it fails if the add-on now asks for others. */
   addonSetEnabled(id: string, enabled: boolean, permissions?: string[]): Promise<AddonInfo[]>
   /** One host API call from an add-on's view. The main process checks the add-on's permissions. */
@@ -991,6 +1041,18 @@ export interface Api {
   getPrReview(workspaceId: string): Promise<{ pr: PrInfo; info: PrReviewInfo } | null>
   /** Which lines of the PR can take review comments, and whether the worktree's line numbers match it. */
   getPrDiffTarget(workspaceId: string): Promise<PrDiffTarget | null>
+  /** Where the worktree stands against the PR's head; `ff` and `reset` also move it there. Null without an open PR. */
+  followPr(workspaceId: string, how: 'check' | 'ff' | 'reset'): Promise<PrHeadSync | null>
+  /** `git diff -U0` per file between two commits, for moving line comments to new line numbers. */
+  getRangeDiffs(workspaceId: string, from: string, to: string, files: string[]): Promise<Record<string, string>>
+  /** Commits and files between `sha` and HEAD; null when the commit can't be found. */
+  getChangedSince(workspaceId: string, sha: string): Promise<{ commits: number; files: FileChange[] } | null>
+  /** What the author changed in the PR since `sha`, leaving out what came from the base branch. */
+  getInterdiff(workspaceId: string, sha: string): Promise<Interdiff | null>
+  getInterdiffFile(workspaceId: string, sha: string, file: string): Promise<string>
+  /** GitHub's per-file Viewed ticks on the workspace's PR. */
+  getPrViewed(workspaceId: string): Promise<{ prId: string; files: Record<string, 'VIEWED' | 'UNVIEWED' | 'DISMISSED'> } | null>
+  setPrViewed(workspaceId: string, prId: string, path: string, viewed: boolean): Promise<void>
   /** Posts a review on the workspace's PR. */
   submitPrReview(workspaceId: string, drafts: ReviewDraft[], body: string, event: ReviewEvent): Promise<{ url: string }>
   replyToPrThread(workspaceId: string, threadId: string, body: string): Promise<void>
@@ -1040,6 +1102,14 @@ export interface Api {
   listGithubRepos(): Promise<GithubRepo[]>
   /** Open PRs across GitHub that wait on the person's review, or that they opened. */
   prInbox(): Promise<PrInbox>
+  /** Looks at GitHub for review updates unless it just did; the list, or null when it can't. */
+  reviewsCheckSoon(): Promise<PrInbox | null>
+  /** Marks PRs (owner/repo#n) as looked at. */
+  reviewsSeen(keys: string[]): Promise<void>
+  /** The PRs list after each background check. */
+  onPrInbox(cb: (inbox: PrInbox) => void): () => void
+  /** A review-update notification was clicked. */
+  onReviewOpen(cb: (pr: InboxPr) => void): () => void
   quickStart(name: string): Promise<Repo>
   /** `beside`: an add-on page asked to show the workspace next to itself (choo.ui.openWorkspace with beside). */
   onNavigate(cb: (workspaceId: string, chatId: string, beside?: { key: string; viewId: string; repoId?: string }) => void): () => void

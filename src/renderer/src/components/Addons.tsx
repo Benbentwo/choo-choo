@@ -204,14 +204,14 @@ export function AddonFrame({ addon, view, repoId, workspaceId, background }: { a
       // The page is going away: don't leave the orchestrator waiting for it.
       for (const id of [...open, ...early.map((c) => c.callId)]) void window.api.addonToolResult(id, { ok: false, error: `${addon.name} was restarted before it answered` })
     }
-  }, [addon.key, addon.version, view.id, view.entry, repoId, workspaceId, background, prs])
+  }, [addon.key, addon.version, addon.rev, view.id, view.entry, repoId, workspaceId, background, prs])
 
   const query = new URLSearchParams({ view: view.id, ...(repoId ? { repo: repoId } : {}), ...(workspaceId ? { workspace: workspaceId } : {}) })
   return (
     <iframe
       ref={ref}
       // A new frame per place it is mounted, so one view never shows another context's state.
-      key={`${addon.key}/${view.id}/${repoId ?? ''}/${workspaceId ?? ''}/${addon.version}`}
+      key={`${addon.key}/${view.id}/${repoId ?? ''}/${workspaceId ?? ''}/${addon.version}/${addon.rev ?? 0}`}
       title={`${addon.name}: ${view.title}`}
       src={`${ADDON_SCHEME}://${addon.key}/${view.entry}?${query}`}
       sandbox="allow-scripts allow-forms"
@@ -236,7 +236,7 @@ export function AddonBackgrounds() {
       {addons
         .filter((a) => a.state === 'on' && a.manifest?.background)
         .map((a) => (
-          <AddonFrame key={`${a.key}/${a.version}`} addon={a} view={{ id: BACKGROUND_VIEW, entry: a.manifest!.background!, title: 'Background' }} background />
+          <AddonFrame key={`${a.key}/${a.version}/${a.rev ?? 0}`} addon={a} view={{ id: BACKGROUND_VIEW, entry: a.manifest!.background!, title: 'Background' }} background />
         ))}
     </>
   )

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -34,9 +34,11 @@ import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
 import * as automations from './automations'
+import * as continueWork from './continueWork'
 import { projectThreads, routerChat, threadTitle, updateTarget } from '@shared/projects'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
+import { onModelPicked } from '@shared/modelSwitch'
 import * as archive from './archive'
 import * as remote from './remote'
 import * as desktop from './desktop'
@@ -46,6 +48,9 @@ import * as notion from './integrations/notion'
 import * as addonHost from './addonHost'
 import { originUrl, githubSlug } from './share'
 import { prBranch, type PrInbox } from '@shared/prInbox'
+import { activeGlobs, normalizeReviewSettings } from '@shared/reviewUpdates'
+import * as interdiff from './interdiff'
+import * as reviewWatch from './reviewWatch'
 import { followPrBase, prRef, syncWorkspaceBranch } from './workspacePr'
 
 let win: BrowserWindow | null = null
@@ -340,6 +345,12 @@ function sendFromPerson(chat: Chat, text: string, images: string[]) {
     const ws = findWs(chat.workspaceId)
     return desktop.openInDesktop(chat, ws, agentEnv(ws), emitChat).then(() => undefined)
   }
+  // Out of usage: hold the message in Up next instead of sending it into a refused turn.
+  if (!agent.isRunning(chat.id) && continueWork.isLimited() && chat.model !== 'codex') {
+    const { position } = continueWork.add(chat.id, text, { top: !!chat.paused, images: images.slice(0, 10) })
+    emitChat(chat.id, { item: { id: randomUUID(), kind: 'note', text: `You're out of usage for this window. Your message is #${position} in Up next and will be sent when the window resets.`, ts: Date.now() } })
+    return
+  }
   if (!agent.isRunning(chat.id)) return sendToChat(chat, text, images)
   if (agent.pushMessage(chat, text, images.slice(0, 10), store.get().settings.whileRunning ?? 'steer', emitChat)) return
   afterTurn.set(chat.id, [...(afterTurn.get(chat.id) ?? []), { text, images }])
@@ -510,6 +521,7 @@ async function addRepoToProject(groupId: string, ref: string, opts: { clone: boo
 }
 
 const orchestratorHost: orchestrator.Host = {
+  changed: () => send('state:changed'),
   findRepos: (groupId, query) => findRepos(groupId, query),
   addRepoToProject,
   createWorkspace: async (repoId, source) => {
@@ -594,7 +606,8 @@ const addonDeps: addonHost.Deps = {
     const key = store.get().settings.anthropicApiKey.trim()
     return key ? { ANTHROPIC_API_KEY: key } : ({} as Record<string, string>)
   },
-  send
+  send,
+  inspectViews: () => win?.webContents.openDevTools({ mode: 'detach' })
 }
 
 function orchestratorChat(ws: Workspace, title: string): Chat {
@@ -802,6 +815,7 @@ function onChatDone(chat: Chat) {
   }
   notifyDone(chat)
   automations.onTurnDone(chat)
+  continueWork.onTurnDone(chat)
   noteForOrchestrator(chat)
   if (finished.has(chat.id)) scheduleWake(chat.id)
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
@@ -815,7 +829,7 @@ function notifyDone(chat: Chat) {
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   const n = new Notification({
     title: ws?.title ?? 'Choo Choo',
-    body: chat.status === 'error' ? 'The agent hit an error' : 'The agent finished and is waiting for you'
+    body: chat.paused ? continueWork.pauseText(chat) : chat.status === 'error' ? 'The agent hit an error' : 'The agent finished and is waiting for you'
   })
   n.on('click', () => {
     win?.show()
@@ -1026,6 +1040,11 @@ function registerIpc() {
   h('automation:enable', (id: string, on: boolean) => automations.setEnabled(id, on))
   h('automation:delete', (id: string) => automations.remove(id))
   h('automation:run', (id: string) => automations.runNow(id))
+  h('continue:add', (chatId: string, prompt: string, top?: boolean) => void continueWork.add(chatId, prompt, { top }))
+  h('continue:move', (id: string, to: number) => continueWork.move(id, to))
+  h('continue:edit', (id: string, prompt: string) => continueWork.edit(id, prompt))
+  h('continue:remove', (id: string) => continueWork.remove(id))
+  h('continue:run', (id: string) => continueWork.runNow(id))
   h('ws:restore', async (id: string) => {
     const ws = findWs(id)
     if (ws.orchestrator) {
@@ -1083,6 +1102,7 @@ function registerIpc() {
   })
   h('chat:close', async (id: string) => {
     await agent.stop(id)
+    continueWork.forgetChat(id)
     const closing = store.get().chats.find((c) => c.id === id)
     if (closing) {
       pty.kill(remote.phoneTerminalId(closing))
@@ -1104,7 +1124,17 @@ function registerIpc() {
   })
   h('chat:update', (id: string, patch: Partial<Chat>) => {
     const c = findChat(id)
-    if (patch.model) c.model = patch.model
+    if (patch.model) {
+      const change = onModelPicked(store.chatItems(id), c.model, patch.model, randomUUID(), Date.now())
+      if (change && 'put' in change) {
+        store.upsertItem(id, change.put)
+        emitChat(id, { item: change.put })
+      } else if (change) {
+        // The renderer reloads the chat's items after a model change, so it drops this too.
+        store.replaceItems(id, store.chatItems(id).filter((x) => x.id !== change.remove))
+      }
+      c.model = patch.model
+    }
     if (patch.effort) c.effort = patch.effort
     if (patch.title) c.title = patch.title
     if (patch.unread !== undefined) c.unread = patch.unread
@@ -1174,7 +1204,45 @@ function registerIpc() {
     ])
     // -z: "XY path\0", with a second path after renames.
     const dirty = status.split('\0').filter((e) => e.length > 3).map((e) => e.slice(3))
-    return { lines, headMatches: !!pr.headRefOid && head.trim() === pr.headRefOid, dirty }
+    return { lines, headMatches: !!pr.headRefOid && head.trim() === pr.headRefOid, dirty, head: head.trim() || undefined }
+  })
+  // The PR's author pushed: check, fast-forward, or (after a force-push) switch the worktree to the PR's head.
+  h('pr:follow', async (id: string, how: 'check' | 'ff' | 'reset') => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr || pr.state !== 'OPEN' || !pr.headRefOid) return null
+    const r = await git.followPrHead(ws.path, pr.number, pr.headRefOid, how === 'reset' || how === 'ff' ? how : 'check')
+    if (r.state === 'updated') send('pr:changed', ws.id)
+    return r
+  })
+  h('pr:rangeDiffs', (id: string, from: string, to: string, files: string[]) => git.rangeDiffs(findWs(id).path, from, to, files))
+  h('pr:changedSince', async (id: string, sha: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return pr ? git.changedSince(ws.path, sha, pr.number) : null
+  })
+  // Since your review: what the author changed in the PR since `sha`, with the base branch's changes left out.
+  h('pr:interdiff', async (id: string, sha: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) return null
+    const to = (await git.git(ws.path, ['rev-parse', 'HEAD'])).trim()
+    const ignore = activeGlobs(normalizeReviewSettings(store.get().settings.reviews))
+    return interdiff.interdiff(ws.path, { from: sha, to, base: pr.baseRefName || 'main', prNumber: pr.number, ignore })
+  })
+  // GitHub's per-file Viewed ticks (Settings › Reviews › Sync "Viewed" ticks with GitHub).
+  h('pr:viewed', async (id: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return pr ? gh.prViewed(ws.path, pr.number) : null
+  })
+  h('pr:setViewed', (id: string, prId: string, path: string, viewed: boolean) => gh.setPrViewed(findWs(id).path, prId, path, viewed))
+  h('pr:interdiffFile', async (id: string, sha: string, file: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) return ''
+    const to = (await git.git(ws.path, ['rev-parse', 'HEAD'])).trim()
+    return interdiff.interdiffFile(ws.path, { from: sha, to, base: pr.baseRefName || 'main', prNumber: pr.number, file })
   })
   h('pr:submitReview', async (id: string, drafts: ReviewDraft[], body: string, event: ReviewEvent) => {
     const ws = findWs(id)
@@ -1229,6 +1297,7 @@ function registerIpc() {
     if ('theme' in patch) applyNativeTheme(s.settings)
     if ('archiveRetentionDays' in patch) void archive.cleanupArchives()
     updates.onSettingsChanged(Object.keys(patch))
+    if ('reviews' in patch) reviewWatch.reschedule()
     return s.settings
   })
   h('folder:pick', async () => {
@@ -1237,7 +1306,11 @@ function registerIpc() {
   })
   h('repo:clone', (url: string, dir?: string) => cloneAndAdd(url, dir))
   h('gh:repos', () => gh.listMyRepos())
-  h('prs:inbox', () => loadPrInbox())
+  // The PRs list, with review updates on the PRs you review (src/main/reviewWatch.ts).
+  h('prs:inbox', () => reviewWatch.check())
+  // Opening a PR you review, or the PRs page: look at GitHub unless it was just looked at.
+  h('reviews:checkSoon', () => reviewWatch.checkSoon())
+  h('reviews:seen', (keys: string[]) => reviewWatch.seen(keys))
   h('models:details', () => modelDetails())
   h('limits:get', (force?: boolean) => subscriptionLimits(store.get().settings.anthropicApiKey ?? '', !!force))
   h('conductor:preview', () => previewConductor())
@@ -1660,7 +1733,56 @@ app.whenReady().then(async () => {
       send('state:changed')
     }
   })
+  let awake: number | null = null
+  continueWork.init({
+    send: (chat, text, images) => sendToChat(chat, text, images),
+    isRunning: (id) => agent.isRunning(id),
+    limits: async (force) => (await subscriptionLimits(store.get().settings.anthropicApiKey ?? '', force)).find((l) => l.provider === 'claude') ?? null,
+    projectOf: (chatId) => {
+      const chat = store.get().chats.find((c) => c.id === chatId)
+      const ws = chat && store.get().workspaces.find((w) => w.id === chat.workspaceId)
+      if (!ws) return undefined
+      return ws.groupId ?? (store.get().settings.experimentalProjects ? store.get().groups?.find((g) => g.repoIds.includes(ws.repoId))?.id : undefined) ?? ws.repoId
+    },
+    notify: (title, body) => {
+      if (!store.get().settings.notifications || !Notification.isSupported()) return
+      const n = new Notification({ title, body })
+      n.on('click', () => {
+        win?.show()
+        win?.focus()
+      })
+      n.show()
+    },
+    keepAwake: (on) => {
+      if (on && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension')
+      else if (!on && awake !== null) {
+        powerSaveBlocker.stop(awake)
+        awake = null
+      }
+    },
+    onReset: () => automations.onUsageReset(),
+    changed: () => {
+      store.save()
+      send('state:changed')
+    }
+  })
+  powerMonitor.on('resume', () => continueWork.onWake())
   updates.startUpdater(send)
+  reviewWatch.start({
+    loadInbox: loadPrInbox,
+    broadcast: (inbox) => send('prs:inbox', inbox),
+    onUpdates: (updates) => void automations.onReviewUpdates(updates),
+    notify: (pr, title, body) => {
+      if (!Notification.isSupported()) return
+      const n = new Notification({ title, body })
+      n.on('click', () => {
+        win?.show()
+        win?.focus()
+        send('reviews:open', pr)
+      })
+      n.show()
+    }
+  })
   // PR and check changes: cheap ETag probes, and the UI refetches only when one reports a change.
   const prWatch = startPrWatch({
     // Agents switch branches on their own (gh pr checkout); follow them before probing GitHub.

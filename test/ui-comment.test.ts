@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { commentPrompt, commentSlug, commentTargets, defaultCommentTarget, isUpstreamRemote, issueUrl } from '../src/shared/uiComment'
+import { commentPrompt, commentSlug, commentTargets, defaultCommentTarget, isUpstreamRemote, issueUrl, sidebarVersion } from '../src/shared/uiComment'
+
+describe('sidebarVersion', () => {
+  it('shows the version in a packaged build', () => {
+    expect(sidebarVersion({ version: '0.1.0', commit: 'caa87ba', packaged: true })).toBe('v0.1.0')
+  })
+  it('shows the commit with -dev under npm run dev', () => {
+    expect(sidebarVersion({ version: '0.1.0', commit: 'caa87ba', packaged: false })).toBe('caa87ba-dev')
+    expect(sidebarVersion({ version: '0.1.0', commit: '', packaged: false })).toBe('dev')
+  })
+})
 
 const payload = {
   comment: 'The Create PR button should say "Open PR" when a draft exists',

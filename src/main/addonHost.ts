@@ -6,7 +6,7 @@
  * Add-ons with a background page get one more frame each, in a window that is never shown, so they
  * keep working while their views are closed and can answer the orchestrator's tool calls.
  */
-import { app, BrowserWindow, ipcMain, protocol } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -22,6 +22,8 @@ import {
   type AddonAppEvent,
   type AddonCallResult,
   type AddonContext,
+  type AddonDevResult,
+  type AddonReloaded,
   type AddonInfo,
   type AddonSource,
   type AddonTool,
@@ -32,7 +34,8 @@ import {
 } from '@shared/addons'
 import * as store from './store'
 import * as plugins from './plugins'
-import { availableFrom, contentType, describeAddons, listPlugins, listSources, pinStatus, readPins, resolveFile, type LoadedAddon } from './addons'
+import { availableFrom, contentType, describeAddons, listPlugins, listSources, pinStatus, readPins, resolveFile, type LoadedAddon, type PluginEntry } from './addons'
+import { DEV_MARKETPLACE, inspectFolder, linkDevAddon, manifestChanged, sameFolder, unlinkDevAddon, watchFolder } from './addonDev'
 import { backgroundPress, call, type AddonHost } from './addonApi'
 import { HOST_SCRIPT, HOST_SCRIPT_PATH } from './addonClient'
 
@@ -46,11 +49,19 @@ export interface Deps {
   /** Environment for `claude plugin …`, such as the API key when one is set. */
   env(): Record<string, string>
   send(channel: string, ...args: unknown[]): void
+  /** Opens DevTools on the app window, where add-on views run as frames. */
+  inspectViews(): void
 }
 
 let cache: LoadedAddon[] = []
 /** Every installed plugin's id, add-on or not. */
 let pluginIds: string[] = []
+/** The last `claude plugin list`, so a changed manifest can be read again without asking Claude Code. */
+let lastPlugins: PluginEntry[] = []
+/** How many times each add-on was reloaded. Frames are keyed on it, so a bump starts them over. */
+const revs = new Map<string, number>()
+/** File watchers on add-ons read from a folder, by add-on key. */
+const watchers = new Map<string, { dir: string; stop(): void }>()
 let loaded = false
 let loading: Promise<LoadedAddon[]> | null = null
 
@@ -70,13 +81,20 @@ const cwd = () => homedir()
 
 const strip = (list: LoadedAddon[]): AddonInfo[] => list.map(({ dir: _dir, pluginScope: _scope, ...info }) => info)
 
+/** Reads every add-on's manifest again from what Claude Code last listed. */
+function describe() {
+  cache = describeAddons(lastPlugins, grants()).map((a) => ({ ...a, rev: revs.get(a.key) ?? 0 }))
+}
+
 function refresh(deps: Deps): Promise<LoadedAddon[]> {
   loading ??= listPlugins(cwd(), deps.env())
     .then((list) => {
-      cache = describeAddons(list, grants())
+      lastPlugins = list
+      describe()
       pluginIds = list.map((p) => p.id)
       loaded = true
       syncBackground()
+      syncWatchers()
       return cache
     })
     .finally(() => {
@@ -91,6 +109,43 @@ const allowed = (a: LoadedAddon) => a.manifest?.permissions ?? []
 const notFound = () => new Response('Not found', { status: 404 })
 
 const hasBackground = (a: LoadedAddon) => a.state === 'on' && !!a.manifest?.background
+
+/** Tells both windows the list of add-ons changed; they read it again and restart frames whose rev moved. */
+function changed() {
+  toMain('addons:changed')
+  toBackground('addons:changed')
+}
+
+/** Starts its frames over: views reload and the background page restarts. */
+function reload(key: string, files: string[] = []) {
+  revs.set(key, (revs.get(key) ?? 0) + 1)
+  // A changed manifest is read again; anything else only needs the frames to load the files again.
+  if (manifestChanged(files) || !files.length) describe()
+  else cache = cache.map((a) => (a.key === key ? { ...a, rev: revs.get(key) } : a))
+  syncBackground()
+  syncWatchers()
+  changed()
+  const a = cache.find((x) => x.key === key)
+  if (a) toMain('addons:reloaded', { key, name: a.name, files, state: a.state, errors: a.errors } satisfies AddonReloaded)
+}
+
+/**
+ * Watches every add-on read from a folder, whether it is on or not, so fixing a broken manifest
+ * brings it back without a trip to Settings. Add-ons from git sources are never watched: they only
+ * change when Claude Code updates them.
+ */
+function syncWatchers() {
+  if (quitting) return
+  const want = new Map(cache.filter((a) => a.dev).map((a) => [a.key, a.dir]))
+  for (const [key, w] of watchers) {
+    if (want.get(key) === w.dir) continue
+    w.stop()
+    watchers.delete(key)
+  }
+  for (const [key, dir] of want) {
+    if (!watchers.has(key)) watchers.set(key, { dir, stop: watchFolder(dir, (files) => reload(key, files)) })
+  }
+}
 
 /** Opens the unseen window when an add-on that is on has a background page, and closes it when none does. */
 function syncBackground() {
@@ -199,6 +254,8 @@ export function start(deps: Deps) {
   toMain = deps.send
   app.on('before-quit', () => {
     quitting = true
+    for (const w of watchers.values()) w.stop()
+    watchers.clear()
     if (background && !background.isDestroyed()) background.destroy()
   })
   const host: AddonHost = {
@@ -248,10 +305,6 @@ export function start(deps: Deps) {
   })
 
   const h = (ch: string, fn: (...a: any[]) => unknown) => ipcMain.handle(ch, (_e, ...a) => fn(...a))
-  const changed = () => {
-    deps.send('addons:changed')
-    toBackground('addons:changed')
-  }
 
   // Only the background window may answer a tool call.
   ipcMain.handle('addons:toolResult', (e, callId: string, r: { ok: boolean; result?: unknown; error?: string }) => {
@@ -320,6 +373,8 @@ export function start(deps: Deps) {
     const addon = (await refresh(deps)).find((a) => a.id === id)
     if (!addon) throw new Error('That add-on is not installed')
     await plugins.uninstall(cwd(), deps.env(), addon.id, addon.pluginScope)
+    // A single add-on loaded from a folder leaves the dev source too. Its folder is never touched.
+    if (addon.marketplace === DEV_MARKETPLACE) unlinkDevAddon(devDir(), addon.id.split('@')[0])
     const s = store.get().settings
     if (s.addons?.[id]) {
       const { [id]: _gone, ...rest } = s.addons
@@ -351,6 +406,24 @@ export function start(deps: Deps) {
     return strip(cache)
   })
 
+  h('addons:develop', (folder?: string, replace?: boolean) => develop(deps, folder, !!replace))
+
+  h('addons:reload', async (key?: string) => {
+    if (!loaded) await refresh(deps)
+    const keys = key ? [String(key)] : cache.filter((a) => a.state === 'on').map((a) => a.key)
+    // Re-read manifests first, so a reload from Settings also picks up manifest edits.
+    describe()
+    for (const k of keys) reload(k)
+  })
+
+  // DevTools for an add-on's frames: the app window's for its views, and the unseen window's for its background page.
+  h('addons:inspect', (key: string) => {
+    const addon = cache.find((a) => a.key === key)
+    if (!addon) throw new Error('That add-on is not installed')
+    deps.inspectViews()
+    if (hasBackground(addon) && background && !background.isDestroyed()) background.webContents.openDevTools({ mode: 'detach', title: `${addon.name}: background page` })
+  })
+
   // A press of a button whose add-on answers it in the background. Presses that open a view never leave the window.
   h('addons:action', async (key: string, actionId: string, context: AddonActionContext) => {
     if (!loaded) await refresh(deps)
@@ -373,4 +446,63 @@ export function start(deps: Deps) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
+}
+
+/** Where the dev marketplace for single add-ons lives. */
+const devDir = () => join(app.getPath('userData'), 'addon-dev')
+
+/**
+ * Develop add-on: loads a folder holding one add-on or a whole marketplace, installs what it holds,
+ * and from then on the add-ons are read from that folder and reload as it changes.
+ */
+async function develop(deps: Deps, folder: string | undefined, replace: boolean): Promise<AddonDevResult> {
+  if (!folder) {
+    const r = await dialog.showOpenDialog({ title: 'Develop an add-on', buttonLabel: 'Load folder', message: 'Pick the folder of one add-on, or the root of a marketplace repo.', properties: ['openDirectory'] })
+    if (r.canceled || !r.filePaths[0]) return { canceled: true }
+    folder = r.filePaths[0]
+  }
+  const found = inspectFolder(folder)
+  const env = deps.env()
+  const sources = await listSources(cwd(), env)
+  const installedNow = async () => new Set((await listPlugins(cwd(), env)).map((p) => p.id))
+  const installed: string[] = []
+  const skipped: { id: string; reason: string }[] = []
+  const install = async (id: string) => {
+    try {
+      const r = await plugins.install(cwd(), env, id, 'user')
+      if (r.ok) installed.push(id)
+      else skipped.push({ id, reason: 'It installs by running a command. Install it from the list to see the command first.' })
+    } catch (e) {
+      skipped.push({ id, reason: (e as Error).message })
+    }
+  }
+
+  let ids: string[]
+  if (found.kind === 'marketplace') {
+    const same = sources.find((s) => s.name === found.name)
+    if (same && !sameFolder(same.dir, found.dir)) {
+      if (!replace) return { folder: found.dir, replace: { name: found.name, from: same.source } }
+      // Removing a source uninstalls its plugins. Note which were installed and put them back from the folder.
+      // Grants and add-on data are keyed by the id, which stays the same, so nothing else is lost.
+      const before = [...(await installedNow())].filter((id) => id.endsWith(`@${found.name}`))
+      await plugins.removeMarketplace(cwd(), env, found.name)
+      await plugins.addMarketplace(cwd(), env, found.dir)
+      for (const id of before) await install(id)
+    } else if (!same) {
+      await plugins.addMarketplace(cwd(), env, found.dir)
+    }
+    const have = await installedNow()
+    const offered = availableFrom([{ name: found.name, source: found.dir, dir: found.dir }], new Set())
+    ids = offered.map((a) => a.id)
+    for (const a of offered) if (!have.has(a.id)) await install(a.id)
+  } else {
+    linkDevAddon(devDir(), found.dir, found.name)
+    if (!sources.some((s) => s.name === DEV_MARKETPLACE)) await plugins.addMarketplace(cwd(), env, devDir())
+    const id = `${found.name}@${DEV_MARKETPLACE}`
+    ids = [id]
+    if (!(await installedNow()).has(id)) await install(id)
+  }
+  await refresh(deps)
+  changed()
+  return { folder: found.dir, installed, ids, skipped }
 }

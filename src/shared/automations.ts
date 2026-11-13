@@ -7,7 +7,7 @@ import type { InboxPr } from './prInbox'
  */
 
 /** GitHub events the app can notice by polling, without a server. */
-export type GithubEvent = 'review_requested' | 'checks_failed' | 'reviewed' | 'issue_opened' | 'pr_opened'
+export type GithubEvent = 'review_requested' | 'review_update' | 'checks_failed' | 'reviewed' | 'issue_opened' | 'pr_opened'
 
 export type AutomationTrigger =
   /** Every `hours` hours. */
@@ -20,6 +20,8 @@ export type AutomationTrigger =
   | { kind: 'github'; event: GithubEvent; label?: string }
   /** Only when the person presses Run now. */
   | { kind: 'manual' }
+  /** Each time the plan's usage window resets after running out (Continue work). */
+  | { kind: 'usage_reset' }
 
 /** Where a run's conversation and workspaces go. */
 export type AutomationTarget = { kind: 'project'; groupId: string } | { kind: 'repo'; repoId: string }
@@ -66,11 +68,19 @@ export const RUNS_LIMIT = 300
 
 export const GITHUB_EVENTS: { id: GithubEvent; label: string; hint: string }[] = [
   { id: 'review_requested', label: 'A PR asks for my review', hint: 'Someone requests your review on an open PR.' },
+  {
+    id: 'review_update',
+    label: "A PR I'm reviewing changed for me",
+    hint: 'After you reviewed: the PR\'s own code changed, someone answered your comment, or you were asked again. Merges from main don\'t count. Follows Settings › Reviews.'
+  },
   { id: 'checks_failed', label: 'CI fails on my PR', hint: 'Checks go red on a PR you opened.' },
   { id: 'reviewed', label: 'My PR gets a review', hint: 'Someone approves or requests changes on a PR you opened.' },
   { id: 'issue_opened', label: 'A new issue is opened', hint: 'Anyone opens an issue in the repo, optionally only ones with a label.' },
   { id: 'pr_opened', label: 'A new PR is opened', hint: 'Anyone opens a pull request in the repo, optionally only ones with a label.' }
 ]
+
+/** Events that come from review updates (src/main/reviewWatch.ts) rather than from comparing two inbox polls. */
+export const isReviewEvent = (e: GithubEvent) => e === 'review_update'
 
 /** Events read from a repo's issue list rather than from the person's PR inbox. */
 export const isRepoEvent = (e: GithubEvent) => e === 'issue_opened' || e === 'pr_opened'
@@ -118,6 +128,8 @@ export function describeTrigger(t: AutomationTrigger): string {
     }
     case 'manual':
       return 'Only when run by hand'
+    case 'usage_reset':
+      return 'When my usage window resets'
   }
 }
 
@@ -180,6 +192,19 @@ export function diffRepoItems(repo: string, prevLatest: number | undefined, item
       labels: i.labels
     }))
   return { events, latest: top }
+}
+
+/** Review updates as automation events, keyed so the same update never starts a second workspace. */
+export function reviewUpdateEvents(updates: { pr: InboxPr; reasons: { label: string; key: string }[] }[]): PrEvent[] {
+  return updates.map(({ pr, reasons }) => ({
+    event: 'review_update',
+    repo: pr.repo,
+    number: pr.number,
+    title: pr.title,
+    url: pr.url,
+    detail: `changed for you since your review: ${reasons.map((r) => r.label).join(', ')}`,
+    key: `review_update:${pr.repo}#${pr.number}:${reasons.map((r) => r.key).sort().join('|')}`
+  }))
 }
 
 /** Whether an event matches an automation's label filter (case-insensitive). */

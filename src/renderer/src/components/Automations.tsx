@@ -213,7 +213,7 @@ function RunRow({ r }: { r: AutomationRun }) {
   )
 }
 
-type WhenKind = 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'github' | 'manual'
+type WhenKind = 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'github' | 'manual' | 'usage_reset'
 
 function whenKind(t: AutomationTrigger): WhenKind {
   if (t.kind === 'daily') return t.weekdaysOnly ? 'weekdays' : 'daily'
@@ -251,6 +251,8 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
         return { kind: 'weekly', day, at }
       case 'github':
         return { kind: 'github', event, ...(isRepoEvent(event) && label.trim() ? { label: label.trim() } : {}) }
+      case 'usage_reset':
+        return { kind: 'usage_reset' }
       default:
         return { kind: 'manual' }
     }
@@ -301,6 +303,7 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
           <option value="weekdays">Weekdays</option>
           <option value="weekly">Once a week</option>
           <option value="github">On a GitHub event</option>
+          <option value="usage_reset">When my usage window resets</option>
           <option value="manual">Only when I run it</option>
         </select>
         {kind === 'hourly' && (

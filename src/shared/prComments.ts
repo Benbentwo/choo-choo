@@ -20,7 +20,7 @@ export const PR_FEEDBACK_QUERY = `query($owner: String!, $name: String!, $number
           comments(first: 50) { nodes { id author { login } body createdAt url diffHunk } }
         }
       }
-      reviews(last: 50) { nodes { id author { login } state body submittedAt url } }
+      reviews(last: 50) { nodes { id author { login } state body submittedAt url commit { oid } } }
       comments(last: 100) { nodes { id author { login } body createdAt url } }
     }
   }
@@ -30,7 +30,7 @@ type Author = { login: string } | null
 type Node<T> = { nodes: (T | null)[] | null } | null
 interface ThreadComment { id: string; author: Author; body: string; createdAt: string; url: string; diffHunk?: string }
 interface Thread { id?: string; diffSide?: 'LEFT' | 'RIGHT' | null; isResolved: boolean; isOutdated: boolean; path: string; line: number | null; originalLine: number | null; startLine: number | null; comments: Node<ThreadComment> }
-interface Review { id: string; author: Author; state: string; body: string; submittedAt: string | null; url: string }
+interface Review { id: string; author: Author; state: string; body: string; submittedAt: string | null; url: string; commit?: { oid: string } | null }
 interface IssueComment { id: string; author: Author; body: string; createdAt: string; url: string }
 export interface PrFeedbackResponse {
   data?: { viewer?: { login: string } | null; repository?: { pullRequest?: { author: Author; reviewThreads: Node<Thread>; reviews: Node<Review>; comments: Node<IssueComment> } | null } | null }
@@ -88,8 +88,19 @@ export function parsePrFeedback(res: PrFeedbackResponse): PrComment[] {
 export function parsePrReviewInfo(res: PrFeedbackResponse): PrReviewInfo {
   const pr = res.data?.repository?.pullRequest
   const viewer = res.data?.viewer?.login ?? ''
-  const reviews = nodes(pr?.reviews).map((r) => ({ author: r.author?.login ?? 'ghost', state: r.state, submittedAt: r.submittedAt }))
-  return { author: pr?.author?.login ?? '', viewer, myReview: viewer ? latestReviewBy(reviews, viewer) : undefined, feedback: parsePrFeedback(res) }
+  const reviews = nodes(pr?.reviews).map((r) => ({ author: r.author?.login ?? 'ghost', state: r.state, submittedAt: r.submittedAt, commit: r.commit?.oid }))
+  // The commit of the viewer's newest submitted review, of any kind: what they last looked at.
+  const last = reviews
+    .filter((r) => viewer && r.author.toLowerCase() === viewer.toLowerCase() && r.state !== 'PENDING' && r.submittedAt && r.commit)
+    .sort((a, b) => (a.submittedAt ?? '').localeCompare(b.submittedAt ?? ''))
+    .at(-1)
+  return {
+    author: pr?.author?.login ?? '',
+    viewer,
+    myReview: viewer ? latestReviewBy(reviews, viewer) : undefined,
+    myReviewCommit: last?.commit,
+    feedback: parsePrFeedback(res)
+  }
 }
 
 /** Comments newer than the last time they were added to chat. */

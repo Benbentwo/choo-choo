@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { LimitWindow, SubscriptionLimits } from '@shared/types'
 import { pace, paceText } from '@shared/limitPace'
 import { LimitsChart } from './LimitsChart'
-import { useStore } from '../store'
+import { useStore, openContinuePage } from '../store'
 
 const ROTATE_MS = 12000
 const FADE_MS = 600
@@ -29,6 +29,8 @@ export function LimitsFooter() {
   const [detail, setDetail] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const running = useStore((s) => s.chats.filter((c) => c.status === 'running').length)
+  const queue = useStore((s) => s.continueQueue)
+  const limitedUntil = useStore((s) => (s.usageLimit ? (s.usageLimit.until ?? 0) : null))
   const prevRunning = useRef(running)
 
   const load = (force = false) => void window.api.subscriptionLimits(force).then(setLimits, () => {})
@@ -131,6 +133,12 @@ export function LimitsFooter() {
           ))}
         </div>
       </div>
+      {(queue.length > 0 || limitedUntil !== null) && (
+        <button className="block w-full truncate px-3 pb-1.5 text-left text-[11px] text-amber-400 hover:underline" onClick={openContinuePage} title="Open Up next">
+          ❚❚ {[queue.filter((q) => q.source === 'paused').length ? `${queue.filter((q) => q.source === 'paused').length} paused` : '', `${queue.length} up next`].filter(Boolean).join(' · ')}
+          {limitedUntil ? ` at ${new Date(limitedUntil + 60_000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}
+        </button>
+      )}
     </div>
   )
 }

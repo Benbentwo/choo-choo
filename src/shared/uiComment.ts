@@ -58,6 +58,12 @@ export function buildLabel(b: BuildInfo): string {
   return b.commit ? `v${b.version} (${b.commit})` : `v${b.version}`
 }
 
+/** The short version next to "Choo Choo" in the sidebar: `v1.2.3` when packaged, `<sha>-dev` under `npm run dev`. */
+export function sidebarVersion(b: BuildInfo): string {
+  if (b.packaged) return `v${b.version}`
+  return b.commit ? `${b.commit}-dev` : 'dev'
+}
+
 /** A short branch-safe slug from the comment, for `comment/<slug>`. */
 export function commentSlug(comment: string): string {
   const words = comment

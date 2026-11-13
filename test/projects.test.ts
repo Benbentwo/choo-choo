@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { Chat, Repo, RepoGroup, Workspace } from '../src/shared/types'
-import { inProject, projectThreads, projectTree, routerChat, stripRouted, threadTitle, updateTarget, ROUTED_PREFIX } from '../src/shared/projects'
+import { inProject, parseAutoUpdate, projectThreads, projectTree, routerChat, stripRouted, threadKey, threadTitle, updateTarget, workspaceThread, ROUTED_PREFIX } from '../src/shared/projects'
+import { autoUpdatePrompt } from '../src/main/orchestrator'
 
 const repo = (id: string): Repo => ({ id, name: id, path: `/r/${id}`, defaultBranch: 'main' })
 const ws = (id: string, repoId: string, extra: Partial<Workspace> = {}): Workspace => ({ id, repoId, name: id, branch: id, baseRef: 'main', path: `/w/${id}`, title: id, createdAt: 1, ...extra })
@@ -8,19 +9,34 @@ const chat = (id: string, extra: Partial<Chat> = {}): Chat => ({ id, workspaceId
 const group: RepoGroup = { id: 'g', name: 'Launch', repoIds: ['api', 'web', 'docs'], createdAt: 1 }
 
 describe('projects', () => {
-  it('lists only repos with open work, newest first, unless asked for all', () => {
+  it('groups open work by the thread that owns it, then by repo, newest first', () => {
+    const chats = [chat('r'), chat('t1', { thread: true, createdAt: 1 }), chat('t2', { thread: true, createdAt: 2 }), chat('t3', { thread: true, createdAt: 3 })]
     const wss = [
-      ws('a', 'api', { orchestratorId: 'g', createdAt: 1 }),
-      ws('b', 'api', { orchestratorId: 'g', createdAt: 2 }),
-      ws('c', 'web', { orchestratorId: 'g', archived: true }),
+      ws('a', 'api', { orchestratorId: 'g', threadId: 't1', createdAt: 1 }),
+      ws('b', 'api', { orchestratorId: 'g', threadId: 't1', createdAt: 2 }),
+      ws('w', 'web', { orchestratorId: 'g', threadId: 't1' }),
+      ws('x', 'web', { orchestratorId: 'g', threadId: 't2' }),
+      ws('c', 'web', { orchestratorId: 'g', threadId: 't2', archived: true }),
+      ws('n', 'docs', { orchestratorId: 'g' }),
+      ws('gone', 'docs', { orchestratorId: 'g', threadId: 'deleted' }),
       ws('d', 'web'),
       ws('o', 'api', { orchestrator: true, groupId: 'g' })
     ]
     const repos = ['api', 'web', 'docs'].map(repo)
-    expect(projectTree(group, repos, wss).map((n) => [n.repo.id, n.workspaces.map((w) => w.id)])).toEqual([['api', ['b', 'a']]])
-    expect(projectTree(group, repos, wss, true).map((n) => n.repo.id)).toEqual(['api', 'web', 'docs'])
+    const tree = projectTree(group, repos, wss, chats, 'orch')
+    // Newest thread first; t3 has no open work so it stays out; unowned work comes last.
+    expect(tree.map((n) => [n.thread?.id ?? null, n.repos.map((r) => [r.repo.id, r.workspaces.map((w) => w.id)])])).toEqual([
+      ['t2', [['web', ['x']]]],
+      ['t1', [['api', ['b', 'a']], ['web', ['w']]]],
+      [null, [['docs', ['n', 'gone']]]]
+    ])
+    expect(tree.map(threadKey)).toEqual(['t2', 't1', 'none'])
+    expect(workspaceThread(wss[0], chats, 'orch')?.id).toBe('t1')
+    expect(workspaceThread(wss[0], chats, undefined)).toBeUndefined()
+    // The orchestrator chat isn't a thread, so work it "owns" is unowned.
+    expect(workspaceThread(ws('z', 'api', { threadId: 'r' }), chats, 'orch')).toBeUndefined()
     expect(inProject(wss[0], [group])).toBe(true)
-    expect(inProject(wss[3], [group])).toBe(false)
+    expect(inProject(wss[7], [group])).toBe(false)
   })
   it('tells the orchestrator chat from threads and sends updates to the thread that started the work', () => {
     const chats = [chat('t1', { thread: true, createdAt: 1 }), chat('r'), chat('t2', { thread: true, createdAt: 2 }), chat('other', { workspaceId: 'x' })]
@@ -36,6 +52,15 @@ describe('projects', () => {
     expect(threadTitle(`${ROUTED_PREFIX}\nStart dark mode\nmore`)).toBe('Start dark mode')
     expect(threadTitle('Rework the signup flow into three steps on web and mobile')).toBe('Rework the signup flow into three steps…')
     expect(threadTitle('   ')).toBe('New thread')
+  })
+  it('reads back the workspaces an automatic update reported', () => {
+    const entries = [
+      { title: 'Upgrade libxml2 (CVE fix)', id: 'w1', state: 'finished' as const },
+      { title: 'Add tests', id: 'w2', state: 'error' as const },
+      { title: 'Deploy', id: 'w3', state: 'needs-approval' as const }
+    ]
+    expect(parseAutoUpdate(autoUpdatePrompt(entries))).toEqual(entries)
+    expect(parseAutoUpdate('- Fix login (w1) finished.')).toBeNull()
   })
 })
 

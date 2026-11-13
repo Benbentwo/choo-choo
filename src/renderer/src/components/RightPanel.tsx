@@ -4,7 +4,7 @@ import { canUpdateBranch, fixChecksPrompt, nextPrAction, resolveConflictsPrompt,
 import { newSince, prCommentsPrompt } from '@shared/prComments'
 import { isTheirs, type PrReviewInfo } from '@shared/prReview'
 import { useStore, reportError, openDoc, destOf, type RightTab } from '../store'
-import { useWorkspaceMode, type WsMode } from '../prReview'
+import { useFollowPrHead, useWorkspaceMode, type WsMode } from '../prReview'
 import { IconComment, IconDown, IconEye, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
 import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
@@ -13,6 +13,9 @@ import { MergedActions } from './Reflect'
 import { UsageGraphs } from './UsageGraphs'
 import { AddonActions, AddonFrame, addonTabId, addonViews } from './Addons'
 import { StackTab } from './Stack'
+import { PrSyncBanner } from './ReviewFollowUp'
+import { SinceReviewToggle } from './SinceReview'
+import { useSinceReview, useViewed } from '../sinceReview'
 import { prBaseFor, targetBranch } from '@shared/stack'
 import * as L from '@shared/layout'
 
@@ -52,6 +55,8 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   const [more, setMore] = useState(false)
   const extra = MORE.find((t) => t.id === s.rightTab)
   const tabs = [...TABS[mode].filter((t) => !t.stack || ws.stack), ...(extra ? [extra] : [])]
+  // Reviewing: take the PR author's new commits as they're pushed, and move draft comments with them.
+  useFollowPrHead(ws)
 
   // The add-on behind the open tab was turned off: fall back to Changes.
   useEffect(() => {
@@ -132,6 +137,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
             className="mx-3 mb-2 rounded-md border border-line bg-bg px-2 py-1 outline-none focus:border-faint"
           />
         )}
+        <PrSyncBanner ws={ws} />
         {addonTab && (
           <div className="flex min-h-0 flex-1">
             <AddonFrame addon={addonTab.addon} view={addonTab.view} repoId={ws.repoId} workspaceId={ws.id} />
@@ -161,16 +167,28 @@ const STATUS_COLOR: Record<FileChange['status'], string> = {
   D: 'text-del'
 }
 
-function ChangesList({ ws, changes }: { ws: Workspace; changes: FileChange[] }) {
+function ChangesList({ ws, changes: all }: { ws: Workspace; changes: FileChange[] }) {
   const s = useStore()
+  const since = useSinceReview(ws)
+  const viewed = useViewed(ws)
+  const changes: FileChange[] = since.on && since.data ? since.data.files : all
+  const toggle = <SinceReviewToggle ws={ws} className="border-b border-line px-4 py-2" />
   const add = changes.reduce((n, c) => n + c.additions, 0)
   const del = changes.reduce((n, c) => n + c.deletions, 0)
-  if (changes.length === 0) return <div className="p-6 text-center text-faint">No changes yet</div>
+  if (changes.length === 0)
+    return (
+      <div>
+        {toggle}
+        <div className="p-6 text-center text-faint">{since.on ? 'Nothing changed in the PR since your review' : 'No changes yet'}</div>
+      </div>
+    )
   return (
     <div>
+      {toggle}
       <div className="flex items-center px-4 py-2 text-muted">
         <span className="flex-1">
           {changes.length} file{changes.length === 1 ? '' : 's'} changed
+          {viewed && viewed.count > 0 && <span className="ml-2 text-faint">{viewed.count} viewed</span>}
         </span>
         <span className="font-mono text-[11px]">
           <span className="text-add">+{fmt(add)}</span> <span className="text-del">-{fmt(del)}</span>
@@ -188,8 +206,13 @@ function ChangesList({ ws, changes }: { ws: Workspace; changes: FileChange[] }) 
           >
             <span className="min-w-0 flex-1 truncate">
               {slash >= 0 && <span className="text-faint">{c.path.slice(0, slash + 1)}</span>}
-              <span className={c.status === 'D' ? 'line-through' : ''}>{c.path.slice(slash + 1)}</span>
+              <span className={`${c.status === 'D' ? 'line-through' : ''} ${viewed?.isViewed(c.path) ? 'text-faint' : ''}`}>{c.path.slice(slash + 1)}</span>
             </span>
+            {viewed?.isViewed(c.path) && (
+              <span className="text-[11px] text-add" title="Viewed on GitHub">
+                ✓
+              </span>
+            )}
             <span className={`font-mono text-[11px] ${STATUS_COLOR[c.status]}`}>{c.status}</span>
             <span className="w-16 text-right font-mono text-[11px]">
               {c.additions > 0 && <span className="text-add">+{fmt(c.additions)}</span>}
@@ -221,7 +244,11 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const s = useStore()
   const stats = s.stats[ws.id]
   const repo = s.repos.find((r) => r.id === ws.repoId)
-  const [pr, setPr] = useState<PrInfo | null>(null)
+  // Which workspace `pr` was loaded for. Until it matches, the PR state is unknown and nothing renders,
+  // so switching workspaces never flashes "Create PR" (or the last workspace's PR) before GitHub answers.
+  const [loaded, setLoaded] = useState<{ wsId: string; pr: PrInfo | null } | null>(null)
+  const pr = loaded?.wsId === ws.id ? loaded.pr : null
+  const setPr = (p: PrInfo | null) => setLoaded({ wsId: ws.id, pr: p })
   const [menu, setMenu] = useState(false)
   const [busy, setBusy] = useState(false)
   const [comments, setComments] = useState<PrComment[]>([])
@@ -239,7 +266,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
     const load = () =>
       void window.api.getPr(ws.id).then((p) => {
         if (!live) return
-        setPr(p)
+        setLoaded({ wsId: ws.id, pr: p })
         const set = (v: { pr: PrInfo; info: PrReviewInfo } | null) => {
           const st = useStore.getState()
           st.set({ prReview: { ...st.prReview, [ws.id]: v } })
@@ -256,6 +283,9 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
         )
         if (p?.state !== 'OPEN') return setChecks([])
         window.api.getChecks(ws.id).then((c) => live && setChecks(c), () => {})
+      }, () => {
+        // GitHub unreachable: keep what this workspace last showed, or offer Create PR if it never loaded.
+        if (live) setLoaded((l) => (l?.wsId === ws.id ? l : { wsId: ws.id, pr: null }))
       })
     setAddedAt(localStorage.getItem(addedKey(ws.id)) ?? undefined)
     load()
@@ -363,6 +393,8 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
   const { mode } = useWorkspaceMode(ws)
   const drafts = (s.codeComments[ws.id] ?? []).filter((c) => destOf(c) === 'github').length
   const color = pr?.state === 'MERGED' ? 'text-violet-400' : pr?.state === 'CLOSED' ? 'text-del' : pr?.isDraft ? 'text-muted' : 'text-add'
+  // No default while the PR lookup is in flight: the chip and button appear once we know.
+  if (loaded?.wsId !== ws.id) return null
   return (
     <>
       {pr && (

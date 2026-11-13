@@ -209,6 +209,32 @@ describe('project threads', () => {
     expect(orch.systemPrompt(repo, '', [], role('thread').r)).toContain('You are in the thread "Signup flow"')
     expect(orch.systemPrompt(repo, '')).not.toContain('This chat:')
   })
+  it("lists a thread's own workspaces unless asked for all, and takes one over", async () => {
+    const store = await import('../src/main/store')
+    store.load()
+    const w = (id: string, threadId?: string) => ({ id, repoId: 'r1', name: id, branch: id, baseRef: 'main', path: `/w/${id}`, title: id, createdAt: 1, orchestratorId: 'r1', threadId }) as import('../src/shared/types').Workspace
+    store.get().workspaces.push(w('mine', 't1'), w('theirs', 't2'), w('loose'))
+    store.get().chats.push(...['mine', 'theirs', 'loose'].map((id) => ({ ...chat(`c-${id}`, id), workspaceId: id, thread: false })))
+    const { r, threads } = role('thread')
+    threads.push(chat('t2', 'Dark mode'))
+    let changed = 0
+    const o = orch.queryOptions(sdk, repo, { pendingChatIds: () => new Set(), changed: () => changed++ } as never, [], r) as Server
+    const call = async (name: string, a: unknown) => (await o.mcpServers.choo.tools.find((t) => t.name === name)!.handler(a)).content[0].text
+    const list = async (a: unknown) => (JSON.parse(await call('list_workspaces', a)) as { id: string; thread: string | null; yours: boolean }[]).map((x) => [x.id, x.thread, x.yours])
+    expect(await list({})).toEqual([['mine', 'Signup flow', true]])
+    expect(await list({ all: true })).toEqual([
+      ['mine', 'Signup flow', true],
+      ['theirs', 'Dark mode', false],
+      ['loose', null, false]
+    ])
+    expect(await call('take_workspace', { workspace_id: 'theirs' })).toBe('This thread now owns theirs (was "Dark mode").')
+    expect(changed).toBe(1)
+    expect(await call('take_workspace', { workspace_id: 'theirs' })).toMatch(/already this thread's/)
+    expect((await list({})).map(([id]) => id)).toEqual(['mine', 'theirs'])
+    expect(orch.systemPrompt(repo, '', [], r)).toContain('This thread owns the workspaces it starts')
+    const router = orch.queryOptions(sdk, repo, {} as never, [], role('router').r) as Server
+    expect(router.mcpServers.choo.tools.map((t) => t.name)).not.toContain('take_workspace')
+  })
 })
 
 describe('project repos', () => {

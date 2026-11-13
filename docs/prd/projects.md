@@ -4,7 +4,7 @@
 |---|---|
 | Status | Shipped behind Settings › Experimental (PR #79). Automations are their own feature: [automations.md](automations.md) |
 | Requested by | Ben, 2026-11-10 |
-| Last updated | 2026-11-10 |
+| Last updated | 2026-11-12 (threads own their PRs, in review) |
 
 ## Problem
 
@@ -15,14 +15,15 @@ Big pieces of work, such as a milestone or a change across several repos, need m
 - One project per goal, over one or more repos.
 - You mostly talk to the project's orchestrator chat. It sends each message to the thread it belongs to, or starts a new thread.
 - Threads work like Claude desktop project threads: separate conversations, listed in a panel on the right, opened full size.
-- The sidebar shows the work: project › repos with open work › one row per workspace, named by its PR once there is one. Clicking a row opens that worktree and its Claude session.
-- Everything folds: the Projects section, each project, each repo inside a project.
+- Each thread manages its own PRs: it owns the workspaces it starts, sees them through to merge, and gets their updates.
+- The sidebar shows the work by who owns it: project › thread › repo › one row per workspace, named by its PR once there is one. Clicking a thread opens it; clicking a row opens that worktree and its Claude session.
+- Everything folds: the Projects section, each project, each thread, each repo inside a thread.
 
 ## Non-goals
 
 - Automations. They got their own page next to Pull requests, and can send results to a project or a repo; see [automations.md](automations.md).
 - Slack-style replies hanging off a message. Threads are whole conversations.
-- Tying a workspace to a thread in the sidebar. Workspaces belong to the project; the thread only gets its updates.
+- Hard ownership. A thread can still read, message or archive another thread's workspace when the person asks.
 
 ## User experience
 
@@ -30,18 +31,19 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 
 ![Orchestrator chat](../media/projects/orchestrator-chat.png)
 
-- **Sidebar:** a Projects section above the repos. Each project folds. Under it, only repos with open work (Show all repos lists the rest), and under each repo the project's workspaces: `#418 Verify endpoint` once a PR exists, else the workspace's name with a "no PR" tag. Workspaces that belong to a project leave the plain repo list below.
+- **Sidebar:** a Projects section above the repos. Each project folds. Under it, the threads with open work, newest first (`# Signup flow rework`; clicking one opens it, with a dot while it runs or has unread replies). Under each thread, the repos it has work in, and under each repo that thread's workspaces: `#418 Verify endpoint` once a PR exists, else the workspace's name with a "no PR" tag. Work no thread owns (started before threads, or its thread was deleted) comes last under *No thread*. Workspaces that belong to a project leave the plain repo list below. Threads with no open work are only in the Threads panel.
 - **Orchestrator chat:** clicking the project opens it. Each message is forwarded to a thread ("Sent to # Signup flow rework", Open thread) or starts one ("New thread # Onboarding dark mode"). Quick status questions are answered there.
 - **Threads:** the Threads button in the header opens the list on the right: the orchestrator chat first, then threads, newest first, each with its last line. New starts an empty thread; it takes its title from its first message. Clicking one opens it in place of the orchestrator chat.
 
 ![A thread](../media/projects/thread.png)
 
-- **Updates:** when a workspace finishes, the automatic update goes to the thread that started it, or to the orchestrator chat if that thread is gone.
-- **A project's workspace** shows the project's name before its repo in the header; clicking it goes back to the orchestrator chat.
+- **Owning PRs:** a thread owns the workspaces it starts and their PRs. Its `list_workspaces` shows only those; it can look at the rest with `all`. When the person wants a thread to manage work another thread (or none) owns, the thread calls `take_workspace`, and the row moves under it. The orchestrator chat sends work on an existing PR to the thread that owns it.
+- **Updates:** when a workspace finishes, the automatic update goes to the thread that owns it, or to the orchestrator chat if that thread is gone.
+- **A project's workspace** shows the project's name and its thread before its repo in the header (`Launch › # Signup flow ›`); clicking the project goes back to the orchestrator chat, clicking the thread opens the thread.
 
 ![A PR row opens its workspace](../media/projects/pr-row.png)
 
-- **More repos as the work needs them:** a project isn't fixed to the repos it started with. When docs, code or your messages point at another repo, the orchestrator looks it up (`find_repos`: repos in Choo Choo and GitHub repos you can access). A repo already in Choo Choo is added to the project on its own (`add_repo_to_project`) and the orchestrator says so. A repo you'd have to clone shows an approval card with the orchestrator's reason (`clone_repo`), whatever the chat's permission setting; approving clones it into the repos folder and adds it. Either way, the repo then shows under the project and workspaces can start in it.
+- **More repos as the work needs them:** a project isn't fixed to the repos it started with. When docs, code or your messages point at another repo, the orchestrator looks it up (`find_repos`: repos in Choo Choo and GitHub repos you can access). A repo already in Choo Choo is added to the project on its own (`add_repo_to_project`) and the orchestrator says so. A repo you'd have to clone shows an approval card with the orchestrator's reason (`clone_repo`), whatever the chat's permission setting. **Always allow** on that card covers the rest of that chat's clones, including cards already waiting, so a run of repos asks once (Ben, 2026-11-10: "This prompt has been asked like five times now"); approving clones it into the repos folder and adds it. Either way, the repo then shows under the project and workspaces can start in it.
 - **Icon and color:** Edit (hover the project) picks an icon from a set of about 50 Lucide icons and one of eleven colors, or the theme accent. It shows in the sidebar, the Threads panel and a workspace's project breadcrumb. Projects that never picked one keep the orchestrator mark.
 
 ![Project icons in the sidebar](../media/projects/icons-sidebar.png)
@@ -60,22 +62,22 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 2. A project is a `RepoGroup`. Its orchestrator workspace's first non-thread chat is the orchestrator chat; every chat with `thread: true` is a thread.
 3. The orchestrator chat has `list_threads` and `send_to_thread` and no `start_workspace`. It forwards the person's message in full, marked with `[Sent here from the orchestrator chat]`, then replies in one line.
 4. A forwarded message is sent like a message the person typed: steered or queued if the thread is busy.
-5. Threads have the full orchestrator tool set. A workspace started in a thread records `threadId`; its updates go to that thread.
-6. Every thread shares the project's memory and can see every workspace in the project.
+5. Threads have the full orchestrator tool set plus `take_workspace`. A workspace started in a thread records `threadId`: that thread owns it and its PR, and its updates go there. In a thread, `list_workspaces` returns the thread's own workspaces unless `all` is set, and each entry names its owning thread.
+6. Every thread shares the project's memory and can see every workspace in the project. Its prompt tells it to leave other threads' workspaces alone unless the person asks ([decision 0017](../decisions/0017-threads-own-their-prs.md)).
 7. New chat on a project orchestrator makes a thread. A thread named "New thread" takes its title from its first message.
-8. The sidebar tree lists open workspaces with `orchestratorId` equal to the project, by repo, newest first. PR numbers come from `getPr`, cached per workspace until the PR watcher reports a change.
-9. Fold state lives in `Settings.sidebarCollapsed` with keys `section:projects`, `project:<id>` and `project:<id>:<repoId>`.
-10. A project's orchestrator never clones a repo without the person's OK: `clone_repo` is in `alwaysAskTools`, which asks even when the chat allows everything. Adding a repo the person already has needs no OK.
+8. The sidebar tree lists open workspaces with `orchestratorId` equal to the project, by owning thread (newest thread first, unowned last), then repo, newest workspace first. PR numbers come from `getPr`, cached per workspace until the PR watcher reports a change.
+9. Fold state lives in `Settings.sidebarCollapsed` with keys `section:projects`, `section:repos` (the Repos list below the projects), `project:<id>`, `project:<id>:thread:<threadId>` and `project:<id>:thread:<threadId>:<repoId>` (`none` for unowned work).
+10. A project's orchestrator never clones a repo without the person's OK: `clone_repo` is in `alwaysAskTools`, which asks even when the chat allows everything, until the person picks Always allow for it on a card in that chat. Adding a repo the person already has needs no OK.
 11. `RepoGroup.icon` is a name from the renderer's icon set and `RepoGroup.color` a `PROJECT_COLORS` id; the main process accepts only short lowercase names, and unknown ones fall back to the default mark.
 
 ## Design
 
-- `src/shared/projects.ts`: pure helpers (router chat, threads, update target, sidebar tree, thread titles, fold keys). Tested in `test/projects.test.ts`.
-- `src/main/orchestrator.ts`: `ProjectRole` (router or thread, with list/create/forward). `queryOptions` and `systemPrompt` take it; the router gets `routerTools`.
+- `src/shared/projects.ts`: pure helpers (router chat, threads, update target, owning thread, thread › repo sidebar tree, thread titles, fold keys). Tested in `test/projects.test.ts`.
+- `src/main/orchestrator.ts`: `ProjectRole` (router or thread, with list/create/forward). `queryOptions` and `systemPrompt` take it; the router gets `routerTools`, a thread gets `take_workspace` and a thread-scoped `list_workspaces`.
 - Repos: `Host.findRepos` and `Host.addRepoToProject` (`src/main/index.ts`, cloning through the same `cloneAndAdd` as Open GitHub project). Added repos join `group.repoIds`, and the orchestrator's chats get them as extra readable folders from the next turn. `alwaysAskTools` is a new `queryOptions` field `agent.ts` honors.
 - Icons: `components/ProjectIcon.tsx` (`lucide-react`, ISC; see THIRD_PARTY_NOTICES.md).
 - `src/main/index.ts`: `projectRole()` picks the role per chat, `newThread()` makes threads (also from `chat:create`), `noteForOrchestrator` uses `updateTarget`.
-- Renderer: `components/Projects.tsx` (sidebar section, PR rows, Threads panel, route chip), `Center.tsx` (Threads button, one chat at a time), `ChatView.tsx` (route chip, forwarded-message label), Settings › Experimental.
+- Renderer: `components/Projects.tsx` (sidebar section, thread nodes, PR rows, Threads panel, route chip), `Center.tsx` (Threads button, one chat at a time, project › thread breadcrumb), `ChatView.tsx` (route chip, forwarded-message label), Settings › Experimental.
 
 ## Compliance, privacy and security
 
@@ -83,7 +85,7 @@ Runs on the Agent SDK with the person's own sign-in like every chat ([decision 0
 
 ## Testing
 
-`test/projects.test.ts`, `test/orchestrator.test.ts` (project threads, project repos). Screenshots above are from the built app with a seeded state and a stand-in `gh`.
+`test/projects.test.ts`, `test/orchestrator.test.ts` (project threads, thread-owned workspaces, project repos). Screenshots above are from the built app with a seeded state and a stand-in `gh`; the sidebar ones predate the thread level and need retaking.
 
 ## Future work
 

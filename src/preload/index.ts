@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { Api, ChatEvent } from '@shared/types'
 import type { UpdateStatus } from '@shared/updates'
-import type { AddonAppEvent, AddonToolCall } from '@shared/addons'
+import type { AddonAppEvent, AddonReloaded, AddonToolCall } from '@shared/addons'
+import type { InboxPr, PrInbox } from '@shared/prInbox'
 
 const inv = (ch: string) => (...a: unknown[]) => ipcRenderer.invoke(ch, ...a)
 function on<T extends unknown[]>(ch: string, cb: (...a: T) => void) {
@@ -28,6 +29,11 @@ const api: Api = {
   setAutomationEnabled: inv('automation:enable') as Api['setAutomationEnabled'],
   deleteAutomation: inv('automation:delete') as Api['deleteAutomation'],
   runAutomation: inv('automation:run') as Api['runAutomation'],
+  continueAdd: inv('continue:add') as Api['continueAdd'],
+  continueMove: inv('continue:move') as Api['continueMove'],
+  continueEdit: inv('continue:edit') as Api['continueEdit'],
+  continueRemove: inv('continue:remove') as Api['continueRemove'],
+  continueRunNow: inv('continue:run') as Api['continueRunNow'],
   deleteGroup: inv('group:delete') as Api['deleteGroup'],
   archiveWorkspace: inv('ws:archive') as Api['archiveWorkspace'],
   restoreWorkspace: inv('ws:restore') as Api['restoreWorkspace'],
@@ -77,6 +83,10 @@ const api: Api = {
   addonCall: inv('addons:call') as Api['addonCall'],
   addonAction: inv('addons:action') as Api['addonAction'],
   onAddonsChanged: (cb) => on<[]>('addons:changed', cb),
+  addonDevelop: inv('addons:develop') as Api['addonDevelop'],
+  addonReload: inv('addons:reload') as Api['addonReload'],
+  addonInspect: inv('addons:inspect') as Api['addonInspect'],
+  onAddonReloaded: (cb) => on<[AddonReloaded]>('addons:reloaded', cb),
   addonPins: inv('addons:pins') as Api['addonPins'],
   addonInstallPinned: inv('addons:installPinned') as Api['addonInstallPinned'],
   onAddonEvent: (cb) => on<[AddonAppEvent]>('addons:event', cb),
@@ -111,6 +121,13 @@ const api: Api = {
   getPrComments: inv('pr:comments') as Api['getPrComments'],
   getPrReview: inv('pr:review') as Api['getPrReview'],
   getPrDiffTarget: inv('pr:diffTarget') as Api['getPrDiffTarget'],
+  followPr: inv('pr:follow') as Api['followPr'],
+  getRangeDiffs: inv('pr:rangeDiffs') as Api['getRangeDiffs'],
+  getChangedSince: inv('pr:changedSince') as Api['getChangedSince'],
+  getInterdiff: inv('pr:interdiff') as Api['getInterdiff'],
+  getInterdiffFile: inv('pr:interdiffFile') as Api['getInterdiffFile'],
+  getPrViewed: inv('pr:viewed') as Api['getPrViewed'],
+  setPrViewed: inv('pr:setViewed') as Api['setPrViewed'],
   submitPrReview: inv('pr:submitReview') as Api['submitPrReview'],
   replyToPrThread: inv('pr:replyThread') as Api['replyToPrThread'],
   resolvePrThread: inv('pr:resolveThread') as Api['resolvePrThread'],
@@ -146,6 +163,10 @@ const api: Api = {
   importFromConductor: inv('conductor:import') as Api['importFromConductor'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
   prInbox: inv('prs:inbox') as Api['prInbox'],
+  reviewsCheckSoon: inv('reviews:checkSoon') as Api['reviewsCheckSoon'],
+  reviewsSeen: inv('reviews:seen') as Api['reviewsSeen'],
+  onPrInbox: (cb) => on<[PrInbox]>('prs:inbox', cb),
+  onReviewOpen: (cb) => on<[InboxPr]>('reviews:open', cb),
   quickStart: inv('repo:quickstart') as Api['quickStart'],
   listSources: inv('ws:sources') as Api['listSources'],
   listIntegrations: inv('integrations:list') as Api['listIntegrations'],
