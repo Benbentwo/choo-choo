@@ -762,6 +762,15 @@ export function setSidebarRowHidden(keys: string | string[], hidden: boolean) {
   saveSidebarList('sidebarHidden', keys, hidden)
 }
 
+/** Order the work under project threads (the sort arrow on a thread row). Saved, so it sticks across restarts. */
+export function setProjectWorkSort(sort: NonNullable<Settings['projectWorkSort']>) {
+  useStore.getState().set({ settings: { ...useStore.getState().settings, projectWorkSort: sort } })
+  void window.api
+    .saveSettings({ projectWorkSort: sort })
+    .then((settings) => useStore.getState().set({ settings }))
+    .catch(reportError)
+}
+
 /** Collapse a project in the sidebar so only its row shows, or expand it again. */
 export function setRepoCollapsed(repoId: string, collapsed: boolean) {
   saveSidebarList('sidebarCollapsed', repoId, collapsed)

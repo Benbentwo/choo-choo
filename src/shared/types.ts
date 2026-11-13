@@ -531,6 +531,8 @@ export interface Settings extends AppearanceSettings {
   sidebarHidden?: string[]
   /** Projects collapsed in the sidebar (repo ids): only the project row shows. */
   sidebarCollapsed?: string[]
+  /** How work under a project thread's repo is ordered (shared/sidebarOrder.ts). Newest first when unset. */
+  projectWorkSort?: 'newest' | 'oldest' | 'pr' | 'title'
   /** Split panels: how the center is divided, restored on the next start (shared/layout.ts). */
   layout?: Layout | null
   /** Layouts saved by name from the layout menu. */
