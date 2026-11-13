@@ -1,49 +1,328 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { Workspace } from '@shared/types'
-import { useStore, openDoc, newChatTab, closeChatTab, refreshState, reportError, nextUnread, goToNextUnread, closeReflect } from '../store'
-import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconChart, IconPhone } from '../icons'
+import { ProjectIcon } from './ProjectIcon'
+import * as L from '@shared/layout'
+import {
+  useStore,
+  openGroupOrchestrator,
+  newChatTab,
+  closeChatTab,
+  refreshState,
+  reportError,
+  nextUnread,
+  goToNextUnread,
+  closeReflect,
+  focusGroup,
+  setGroupActive,
+  setGroupDoc,
+  splitDocOut,
+  addTerminalTab,
+  closeTerminalTab,
+  mergeGroups,
+  closePane,
+  dropTab,
+  type DragItem
+} from '../store'
+import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconTerminal, IconSplitRight, IconBranch, IconTool, IconEye } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
 import { FileView } from './FileView'
 import { ReflectView, SessionFeedback } from './Reflect'
 import { PhonePanel } from './PhonePanel'
+import { DesktopPanel } from './DesktopPanel'
 import { CloudPanel, RunInCloudDialog } from './CloudPanel'
+import { StackSwitcher } from './Stack'
+import { TerminalView } from './TerminalView'
+import { Stats } from './Stats'
+import { PaneGrip, RepoChip, PaneMenuItems, DropOverlay, Dividers } from './Panes'
+import { ThreadsPanel } from './Projects'
+import { routerChat, workspaceThread } from '@shared/projects'
+import { isTheirs, prOwnerLabel } from '@shared/prReview'
+import { usePrReview, useWorkspaceMode, type WsMode } from '../prReview'
 
-export function Center({ ws }: { ws: Workspace }) {
+/**
+ * One workspace in a pane: a header, then its groups of chat tabs. Alone in the window it looks
+ * like it always did (`framed` false); beside other panes it gets a pane header that names its
+ * repo and workspace plainly.
+ */
+export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.Leaf; framed: boolean; focused: boolean }) {
   const s = useStore()
-  const repo = s.repos.find((r) => r.id === ws.repoId)
   const chats = s.chats.filter((c) => c.workspaceId === ws.id)
-  const activeId = s.activeChat[ws.id] && chats.some((c) => c.id === s.activeChat[ws.id]) ? s.activeChat[ws.id] : chats[0]?.id
-  const active = chats.find((c) => c.id === activeId)
-  const doc = s.openDoc[ws.id] ?? null
-  const diffFile = doc && doc.kind !== 'reflect' ? doc.path : null
-  const reflect = s.reflects[ws.id]
-  const [menu, setMenu] = useState(false)
+  const active = chats.find((c) => c.id === s.activeChat[ws.id]) ?? chats[0]
   const [reflecting, setReflecting] = useState(false)
   const [cloudDialog, setCloudDialog] = useState(false)
+  const view = leaf.view.kind === 'workspace' ? leaf.view : null
+  // A project's orchestrator: one chat at a time, picked from the Threads panel instead of tabs.
+  const project = isProject(ws)
+  const [threadsOpen, setThreadsOpen] = useState(() => localStorage.getItem('threads-panel') !== 'closed')
+  const toggleThreads = (open: boolean) => {
+    setThreadsOpen(open)
+    try {
+      localStorage.setItem('threads-panel', open ? 'open' : 'closed')
+    } catch {
+      /* storage unavailable */
+    }
+  }
 
   useEffect(() => {
     if (chats.length === 0) void newChatTab(ws.id)
   }, [ws.id, chats.length])
 
+  if (!view) return null
+  const groups = L.leavesOf(view.inner)
+  const { leaves: boxes, dividers } = L.boxes(view.inner)
+  const multiGroup = groups.length > 1
+
+  const menu = (close: () => void) => (
+    <WorkspaceMenu ws={ws} close={close} onReflect={() => setReflecting(true)} onCloud={() => setCloudDialog(true)} leaf={leaf} framed={framed} multiGroup={multiGroup} />
+  )
+
+  const main = (
+    <main className="flex h-full min-w-0 flex-1 flex-col bg-bg">
+      {framed ? (
+        <WorkspacePaneHeader ws={ws} leaf={leaf} focused={focused} menu={menu} threads={project ? { open: threadsOpen, toggle: toggleThreads } : undefined} />
+      ) : (
+        <ClassicHeader ws={ws} menu={menu} threads={project ? { open: threadsOpen, toggle: toggleThreads } : undefined} />
+      )}
+      <div className="relative min-h-0 flex-1">
+        {groups.map((g) => {
+          const b = boxes.get(g.id)!
+          return (
+            <div
+              key={g.id}
+              className={`absolute flex flex-col ${b.x > 0 ? 'border-l border-line' : ''} ${b.y > 0 ? 'border-t border-line' : ''}`}
+              style={{ left: `${b.x * 100}%`, top: `${b.y * 100}%`, width: `${b.w * 100}%`, height: `${b.h * 100}%` }}
+              onMouseDownCapture={() => focusGroup(leaf.id, g.id)}
+            >
+              <GroupView ws={ws} leaf={leaf} group={g} focused={focused && view.focusGroup === g.id} accent={multiGroup && view.focusGroup === g.id} />
+            </div>
+          )
+        })}
+        <Dividers dividers={dividers} leafId={leaf.id} inner />
+      </div>
+      {reflecting && <SessionFeedback ws={ws} archive={false} onClose={() => setReflecting(false)} />}
+      {cloudDialog && active && <RunInCloudDialog chat={active} ws={ws} onClose={() => setCloudDialog(false)} />}
+    </main>
+  )
+  if (!project || !threadsOpen) return main
+  return (
+    <div className="flex h-full min-w-0 flex-1">
+      {main}
+      <ThreadsPanel ws={ws} activeId={active?.id} onClose={() => toggleThreads(false)} />
+    </div>
+  )
+}
+
+type ThreadsToggle = { open: boolean; toggle: (open: boolean) => void }
+const isProject = (ws: Workspace) => !!ws.orchestrator && !!ws.groupId && !!useStore.getState().settings.experimentalProjects
+
+/** A project orchestrator names the chat in view; other workspaces name their branch. */
+function useTitles(ws: Workspace) {
+  const s = useStore()
+  const project = !!ws.orchestrator && !!ws.groupId && !!s.settings.experimentalProjects
+  const chats = s.chats.filter((c) => c.workspaceId === ws.id)
+  const active = chats.find((c) => c.id === s.activeChat[ws.id]) ?? chats[0]
+  const isRouter = project && active?.id === routerChat(s.chats, ws.id)?.id
+  // A workspace a project started shows the project before its repo.
+  const partOf = s.settings.experimentalProjects && !ws.orchestrator ? s.groups.find((g) => g.id === ws.orchestratorId) : undefined
+  // …and the thread that owns it.
+  const orchId = partOf ? s.workspaces.find((w) => w.orchestrator && w.groupId === partOf.id && !w.archived)?.id : undefined
+  const ownerThread = partOf ? workspaceThread(ws, s.chats, orchId) : undefined
+  const sub =project ? (isRouter ? 'Orchestrator chat' : `# ${active?.title ?? ''}`) : ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch
+  return { project, partOf, ownerThread, sub, threadCount: chats.filter((c) => c.thread).length }
+}
+
+function PartOf({ ws }: { ws: Workspace }) {
+  const { partOf, ownerThread } = useTitles(ws)
+  if (!partOf) return null
+  return (
+    <>
+      <button className="no-drag shrink-0 text-muted hover:text-fg" onClick={() => void openGroupOrchestrator(partOf.id)} title="Open the project's orchestrator chat">
+        <ProjectIcon group={partOf} size={12} className="mr-1 inline align-[-1px]" />
+        {partOf.name}
+      </button>
+      <IconRight className="shrink-0 text-faint" />
+      {ownerThread && (
+        <>
+          <button className="no-drag max-w-[200px] shrink-0 truncate text-muted hover:text-fg" onClick={() => void openGroupOrchestrator(partOf.id, ownerThread.id)} title="Open the thread that owns this work">
+            # {ownerThread.title}
+          </button>
+          <IconRight className="shrink-0 text-faint" />
+        </>
+      )}
+    </>
+  )
+}
+
+function ThreadsButton({ ws, threads }: { ws: Workspace; threads?: ThreadsToggle }) {
+  const { threadCount } = useTitles(ws)
+  if (!threads) return null
+  return (
+    <button
+      className={`no-drag flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-0.5 text-[12px] ${threads.open ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
+      onClick={() => threads.toggle(!threads.open)}
+      title="Show this project's threads"
+    >
+      Threads <span className="text-faint">{threadCount}</span>
+    </button>
+  )
+}
+
+/** The header the center always had: breadcrumb, workspace menu, and the right panel toggle. It's the window's title bar, so it drags the window. */
+function ClassicHeader({ ws, menu, threads }: { ws: Workspace; menu: (close: () => void) => ReactNode; threads?: ThreadsToggle }) {
+  const s = useStore()
+  const repo = s.repos.find((r) => r.id === ws.repoId)
+  const { project, sub } = useTitles(ws)
+  return (
+    <header className="drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
+      {!s.sidebarOpen && (
+        <button title="Show sidebar" className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
+          <IconSidebar width={16} height={16} />
+        </button>
+      )}
+      <PartOf ws={ws} />
+      <span className="text-muted">{project ? ws.title : repo?.name}</span>
+      <IconRight className="text-faint" />
+      {ws.stack ? (
+        <>
+          <span className="truncate">{ws.title}</span>
+          <IconRight className="text-faint" />
+          <StackSwitcher ws={ws} />
+        </>
+      ) : (
+        <span className="no-drag selectable truncate">{sub}</span>
+      )}
+      <DotsMenu menu={menu} />
+      {!ws.orchestrator && <ModeSwitch ws={ws} />}
+      <ShareBadges ws={ws} />
+      <div className="flex-1" />
+      <ThreadsButton ws={ws} threads={threads} />
+      <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ rightOpen: !s.rightOpen })} title="Toggle right panel">
+        <IconPanelRight width={16} height={16} />
+      </button>
+    </header>
+  )
+}
+
+/** A workspace pane's header beside other panes: repo chip / workspace name, then its branch, which gives way first when space is short. */
+function WorkspacePaneHeader({ ws, leaf, focused, menu, threads }: { ws: Workspace; leaf: L.Leaf; focused: boolean; menu: (close: () => void) => ReactNode; threads?: ThreadsToggle }) {
+  const s = useStore()
+  const repo = s.repos.find((r) => r.id === ws.repoId)
+  const { project, sub } = useTitles(ws)
+  const name = project ? sub : ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.title
+  const showBranch = !ws.orchestrator && ws.branch && ws.branch !== ws.title
+  return (
+    <header className={`flex h-[42px] shrink-0 items-center gap-2 border-b border-line pr-1.5 pl-1 ${focused ? 'bg-accent/[0.07]' : 'bg-panel'}`}>
+      <PaneGrip leafId={leaf.id} />
+      <PartOf ws={ws} />
+      {project ? <RepoChip name={ws.title} /> : repo && <RepoChip name={repo.name} />}
+      <span className="shrink-0 text-[15px] text-faint">/</span>
+      <StatusDot ws={ws} />
+      <span className="shrink-0 text-[15px] font-bold whitespace-nowrap text-fg" title={name}>
+        {name}
+      </span>
+      {ws.stack && <StackSwitcher ws={ws} />}
+      {showBranch && (
+        <span className="flex min-w-0 shrink-[1000] items-center gap-1 overflow-hidden font-mono text-[11px] whitespace-nowrap text-faint" title={ws.branch}>
+          <IconBranch width={11} height={11} className="shrink-0" />
+          <span className="truncate">{ws.branch}</span>
+        </span>
+      )}
+      {!ws.orchestrator && <ModeSwitch ws={ws} />}
+      <ShareBadges ws={ws} />
+      <div className="min-w-0 flex-1" />
+      <ThreadsButton ws={ws} threads={threads} />
+      {!ws.orchestrator && (
+        <span className="shrink-0">
+          <Stats stats={s.stats[ws.id]} />
+        </span>
+      )}
+      <DotsMenu menu={menu} align="right" />
+      <button className="shrink-0 rounded p-1 text-faint hover:bg-hover hover:text-fg" title="Close pane (⌘⌥W). The workspace keeps running." onClick={() => closePane(leaf.id)}>
+        <IconX />
+      </button>
+    </header>
+  )
+}
+
+/** Green while an agent runs, amber when one needs you, blue with unread replies. */
+export function StatusDot({ ws }: { ws: Workspace }) {
+  const s = useStore()
+  const chats = s.chats.filter((c) => c.workspaceId === ws.id)
+  const running = chats.some((c) => c.status === 'running')
+  const asking = chats.some((c) => (s.permissions[c.id]?.length ?? 0) > 0)
+  const unread = chats.some((c) => c.unread)
+  const cls = asking ? 'bg-amber-400' : running ? 'animate-pulse bg-add' : unread ? 'bg-sky-400' : 'bg-faint'
+  return <span className={`h-2 w-2 shrink-0 rounded-full ${cls}`} title={asking ? 'Needs you' : running ? 'Running' : unread ? 'Unread' : 'Idle'} />
+}
+
+function ShareBadges({ ws }: { ws: Workspace }) {
+  const s = useStore()
+  return (
+    <>
+      {ws.importedShare && <span className="shrink-0 text-[12px] text-faint">Shared by {ws.importedShare.sharedBy}</span>}
+      {ws.share && (
+        <button className="no-drag shrink-0 rounded px-1.5 py-0.5 text-[12px] text-add hover:bg-hover" onClick={() => s.set({ modal: 'share' })} title="Shared with coworkers">
+          Shared
+        </button>
+      )}
+    </>
+  )
+}
+
+export function DotsMenu({ menu, title = 'Workspace actions', align = 'left' }: { menu: (close: () => void) => ReactNode; title?: string; align?: 'left' | 'right' }) {
+  // Where the menu opens, in window pixels. It's portaled to the body so a pane's border doesn't clip it.
+  const [at, setAt] = useState<{ top: number; left?: number; right?: number } | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const open = !!at
   useEffect(() => {
-    if (activeId && !s.items[activeId]) {
-      void window.api.getChatItems(activeId).then((items) => useStore.getState().setItems(activeId, items))
+    if (!open) return
+    const off = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node) && setAt(null)
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setAt(null)
+    window.addEventListener('mousedown', off)
+    window.addEventListener('keydown', esc)
+    return () => {
+      window.removeEventListener('mousedown', off)
+      window.removeEventListener('keydown', esc)
     }
-  }, [activeId])
+  }, [open])
+  const toggle = () => {
+    if (open) return setAt(null)
+    const r = ref.current!.getBoundingClientRect()
+    // Start from the button's left or right edge, flipping when the menu wouldn't fit on screen.
+    const W = window.innerWidth
+    const right = align === 'right' ? r.right - 248 > 8 : r.left + 248 > W - 8
+    setAt(right ? { top: r.bottom + 4, right: Math.max(8, W - r.right) } : { top: r.bottom + 4, left: Math.max(8, r.left) })
+  }
+  return (
+    <div ref={ref} className="no-drag relative shrink-0">
+      <button title={title} className={`rounded p-1 text-muted hover:bg-hover hover:text-fg ${open ? 'bg-hover text-fg' : ''}`} onClick={toggle}>
+        <IconDots />
+      </button>
+      {at &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="no-drag fixed z-50 max-h-[calc(100vh-16px)] w-60 overflow-y-auto rounded-lg border border-line bg-raised p-1 shadow-xl"
+            style={{ top: Math.min(at.top, window.innerHeight - 120), left: at.left, right: at.right }}
+          >
+            {menu(() => setAt(null))}
+          </div>,
+          document.body
+        )}
+    </div>
+  )
+}
 
-  // Looking at a chat marks it read.
-  useEffect(() => {
-    if (active?.unread && !doc && active.status !== 'running') {
-      void window.api.updateChat(active.id, { unread: false }).then((c) => useStore.getState().upsertChat(c))
-    }
-  }, [active?.id, active?.unread, doc])
-
-  const hasNextUnread = !!nextUnread()
-
+function WorkspaceMenu(p: { ws: Workspace; leaf: L.Leaf; framed: boolean; multiGroup: boolean; close: () => void; onReflect: () => void; onCloud: () => void }) {
+  const { ws, close } = p
+  const s = useStore()
+  const active = s.chats.find((c) => c.id === s.activeChat[ws.id]) ?? s.chats.find((c) => c.workspaceId === ws.id)
   const archive = async () => {
-    setMenu(false)
+    close()
     try {
       await window.api.archiveWorkspace(ws.id)
       await refreshState()
@@ -52,70 +331,98 @@ export function Center({ ws }: { ws: Workspace }) {
       reportError(e)
     }
   }
+  const run = (fn: () => void) => () => {
+    close()
+    fn()
+  }
+  return (
+    <>
+      <MenuItem label="Reveal in Finder" onClick={run(() => void window.api.revealInFinder(ws.path))} />
+      <MenuItem label="Copy path" onClick={run(() => void navigator.clipboard.writeText(ws.path))} />
+      <MenuItem label="Copy branch name" onClick={run(() => void navigator.clipboard.writeText(ws.branch))} />
+      {active?.sdkSessionId && (
+        <MenuItem
+          label="Copy resume command"
+          title="Reopen this chat in Claude Code from a terminal, e.g. if Choo Choo crashes"
+          onClick={run(() => void navigator.clipboard.writeText(`cd '${ws.path.replace(/'/g, `'\\''`)}' && claude --resume ${active.sdkSessionId}`))}
+        />
+      )}
+      {active && active.model !== 'codex' && <MenuItem label="Usage and context" onClick={run(() => s.set({ modal: 'usage', usageChat: active.id }))} />}
+      <MenuItem label="Reflect on this session…" onClick={run(p.onReflect)} />
+      <MenuItem label={ws.share ? 'Sharing with coworkers…' : 'Share with coworkers…'} onClick={run(() => s.set({ modal: 'share' }))} />
+      {active && active.model !== 'codex' && !ws.orchestrator && !active.remote && active.sdkSessionId && active.status !== 'running' && (
+        <MenuItem label="Continue on phone" onClick={run(() => void continueOnPhone(active.id))} />
+      )}
+      {!ws.orchestrator && active && !active.remote && active.status !== 'running' && active.model !== 'codex' && active.sdkSessionId && (
+        <MenuItem label="Open in Claude desktop" hint="/desktop" onClick={run(() => void openInDesktop(active.id))} />
+      )}
+      {!ws.orchestrator && active && !active.remote && active.status !== 'running' && <MenuItem label="Run in the cloud…" onClick={run(p.onCloud)} />}
+      <MenuItem label="Open a terminal here" onClick={run(() => addTerminalTab(p.leaf.id))} />
+      {p.multiGroup && <MenuItem label="Merge chats into one pane" onClick={run(() => mergeGroups(p.leaf.id))} />}
+      <div className="my-1 border-t border-line" />
+      <PaneMenuItems leafId={p.leaf.id} close={close} />
+      <div className="my-1 border-t border-line" />
+      <MenuItem label={ws.orchestrator ? 'Hide orchestrator' : 'Archive workspace'} danger={!ws.orchestrator} onClick={() => void archive()} />
+    </>
+  )
+}
+
+/** One group of tabs inside a workspace pane: chat and terminal tabs, plus a diff, file or Reflect shown in place of the chat. */
+function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: L.Leaf; group: L.Group; focused: boolean; accent: boolean }) {
+  const s = useStore()
+  const chats = group.chats.map((id) => s.chats.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => !!c)
+  const activeTerm = group.active && group.terms.includes(group.active) ? group.active : null
+  const active = activeTerm ? undefined : (chats.find((c) => c.id === group.active) ?? chats[0])
+  const doc = group.doc
+  const diffFile = doc && doc.kind !== 'reflect' ? doc.path : null
+  const reflect = s.reflects[ws.id]
+  const groups = leaf.view.kind === 'workspace' ? L.leavesOf(leaf.view.inner) : [group]
+  const showReflectTab = reflect && (doc?.kind === 'reflect' || (!groups.some((g) => g.doc?.kind === 'reflect') && groups[0].id === group.id))
+  const drag = s.drag
+  const tabDrag = drag?.kind === 'tab' && drag.leafId === leaf.id ? drag : null
+  const project = isProject(ws)
+
+  useEffect(() => {
+    if (active && !s.items[active.id]) {
+      void window.api.getChatItems(active.id).then((items) => useStore.getState().setItems(active.id, items))
+    }
+  }, [active?.id])
+
+  // Looking at a chat marks it read.
+  useEffect(() => {
+    if (active?.unread && !doc && active.status !== 'running') {
+      void window.api.updateChat(active.id, { unread: false }).then((c) => useStore.getState().upsertChat(c))
+    }
+  }, [active?.id, active?.unread, doc])
+
+  const hasNextUnread = focused && !!nextUnread()
+  const underline = accent ? 'border-accent' : 'border-fg'
+  const startTabDrag = (tabId: string) => (e: React.DragEvent) => {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', tabId)
+    s.set({ drag: { kind: 'tab', leafId: leaf.id, tabId } satisfies DragItem })
+  }
+  const endDrag = () => useStore.getState().set({ drag: null })
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col bg-bg">
-      <header className="drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
-        {!s.sidebarOpen && (
-          <button title="Show sidebar" className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
-            <IconSidebar width={16} height={16} />
-          </button>
-        )}
-        <span className="text-muted">{repo?.name}</span>
-        <IconRight className="text-faint" />
-        <span className="no-drag selectable truncate">{ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch}</span>
-        <div className="no-drag relative">
-          <button title="Workspace actions" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => setMenu(!menu)}>
-            <IconDots />
-          </button>
-          {menu && (
-            <div className="absolute top-7 left-0 z-20 w-56 rounded-lg border border-line bg-raised p-1 shadow-xl" onMouseLeave={() => setMenu(false)}>
-              <MenuItem label="Reveal in Finder" onClick={() => { setMenu(false); void window.api.revealInFinder(ws.path) }} />
-              <MenuItem label="Copy path" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.path) }} />
-              <MenuItem label="Copy branch name" onClick={() => { setMenu(false); void navigator.clipboard.writeText(ws.branch) }} />
-              {active?.sdkSessionId && (
-                <MenuItem
-                  label="Copy resume command"
-                  title="Reopen this chat in Claude Code from a terminal, e.g. if Choo Choo crashes"
-                  onClick={() => {
-                    setMenu(false)
-                    void navigator.clipboard.writeText(`cd '${ws.path.replace(/'/g, `'\\''`)}' && claude --resume ${active.sdkSessionId}`)
-                  }}
-                />
-              )}
-              <MenuItem label="Reflect on this session…" onClick={() => { setMenu(false); setReflecting(true) }} />
-              <MenuItem label={ws.share ? 'Sharing with coworkers…' : 'Share with coworkers…'} onClick={() => { setMenu(false); s.set({ modal: 'share' }) }} />
-              {!ws.orchestrator && active && !active.remote && active.status !== 'running' && (
-                <MenuItem label="Run in the cloud…" onClick={() => { setMenu(false); setCloudDialog(true) }} />
-              )}
-              <div className="my-1 border-t border-line" />
-              <MenuItem label={ws.orchestrator ? 'Hide orchestrator' : 'Archive workspace'} danger={!ws.orchestrator} onClick={() => void archive()} />
-            </div>
-          )}
-        </div>
-        {ws.importedShare && <span className="text-[12px] text-faint">Shared by {ws.importedShare.sharedBy}</span>}
-        {ws.share && (
-          <button className="no-drag rounded px-1.5 py-0.5 text-[12px] text-add hover:bg-hover" onClick={() => s.set({ modal: 'share' })} title="Shared with coworkers">
-            Shared
-          </button>
-        )}
-        <div className="flex-1" />
-        <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ rightOpen: !s.rightOpen })} title="Toggle right panel">
-          <IconPanelRight width={16} height={16} />
-        </button>
-      </header>
-
-      <div className="flex h-11 shrink-0 items-end gap-1 border-b border-line px-4">
-        {chats.map((c) => {
-          const on = !doc && c.id === activeId
+    <div className="relative flex h-full min-h-0 flex-col">
+      <div className="flex h-11 shrink-0 items-end gap-1 overflow-x-auto border-b border-line px-4 [scrollbar-width:none]">
+        {(project ? chats.filter((c) => c.id === active?.id) : chats).map((c) => {
+          const on = !doc && !activeTerm && c.id === active?.id
           return (
-            <div key={c.id} className={`group flex h-10 max-w-[220px] items-center gap-2 border-b-2 px-3 ${on ? 'border-fg text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
-              <button className="truncate" onClick={() => s.setActiveChat(ws.id, c.id)}>
+            <div
+              key={c.id}
+              draggable
+              onDragStart={startTabDrag(c.id)}
+              onDragEnd={endDrag}
+              className={`group flex h-10 max-w-[220px] shrink-0 items-center gap-2 border-b-2 px-3 ${on ? `${underline} text-fg` : 'border-transparent text-muted hover:text-fg'}`}
+            >
+              <button className="truncate" onClick={() => setGroupActive(leaf.id, group.id, c.id)}>
                 {c.status === 'running' && <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-add align-middle" />}
-                {c.status !== 'running' && c.unread && c.id !== activeId && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-sky-400 align-middle" />}
-                {c.title}
+                {c.status !== 'running' && c.unread && c.id !== active?.id && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-sky-400 align-middle" />}
+                {project && !c.thread ? 'Orchestrator chat' : c.title}
               </button>
-              {chats.length > 1 && (
+              {s.chats.filter((x) => x.workspaceId === ws.id).length > 1 && !project && (
                 <button title="Close chat" className="invisible rounded text-faint group-hover:visible hover:text-fg" onClick={() => void closeChatTab(c.id)}>
                   <IconX width={12} height={12} />
                 </button>
@@ -123,61 +430,80 @@ export function Center({ ws }: { ws: Workspace }) {
             </div>
           )
         })}
-        {reflect && (
-          <div className={`flex h-10 items-center gap-2 border-b-2 px-3 ${doc?.kind === 'reflect' ? 'border-fg text-fg' : 'border-transparent text-muted hover:text-fg'}`}>
-            <button onClick={() => openDoc(ws.id, { kind: 'reflect', path: 'Reflect' })}>Reflect</button>
+        {group.terms.map((t, i) => {
+          const on = !doc && activeTerm === t
+          return (
+            <div
+              key={t}
+              draggable
+              onDragStart={startTabDrag(t)}
+              onDragEnd={endDrag}
+              className={`group flex h-10 shrink-0 items-center gap-2 border-b-2 px-3 ${on ? `${underline} text-fg` : 'border-transparent text-muted hover:text-fg'}`}
+            >
+              <button className="flex items-center gap-1.5" onClick={() => setGroupActive(leaf.id, group.id, t)}>
+                <IconTerminal width={12} height={12} />
+                Terminal{group.terms.length > 1 ? ` ${i + 1}` : ''}
+              </button>
+              <button title="Close terminal" className="invisible rounded text-faint group-hover:visible hover:text-fg" onClick={() => closeTerminalTab(leaf.id, t)}>
+                <IconX width={12} height={12} />
+              </button>
+            </div>
+          )
+        })}
+        {showReflectTab && (
+          <div className={`flex h-10 shrink-0 items-center gap-2 border-b-2 px-3 ${doc?.kind === 'reflect' ? `${underline} text-fg` : 'border-transparent text-muted hover:text-fg'}`}>
+            <button onClick={() => setGroupDoc(leaf.id, group.id, { kind: 'reflect', path: 'Reflect' })}>Reflect</button>
             <button title="Close Reflect" className="text-faint hover:text-fg" onClick={() => closeReflect(ws.id)}>
               <IconX width={12} height={12} />
             </button>
           </div>
         )}
         {diffFile && (
-          <div className="flex h-10 max-w-[260px] items-center gap-2 border-b-2 border-fg px-3">
+          <div className={`flex h-10 max-w-[260px] shrink-0 items-center gap-2 border-b-2 ${underline} px-3`}>
             <span className="truncate font-mono text-[12px]">{diffFile.split('/').pop()}</span>
-            {doc?.kind === 'file' && <span className="text-[11px] text-faint">file</span>}
-            <button title="Close file" className="text-faint hover:text-fg" onClick={() => openDoc(ws.id, null)}>
+            <span className="text-[11px] text-faint">{doc?.kind === 'file' ? 'file' : 'diff'}</span>
+            {(chats.length > 0 || group.terms.length > 0) && (
+              <button title="Open beside the chat" className="text-faint hover:text-fg" onClick={() => splitDocOut(leaf.id, group.id, 'right')}>
+                <IconSplitRight width={12} height={12} />
+              </button>
+            )}
+            <button title="Close file" className="text-faint hover:text-fg" onClick={() => setGroupDoc(leaf.id, group.id, null)}>
               <IconX width={12} height={12} />
             </button>
           </div>
         )}
-        <button className="mb-2.5 ml-1 rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => void newChatTab(ws.id)} title="New chat (⌘T)">
-          <IconPlus />
-        </button>
-        <div className="flex-1" />
-        {active && active.model !== 'codex' && !ws.orchestrator && !active.remote && (
+        {(chats.length > 0 || groups.length === 1) && (
           <button
-            className="mb-2.5 rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent"
-            disabled={!active.sdkSessionId || active.status === 'running'}
-            onClick={() => void continueOnPhone(active.id)}
-            title={
-              !active.sdkSessionId
-                ? 'Send a message first, then continue this chat on your phone'
-                : active.status === 'running'
-                  ? 'Wait for the agent to finish, then continue on your phone'
-                  : 'Continue on phone: steer this chat from the Claude app or claude.ai/code'
-            }
+            className="mb-2.5 ml-1 shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg"
+            onClick={() => {
+              focusGroup(leaf.id, group.id)
+              void newChatTab(ws.id)
+            }}
+            title={project ? 'New thread' : 'New chat (⌘T)'}
           >
-            <IconPhone />
+            <IconPlus />
           </button>
         )}
-        {active && active.model !== 'codex' && (
-          <button className="mb-2.5 rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ modal: 'usage', usageChat: active.id })} title="Usage and context graphs">
-            <IconChart />
-          </button>
-        )}
+        <div className="flex-1" />
       </div>
 
       {/* An open diff or file takes the place of the chat history; the composer stays below it. */}
       {doc?.kind === 'diff' ? (
-        <DiffView ws={ws} file={doc.path} />
+        <DiffView ws={ws} file={doc.path} line={doc.line} />
       ) : doc?.kind === 'file' ? (
         <FileView ws={ws} file={doc.path} line={doc.line} />
       ) : doc?.kind === 'reflect' && reflect ? (
         <ReflectView ws={ws} feedback={reflect.feedback} archiveAfter={reflect.archiveAfter} />
+      ) : activeTerm ? (
+        <div className="min-h-0 flex-1 bg-code p-2">
+          <TerminalView key={activeTerm} id={activeTerm} workspaceId={ws.id} />
+        </div>
       ) : active ? (
         <ChatView chat={active} />
-      ) : null}
-      {active && doc?.kind !== 'reflect' ? (
+      ) : (
+        <div className="flex-1" />
+      )}
+      {active && !activeTerm && doc?.kind !== 'reflect' && (doc === null || chats.length > 0) ? (
         <>
           {!doc && hasNextUnread && (
             <div className="mx-auto -mb-1 flex w-full max-w-3xl justify-end px-8">
@@ -190,15 +516,24 @@ export function Center({ ws }: { ws: Workspace }) {
             <PhonePanel chat={active} ws={ws} />
           ) : active.remote?.kind === 'cloud' ? (
             <CloudPanel chat={active} ws={ws} />
+          ) : active.remote?.kind === 'desktop' ? (
+            <DesktopPanel chat={active} />
           ) : (
             <Composer chat={active} ws={ws} />
           )}
         </>
       ) : null}
-      {reflecting && <SessionFeedback ws={ws} archive={false} onClose={() => setReflecting(false)} />}
-      {cloudDialog && active && <RunInCloudDialog chat={active} ws={ws} onClose={() => setCloudDialog(false)} />}
-    </main>
+      {tabDrag && <DropOverlay inner onDrop={(side) => dropTab(leaf.id, tabDrag.tabId, group.id, side)} canDrop={(side) => side !== undefined || L.groupOf(leaf.view.kind === 'workspace' ? leaf.view.inner : group, tabDrag.tabId)?.id !== group.id} />}
+    </div>
   )
+}
+
+async function openInDesktop(chatId: string) {
+  try {
+    useStore.getState().upsertChat(await window.api.openInDesktop(chatId))
+  } catch (e) {
+    reportError(e)
+  }
 }
 
 async function continueOnPhone(chatId: string) {
@@ -209,10 +544,42 @@ async function continueOnPhone(chatId: string) {
   }
 }
 
-function MenuItem(p: { label: string; title?: string; danger?: boolean; onClick: () => void }) {
+export function MenuItem(p: { label: string; title?: string; danger?: boolean; hint?: string; icon?: ReactNode; onClick: () => void }) {
   return (
-    <button onClick={p.onClick} title={p.title} className={`block w-full rounded px-2 py-1.5 text-left hover:bg-hover ${p.danger ? 'text-del' : ''}`}>
-      {p.label}
+    <button onClick={p.onClick} title={p.title} className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-hover ${p.danger ? 'text-del' : ''}`}>
+      {p.icon && <span className="text-muted">{p.icon}</span>}
+      <span className="flex-1">{p.label}</span>
+      {p.hint && <span className="text-[11px] text-faint">{p.hint}</span>}
     </button>
+  )
+}
+
+/** Building (your branch: the agent commits and pushes) or Reviewing (someone else's PR: comments go to your GitHub review). */
+function ModeSwitch({ ws }: { ws: Workspace }) {
+  const review = usePrReview(ws)
+  const { mode, set } = useWorkspaceMode(ws)
+  const theirs = !!review && review.pr.state === 'OPEN' && isTheirs(review.info)
+  const seg = (m: WsMode, label: string, icon: ReactNode, tip: string) => (
+    <button
+      title={tip}
+      onClick={() => set(m)}
+      className={`flex items-center gap-1 rounded-[5px] px-2 py-[1px] ${mode === m ? (m === 'review' ? 'bg-sky-400/15 text-sky-400' : 'bg-raised text-fg') : 'text-faint hover:text-fg'}`}
+    >
+      {icon} {label}
+    </button>
+  )
+  return (
+    <span className="no-drag flex shrink-0 items-center gap-2 text-[12px]">
+      <span className="flex items-center rounded-md border border-line p-[2px]">
+        {seg('build', 'Build', <IconTool width={12} height={12} />, 'Building: the agent edits, commits and pushes. Line comments go to the agent.')}
+        {seg('review', 'Review', <IconEye width={12} height={12} />, 'Reviewing: line comments go to your GitHub review, and the agent explains but never pushes.')}
+      </span>
+      {theirs && (
+        <span className="text-muted" title={prOwnerLabel(review.pr, review.info)}>
+          {mode === 'build' ? 'on ' : ''}
+          {review.info.author}&apos;s PR
+        </span>
+      )}
+    </span>
   )
 }

@@ -3,6 +3,7 @@ import { promisify } from 'node:util'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DiffStats, FileChange, GrepHit } from '@shared/types'
+import type { PrHeadSync } from '@shared/prReview'
 
 const exec = promisify(execFile)
 
@@ -230,8 +231,120 @@ export async function addWorktreeForBranch(repo: string, path: string, branch: s
   await git(repo, ['worktree', 'add', path, branch])
 }
 
+/**
+ * Brings a branch's new commits on the remote into the worktree. Fast-forwards when it can; with unpushed
+ * local commits it merges, and backs out if that conflicts. Uncommitted edits stay, or git refuses.
+ */
+export async function pullBranch(cwd: string, branch: string) {
+  if ((await currentBranch(cwd)) !== branch) {
+    // Another branch of the stack is checked out: move this one's ref without touching the files.
+    await git(cwd, ['fetch', 'origin', `${branch}:${branch}`]).catch((e) => { throw fail(e) })
+    return
+  }
+  const upstream = await tryGit(cwd, ['rev-parse', '--abbrev-ref', `${branch}@{upstream}`])
+  const from = upstream ? [] : ['origin', branch]
+  if ((await tryGit(cwd, ['pull', '--ff-only', ...from])) !== null) return
+  try {
+    await git(cwd, ['pull', '--no-rebase', '--no-edit', ...from])
+  } catch (e) {
+    await tryGit(cwd, ['merge', '--abort'])
+    throw fail(e)
+  }
+}
+
+const fail = (e: unknown) => new Error(((e as { stderr?: string }).stderr || (e as Error).message).trim())
+
+/** Makes sure `sha` is in the local repo, fetching the PR's head (works for forks) when it isn't. */
+async function haveCommit(cwd: string, sha: string, prNumber: number): Promise<boolean> {
+  if ((await tryGit(cwd, ['cat-file', '-e', `${sha}^{commit}`])) !== null) return true
+  await tryGit(cwd, ['fetch', '--quiet', 'origin', `refs/pull/${prNumber}/head`])
+  if ((await tryGit(cwd, ['cat-file', '-e', `${sha}^{commit}`])) !== null) return true
+  // A commit the PR no longer points at, e.g. one you reviewed before a force-push. GitHub serves it by id.
+  await tryGit(cwd, ['fetch', '--quiet', 'origin', sha])
+  return (await tryGit(cwd, ['cat-file', '-e', `${sha}^{commit}`])) !== null
+}
+
+const count = async (cwd: string, range: string) => Number((await tryGit(cwd, ['rev-list', '--count', range]))?.trim() ?? 0) || 0
+
+/**
+ * Brings a review worktree to the PR's head commit after its author pushed. `how`:
+ * - `check` only reports where the worktree stands;
+ * - `ff` fast-forwards when the worktree has no commits of its own (uncommitted edits stay, or git refuses);
+ * - `reset` moves to the PR's head after a force-push with `git reset --keep`, which keeps uncommitted
+ *   edits and refuses when they'd be overwritten. Commits left behind stay in the reflog.
+ */
+export async function followPrHead(cwd: string, prNumber: number, prHead: string, how: 'check' | 'ff' | 'reset'): Promise<PrHeadSync> {
+  const head = (await git(cwd, ['rev-parse', 'HEAD'])).trim()
+  if (head === prHead) return { state: 'current', head }
+  if (!(await haveCommit(cwd, prHead, prNumber))) {
+    return { state: 'behind', head, prHead, commits: 0, local: 0, reason: 'Couldn\'t fetch the PR\'s new commits from GitHub.' }
+  }
+  const commits = await count(cwd, `${head}..${prHead}`)
+  const local = await count(cwd, `${prHead}..${head}`)
+  // Already has everything the PR has, plus its own commits: nothing to take.
+  if (!commits) return { state: 'current', head }
+  if (!local) {
+    if (how === 'check') return { state: 'behind', head, prHead, commits, local }
+    try {
+      await git(cwd, ['merge', '--ff-only', '--quiet', prHead])
+    } catch (e) {
+      return { state: 'behind', head, prHead, commits, local, reason: `Git couldn't update the files: ${fail(e).message}` }
+    }
+    return { state: 'updated', head: prHead, from: head, commits }
+  }
+  if (how !== 'reset') {
+    return { state: 'diverged', head, prHead, commits, local, reason: `The PR's history changed (force-pushed or rebased), and this worktree has ${local} commit${local === 1 ? '' : 's'} that ${local === 1 ? 'isn\'t' : 'aren\'t'} on it.` }
+  }
+  try {
+    await git(cwd, ['reset', '--keep', prHead])
+  } catch (e) {
+    return { state: 'diverged', head, prHead, commits, local, reason: `Git couldn't switch: ${fail(e).message}` }
+  }
+  return { state: 'updated', head: prHead, from: head, commits }
+}
+
+/** `git diff -U0` of each file between two commits, for moving line comments from one to the other. */
+export async function rangeDiffs(cwd: string, from: string, to: string, files: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  // A file left out means git couldn't diff it (e.g. `from` is gone); the caller treats that as changed.
+  for (const f of files) {
+    const d = await tryGit(cwd, ['diff', '-U0', '--no-color', from, to, '--', f])
+    if (d !== null) out[f] = d
+  }
+  return out
+}
+
+/** Files and commits between `sha` (e.g. the commit you last reviewed) and HEAD. Null when `sha` can't be found. */
+export async function changedSince(cwd: string, sha: string, prNumber: number): Promise<{ commits: number; files: FileChange[] } | null> {
+  if (!(await haveCommit(cwd, sha, prNumber))) return null
+  const [nameStatus, numstat] = await Promise.all([git(cwd, ['diff', '--name-status', '-M', sha, 'HEAD']), git(cwd, ['diff', '--numstat', '-M', sha, 'HEAD'])])
+  const counts = new Map<string, [number, number]>()
+  for (const line of numstat.split('\n').filter(Boolean)) {
+    const [a, d, ...rest] = line.split('\t')
+    counts.set(normalizeRenamePath(rest.join('\t')), [Number(a) || 0, Number(d) || 0])
+  }
+  const files = nameStatus
+    .split('\n')
+    .filter(Boolean)
+    .map((line): FileChange => {
+      const parts = line.split('\t')
+      const p = parts[parts.length - 1]
+      const [additions, deletions] = counts.get(p) ?? [0, 0]
+      const code = parts[0][0]
+      return { path: p, status: (code === 'C' ? 'A' : code) as FileChange['status'], additions, deletions }
+    })
+  return { commits: await count(cwd, `${sha}..HEAD`), files }
+}
+
 export async function currentBranch(cwd: string): Promise<string | null> {
   return (await tryGit(cwd, ['branch', '--show-current']))?.trim() || null
+}
+
+/** The PR a branch was checked out from, when it tracks refs/pull/<n>/head (what `gh pr checkout` sets up for fork PRs). */
+export async function pullNumberOf(cwd: string, branch: string): Promise<number | null> {
+  const merge = (await tryGit(cwd, ['config', '--get', `branch.${branch}.merge`]))?.trim()
+  const n = merge?.match(/^refs\/pull\/(\d+)\/head$/)?.[1]
+  return n ? Number(n) : null
 }
 
 /** Moves a worktree folder, keeping uncommitted and untracked files. Fails for worktrees with submodules. */

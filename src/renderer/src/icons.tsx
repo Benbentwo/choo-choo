@@ -33,6 +33,10 @@ export const IconSearch = (p: SVGProps<SVGSVGElement>) => (
 export const IconBranch = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10M18 9c0 4-6 3-11 8" /></svg>
 )
+/** A merged pull request: a branch joined back into the line it came from. */
+export const IconMerged = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="13" r="2" /><path d="M6 7v10M6 7c0 4 4 6 10 6" /></svg>
+)
 export const IconSidebar = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg>
 )
@@ -123,9 +127,43 @@ export const IconChart = (p: SVGProps<SVGSVGElement>) => (
 export const IconPhone = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="7" y="3" width="10" height="18" rx="2" /><path d="M11 18h2" /></svg>
 )
+export const IconDesktop = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
+)
 export const IconComment = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /><path d="M8 10h8M8 14h5" /></svg>
 )
 export const IconAddon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><path d="M17 4v6M14 7h6" /></svg>
+)
+export const IconStack = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="m12 3 9 4.5-9 4.5-9-4.5z" /><path d="m3 12 9 4.5 9-4.5" /><path d="m3 16.5 9 4.5 9-4.5" /></svg>
+)
+export const IconRestack = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M20 9a8 8 0 0 0-14.5-3M4 15a8 8 0 0 0 14.5 3" /><path d="M5 2v4h4M19 22v-4h-4" /></svg>
+)
+export const IconBot = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="4.5" y="8" width="15" height="11" rx="3" /><path d="M12 4v4M9.5 13h.01M14.5 13h.01" /></svg>
+)
+export const IconSplitRight = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" /></svg>
+)
+export const IconSplitDown = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 12h18" /></svg>
+)
+export const IconMaximize = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 9V4h5M20 15v5h-5M4 4l6 6M20 20l-6-6" /></svg>
+)
+export const IconSingle = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /></svg>
+)
+export const IconGrip = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base({ fill: 'currentColor', stroke: 'none', ...p })}><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" /></svg>
+)
+/** Up next: a list with an arrow, for work that starts when the usage window resets. */
+export const IconUpNext = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 6h11M4 12h11M4 18h7M17 15l3 3-3 3M20 18h-6" /></svg>
+)
+export const IconPause = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M9 5v14M15 5v14" /></svg>
 )

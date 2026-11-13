@@ -4,7 +4,7 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import type { AvailablePlugin, InstalledPlugin, LocalSkill, Marketplace, PluginInstallResult } from '@shared/types'
 import { lastJson, runClaude, runClaudeCli } from './claudeCli'
 
@@ -64,7 +64,9 @@ export async function marketplaces(cwd: string, env: Record<string, string>): Pr
 
 export async function addMarketplace(cwd: string, env: Record<string, string>, source: string) {
   const s = source.trim()
-  if (!s || /\s/.test(s)) throw new Error('Enter a GitHub owner/repo, a git URL, or a path')
+  // Folders may have spaces in their path (Application Support, for one); repos and URLs never do.
+  const folder = isAbsolute(s) && existsSync(s)
+  if (!s || (!folder && /\s/.test(s))) throw new Error('Enter a GitHub owner/repo, a git URL, or a path')
   availableCache = null
   await runClaude(['plugin', 'marketplace', 'add', s, '--json'], cwd, env, 300_000)
 }

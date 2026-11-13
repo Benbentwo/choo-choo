@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 vi.mock('../src/main/claudeBinary', () => ({ claudeExecutable: () => '/nonexistent/claude' }))
@@ -523,8 +523,8 @@ function fakeHost() {
     chats: () => state.chats,
     chatItems: (id) => state.items[id] ?? [],
     pendingChatIds: () => new Set(['cb']),
-    createWorkspace: async (repoId) => {
-      const w = ws(`new${state.workspaces.length}`, { repoId })
+    createWorkspace: async (repoId, source) => {
+      const w = ws(`new${state.workspaces.length}`, { repoId, ...(source ? { branch: `ben/pr-${source.number}`, title: `#${source.number}` } : {}) })
       const c = chat(`c-${w.id}`, w.id)
       state.workspaces.push(w)
       state.chats.push(c)
@@ -541,6 +541,10 @@ function fakeHost() {
         { name: 'test', state: 'FAILURE', bucket: 'fail', link: 'l', workflow: 'CI', description: '' },
         { name: 'lint', state: 'SUCCESS', bucket: 'pass', link: '', workflow: '', description: '' }
       ]
+    }),
+    prByNumber: async (_repo, number) => ({
+      pr: number === 404 ? null : { number, url: `https://github.com/x/y/pull/${number}`, state: 'OPEN', isDraft: false, title: 'Theirs', reviewDecision: 'APPROVED', headRefName: number === 12 ? 'ben/b' : `ben/pr-${number}` },
+      checks: number === 404 ? [] : [{ name: 'test', state: 'SUCCESS', bucket: 'pass', link: '', workflow: 'CI', description: '' }]
     }),
     notify: (title) => void state.notified.push(title),
     openWorkspace: (id) => void state.opened.push(id),
@@ -624,7 +628,7 @@ describe('host API', () => {
   it('summarizes a pull request and its checks', async () => {
     const { host } = fakeHost()
     expect(await call(host, caller(), 'prs.status', { workspaceId: 'a' })).toEqual({
-      pr: { number: 7, url: 'https://github.com/x/y/pull/7', state: 'OPEN', isDraft: true, title: 'Fix', reviewDecision: '', mergeState: '' },
+      pr: { number: 7, url: 'https://github.com/x/y/pull/7', state: 'OPEN', isDraft: true, title: 'Fix', reviewDecision: '', mergeState: '', branch: '' },
       checks: { total: 2, passed: 1, pending: 0, failed: [{ name: 'CI / test', link: 'l' }] }
     })
   })
@@ -648,6 +652,61 @@ describe('host API', () => {
     await call(host, caller(), 'store.get', { key: 'plan' })
     await call(host, caller(), 'store.delete', { key: 'plan' })
     expect(changes).toEqual(['board.acme:plan', 'board.acme:plan'])
+  })
+  it('looks up a pull request by its number, with no workspace', async () => {
+    const { host } = fakeHost()
+    expect(await call(host, caller(), 'prs.get', { repoId: 'r1', number: 31 })).toEqual({
+      pr: { number: 31, url: 'https://github.com/x/y/pull/31', state: 'OPEN', isDraft: false, title: 'Theirs', reviewDecision: 'APPROVED', mergeState: '', branch: 'ben/pr-31' },
+      checks: { total: 1, passed: 1, pending: 0, failed: [] }
+    })
+    expect(((await call(host, caller(), 'prs.get', { repoId: 'r1', number: 404 })) as { pr: unknown }).pr).toBeNull()
+    await expect(call(host, caller(), 'prs.get', { repoId: 'r2', number: 31 })).rejects.toThrow(/No project/)
+    await expect(call(host, caller(), 'prs.get', { repoId: 'r1', number: 0 })).rejects.toThrow(/number/)
+    await expect(call(host, caller(['workspaces:read']), 'prs.get', { repoId: 'r1', number: 31 })).rejects.toThrow(/"prs:read" permission/)
+  })
+  it('opens a pull request in a workspace: the one already on its branch, or a new one, and starts no agent', async () => {
+    const { host, state } = fakeHost()
+    const before = state.workspaces.length
+    // #12 is made from ben/b, which workspace b is on.
+    expect(((await call(host, caller(), 'workspaces.forPr', { repoId: 'r1', number: 12 })) as { id: string }).id).toBe('b')
+    expect(state.workspaces).toHaveLength(before)
+    const made = (await call(host, caller(), 'workspaces.forPr', { repoId: 'r1', number: 31 })) as { id: string; branch: string; startedBy: string; status: string }
+    expect(made).toMatchObject({ branch: 'ben/pr-31', startedBy: 'board@acme', status: 'idle' })
+    expect(state.workspaces).toHaveLength(before + 1)
+    expect(state.sent).toEqual([])
+    // Asking again finds the one just made.
+    expect(((await call(host, caller(), 'workspaces.forPr', { repoId: 'r1', number: 31 })) as { id: string }).id).toBe(made.id)
+    expect(state.workspaces).toHaveLength(before + 1)
+    await expect(call(host, caller(), 'workspaces.forPr', { repoId: 'r1', number: 404 })).rejects.toThrow(/No pull request #404/)
+    await expect(call(host, caller(['prs:read']), 'workspaces.forPr', { repoId: 'r1', number: 31 })).rejects.toThrow(/"workspaces:start" permission/)
+  })
+  it("reads text files in a workspace's own .choo-choo folder, and writes only to the project's", async () => {
+    const { host, state } = fakeHost()
+    const main = mkdtempSync(join(tmpdir(), 'choo-project-'))
+    const tree = mkdtempSync(join(tmpdir(), 'choo-worktree-'))
+    host.repos()[0].path = main
+    state.workspaces[0].path = tree
+    mkdirSync(join(tree, '.choo-choo', 'plans'), { recursive: true })
+    writeFileSync(join(tree, '.choo-choo', 'plans', 'q3.plan.md'), '# From the agent\n')
+    const c = caller()
+    expect(await call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md' })).toBeNull()
+    expect(((await call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md', workspaceId: 'a' })) as { content: string }).content).toBe('# From the agent\n')
+    expect(((await call(host, c, 'files.list', { repoId: 'r1', workspaceId: 'a' })) as { path: string }[]).map((f) => f.path)).toEqual(['plans/q3.plan.md'])
+    expect(await call(host, c, 'files.list', { repoId: 'r1' })).toEqual([])
+    // A write names no workspace: it lands in the project's main checkout.
+    await call(host, c, 'files.write', { repoId: 'r1', path: 'plans/q3.plan.md', content: '# Copied\n', workspaceId: 'a' })
+    expect(readFileSync(join(main, '.choo-choo', 'plans', 'q3.plan.md'), 'utf8')).toBe('# Copied\n')
+    expect(readFileSync(join(tree, '.choo-choo', 'plans', 'q3.plan.md'), 'utf8')).toBe('# From the agent\n')
+    // Only a live workspace of that project, and never through a link.
+    await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md', workspaceId: 'old' })).rejects.toThrow(/No workspace/)
+    await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md', workspaceId: 'orch' })).rejects.toThrow(/No workspace/)
+    state.workspaces[1].repoId = 'r3'
+    await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'plans/q3.plan.md', workspaceId: 'b' })).rejects.toThrow(/isn't in project/)
+    const outside = mkdtempSync(join(tmpdir(), 'choo-outside-'))
+    writeFileSync(join(outside, 'secret.md'), 'secret')
+    rmSync(join(tree, '.choo-choo'), { recursive: true })
+    symlinkSync(outside, join(tree, '.choo-choo'))
+    await expect(call(host, c, 'files.read', { repoId: 'r1', path: 'secret.md', workspaceId: 'a' })).rejects.toThrow(/outside the workspace through a link/)
   })
   it("reads and writes text files in a project's .choo-choo folder", async () => {
     const { host } = fakeHost()

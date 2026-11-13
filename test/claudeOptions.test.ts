@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, listOutputStyles, permissionMode, runningTasks } from '../src/main/claudeOptions'
-import { needsApproval } from '../src/main/agent'
+import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, listOutputStyles, permissionMode, questionReply, runningTasks } from '../src/main/claudeOptions'
+import { alwaysAskNeedsOk, needsApproval } from '../src/main/agent'
 import { codexEffort } from '../src/main/codex'
 import { reportedFindings, findingsFromItems } from '../src/renderer/src/review'
 import { DEFAULT_EXTRAS, type BackgroundTask, type ChatItem } from '../src/shared/types'
@@ -101,5 +101,26 @@ describe('Claude Code /code-review findings', () => {
       { id: '2', kind: 'tool', name: 'ReportFindings', input, ts: 2 }
     ]
     expect(findingsFromItems(items)).toHaveLength(2)
+  })
+})
+
+describe('AskUserQuestion answers', () => {
+  const input = { questions: [{ question: 'Which color?', header: 'Color', multiSelect: false, options: [{ label: 'Red', description: '' }, { label: 'Blue', description: '' }] }] }
+
+  it('hands the picks back to Claude in answers', () => {
+    expect(questionReply(input, 'allow', { 'Which color?': 'Blue' })).toEqual({ behavior: 'allow', updatedInput: { ...input, answers: { 'Which color?': 'Blue' } } })
+  })
+
+  it('tells Claude the question was skipped', () => {
+    expect(questionReply(input, 'deny', undefined).behavior).toBe('deny')
+    expect(questionReply(input, 'allow', { 'Which color?': '  ' }).behavior).toBe('deny')
+  })
+})
+
+describe('always-ask tools', () => {
+  it('ask until the person picks Always allow for that tool in the chat', () => {
+    expect(alwaysAskNeedsOk(undefined, 'mcp__choo__clone_repo')).toBe(true)
+    expect(alwaysAskNeedsOk(['Bash'], 'mcp__choo__clone_repo')).toBe(true)
+    expect(alwaysAskNeedsOk(['mcp__choo__clone_repo'], 'mcp__choo__clone_repo')).toBe(false)
   })
 })

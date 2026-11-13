@@ -11,7 +11,7 @@ Each agent gets its own git worktree. You review the diffs and ship the PRs from
 An open-source, MIT-licensed alternative to [Conductor](https://conductor.build).
 
 [![CI](https://github.com/Benbentwo/choo-choo/actions/workflows/ci.yml/badge.svg)](https://github.com/Benbentwo/choo-choo/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/Benbentwo/choo-choo?include_prereleases&label=download)](https://github.com/Benbentwo/choo-choo/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/Benbentwo/choo-choo?label=download)](https://github.com/Benbentwo/choo-choo/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS](https://img.shields.io/badge/macOS-Apple%20silicon%20%7C%20Intel-lightgrey)
 
@@ -65,13 +65,13 @@ With [Homebrew](https://brew.sh):
 brew install --cask benbentwo/tap/choo-choo
 ```
 
-`brew upgrade --cask choo-choo` picks up new releases. Until builds are signed, the cask clears the download quarantine for you, so the first launch isn't blocked.
+Releases are signed and notarized, so the app opens normally and updates itself (Settings > Updates). `brew upgrade --cask --greedy choo-choo` also works. For beta builds, install the same cask and pick Settings > Updates > Update channel > **Beta**; there's no separate beta cask.
 
 Or install it by hand:
 
 1. Download the `.dmg` for your Mac from the [latest release](https://github.com/Benbentwo/choo-choo/releases/latest): `arm64` for Apple silicon, `x64` for Intel.
 2. Open it and drag Choo Choo to Applications.
-3. Until builds are signed, macOS blocks the first launch. Clear the download quarantine once:
+3. Release 0.1.0 wasn't signed, so macOS blocks its first launch. Clear the download quarantine once (later releases don't need this):
 
    ```sh
    xattr -cr "/Applications/Choo Choo.app"
@@ -148,7 +148,9 @@ Dev mode has a built-in way to give Claude Code feedback on the running app:
 2. Open Claude Code in this repo and say "watch for my comments". [CLAUDE.md](CLAUDE.md) tells it how: it runs `scripts/watch-feedback.sh` in the background and gets a line for each new comment.
 3. In the app, press ⌘⇧K (or click the "Comment" pill in the bottom-right), click any element, type what should change, and press Enter.
 
-Each comment is saved to `.feedback/` in your checkout with the element's selector, its React component, and two screenshots. Claude reads it, makes the change, and moves it to `.feedback/done/`. UI edits hot-reload; main-process edits restart the app. Comment mode only exists in dev builds, and `.feedback/` is gitignored, so comments stay on your machine.
+Each comment is saved to `.feedback/` in your checkout with the element's selector, its React component, and two screenshots. Claude reads it, makes the change, and moves it to `.feedback/done/`. UI edits hot-reload; main-process edits restart the app. `.feedback/` is gitignored, so comments stay on your machine.
+
+In a release build, ⌘⇧K (Help > Comment on Choo Choo…) works the same way, but **Fix it** opens a new workspace on this repo with your note and a screenshot, and Claude starts on the fix there. The first time, the app clones the repo, or your fork if you can't push to it, so the PR goes upstream. Pick **GitHub issue** instead to open a prefilled issue in your browser.
 
 ## Release
 
@@ -156,7 +158,9 @@ Each comment is saved to `.feedback/` in your checkout with the element's select
 
 To ship, open **Actions > Release > Run workflow** (optionally type a version). It builds the app for Apple silicon and Intel, attaches the `.dmg`, `.zip` and update files to the draft, and publishes it. Publishing the draft by hand on the Releases page works too; the workflow then attaches the files. The app's version comes from the release tag.
 
-Add a `HOMEBREW_TAP_TOKEN` secret (a token that can push to `Benbentwo/homebrew-tap`) and each release also updates the Homebrew cask, written by `scripts/homebrew-cask.sh`. Add `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` repository secrets to sign and notarize builds; without them the app is unsigned and can't update itself on macOS, so it offers `brew upgrade` (when Homebrew installed it) or the release page instead.
+Every merge to `main` also ships a **beta**: the [Beta workflow](.github/workflows/beta.yml) builds, signs and notarizes the app and publishes it as a prerelease named after the draft's next version, like `v0.2.0-beta.57`. People who pick Settings > Updates > Update channel > **Beta** update to these; everyone else stays on **Stable** (published releases). Prereleases are never marked Latest, so the Homebrew cask and the download link skip them. Merges that only change docs don't build, a newer merge cancels an older build, and only the 10 newest betas are kept. Beta builds need the signing secrets below.
+
+Add a `HOMEBREW_TAP_TOKEN` secret (a fine-grained token with Contents read and write on `Benbentwo/homebrew-tap` only) and each stable release also updates the Homebrew cask, written by `scripts/homebrew-cask.sh` from the [Homebrew cask workflow](.github/workflows/homebrew.yml). Run that workflow by hand to point the cask at an existing release. Betas never go in the cask. Add `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` repository secrets to sign and notarize builds (Actions > Release > Run workflow with **Test build only** checked signs, notarizes and checks a build without touching any release); without them the app is unsigned and can't update itself on macOS, so it offers `brew upgrade` (when Homebrew installed it) or the release page instead.
 
 Agents run the Claude Code binary bundled with the Agent SDK (the SDK's `claudeCodeVersion`), unless Settings > General > Claude Code picks your installed `claude`. Dependabot opens a PR whenever a new SDK is out; merge it and release to ship the newer Claude Code. An installed `claude` can be updated from Settings > Updates, which runs `claude update`.
 

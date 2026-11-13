@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseFindings, findingsFromItems, REVIEW_PROMPT, SECURITY_REVIEW_PROMPT } from '../src/renderer/src/review'
+import { parseFindings, findingsFromItems, splitFindingsBlock, REVIEW_PROMPT, SECURITY_REVIEW_PROMPT } from '../src/renderer/src/review'
 
 describe('review findings', () => {
   it('parses the last json block and normalizes fields', () => {
@@ -28,5 +28,18 @@ describe('review prompts', () => {
     expect(REVIEW_PROMPT('main')).not.toContain('Cross-boundary')
     expect(REVIEW_PROMPT('main', true)).toContain('Cross-boundary')
     expect(SECURITY_REVIEW_PROMPT('main')).toContain('```json')
+  })
+})
+
+describe('splitFindingsBlock', () => {
+  it('cuts a reply around its findings block', () => {
+    const r = splitFindingsBlock('I found 1 issue.\n\n```json\n[{"file":"a.ts","line":3,"severity":"low","message":"m"}]\n```\nDone.')
+    expect(r).toEqual({ before: 'I found 1 issue.', findings: [{ file: 'a.ts', line: 3, severity: 'low', message: 'm', fix: undefined }], after: 'Done.' })
+  })
+  it('keeps an empty findings list, and leaves other JSON and plain replies alone', () => {
+    expect(splitFindingsBlock('Clean.\n```json\n[]\n```')).toEqual({ before: 'Clean.', findings: [], after: '' })
+    expect(splitFindingsBlock('Config:\n```json\n{"name":"x"}\n```')).toBeNull()
+    expect(splitFindingsBlock('Rows:\n```json\n[{"id":1},{"id":2}]\n```')).toBeNull()
+    expect(splitFindingsBlock('no block')).toBeNull()
   })
 })

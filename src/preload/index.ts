@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { Api, ChatEvent } from '@shared/types'
 import type { UpdateStatus } from '@shared/updates'
-import type { AddonAppEvent, AddonToolCall } from '@shared/addons'
+import type { AddonAppEvent, AddonReloaded, AddonToolCall } from '@shared/addons'
+import type { InboxPr, PrInbox } from '@shared/prInbox'
 
 const inv = (ch: string) => (...a: unknown[]) => ipcRenderer.invoke(ch, ...a)
 function on<T extends unknown[]>(ch: string, cb: (...a: T) => void) {
@@ -24,6 +25,15 @@ const api: Api = {
   openOrchestrator: inv('ws:orchestrator') as Api['openOrchestrator'],
   openGroupOrchestrator: inv('group:orchestrator') as Api['openGroupOrchestrator'],
   saveGroup: inv('group:save') as Api['saveGroup'],
+  saveAutomation: inv('automation:save') as Api['saveAutomation'],
+  setAutomationEnabled: inv('automation:enable') as Api['setAutomationEnabled'],
+  deleteAutomation: inv('automation:delete') as Api['deleteAutomation'],
+  runAutomation: inv('automation:run') as Api['runAutomation'],
+  continueAdd: inv('continue:add') as Api['continueAdd'],
+  continueMove: inv('continue:move') as Api['continueMove'],
+  continueEdit: inv('continue:edit') as Api['continueEdit'],
+  continueRemove: inv('continue:remove') as Api['continueRemove'],
+  continueRunNow: inv('continue:run') as Api['continueRunNow'],
   deleteGroup: inv('group:delete') as Api['deleteGroup'],
   archiveWorkspace: inv('ws:archive') as Api['archiveWorkspace'],
   restoreWorkspace: inv('ws:restore') as Api['restoreWorkspace'],
@@ -73,6 +83,10 @@ const api: Api = {
   addonCall: inv('addons:call') as Api['addonCall'],
   addonAction: inv('addons:action') as Api['addonAction'],
   onAddonsChanged: (cb) => on<[]>('addons:changed', cb),
+  addonDevelop: inv('addons:develop') as Api['addonDevelop'],
+  addonReload: inv('addons:reload') as Api['addonReload'],
+  addonInspect: inv('addons:inspect') as Api['addonInspect'],
+  onAddonReloaded: (cb) => on<[AddonReloaded]>('addons:reloaded', cb),
   addonPins: inv('addons:pins') as Api['addonPins'],
   addonInstallPinned: inv('addons:installPinned') as Api['addonInstallPinned'],
   onAddonEvent: (cb) => on<[AddonAppEvent]>('addons:event', cb),
@@ -81,13 +95,15 @@ const api: Api = {
   revealPath: inv('shell:reveal') as Api['revealPath'],
   continueOnPhone: inv('chat:phone') as Api['continueOnPhone'],
   bringBackFromPhone: inv('chat:phoneBack') as Api['bringBackFromPhone'],
+  openInDesktop: inv('chat:desktop') as Api['openInDesktop'],
+  bringBackFromDesktop: inv('chat:desktopBack') as Api['bringBackFromDesktop'],
   runInCloud: inv('chat:cloud') as Api['runInCloud'],
   sendToCloud: inv('chat:cloudSend') as Api['sendToCloud'],
   bringBackFromCloud: inv('chat:cloudBack') as Api['bringBackFromCloud'],
   forgetCloud: inv('chat:cloudForget') as Api['forgetCloud'],
   actOnAdvice: inv('advisor:act') as Api['actOnAdvice'],
   reviewPlan: inv('plan:review') as Api['reviewPlan'],
-  respondPermission: (id, d) => ipcRenderer.send('permission:respond', id, d),
+  respondPermission: (id, d, answers) => ipcRenderer.send('permission:respond', id, d, answers),
   pendingPermissions: inv('permission:pending') as Api['pendingPermissions'],
   addChatFolder: inv('chat:addFolder') as Api['addChatFolder'],
   removeChatFolder: inv('chat:removeFolder') as Api['removeChatFolder'],
@@ -98,9 +114,35 @@ const api: Api = {
   stopScript: (id, kind) => ipcRenderer.send('scripts:stop', id, kind),
   isScriptRunning: inv('scripts:running') as Api['isScriptRunning'],
   getPr: inv('pr:get') as Api['getPr'],
+  getPrState: inv('pr:state') as Api['getPrState'],
   mergePr: inv('pr:merge') as Api['mergePr'],
   markPrReady: inv('pr:ready') as Api['markPrReady'],
+  updatePrBranch: inv('pr:update') as Api['updatePrBranch'],
   getPrComments: inv('pr:comments') as Api['getPrComments'],
+  getPrReview: inv('pr:review') as Api['getPrReview'],
+  getPrDiffTarget: inv('pr:diffTarget') as Api['getPrDiffTarget'],
+  followPr: inv('pr:follow') as Api['followPr'],
+  getRangeDiffs: inv('pr:rangeDiffs') as Api['getRangeDiffs'],
+  getChangedSince: inv('pr:changedSince') as Api['getChangedSince'],
+  getInterdiff: inv('pr:interdiff') as Api['getInterdiff'],
+  getInterdiffFile: inv('pr:interdiffFile') as Api['getInterdiffFile'],
+  getPrViewed: inv('pr:viewed') as Api['getPrViewed'],
+  setPrViewed: inv('pr:setViewed') as Api['setPrViewed'],
+  submitPrReview: inv('pr:submitReview') as Api['submitPrReview'],
+  replyToPrThread: inv('pr:replyThread') as Api['replyToPrThread'],
+  resolvePrThread: inv('pr:resolveThread') as Api['resolvePrThread'],
+  stackStatus: inv('stack:status') as Api['stackStatus'],
+  stackAddLayer: inv('stack:addLayer') as Api['stackAddLayer'],
+  stackSwitch: inv('stack:switch') as Api['stackSwitch'],
+  stackRestack: inv('stack:restack') as Api['stackRestack'],
+  stackSetAuto: inv('stack:setAuto') as Api['stackSetAuto'],
+  stackAddressFeedback: inv('stack:feedback') as Api['stackAddressFeedback'],
+  stackContinue: inv('stack:continue') as Api['stackContinue'],
+  stackStopJob: inv('stack:stop') as Api['stackStopJob'],
+  stackDissolve: inv('stack:dissolve') as Api['stackDissolve'],
+  stackLinkGithub: inv('stack:linkGithub') as Api['stackLinkGithub'],
+  stackMergeThrough: inv('stack:mergeThrough') as Api['stackMergeThrough'],
+  stackInstallCli: inv('stack:installCli') as Api['stackInstallCli'],
   getChecks: inv('checks:get') as Api['getChecks'],
   rerunCheck: inv('checks:rerun') as Api['rerunCheck'],
   getArtifacts: inv('ws:artifacts') as Api['getArtifacts'],
@@ -110,6 +152,7 @@ const api: Api = {
   setZoom: (f) => webFrame.setZoomFactor(f),
   cloneRepo: inv('repo:clone') as Api['cloneRepo'],
   pickFolder: inv('folder:pick') as Api['pickFolder'],
+  subscriptionLimits: inv('limits:get') as Api['subscriptionLimits'],
   removeProject: inv('repo:removeProject') as Api['removeProject'],
   deleteWorkspace: inv('ws:delete') as Api['deleteWorkspace'],
   deleteLeftover: inv('leftover:delete') as Api['deleteLeftover'],
@@ -120,12 +163,16 @@ const api: Api = {
   importFromConductor: inv('conductor:import') as Api['importFromConductor'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],
   prInbox: inv('prs:inbox') as Api['prInbox'],
+  reviewsCheckSoon: inv('reviews:checkSoon') as Api['reviewsCheckSoon'],
+  reviewsSeen: inv('reviews:seen') as Api['reviewsSeen'],
+  onPrInbox: (cb) => on<[PrInbox]>('prs:inbox', cb),
+  onReviewOpen: (cb) => on<[InboxPr]>('reviews:open', cb),
   quickStart: inv('repo:quickstart') as Api['quickStart'],
   listSources: inv('ws:sources') as Api['listSources'],
   listIntegrations: inv('integrations:list') as Api['listIntegrations'],
   connectIntegration: inv('integrations:connect') as Api['connectIntegration'],
   disconnectIntegration: inv('integrations:disconnect') as Api['disconnectIntegration'],
-  onNavigate: (cb) => on<[string, string]>('navigate', cb),
+  onNavigate: (cb) => on<[string, string, { key: string; viewId: string; repoId?: string } | undefined]>('navigate', cb),
   onChatEvent: (cb) => on<[ChatEvent]>('chat:event', cb),
   getChanges: inv('git:changes') as Api['getChanges'],
   getDiffStats: inv('git:stats') as Api['getDiffStats'],
@@ -143,6 +190,7 @@ const api: Api = {
   onMenu: (cb) => on<[string]>('menu', cb),
   onStateChanged: (cb) => on<[]>('state:changed', cb),
   onPrChanged: (cb) => on<[string]>('pr:changed', cb),
+  onStackChanged: (cb) => on<[string]>('stack:changed', cb),
   updateStatus: inv('updates:status') as Api['updateStatus'],
   checkForUpdates: inv('updates:check') as Api['checkForUpdates'],
   installAppUpdate: inv('updates:install-app') as Api['installAppUpdate'],
@@ -161,7 +209,5 @@ const api: Api = {
 
 contextBridge.exposeInMainWorld('api', api)
 
-// Dev-only feedback mode (see src/main/devFeedback.ts).
-if (process.env.ELECTRON_RENDERER_URL) {
-  contextBridge.exposeInMainWorld('devFeedback', { submit: inv('devFeedback:submit') })
-}
+// Comment mode (see src/main/uiComment.ts): dev writes to the checkout, packaged builds open a workspace or an issue.
+contextBridge.exposeInMainWorld('uiComment', { info: inv('uiComment:info'), submit: inv('uiComment:submit') })

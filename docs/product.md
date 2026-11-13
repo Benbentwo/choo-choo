@@ -48,7 +48,7 @@ The detailed requirements live in the [PRDs](prd/). Status as of 2026-11-06:
 
 - Apple silicon and Intel `.dmg`/`.zip` from GitHub Releases, auto-update from releases.
 - Homebrew: `brew install --cask benbentwo/tap/choo-choo`.
-- Builds are unsigned until the Apple signing secrets are added (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`). Auto-update can't install on macOS until then.
+- Release builds are signed with a Developer ID and notarized (the secrets `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` are set). Without them the workflow still builds, unsigned.
 
 ## Not goals (for now)
 

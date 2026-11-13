@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useWorkspaceMode } from '../prReview'
+import { inOpenFence } from '../markdown'
 import type { Chat, Effort, ExtraAgentId, ModelId, OutputStyleInfo, Permission, SlashCommandInfo, Workspace } from '@shared/types'
-import { useStore, reportError, modelLabel, setCodeComments, codeCommentsMessage, openDoc } from '../store'
+import { useStore, reportError, modelLabel, setCodeComments, codeCommentsMessage, destOf, reviewTarget, openDoc } from '../store'
 import { IconDown, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
 
@@ -37,6 +39,8 @@ export function setDraft(chatId: string, text: string) {
 }
 
 export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
+  const limited = useStore((s) => !!s.usageLimit)
+  const { mode } = useWorkspaceMode(ws)
   const [text, setTextState] = useState(drafts[chat.id] ?? '')
   const [picker, setPicker] = useState(false)
   const [trigger, setTrigger] = useState<Trigger | null>(null)
@@ -44,7 +48,10 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const [files, setFiles] = useState<string[] | null>(null)
   const [commands, setCommands] = useState<SlashCommandInfo[] | null>(null)
   const [images, setImages] = useState<string[]>([])
-  const codeComments = useStore((s) => s.codeComments[ws.id]) ?? []
+  const allComments = useStore((s) => s.codeComments[ws.id]) ?? []
+  // GitHub review drafts wait in the Review tab; only agent comments go with a chat message.
+  const codeComments = allComments.filter((c) => destOf(c) === 'agent')
+  const prReview = useStore((s) => s.prReview[ws.id])
   const hasContent = !!text.trim() || images.length > 0 || codeComments.length > 0
   const [dragging, setDragging] = useState(false)
   const [goalOpen, setGoalOpen] = useState(false)
@@ -52,6 +59,8 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const [styles, setStyles] = useState<OutputStyleInfo[] | null>(null)
   const tasks = useStore((s) => s.tasks[chat.id]) ?? []
   const ta = useRef<HTMLTextAreaElement>(null)
+  /** The cursor sits inside a ``` block that isn't closed yet. */
+  const [inCode, setInCode] = useState(false)
   const running = chat.status === 'running'
   const whileRunning = useStore((s) => s.settings.whileRunning ?? 'steer')
   const extras = useStore((s) => s.settings.extras)
@@ -143,13 +152,13 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
 
   const submit = async () => {
     const typed = text.trim() || (images.length && !codeComments.length ? 'See the attached image.' : '')
-    const t = codeComments.length ? codeCommentsMessage(codeComments, typed) : typed
+    const t = codeComments.length ? codeCommentsMessage(codeComments, typed, reviewTarget(prReview, mode)) : typed
     if (!t) return
     const imgs = images
     setText('')
     setImages([])
     setTrigger(null)
-    if (codeComments.length) setCodeComments(ws.id, () => [])
+    if (codeComments.length) setCodeComments(ws.id, (list) => list.filter((c) => destOf(c) !== 'agent'))
     try {
       await window.api.sendMessage(chat.id, t, imgs)
     } catch (e) {
@@ -176,6 +185,8 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
 
   const update = async (patch: Partial<Pick<Chat, 'model' | 'effort' | 'planMode' | 'permission' | 'advisor' | 'fast' | 'budgetUsd' | 'outputStyle'>>) => {
     useStore.getState().upsertChat(await window.api.updateChat(chat.id, patch))
+    // A model change adds, updates or drops the "switched to model" divider.
+    if (patch.model) useStore.getState().setItems(chat.id, await window.api.getChatItems(chat.id))
   }
   const addFolder = async () => useStore.getState().upsertChat(await window.api.addChatFolder(chat.id))
   const removeFolder = async (d: string) => useStore.getState().upsertChat(await window.api.removeChatFolder(chat.id, d))
@@ -323,9 +334,11 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
           value={text}
           onChange={(e) => {
             setText(e.target.value)
+            setInCode(inOpenFence(e.target.value.slice(0, e.target.selectionStart)))
             updateTrigger(e.target.value, e.target.selectionStart)
           }}
           onClick={(e) => updateTrigger(text, e.currentTarget.selectionStart)}
+          onSelect={(e) => setInCode(inOpenFence(e.currentTarget.value.slice(0, e.currentTarget.selectionStart)))}
           onBlur={() => setTimeout(() => setTrigger(null), 100)}
           onKeyDown={(e) => {
             if (showPopup) {
@@ -351,15 +364,18 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
               return void update({ planMode: !chat.planMode })
             }
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              // Inside an open ``` block Enter adds a line, as in an editor; ⌘Enter sends from anywhere.
+              if (!e.metaKey && inOpenFence(e.currentTarget.value.slice(0, e.currentTarget.selectionStart))) return
               e.preventDefault()
               void submit()
             }
             if (e.key === 'Escape' && running) void window.api.stopChat(chat.id)
           }}
           rows={3}
-          placeholder="Ask to make changes, @mention files, run /commands"
-          className="selectable block max-h-72 w-full resize-none bg-transparent px-4 pt-3 text-[13px] outline-none placeholder:text-faint"
+          placeholder={limited && chat.model !== 'codex' ? "You're out of usage for this window. A message goes to Up next and is sent when it resets." : mode === 'review' ? "Ask about this PR, or click a line in a diff to comment" : 'Ask to make changes, @mention files, run /commands'}
+          className={`selectable block max-h-72 w-full resize-none bg-transparent px-4 pt-3 text-[13px] outline-none placeholder:text-faint ${inCode ? 'font-mono text-[12px]' : ''}`}
         />
+        {inCode && <div className="px-4 pt-1 text-[11px] text-faint">Code block · Enter adds a line · close it with ``` or press ⌘Enter to send</div>}
         <div className="flex items-center gap-2 px-3 pb-2.5">
           <div className="relative">
             <button className="flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-hover" onClick={() => setPicker(!picker)}>

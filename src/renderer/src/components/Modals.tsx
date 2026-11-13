@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ReviewSettingsSection } from './ReviewSettings'
+import { ContinueSettingsSection } from './ContinueWork'
 import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, PromptCustom, Settings, Telemetry } from '@shared/types'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, openGroupOrchestrator, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
@@ -15,6 +17,7 @@ import { OpenShareModal, ShareModal } from './ShareModals'
 import { CommandPalette } from './CommandPalette'
 import { UpdatesSettings } from './Updates'
 import { UsageGraphs } from './UsageGraphs'
+import { ProjectIcon, ProjectIconPicker } from './ProjectIcon'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -65,12 +68,15 @@ function GroupModal({ onClose }: { onClose: () => void }) {
   const existing = useStore((s) => s.groups.find((g) => g.id === s.editGroup))
   const [name, setName] = useState(existing?.name ?? '')
   const [picked, setPicked] = useState<string[]>(existing?.repoIds ?? [])
+  const [look, setLook] = useState<{ icon?: string; color?: string }>({ icon: existing?.icon, color: existing?.color })
   const [busy, setBusy] = useState(false)
+  const projects = useStore((s) => !!s.settings.experimentalProjects)
+  const noun = projects ? 'project' : 'project group'
   const toggle = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
   const submit = async () => {
     setBusy(true)
     try {
-      const g = await window.api.saveGroup({ id: existing?.id, name, repoIds: picked })
+      const g = await window.api.saveGroup({ id: existing?.id, name, repoIds: picked, ...(projects ? { icon: look.icon ?? '', color: look.color ?? '' } : {}) })
       await refreshState()
       onClose()
       if (!existing) await openGroupOrchestrator(g.id)
@@ -92,19 +98,29 @@ function GroupModal({ onClose }: { onClose: () => void }) {
   }
   return (
     <Shell onClose={onClose} width="w-[460px]">
-      <div className="border-b border-line px-5 py-3 font-medium">{existing ? 'Edit project group' : 'New project group'}</div>
+      <div className="border-b border-line px-5 py-3 font-medium">{existing ? `Edit ${noun}` : `New ${noun}`}</div>
       <div className="space-y-4 px-5 py-4">
         <div className="text-[12px] text-muted">
-          A project group gives several repositories one orchestrator and one shared memory. It starts workspaces in whichever repo each piece of work belongs to.
+          {projects
+            ? "A project is one goal across one or more repositories. You talk to its orchestrator chat, which sends each message to the right thread; threads start workspaces in whichever repo the work belongs to."
+            : 'A project group gives several repositories one orchestrator and one shared memory. It starts workspaces in whichever repo each piece of work belongs to.'}
         </div>
-        <input
-          autoFocus
-          className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent"
-          placeholder="Name, e.g. Storefront"
+        <div className="flex items-center gap-2">
+          {projects && (
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line">
+              <ProjectIcon group={look} size={16} />
+            </span>
+          )}
+          <input
+            autoFocus
+            className="w-full rounded-md border border-line bg-bg px-2.5 py-1.5 outline-none focus:border-accent"
+            placeholder="Name, e.g. Storefront"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && name.trim() && picked.length && void submit()}
-        />
+            onKeyDown={(e) => e.key === 'Enter' && name.trim() && picked.length && void submit()}
+          />
+        </div>
+        {projects && <ProjectIconPicker icon={look.icon} color={look.color} onChange={setLook} />}
         <div className="max-h-64 overflow-y-auto rounded-md border border-line">
           {repos.length === 0 && <div className="px-3 py-2 text-faint">Add a repository first.</div>}
           {repos.map((r) => (
@@ -119,7 +135,7 @@ function GroupModal({ onClose }: { onClose: () => void }) {
       <div className="flex items-center gap-2 border-t border-line px-5 py-3">
         {existing && (
           <button className="rounded-md px-2.5 py-1 text-del hover:bg-hover" onClick={() => void remove()}>
-            Delete group
+            Delete {noun}
           </button>
         )}
         <div className="flex-1" />
@@ -178,6 +194,26 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   )
 }
 
+type SettingsTab = ReturnType<typeof useStore.getState>['settingsTab']
+
+// The section list down the left of Settings, in this order.
+const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
+  { id: 'general', label: 'General', hint: 'Default model, effort and permissions, notifications, branches and archiving.' },
+  { id: 'appearance', label: 'Appearance', hint: 'Theme, accent color, text size, density and fonts.' },
+  { id: 'reviews', label: 'Reviews', hint: 'When a PR you review changes for you, and how you catch up on it.' },
+  { id: 'projects', label: 'Projects', hint: 'Your projects and their workspaces.' },
+  { id: 'continue', label: 'Continue work', hint: 'What happens when a chat hits your plan\'s usage limit, and what starts when the window resets.' },
+  { id: 'agents', label: 'Agents', hint: 'Extra agents and the advisor.' },
+  { id: 'prompts', label: 'Prompts', hint: 'Custom instructions added to chats, for every project or one.' },
+  { id: 'mcp', label: 'MCP', hint: 'MCP servers Claude Code loads for each project.' },
+  { id: 'plugins', label: 'Plugins', hint: 'Claude Code plugins, marketplaces and your own skills.' },
+  { id: 'addons', label: 'Add-ons', hint: 'Views, orchestrator tools and agent skills from git repos you can read.' },
+  { id: 'integrations', label: 'Integrations', hint: 'Sign in to Linear, Notion and other services.' },
+  { id: 'updates', label: 'Updates', hint: 'Choo Choo and Claude Code versions and update checks.' },
+  { id: 'telemetry', label: 'Telemetry', hint: 'Export traces and metrics with OpenTelemetry.' },
+  { id: 'experimental', label: 'Experimental', hint: 'Features still being tried out. Off by default.' },
+]
+
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const settings = useStore((s) => s.settings)
   const modelDetails = useStore((s) => s.modelDetails)
@@ -185,30 +221,40 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
-  const [tab, setTab] = useState<'general' | 'projects' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance'>(() => useStore.getState().settingsTab)
+  const [tab, setTab] = useState<SettingsTab>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
+  const current = SETTINGS_SECTIONS.find((x) => x.id === tab) ?? SETTINGS_SECTIONS[0]
   return (
-    <Shell onClose={onClose} width="w-[940px]">
-      <div className="flex items-center gap-4 border-b border-line px-5 pt-3">
-        <div className="pb-3 font-medium">Settings</div>
-        <div className="ml-auto flex gap-1">
-          {(['general', 'projects', 'agents', 'prompts', 'mcp', 'plugins', 'addons', 'integrations', 'updates', 'telemetry', 'appearance'] as const).map((t) => (
+    <Shell onClose={onClose} width="w-[1040px]">
+      <div className="flex h-[76vh] max-h-[760px]">
+        <nav aria-label="Settings sections" role="tablist" aria-orientation="vertical" className="flex w-48 shrink-0 flex-col gap-0.5 overflow-y-auto rounded-l-xl border-r border-line bg-bg/40 p-2">
+          <div className="px-2.5 pt-1.5 pb-2 text-[11px] font-medium tracking-wide text-faint uppercase">Settings</div>
+          {SETTINGS_SECTIONS.map((t) => (
             <button
-              key={t}
+              key={t.id}
               role="tab"
-              onClick={() => setTab(t)}
-              className={`-mb-px border-b-2 px-2.5 pb-2.5 ${t === 'addons' ? '' : 'capitalize'} ${tab === t ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={`rounded-md px-2.5 py-1.5 text-left ${tab === t.id ? 'bg-raised text-fg' : 'text-muted hover:bg-raised/50 hover:text-fg'}`}
             >
-              {t === 'mcp' ? 'MCP' : t === 'addons' ? 'Add-ons' : t}
+              {t.label}
             </button>
           ))}
-        </div>
-      </div>
-      <div className="max-h-[70vh] overflow-y-auto">
+        </nav>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="border-b border-line px-5 pt-4 pb-3">
+            <div className="text-[15px] font-medium">{current.label}</div>
+            <div className="mt-0.5 text-[12px] text-faint">{current.hint}</div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'projects' ? (
           <ProjectsSettings />
+        ) : tab === 'continue' ? (
+          <ContinueSettingsSection />
         ) : tab === 'appearance' ? (
           <AppearanceSettings />
+        ) : tab === 'reviews' ? (
+          <ReviewSettingsSection settings={settings} save={(patch) => void save(patch)} />
         ) : tab === 'updates' ? (
           <UpdatesSettings settings={settings} save={(patch) => void save(patch)} />
         ) : tab === 'integrations' ? (
@@ -221,6 +267,13 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <AddonSettings />
         ) : tab === 'prompts' ? (
           <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
+        ) : tab === 'experimental' ? (
+          <Row
+            label="Projects"
+            hint="Project groups become projects. You talk to a project's orchestrator chat, which sends each message to the right thread or starts one, and the sidebar lists the project's work by repo and PR. Also turns on Automations: checks that run on a schedule or a GitHub event and open a workspace per finding. Turning this off hides projects and pauses automations; nothing is deleted."
+          >
+            <input type="checkbox" checked={!!settings.experimentalProjects} onChange={(e) => void save({ experimentalProjects: e.target.checked })} />
+          </Row>
         ) : tab === 'telemetry' ? (
           <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (
@@ -307,6 +360,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             </Row>
           </>
         )}
+          </div>
+        </div>
       </div>
     </Shell>
   )
@@ -401,7 +456,7 @@ function TelemetrySection({ t, save }: { t: Telemetry; save: (patch: Partial<Tel
   return (
     <>
       <div className="border-b border-line px-5 py-2.5 text-[12px] text-faint">
-        Send OpenTelemetry metrics, events and traces from Claude agents to any OTLP collector, such as Honeycomb, Datadog, Grafana or a local collector. Each export is tagged with choo.repo, choo.workspace and choo.branch. Applies from the next message you send.
+        Send OpenTelemetry metrics, events and traces from Claude agents to any OTLP collector, such as Honeycomb, Datadog, Grafana or a local collector. Each export is tagged with choo.repo, choo.workspace and choo.branch, plus choo.project and choo.thread for project work. Applies from the next message you send.
       </div>
       <Row label="Export telemetry" hint="Off by default. Export errors never stop the agent.">
         <input type="checkbox" checked={t.enabled} onChange={(e) => save({ enabled: e.target.checked })} />

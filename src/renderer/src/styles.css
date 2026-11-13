@@ -248,3 +248,12 @@ a,
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Find in a file or diff (FindBar): every match, and the one you are on. */
+::highlight(find) {
+  background-color: rgb(250 204 21 / 0.3);
+}
+::highlight(find-current) {
+  background-color: rgb(249 115 22 / 0.75);
+  color: #fff;
+}

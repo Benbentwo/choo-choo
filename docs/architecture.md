@@ -54,7 +54,7 @@ Choo Choo is an Electron app built with electron-vite. Three processes, one shar
 | `naming.ts`, `names.ts` | Names a workspace from its first prompt; city names for worktree folders |
 | `updater.ts` | Auto-update from GitHub releases via electron-updater |
 | `addons.ts`, `addonApi.ts`, `addonHost.ts`, `addonClient.ts` | [Add-ons](prd/add-ons.md): finds plugins with a `choo-choo.addon.json`, serves their views on `choo-addon://` in sandboxed frames, answers their permission-checked host API calls, keeps their background pages in a window that is never shown, and passes the orchestrator's calls to their tools |
-| `devFeedback.ts` | Dev-only comment mode writer (see [comment mode](prd/comment-mode.md)) |
+| `uiComment.ts` | Comment mode: `.feedback/` in dev, a choo-choo workspace or GitHub issue in release builds (see [comment mode](prd/comment-mode.md)) |
 
 ## Data on disk
 
@@ -87,5 +87,5 @@ Before each turn the worktree is snapshotted into a checkpoint so "revert to her
 
 - `npm run dev`, `npm run typecheck`, `npm test` (Vitest, `test/`), `npm run build`, `npm run dist:mac`.
 - CI (`.github/workflows/ci.yml`, macOS) runs typecheck, tests, build, and an unsigned package for both CPUs.
-- Preview builds on every push to `main`; Release workflow builds, attaches and publishes the drafted release and bumps the Homebrew cask. CodeQL scans JS/TS and Actions.
+- Beta workflow publishes a signed prerelease for every merge to `main` (the Beta update channel); Release workflow builds, attaches and publishes the drafted release and bumps the Homebrew cask. CodeQL scans JS/TS and Actions.
 - node-pty can't rebuild for Electron in the cloud sandbox, so terminal changes are verified on macOS CI. The Agent SDK does run in the sandbox.

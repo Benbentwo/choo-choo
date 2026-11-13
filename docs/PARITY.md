@@ -12,7 +12,7 @@ Goal: a Mac desktop app that replaces Conductor 1:1. Run many Claude Code agents
 | Terminal | xterm.js + node-pty | Real shells for Setup/Run/Terminal tabs |
 | Git | `git` CLI (worktrees) + `gh` CLI | Matches what users already have authed |
 | Storage | JSON in `~/Library/Application Support/Choo Choo` | No native DB dependency |
-| Packaging | electron-builder (dmg, arm64 + x64) | Signed/notarized later |
+| Packaging | electron-builder (dmg, arm64 + x64) | Signed and notarized (Developer ID) |
 
 Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's `~/conductor/workspaces/<repo>/<city>`.
 
@@ -24,12 +24,13 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Three-pane layout: sidebar, chat, right panel; collapsible sidebar (⌘B), right panel, bottom panel (⌘J)
 - ✅ Breadcrumb header: repo › branch, workspace menu (Reveal in Finder, copy path/branch, copy the active chat's `claude --resume` command, archive)
 - ✅ Back/forward between workspaces
+- ✅ Split panels (beyond Conductor): workspaces and add-on pages side by side, chats/diffs/files/terminals split inside a workspace pane, drag to split, saved layouts ([PRD](prd/split-panels.md))
 - ✅ Home view with recent workspaces
 - ✅ Command palette (⌘K) with All / Workspaces / Projects / Actions / Settings tabs; recent workspaces include archived ones (dimmed, accent bar, opening restores)
 - ✅ File picker (⌘P) and search in files (⌘⇧F)
 - ✅ Sidebar hover: archive button and preview card (branch, diff size, status, title, latest message, Create PR, last active)
 - ✅ Archived worktrees kept in ~/choo-choo/archive with uncommitted files; deleted after a retention period (Settings, default 30 days)
-- ✅ Settings (⌘,): default model/effort, branch prefix, API key, notifications
+- ✅ Settings (⌘,): default model/effort, branch prefix, API key, notifications. Sections are listed down the left side (General, Appearance, Projects, Agents, Prompts, MCP, Plugins, Add-ons, Integrations, Updates, Telemetry), like the add-ons mockup, since there are too many for tabs along the top
 - ⬜ Onboarding, help menu, update notices
 
 ### Workspaces sidebar
@@ -45,11 +46,15 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Drag to reorder repos
 - ✅ Drag to reorder workspaces (Sort by > Manual)
 - ✅ Right-click a workspace: Rename…, Regenerate name from the chat, Reveal in Finder, Copy branch name, Archive
+- ✅ Right-click the Orchestrator row or an add-on row (such as Plans) > Hide from sidebar; bring rows back from the project's ⋯ menu or View options > Hidden rows (choo-choo addition)
+- ✅ Click a project's icon to collapse it to one row (shows a workspace count and a dot when something inside is unread or needs you); click again to expand (choo-choo addition)
 
 ### Chat
 - ✅ Chat tabs per workspace, ⌘T / ⌘W
-- ✅ Model picker (Opus / Fable / Sonnet / Haiku) and effort (Low / Medium / High / Extra high / Max)
+- ✅ Model picker (Opus / Fable / Sonnet / Haiku) and effort (Low / Medium / High / Extra high / Max). Switching models mid-chat draws a "Switched to model X" rule, confirmed with the model Claude Code reports on the next turn
 - ✅ Streaming replies with markdown, collapsible tool calls, cost and duration
+- ✅ Compact chat format (Settings › Appearance): each stretch of tool calls folds into one collapsed Working row
+- ✅ Code blocks in your own messages: text between ``` fences shows as a monospace block that keeps its spacing. While the cursor is inside an open fence the composer turns monospace and Enter adds a line; closing the fence or ⌘Enter sends.
 - ✅ Stop (button or Esc)
 - ✅ Send while Claude works: Steer (default, folded in at the next step) or Queue (sent after), set in Settings > General
 - ✅ `/clear` folds the messages before it behind a "Context cleared" divider, with Show earlier messages
@@ -60,18 +65,27 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Revert to here: restores files and forks the conversation
 - ✅ Codex agent (via the `codex` CLI)
 - ✅ Per-tool permission prompts (Full access, Auto, Ask for commands, Ask for edits and commands)
+- ✅ Clickable question cards when Claude asks the user something (`AskUserQuestion`), in every permission mode
 
 ### Right panel
-- ✅ Changes: committed, uncommitted and untracked vs merge base, with diff view
+- ✅ Changes: committed, uncommitted and untracked vs merge base with the target branch (the branch the workspace's PR merges into, or the one below it in a stack; else the branch it started from), with diff view
 - ✅ Code comments: click, drag or shift-click line numbers in the diff to comment; comments wait as chips in the composer (which stays below an open diff or file) and go to the agent together, each with its file, lines and code
 - ✅ All files tree with file preview, filter
+- ✅ Find in a file or diff: ⌘F or the magnifier in the file's header, Enter and ⇧Enter step through matches, Esc closes
 - ✅ Artifacts: files the agent wrote
 - ✅ Checks: PR check runs, re-run failed jobs
 - ✅ PR and check status stay fresh through ETag polling (free 304s), every 15s while focused; no webhook server needed
+- ✅ A workspace adopts the existing PR of whatever branch is checked out in it, including one the agent switched to itself (orchestrator-started workspaces) and fork PRs
 - ✅ Review: agent code review in a new tab
-- ✅ Create PR (agent commits, pushes, opens PR), draft option; PR status, open, squash merge
+- ✅ Create PR (agent commits, pushes, opens PR), draft option; PR status, open, squash merge, update a branch that is behind its base
+- ✅ Word-level highlights in the diff: within an edited line, the words that changed are shaded more strongly, as on GitHub
 - ✅ Review findings inline in the diff, with Fix buttons
-- ✅ Add all PR comments to chat: unresolved review threads, change requests and comments, with file/line context; new-comment count in the header
+- ✅ Review findings in the chat as tiles (severity, file and line, what is wrong, the fix) instead of the raw JSON block; a tile opens the diff at that line, and each has Ask the agent to fix this
+- ✅ Add all PR comments to chat: unresolved review threads, change requests and comments, with file/line context; comment count on the PR chip
+- ✅ Line comments pick Agent or GitHub review (default by Build or Review mode); submit a GitHub review with Comment, Approve or Request changes; findings into your review; GitHub threads inline with Reply, Resolve, Ask agent; header says whose PR it is
+- ✅ Coming back to an updated PR: Review mode takes the author's new commits into the worktree (fast-forward, never over local commits), drafts move to their new lines or are flagged when the code under them changed, outdated threads leave the diff for a collapsed group, and the Review tab shows what changed since your review and your open threads with Resolve and "Which are addressed?" (choo-choo addition, [PRD](prd/review-comments.md#when-the-pr-is-updated))
+- ✅ Since your review: All changes | Since your review toggle on the Files list and diff shows only what the author changed since your last review, with merges from the base branch and clean rebases left out (choo-choo addition, [PRD](prd/review-updates.md))
+- ✅ Build | Review switch per workspace (defaults from PR ownership, switch to collaborate); top right is one PR chip and one next-step button (Create PR, Fix checks, Address comments, Merge, or Submit review); extra tabs under More (choo-choo addition, [PRD](prd/workspace-modes.md))
 
 ### Bottom panel
 - ✅ Terminal tabs (xterm + pty), persist across workspace switches
@@ -82,12 +96,16 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ macOS menus and shortcuts, desktop notifications
 - ✅ dmg/zip builds for Apple silicon and Intel, release workflow (signs and notarizes when secrets are set)
 - ✅ Auto-update from GitHub releases (signed builds install in place; unsigned ones offer brew upgrade or the download page)
+- ✅ Update channels: Stable (published releases) or Beta (a signed prerelease from every merge to main), in Settings > Updates. See [decision 0015](decisions/0015-beta-channel-uses-prereleases.md).
 - ✅ Claude Code version and update check (Settings > Updates; runs `claude update` for an installed copy)
 
 ### Beyond Conductor
 - ✅ Shared sessions: share a workspace (branch, uncommitted files, chats) with coworkers through the repo's own remote; they continue with their own Claude login
 - ✅ Orchestrator: one chat per repo that starts workspaces, briefs their agents, waits on them, follows up and keeps a memory file. It wakes itself with an automatic update when a workspace it started finishes, can run workspaces in a Claude Code cloud session, and watches each workspace's PR and CI checks. See [PRD](prd/orchestrator.md).
 - ✅ Project groups: several repos share one orchestrator and one memory; it starts each workspace in the repo the work belongs to.
+- 🧪 Projects (Settings › Experimental, choo-choo addition): a project's orchestrator chat forwards each message to the right thread or starts one; threads are listed in a panel like Claude desktop projects; each thread owns the workspaces and PRs it starts, and the sidebar shows project › thread › repo › PR, all foldable. The orchestrator adds repos the work turns out to need (asking before it clones one), each project can pick an icon and color, and project rows archive and restore like any workspace. See [PRD](prd/projects.md).
+- 🧪 Automations (Settings › Experimental, choo-choo addition): checks that run on a schedule, a GitHub event (review requested, a PR I review changed for me, CI failed, PR reviewed, new issue or PR, optionally by label) or Run now, and open one workspace per finding in a project thread or a repo, capped per run and never twice for the same finding. See [PRD](prd/automations.md).
+- ✅ Continue work (choo-choo addition): a chat that stops on the plan's usage limit is paused and joins Up next, an ordered list of what starts when the window resets, a few at a time and only until the new window is partly used. Home shows it while you're out of usage; Settings › Continue work holds the rules; Automations can run "When my usage window resets". Drag a workspace, project thread or project onto Up next (or right-click › Queue for next window…) to line it up. See [PRD](prd/continue-work.md).
 
 ## Build sequence
 1. **Foundation**: app scaffold, layout, repos, worktree sessions, agent chat, Changes + diff, terminal.
@@ -110,13 +128,17 @@ Features Conductor doesn't have. Each one is off until you turn it on in Setting
 - ✅ **Claude Code session controls** ([PRD](prd/claude-code-controls.md)): auto mode, a Goal button for `/goal`, fast mode, a spend cap per message, Compact, output styles, Claude Code's own `/code-review` in the Review tab, and a list of running background tasks with Stop.
 - ✅ **MCP servers** ([PRD](prd/mcp-servers.md)): Settings › MCP lists every server Claude Code loads for a repo, with status, tools and errors. You can add (HTTP, SSE or stdio; every repo or the repo's .mcp.json), remove, turn off per repo, retry, and sign in through Claude Code's /mcp.
 - ✅ **Plugins and skills** ([PRD](prd/plugins.md)): Settings › Plugins lets you browse marketplaces (Anthropic's is one click away), install for every repo or one repo, turn plugins on or off, uninstall, and see what each one adds and costs. It also lists your own skills, commands and agents.
-- ✅ **Add-ons** ([PRD](prd/add-ons.md), [author guide](addon-api.md)): Claude Code plugins that also add views to Choo Choo: in the sidebar, under a project, or as a tab beside a workspace. Settings › Add-ons adds sources (git repos, private ones included), installs, and turns add-ons on after showing their permissions in plain words. Views run in a sandbox and reach the app only through a permission-checked API (list, start, message and stop workspaces, PR status, own storage, notifications). An add-on can also keep working in the background, give the orchestrator tools, keep text files in a project's `.choo-choo` folder, and put buttons in the app (at the top of a workspace, on sidebar rows, in the ⌘K palette), and a project's `choo-choo.json` can name the add-ons its team should have. An example lives in `examples/addons`.
+- ✅ **Add-ons** ([PRD](prd/add-ons.md), [author guide](addon-api.md)): Claude Code plugins that also add views to Choo Choo: in the sidebar, under a project, or as a tab beside a workspace. Settings › Add-ons adds sources (git repos, private ones included), installs, and turns add-ons on after showing their permissions in plain words. Views run in a sandbox and reach the app only through a permission-checked API (list, start, message and stop workspaces, the status of any pull request, opening a pull request in a workspace, own storage, notifications). An add-on can also keep working in the background, give the orchestrator tools, keep text files in a project's `.choo-choo` folder (and read the ones an agent left in its worktree), and put buttons in the app (at the top of a workspace, on sidebar rows, in the ⌘K palette), and a project's `choo-choo.json` can name the add-ons its team should have. An example lives in `examples/addons`. Develop add-on… loads an add-on or a marketplace from a folder and reloads it on save, with Reload and Inspect for each add-on (choo-choo addition).
 - ✅ **PRs page** ([PRD](prd/pr-inbox.md)): a PRs item under Search lists open PRs waiting on your review and the ones you opened, across all repos, grouped by repo, like Arc's GitHub live folder. Open → starts (or goes to) a workspace on the PR's branch with the Review tab open, cloning the repo first if needed.
+- ✅ **Review updates** ([PRD](prd/review-updates.md), choo-choo addition): PRs you reviewed are marked on the PRs page, in the sidebar and with a macOS notification only when they change for you (the PR's own code, an answer to your comment, a new request, ready for review), never for a merge from main or a clean rebase. Settings › Reviews has a switch per reason, an editable ignore list and the check interval (1, 2, 5 minutes or your own).
+- ✅ **Stacked PRs** ([PRD](prd/stacked-prs.md)): one workspace holds a stack of PRs for one feature, listed under it in the sidebar, with a switcher in the header and a Stack tab. Changes to a lower PR are rebased up the stack and pushed after each agent turn; conflicts go to the agent. Address feedback on one, some or all PRs, fixed bottom first with a restack after each. Link the stack on GitHub (GitHub's stacked pull requests), then "Merge through #N" merges a PR and every PR below it in one step, all or none, and takes them off the stack.
+- ✅ **Comment mode** ([PRD](prd/comment-mode.md)): ⌘⇧K, click an element, type a note. In `npm run dev` it goes to the running checkout; in a release build Fix it opens a workspace on choo-choo itself (clone, or fork without push access) with the note and a screenshot, or opens a prefilled GitHub issue.
 - ✅ Subagent calls show as one collapsible card per agent, with the steps it took inside.
 - ✅ Settings › Claude Code: run the bundled binary or your installed `claude`. When Claude Code isn't signed in, the chat says to run `claude` and `/login`.
-- ✅ Settings › Telemetry: OpenTelemetry export (metrics, log events, beta traces) from Claude agents to any OTLP collector, tagged with `choo.repo`, `choo.workspace` and `choo.branch`. Prompt and tool content are separate opt-ins.
+- ✅ Settings › Telemetry: OpenTelemetry export (metrics, log events, beta traces) from Claude agents to any OTLP collector, tagged with `choo.repo`, `choo.workspace` and `choo.branch`, plus `choo.project` and `choo.thread` for project work. Prompt and tool content are separate opt-ins.
 - ✅ **Continue on phone**: hand a chat to Claude Code's Remote Control and steer it from the Claude app or claude.ai/code (QR code and link), then bring it back with the phone turns copied in. See [PRD](prd/remote-sessions.md).
+- ✅ **Open in Claude desktop**: `/desktop` in the composer, a button on the chat tabs or the workspace ⋯ menu hands the chat to the Claude desktop app through Claude Code's own `claude --desktop --resume`, then Bring back copies the app's turns in. See [PRD](prd/remote-sessions.md).
 - ✅ **Run in the cloud**: push a workspace to a Claude Code cloud session (`claude --cloud`) that keeps going with the Mac closed, send it follow-ups, and bring it back into the worktree with `claude --teleport`.
-- ✅ Session usage graphs: per chat, tokens per Claude response (input, cache write, cache read, output) and context-window fill, by response or by time, with compactions marked and a table view. Read from Claude Code's own transcript, so no collector is needed and past sessions work too. Open from the chart button on the chat tabs, the Usage link after a turn, or ⌘K.
+- ✅ Session usage graphs: per chat, tokens per Claude response (input, cache write, cache read, output) and context-window fill, by response or by time, with compactions marked and a table view. Read from Claude Code's own transcript, so no collector is needed and past sessions work too. Works in every workspace, including project orchestrators, threads and the workspaces threads start. Open from the right panel (More › Usage, or the Usage panel beside an orchestrator or thread), the ⋯ menu, the Usage link after a turn, or ⌘K.
 - ✅ Settings › Integrations: Notion uses the Notion connection Claude Code already has (no separate sign-in, no Notion token in Choo Choo). Paste a Notion page or task link to start a workspace from it; agents read and update Notion with Claude's Notion tools.
 - Everything runs on the official Agent SDK and an unmodified Claude Code binary, with each user's own sign-in through Claude Code's /login. Choo Choo never shows its own Claude login or handles tokens, which keeps it within Anthropic's terms. oh-my-pi's own Claude subscription login is not used: it impersonates Claude Code.

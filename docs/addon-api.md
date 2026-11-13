@@ -202,13 +202,15 @@ The client sets CSS variables on `<html>` and keeps them current: `--choo-bg`, `
 | `choo.workspaces.start({ repoId, task, title?, model?, planFirst? })` | `workspaces:start` | Creates a worktree, branch and agent, and sends it `task`. Returns the workspace right away; the agent works in the background. At most 8 of your workspaces can be running at once. |
 | `choo.workspaces.message(workspaceId, message)` | `workspaces:message` | Sends a follow-up. Fails while the agent is running. |
 | `choo.workspaces.stop(workspaceId)` | `workspaces:stop` | Stops the workspace's running agents. |
-| `choo.prs.status(workspaceId)` | `prs:read` | `{ pr: { number, url, state, isDraft, title, reviewDecision, mergeState } \| null, checks: { total, passed, pending, failed: [{ name, link }] } }` |
-| `choo.files.list(repoId, dir?)` | `files:read` | Text files in the project's `.choo-choo/` folder (main checkout), up to 500: `{ path, size, modified }`, with `path` relative to `.choo-choo/`. |
-| `choo.files.read(repoId, path)` | `files:read` | `{ content, modified }`, or `null` when there is no such file. |
+| `choo.workspaces.forPr(repoId, number)` | `workspaces:start` | The workspace on that pull request's branch. If there is none, one is made with the branch checked out. Starts no agent. Show it with `choo.ui.openWorkspace`. |
+| `choo.prs.status(workspaceId)` | `prs:read` | The pull request of a workspace's branch: `{ pr: { number, url, state, isDraft, title, reviewDecision, mergeState, branch } \| null, checks: { total, passed, pending, failed: [{ name, link }] } }` |
+| `choo.prs.get(repoId, number)` | `prs:read` | The same, for any pull request of the project by its number, whether or not a workspace is on it. `choo.on('prs')` only reports workspaces' pull requests, so ask again when you need this one fresh, and not more than every minute or two. |
+| `choo.files.list(repoId, dir?, { workspaceId? })` | `files:read` | Text files in the project's `.choo-choo/` folder (main checkout), up to 500: `{ path, size, modified }`, with `path` relative to `.choo-choo/`. With `workspaceId`, the `.choo-choo/` folder in that workspace's worktree instead. |
+| `choo.files.read(repoId, path, { workspaceId? })` | `files:read` | `{ content, modified }`, or `null` when there is no such file. With `workspaceId`, the file an agent left in its own worktree. Writing always goes to the main checkout, so this is how an add-on brings such a file over. |
 | `choo.files.write(repoId, path, content)` / `delete(repoId, path)` | `files:write` | Creates, replaces or deletes a file under `.choo-choo/`. Only `.md`, `.json`, `.txt`, `.yaml` and `.yml`, at most 1 MB, no dotfiles, and never through a symlink. The change is an ordinary uncommitted edit in the project. |
 | `choo.store.get(key)` / `set(key, value)` / `delete(key)` / `keys()` | `storage` | Your add-on's own JSON storage on this Mac, 1 MB in total. |
 | `choo.actions.handle(id, fn)` | none | Answers presses of the button `id` from the manifest's `actions`: `fn({ place, repoId?, workspaceId? })`. See [Buttons in the app](#buttons-in-the-app). |
-| `choo.ui.openWorkspace(workspaceId)` | none | Shows the workspace in the app. |
+| `choo.ui.openWorkspace(workspaceId, { beside? })` | none | Shows the workspace in the app. From a page, `{ beside: true }` opens it in a pane next to the page instead of replacing the page (up to three stacked panes, then the last is reused). |
 | `choo.ui.notify(title, body?, workspaceId?)` | `notify` | A system notification, prefixed with your add-on's name. Respects the person's notification setting. |
 | `net:<host>` | (a permission, not a method) | Lets views `fetch` and load images from `https://<host>`. `*.example.com` covers subdomains. |
 
@@ -244,11 +246,17 @@ A project can name the add-ons its team should have in the `choo-choo.json` at i
 
 ## Trying yours
 
-1. Settings › Add-ons › Add source: paste the path to your marketplace folder.
-2. Install it and turn it on.
-3. With a folder as the source, Choo Choo reads the add-on straight from it: edit a file, then reopen the view. After changing the manifest, press Check again in Settings › Add-ons.
+1. Settings › Add-ons › **Develop add-on…**: pick your add-on's folder, or the root of a marketplace repo holding several. A single add-on needs no `marketplace.json`; Choo Choo puts it in a marketplace of its own called `choo-choo-dev`.
+2. Turn it on. It shows a **Dev** badge.
+3. Edit and save. Choo Choo reads the add-on straight from the folder and watches it: a save reloads its open views and restarts its background page, and a save of `choo-choo.addon.json` reads the manifest again. If the manifest is broken, or asks for new permissions, the app says so and the add-on pauses until it's fixed or reviewed.
 
-With a git repo as the source, push your change and update the plugin (`claude plugin update <name>@<source>`).
+**Reload** and **Inspect** sit on a dev add-on's row in Settings, and the ⌘K palette has "Reload <add-on>" and "Inspect <add-on>". Inspect opens DevTools for the app window, where views run as frames (pick the frame in the console's context menu), and a DevTools window for the background page. Your Claude Code parts (skills, commands, hooks) load from the folder too, in new sessions.
+
+A reload starts the add-on's frames over, so a view loses whatever it kept in memory. Keep what should survive in `choo.store`. If your add-on has a build step, run its watcher (for example `vite build --watch`) into the folder your manifest points at; each rebuild is a save.
+
+If the folder's marketplace is already added from GitHub, Choo Choo offers to swap that source for the folder. The ids stay the same, so your permissions and the add-on's data carry over. To go back, remove the source and add the repo again.
+
+Without Develop add-on, Add source also takes a folder path, and add-ons from a folder are watched the same way. With a git repo as the source, push your change and update the plugin (`claude plugin update <name>@<source>`).
 
 ## Compatibility
 

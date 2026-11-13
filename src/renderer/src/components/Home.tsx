@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore, addRepository, openOrchestrator } from '../store'
 import { IconAddon, IconEye, IconFolder, IconFolderPlus, IconGear, IconGlobe, IconOrchestrator, IconSidebar, IconTool } from '../icons'
 import { BrandMark } from './BrandMark'
+import { ContinueCard } from './ContinueWork'
 
 export function Home() {
   const s = useStore()
@@ -49,6 +50,7 @@ export function Home() {
           Choo Choo
         </h1>
         <p className="mb-8 text-muted">Run Claude Code agents in parallel, each in its own git worktree.</p>
+        <ContinueCard />
         <div className="grid grid-cols-3 gap-3">
           {actions.map((a) => (
             <button key={a.label} onClick={a.run} className="flex flex-col items-start gap-3 rounded-lg border border-line px-4 py-3 text-left whitespace-nowrap hover:bg-hover">

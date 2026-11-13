@@ -1,14 +1,18 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { CheckRun, GithubRepo, PrComment, PrInfo, SourceOption } from '@shared/types'
-import { parsePrFeedback, PR_FEEDBACK_QUERY } from '@shared/prComments'
+import { parsePrReviewInfo, PR_FEEDBACK_QUERY } from '@shared/prComments'
+import { comparePath } from '@shared/prStatus'
+import { patchLines, reviewPayload, type PrDiffLines, type PrReviewInfo, type ReviewDraft, type ReviewEvent } from '@shared/prReview'
 import { parsePrInbox, prInboxQuery, type InboxPr, type PrRole } from '@shared/prInbox'
+import type { RepoItem } from '@shared/automations'
 
 const exec = promisify(execFile)
 
+/** The pull request of a branch, or the one with that number: `gh pr view` takes either. */
 export async function prForBranch(cwd: string, branch: string): Promise<PrInfo | null> {
   try {
-    const { stdout } = await exec('gh', ['pr', 'view', branch, '--json', 'number,url,state,isDraft,title,mergeable,reviewDecision,mergeStateStatus'], { cwd })
+    const { stdout } = await exec('gh', ['pr', 'view', branch, '--json', 'number,url,state,isDraft,title,mergeable,reviewDecision,mergeStateStatus,headRefName,baseRefName,isCrossRepository,headRepositoryOwner,headRefOid'], { cwd })
     return JSON.parse(stdout) as PrInfo
   } catch {
     return null
@@ -24,14 +28,102 @@ export async function markPrReady(cwd: string, number: number) {
   await exec('gh', ['pr', 'ready', String(number)], { cwd })
 }
 
+/** How many commits the PR's base branch has that its own branch lacks; undefined when GitHub can't say. */
+export async function prBehindBy(cwd: string, pr: PrInfo): Promise<number | undefined> {
+  const path = comparePath(pr)
+  if (!path) return undefined
+  try {
+    const { stdout } = await exec('gh', ['api', path, '--jq', '.behind_by'], { cwd, timeout: 20_000 })
+    const n = Number(stdout.trim())
+    return Number.isFinite(n) ? n : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Merges the base branch into the PR's branch on GitHub, as the "Update branch" button there does. */
+export async function updatePrBranch(cwd: string, number: number) {
+  try {
+    await exec('gh', ['pr', 'update-branch', String(number)], { cwd })
+  } catch (e) {
+    const err = e as { stderr?: string; message?: string }
+    throw new Error((err.stderr || err.message || 'Could not update the branch').trim())
+  }
+}
+
 /** Unresolved review threads, reviews and conversation comments on a PR. */
 export async function prComments(cwd: string, number: number): Promise<PrComment[]> {
+  return (await prReview(cwd, number)).feedback
+}
+
+/** The PR's feedback plus its author, the signed-in gh user and that user's last review. */
+export async function prReview(cwd: string, number: number): Promise<PrReviewInfo> {
   const { stdout } = await exec(
     'gh',
     ['api', 'graphql', '-F', 'owner={owner}', '-F', 'name={repo}', '-F', `number=${number}`, '-f', `query=${PR_FEEDBACK_QUERY}`],
     { cwd, maxBuffer: 16 * 1024 * 1024 }
   )
-  return parsePrFeedback(JSON.parse(stdout))
+  return parsePrReviewInfo(JSON.parse(stdout))
+}
+
+/** The lines of each file in the PR that can take a review comment. */
+export async function prDiffLines(cwd: string, number: number): Promise<PrDiffLines> {
+  const { stdout } = await exec('gh', ['api', '--paginate', `repos/{owner}/{repo}/pulls/${number}/files?per_page=100`, '--jq', '.[] | {filename, patch}'], {
+    cwd,
+    maxBuffer: 64 * 1024 * 1024
+  })
+  const out: PrDiffLines = {}
+  for (const line of stdout.split('\n').filter(Boolean)) {
+    const f = JSON.parse(line) as { filename: string; patch?: string }
+    out[f.filename] = patchLines(f.patch)
+  }
+  return out
+}
+
+/** Runs gh with `input` on stdin and returns stdout. */
+function ghWithInput(cwd: string, args: string[], input: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const p = spawn('gh', args, { cwd })
+    let out = ''
+    let err = ''
+    p.stdout.on('data', (d) => (out += d))
+    p.stderr.on('data', (d) => (err += d))
+    p.on('error', reject)
+    p.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(ghError(err || out) || `gh exited with ${code}`))))
+    p.stdin.end(input)
+  })
+}
+
+/** GitHub's own message from a failed `gh api` call, when there is one. */
+function ghError(text: string): string {
+  try {
+    const j = JSON.parse(text.slice(text.indexOf('{'))) as { message?: string; errors?: (string | { message?: string })[] }
+    const more = (j.errors ?? []).map((e) => (typeof e === 'string' ? e : e.message)).filter(Boolean)
+    return [j.message, ...more].filter(Boolean).join(': ')
+  } catch {
+    return text.trim()
+  }
+}
+
+/** Submits a review with line comments in one call, so nothing is posted until the person submits. */
+export async function submitReview(cwd: string, number: number, drafts: ReviewDraft[], body: string, event: ReviewEvent, commitId?: string): Promise<{ url: string }> {
+  const out = await ghWithInput(cwd, ['api', '--method', 'POST', `repos/{owner}/{repo}/pulls/${number}/reviews`, '--input', '-'], JSON.stringify(reviewPayload(drafts, body, event, commitId)))
+  const res = JSON.parse(out || '{}') as { html_url?: string }
+  return { url: res.html_url ?? '' }
+}
+
+async function graphql(cwd: string, query: string, vars: Record<string, string>) {
+  const args = ['api', 'graphql', '-f', `query=${query}`]
+  for (const [k, v] of Object.entries(vars)) args.push('-f', `${k}=${v}`)
+  await exec('gh', args, { cwd })
+}
+
+export async function replyToThread(cwd: string, threadId: string, body: string) {
+  await graphql(cwd, 'mutation($id: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $id, body: $body}) { comment { id } } }', { id: threadId, body })
+}
+
+export async function resolveThread(cwd: string, threadId: string) {
+  await graphql(cwd, 'mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }', { id: threadId })
 }
 
 export async function checks(cwd: string, branch: string): Promise<CheckRun[]> {
@@ -64,6 +156,16 @@ export async function listMyRepos(): Promise<GithubRepo[]> {
   return repos.sort((a, b) => (b.pushedAt ?? '').localeCompare(a.pushedAt ?? ''))
 }
 
+/** The newest open issues and PRs in the repo at `cwd`, newest first. */
+export async function recentIssues(cwd: string): Promise<RepoItem[]> {
+  const { stdout } = await exec(
+    'gh',
+    ['api', 'repos/{owner}/{repo}/issues?state=open&sort=created&direction=desc&per_page=30', '--jq', '[.[] | {number, title, url: .html_url, author: (.user.login // "ghost"), labels: [.labels[].name], isPr: (.pull_request != null)}]'],
+    { cwd, timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }
+  )
+  return JSON.parse(stdout || '[]') as RepoItem[]
+}
+
 /** Open PRs that ask for the person's review, plus the ones they opened, across every repo gh can see. */
 export async function prInbox(): Promise<InboxPr[]> {
   try {
@@ -80,8 +182,9 @@ export async function prInbox(): Promise<InboxPr[]> {
         return run(20)
       }
     }
-    const [review, mine] = await Promise.all([search('review'), search('mine')])
-    return parsePrInbox({ data: { review, mine } })
+    // PRs you reviewed drop out of "review requested"; a failed third search shouldn't lose the other two.
+    const [review, mine, reviewed] = await Promise.all([search('review'), search('mine'), search('reviewed').catch(() => undefined)])
+    return parsePrInbox({ data: { review, reviewed, mine } })
   } catch (e) {
     const err = e as { code?: string; stderr?: string; message?: string }
     if (err.code === 'ENOENT') throw new Error('The GitHub CLI (gh) isn\'t installed. Install it with `brew install gh`, then run `gh auth login`.')
@@ -111,8 +214,8 @@ export async function listIssues(cwd: string, query: string): Promise<SourceOpti
 }
 
 export async function prHead(cwd: string, number: number) {
-  const { stdout } = await exec('gh', ['pr', 'view', String(number), '--json', 'headRefName,isCrossRepository,title'], { cwd })
-  return JSON.parse(stdout) as { headRefName: string; isCrossRepository: boolean; title: string }
+  const { stdout } = await exec('gh', ['pr', 'view', String(number), '--json', 'headRefName,baseRefName,isCrossRepository,title'], { cwd })
+  return JSON.parse(stdout) as { headRefName: string; baseRefName?: string; isCrossRepository: boolean; title: string }
 }
 
 export async function issueText(cwd: string, number: number) {
@@ -143,4 +246,31 @@ export function issueContext(number: number, issue: { title: string; body: strin
     `<issue_title>${esc(issue.title)}</issue_title>`,
     `<issue_body>\n${esc(issue.body.trim())}\n</issue_body>`
   ].join('\n\n')
+}
+
+/** GitHub's per-file "Viewed" ticks on a PR, for the signed-in user, and the PR's node id for changing them. */
+export async function prViewed(cwd: string, number: number): Promise<{ prId: string; files: Record<string, 'VIEWED' | 'UNVIEWED' | 'DISMISSED'> }> {
+  const files: Record<string, 'VIEWED' | 'UNVIEWED' | 'DISMISSED'> = {}
+  let prId = ''
+  let after: string | null = null
+  // 100 files a page; PRs past 3000 files are rare and the rest just show unticked.
+  for (let page = 0; page < 30; page++) {
+    const query: string = `query($owner: String!, $name: String!, $number: Int!${after ? ', $after: String!' : ''}) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id files(first: 100${after ? ', after: $after' : ''}) { nodes { path viewerViewedState } pageInfo { hasNextPage endCursor } } } } }`
+    const args: string[] = ['api', 'graphql', '-F', 'owner={owner}', '-F', 'name={repo}', '-F', `number=${number}`, '-f', `query=${query}`]
+    if (after) args.push('-f', `after=${after}`)
+    const { stdout }: { stdout: string } = await exec('gh', args, { cwd, maxBuffer: 16 * 1024 * 1024, timeout: 30_000 })
+    const pr = JSON.parse(stdout).data?.repository?.pullRequest
+    if (!pr) break
+    prId = pr.id
+    for (const f of pr.files?.nodes ?? []) if (f?.path) files[f.path] = f.viewerViewedState
+    if (!pr.files?.pageInfo?.hasNextPage) break
+    after = pr.files.pageInfo.endCursor
+  }
+  return { prId, files }
+}
+
+/** Ticks or unticks a file's "Viewed" box on GitHub. */
+export async function setPrViewed(cwd: string, prId: string, path: string, viewed: boolean) {
+  const m = viewed ? 'markFileAsViewed' : 'unmarkFileAsViewed'
+  await graphql(cwd, `mutation($id: ID!, $path: String!) { ${m}(input: {pullRequestId: $id, path: $path}) { clientMutationId } }`, { id: prId, path })
 }

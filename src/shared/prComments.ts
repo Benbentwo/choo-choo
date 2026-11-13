@@ -1,22 +1,26 @@
 import type { PrComment } from './types'
+import { latestReviewBy, type PrReviewInfo } from './prReview'
 
 /** GraphQL query for every kind of feedback on a pull request. gh fills {owner} and {repo}. */
 export const PR_FEEDBACK_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  viewer { login }
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       author { login }
       reviewThreads(first: 100) {
         nodes {
+          id
           isResolved
           isOutdated
           path
           line
           originalLine
           startLine
+          diffSide
           comments(first: 50) { nodes { id author { login } body createdAt url diffHunk } }
         }
       }
-      reviews(last: 50) { nodes { id author { login } state body submittedAt url } }
+      reviews(last: 50) { nodes { id author { login } state body submittedAt url commit { oid } } }
       comments(last: 100) { nodes { id author { login } body createdAt url } }
     }
   }
@@ -25,11 +29,11 @@ export const PR_FEEDBACK_QUERY = `query($owner: String!, $name: String!, $number
 type Author = { login: string } | null
 type Node<T> = { nodes: (T | null)[] | null } | null
 interface ThreadComment { id: string; author: Author; body: string; createdAt: string; url: string; diffHunk?: string }
-interface Thread { isResolved: boolean; isOutdated: boolean; path: string; line: number | null; originalLine: number | null; startLine: number | null; comments: Node<ThreadComment> }
-interface Review { id: string; author: Author; state: string; body: string; submittedAt: string | null; url: string }
+interface Thread { id?: string; diffSide?: 'LEFT' | 'RIGHT' | null; isResolved: boolean; isOutdated: boolean; path: string; line: number | null; originalLine: number | null; startLine: number | null; comments: Node<ThreadComment> }
+interface Review { id: string; author: Author; state: string; body: string; submittedAt: string | null; url: string; commit?: { oid: string } | null }
 interface IssueComment { id: string; author: Author; body: string; createdAt: string; url: string }
 export interface PrFeedbackResponse {
-  data?: { repository?: { pullRequest?: { author: Author; reviewThreads: Node<Thread>; reviews: Node<Review>; comments: Node<IssueComment> } | null } | null }
+  data?: { viewer?: { login: string } | null; repository?: { pullRequest?: { author: Author; reviewThreads: Node<Thread>; reviews: Node<Review>; comments: Node<IssueComment> } | null } | null }
 }
 
 const nodes = <T>(n: Node<T> | undefined): T[] => (n?.nodes ?? []).filter((x): x is T => !!x)
@@ -51,6 +55,8 @@ export function parsePrFeedback(res: PrFeedbackResponse): PrComment[] {
     out.push({
       id: first.id,
       kind: 'inline',
+      threadId: t.id,
+      side: t.diffSide === 'LEFT' ? 'old' : 'new',
       author: first.author?.login ?? 'ghost',
       body: first.body.trim(),
       // A reply from the PR author (often the agent) doesn't make the thread new again.
@@ -76,6 +82,25 @@ export function parsePrFeedback(res: PrFeedbackResponse): PrComment[] {
     out.push({ id: c.id, kind: 'comment', author, body: c.body.trim(), createdAt: c.createdAt, url: c.url })
   }
   return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+/** The feedback plus who wrote the PR, who is signed in, and how they last reviewed it. */
+export function parsePrReviewInfo(res: PrFeedbackResponse): PrReviewInfo {
+  const pr = res.data?.repository?.pullRequest
+  const viewer = res.data?.viewer?.login ?? ''
+  const reviews = nodes(pr?.reviews).map((r) => ({ author: r.author?.login ?? 'ghost', state: r.state, submittedAt: r.submittedAt, commit: r.commit?.oid }))
+  // The commit of the viewer's newest submitted review, of any kind: what they last looked at.
+  const last = reviews
+    .filter((r) => viewer && r.author.toLowerCase() === viewer.toLowerCase() && r.state !== 'PENDING' && r.submittedAt && r.commit)
+    .sort((a, b) => (a.submittedAt ?? '').localeCompare(b.submittedAt ?? ''))
+    .at(-1)
+  return {
+    author: pr?.author?.login ?? '',
+    viewer,
+    myReview: viewer ? latestReviewBy(reviews, viewer) : undefined,
+    myReviewCommit: last?.commit,
+    feedback: parsePrFeedback(res)
+  }
 }
 
 /** Comments newer than the last time they were added to chat. */

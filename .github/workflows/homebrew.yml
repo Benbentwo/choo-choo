@@ -1,0 +1,79 @@
+name: Homebrew cask
+# Writes Casks/choo-choo.rb in Benbentwo/homebrew-tap for a published stable release, so
+# `brew install --cask benbentwo/tap/choo-choo` gets it. The Release workflow calls this after each release;
+# run it by hand (Actions > Homebrew cask > Run workflow) to point the cask at an existing release.
+#
+# Needs a HOMEBREW_TAP_TOKEN secret that can push to Benbentwo/homebrew-tap. Without it the job warns and skips.
+# Betas never go in the cask: signed apps update themselves, so beta testers install the stable cask and pick
+# Settings > Updates > Update channel > Beta.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      signed:
+        type: string
+        default: 'true'
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, like v0.2.1. Leave empty for the latest release.'
+        required: false
+      signed:
+        description: 'The release is signed and notarized'
+        type: boolean
+        default: true
+concurrency:
+  group: homebrew-cask
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  cask:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      TAG: ${{ inputs.tag }}
+      SIGNED: ${{ inputs.signed }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update the Homebrew cask
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::No HOMEBREW_TAP_TOKEN secret; skipping the Homebrew cask update."
+            echo "Homebrew cask not updated: add a HOMEBREW_TAP_TOKEN secret that can push to Benbentwo/homebrew-tap." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "$TAG" ]; then TAG=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name); fi
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")
+          if [ "$(jq -r '.prerelease or .draft' <<< "$release")" = "true" ]; then
+            echo "::error::$TAG is a draft or prerelease; the cask only follows stable releases."; exit 1
+          fi
+          VERSION="${TAG#v}"
+          # GitHub records each asset's sha256; download and hash only if it's missing.
+          sha() {
+            local name="ChooChoo-$VERSION-$1.dmg" digest
+            digest=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .digest // ""' <<< "$release")
+            if [ "${digest#sha256:}" != "$digest" ]; then echo "${digest#sha256:}"; return; fi
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dl --pattern "$name" --clobber
+            sha256sum "dl/$name" | cut -d' ' -f1
+          }
+          arm=$(sha arm64)
+          intel=$(sha x64)
+          if [ -z "$arm" ] || [ -z "$intel" ]; then echo "::error::$TAG is missing a ChooChoo-$VERSION-<arch>.dmg."; exit 1; fi
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/Benbentwo/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          scripts/homebrew-cask.sh "$VERSION" "$arm" "$intel" "${SIGNED:-true}" > tap/Casks/choo-choo.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/choo-choo.rb
+          if git diff --cached --quiet; then echo "Cask already up to date."; exit 0; fi
+          git commit -m "choo-choo $VERSION"
+          git push origin HEAD:main
+          echo "Homebrew cask now at choo-choo $VERSION." >> "$GITHUB_STEP_SUMMARY"

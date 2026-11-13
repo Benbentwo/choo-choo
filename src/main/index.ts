@@ -1,11 +1,14 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
-import type { Artifact, Chat, FilePreview, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
+import type { Automation } from '@shared/automations'
+import type { Artifact, Chat, FeedbackOptions, FilePreview, PrInfo, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
+import { diffBase } from '@shared/stack'
+import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import { sessionUsage } from './usage'
 import * as store from './store'
@@ -16,28 +19,39 @@ import { pickCityName } from './names'
 import { readScripts } from './scripts'
 import { listCommands } from './commands'
 import * as gh from './github'
+import * as stack from './stack'
 import { startPrWatch } from './prWatch'
 import { suggestName, suggestTitleFromChats } from './naming'
 import * as updates from './updater'
-import { registerDevFeedback } from './devFeedback'
+import { registerUiComment } from './uiComment'
 import * as conductor from './conductorImport'
 import { modelDetails } from './models'
+import { initLimitsHistory, subscriptionLimits } from './limits'
 import { listOutputStyles } from './claudeOptions'
 import * as mcp from './mcp'
 import * as plugins from './plugins'
 import { resolveTheme } from '@shared/themes'
 import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
+import * as automations from './automations'
+import * as continueWork from './continueWork'
+import { projectThreads, routerChat, telemetryTags, threadTitle, updateTarget } from '@shared/projects'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
+import { onModelPicked } from '@shared/modelSwitch'
 import * as archive from './archive'
 import * as remote from './remote'
+import * as desktop from './desktop'
 import * as cloud from './cloud'
 import { registerIntegrationsIpc } from './integrations'
 import * as notion from './integrations/notion'
 import * as addonHost from './addonHost'
 import { originUrl, githubSlug } from './share'
 import { prBranch, type PrInbox } from '@shared/prInbox'
+import { activeGlobs, normalizeReviewSettings } from '@shared/reviewUpdates'
+import * as interdiff from './interdiff'
+import * as reviewWatch from './reviewWatch'
+import { followPrBase, prRef, syncWorkspaceBranch } from './workspacePr'
 
 let win: BrowserWindow | null = null
 
@@ -142,13 +156,13 @@ function newChat(workspaceId: string): Chat {
   return chat
 }
 
-async function createWorkspace(repoId: string, source?: WorkspaceSource, folders: string[] = []) {
+async function createWorkspace(repoId: string, source?: WorkspaceSource, folders: string[] = [], opts: { baseRef?: string; branch?: string } = {}) {
   const s = store.get()
   const repo = s.repos.find((r) => r.id === repoId)
   if (!repo) throw new Error('Unknown repo')
   const taken = new Set(s.workspaces.filter((w) => w.repoId === repoId).map((w) => w.name))
   const name = pickCityName(taken)
-  const baseRef = await git.baseRefFor(repo.path, repo.defaultBranch)
+  let baseRef = opts.baseRef ?? (await git.baseRefFor(repo.path, repo.defaultBranch))
   const dir = join(workspacesRoot(), repo.name)
   mkdirSync(dir, { recursive: true })
   const path = join(dir, name)
@@ -156,6 +170,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
   let title = name
   let named = false
   let context: string | undefined
+  let prNumber: number | undefined
   if (source?.kind === 'branch') {
     branch = source.name
     await git.addWorktreeForRemoteBranch(repo.path, path, branch)
@@ -168,9 +183,12 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     else await git.addWorktreeForRemoteBranch(repo.path, path, branch)
     title = `#${source.number} ${pr.title}`
     named = true
+    prNumber = source.number
+    // Compare with the branch the PR merges into, which isn't always the default branch.
+    if (pr.baseRefName && !opts.baseRef) baseRef = await git.baseRefFor(repo.path, pr.baseRefName)
   } else {
     const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
-    branch = `${prefix}/${name}`
+    branch = opts.branch ?? `${prefix}/${name}`
     await git.addWorktree(repo.path, path, branch, baseRef)
     if (source?.kind === 'issue') {
       const issue = await gh.issueText(repo.path, source.number)
@@ -179,7 +197,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
       context = notion.pageContext(source.id)
     }
   }
-  const workspace: Workspace = { id: randomUUID(), repoId, name, branch, baseRef, path, title, named, createdAt: Date.now() }
+  const workspace: Workspace = { id: randomUUID(), repoId, name, branch, ...(prNumber ? { prNumber } : {}), baseRef, path, title, named, createdAt: Date.now() }
   s.workspaces.push(workspace)
   const chat = newChat(workspace.id)
   if (folders.length) chat.additionalDirectories = [...new Set(folders)]
@@ -322,6 +340,17 @@ const afterTurn = new Map<string, { text: string; images: string[] }[]>()
  * or queued per Settings; when the turn can't take it, it waits and is sent when the turn ends.
  */
 function sendFromPerson(chat: Chat, text: string, images: string[]) {
+  // `/desktop` (or `/app`) hands the chat to Claude desktop, as it does in Claude Code's terminal.
+  if (desktop.DESKTOP_COMMAND.test(text.trim()) && !images.length && chat.model !== 'codex') {
+    const ws = findWs(chat.workspaceId)
+    return desktop.openInDesktop(chat, ws, agentEnv(ws, chat), emitChat).then(() => undefined)
+  }
+  // Out of usage: hold the message in Up next instead of sending it into a refused turn.
+  if (!agent.isRunning(chat.id) && continueWork.isLimited() && chat.model !== 'codex') {
+    const { position } = continueWork.add(chat.id, text, { top: !!chat.paused, images: images.slice(0, 10) })
+    emitChat(chat.id, { item: { id: randomUUID(), kind: 'note', text: `You're out of usage for this window. Your message is #${position} in Up next and will be sent when the window resets.`, ts: Date.now() } })
+    return
+  }
   if (!agent.isRunning(chat.id)) return sendToChat(chat, text, images)
   if (agent.pushMessage(chat, text, images.slice(0, 10), store.get().settings.whileRunning ?? 'steer', emitChat)) return
   afterTurn.set(chat.id, [...(afterTurn.get(chat.id) ?? []), { text, images }])
@@ -334,15 +363,56 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
   const ws = findWs(chat.workspaceId)
   const repo = store.get().repos.find((r) => r.id === ws.repoId)
   if (!ws.named) void nameWorkspace(ws, text)
-  const env = agentEnv(ws)
   let extra: Parameters<typeof agent.send>[8]
   if (ws.orchestrator && repo) {
     const scope = scopeFor(ws, repo)
     // The orchestrator's tools only exist on Claude.
     if (chat.model === 'codex') chat.model = 'opus'
-    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets())
+    const role = projectRole(ws, chat)
+    if (role?.kind === 'thread' && chat.title === 'New thread') {
+      chat.title = threadTitle(text)
+      store.save()
+      send('state:changed')
+    }
+    const run = automations.hooksFor(chat)
+    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets(), role, run)
   }
+  // After a new thread is titled, so its telemetry carries the title.
+  const env = agentEnv(ws, chat)
   void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
+}
+
+/** With projects on, a project orchestrator's first chat routes messages and the rest are threads. */
+function projectRole(ws: Workspace, chat: Chat): orchestrator.ProjectRole | undefined {
+  if (!ws.groupId || !store.get().settings.experimentalProjects) return undefined
+  const router = routerChat(store.get().chats, ws.id)
+  const kind = chat.thread || (router && router.id !== chat.id) ? 'thread' : 'router'
+  return {
+    kind,
+    chatId: chat.id,
+    title: chat.title,
+    threads: {
+      list: () => projectThreads(store.get().chats, ws.id),
+      create: (title) => newThread(ws, title),
+      forward: (c, t) => {
+        autoWakes.delete(c.id)
+        sendFromPerson(c, t, [])
+      }
+    }
+  }
+}
+
+/** A new thread on a project's orchestrator, reading the same repos as its orchestrator chat. */
+function newThread(ws: Workspace, title = 'New thread'): Chat {
+  const chat = newChat(ws.id)
+  chat.thread = true
+  chat.title = title
+  if (chat.model === 'codex') chat.model = 'opus'
+  const router = routerChat(store.get().chats, ws.id)
+  if (router?.additionalDirectories) chat.additionalDirectories = [...router.additionalDirectories]
+  store.save()
+  send('state:changed')
+  return chat
 }
 
 /** What an orchestrator directs: its repo, or every repo in its project group. */
@@ -358,9 +428,105 @@ function scopeFor(ws: Workspace, repo: Repo): orchestrator.Scope {
 
 const cloudOut = { onData: (i: string, d: string) => send('pty:data', i, d), onExit: (i: string, c: number) => send('pty:exit', i, c), stateChanged: () => send('state:changed') }
 
+/** Notices a branch the agent checked out in the worktree, so PR lookups follow it. See workspacePr.ts. */
+async function catchUpBranch(ws: Workspace) {
+  if (!(await syncWorkspaceBranch(ws))) return
+  store.save()
+  send('state:changed')
+  send('pr:changed', ws.id)
+}
+
+/** Moves the workspace's diff base to the branch its open PR merges into, when they differ. */
+async function followPr(ws: Workspace, pr: PrInfo | null) {
+  const repo = store.get().repos.find((r) => r.id === ws.repoId)
+  if (!repo || !(await followPrBase(ws, repo.path, pr).catch(() => false))) return
+  store.save()
+  send('state:changed')
+}
+
+/** The workspace, caught up with the branch checked out in it, for looking up its PR. */
+async function wsForPr(id: string) {
+  const ws = findWs(id)
+  await catchUpBranch(ws)
+  return ws
+}
+
+/** Clones a git URL or GitHub owner/repo into the repos folder (or `dir`) and adds it to Choo Choo. */
+async function cloneAndAdd(url: string, dir?: string): Promise<Repo> {
+  url = url.trim()
+  const root = dir?.trim() ? resolve(dir.trim().replace(/^~(?=$|\/)/, homedir())) : REPOS_ROOT
+  // owner/repo shorthand (or a github.com URL) clones through gh, so private repos use the gh login.
+  const gh_ = url.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
+  if (!gh_ && !/^(https:\/\/|git@|ssh:\/\/)/.test(url)) throw new Error('Enter owner/repo, or an https or ssh git URL')
+  mkdirSync(root, { recursive: true })
+  let dest = join(root, git.repoNameFromUrl(url))
+  for (let n = 2; existsSync(dest); n++) dest = join(root, `${git.repoNameFromUrl(url)}-${n}`)
+  if (gh_) await gh.cloneRepo(gh_, dest)
+  else await git.clone(url, dest)
+  return addRepo(dest)
+}
+
+/** The GitHub owner/name of each repo in Choo Choo, looked up once per path. */
+const slugs = new Map<string, string>()
+async function repoSlug(r: Repo): Promise<string | undefined> {
+  if (!slugs.has(r.path)) slugs.set(r.path, (existsSync(r.path) && githubSlug(await originUrl(r.path).catch(() => ''))) || '')
+  return slugs.get(r.path) || undefined
+}
+
+let myRepos: { at: number; list: Promise<Awaited<ReturnType<typeof gh.listMyRepos>>> } | null = null
+
+/** Repos in Choo Choo and on GitHub that match a query, for a project's orchestrator. */
+async function findRepos(groupId: string, query: string) {
+  const s = store.get()
+  const group = s.groups?.find((g) => g.id === groupId)
+  const words = query.toLowerCase().split(/[\s,]+/).filter(Boolean)
+  const hit = (...fields: (string | undefined)[]) => !words.length || words.some((w) => fields.some((f) => f?.toLowerCase().includes(w)))
+  const local = await Promise.all(
+    s.repos.map(async (r) => ({ name: r.name, path: r.path, github: await repoSlug(r), inProject: !!group?.repoIds.includes(r.id) }))
+  )
+  if (!myRepos || Date.now() - myRepos.at > 10 * 60_000) myRepos = { at: Date.now(), list: gh.listMyRepos() }
+  const haveSlugs = new Set(local.map((l) => l.github?.toLowerCase()).filter(Boolean))
+  let github: { nameWithOwner: string; description?: string; private?: boolean }[] = []
+  try {
+    github = (await myRepos.list)
+      .filter((r) => !haveSlugs.has(r.nameWithOwner.toLowerCase()) && hit(r.nameWithOwner, r.description ?? undefined))
+      .slice(0, 20)
+      .map((r) => ({ nameWithOwner: r.nameWithOwner, description: r.description ?? undefined, private: r.private }))
+  } catch {
+    myRepos = null
+  }
+  return { local: local.filter((l) => hit(l.name, l.github)).slice(0, 30), github }
+}
+
+/** Adds a repo to a project: one in Choo Choo by name, path or owner/name, or (with clone) a GitHub repo it clones first. */
+async function addRepoToProject(groupId: string, ref: string, opts: { clone: boolean }): Promise<Repo> {
+  const s = store.get()
+  const group = s.groups?.find((g) => g.id === groupId)
+  if (!group) throw new Error('This project was deleted')
+  const want = ref.trim().replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '')
+  let repo = s.repos.find((r) => r.id === want || r.name === want || r.path === want) ?? s.repos.find((r) => r.name.toLowerCase() === want.toLowerCase())
+  if (!repo) for (const r of s.repos) if ((await repoSlug(r))?.toLowerCase() === want.toLowerCase()) repo = r
+  if (!repo) {
+    if (!opts.clone) throw new Error(`${ref} isn't in Choo Choo yet. Ask the person to clone it with clone_repo.`)
+    if (!/^[\w.-]+\/[\w.-]+$/.test(want)) throw new Error('Pass the GitHub repo as owner/name.')
+    repo = await cloneAndAdd(want)
+  }
+  if (!group.repoIds.includes(repo.id)) group.repoIds.push(repo.id)
+  // The project's chats can read it from their next turn.
+  const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === groupId)
+  if (orch && orch.repoId !== repo.id)
+    for (const c of s.chats.filter((c) => c.workspaceId === orch.id)) c.additionalDirectories = [...new Set([...(c.additionalDirectories ?? []), repo.path])]
+  store.save()
+  send('state:changed')
+  return repo
+}
+
 const orchestratorHost: orchestrator.Host = {
-  createWorkspace: async (repoId) => {
-    const r = await createWorkspace(repoId)
+  changed: () => send('state:changed'),
+  findRepos: (groupId, query) => findRepos(groupId, query),
+  addRepoToProject,
+  createWorkspace: async (repoId, source) => {
+    const r = await createWorkspace(repoId, source)
     send('state:changed')
     return r
   },
@@ -372,15 +538,35 @@ const orchestratorHost: orchestrator.Host = {
   },
   pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId)),
   runInCloud: async (chat, ws, task) => {
-    await cloud.runInCloud(chat, ws, task, agentEnv(ws), emitChat, cloudOut)
+    await cloud.runInCloud(chat, ws, task, agentEnv(ws, chat), emitChat, cloudOut)
     send('state:changed')
   },
-  sendToCloud: (chat, ws, text) => cloud.sendToCloud(chat, ws, text, agentEnv(ws), emitChat),
+  sendToCloud: (chat, ws, text) => cloud.sendToCloud(chat, ws, text, agentEnv(ws, chat), emitChat),
   prStatus: async (ws) => {
-    const pr = await gh.prForBranch(ws.path, ws.branch)
-    return { pr, checks: pr ? await gh.checks(ws.path, ws.branch).catch(() => []) : [] }
+    await catchUpBranch(ws)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    await followPr(ws, pr)
+    return { pr, checks: pr ? await gh.checks(ws.path, prRef(ws)).catch(() => []) : [] }
   }
 }
+
+stack.init({
+  save: () => store.save(),
+  changed: (wsId) => {
+    send('stack:changed', wsId)
+    send('state:changed')
+  },
+  sendToChat: (chat, text) => sendToChat(chat, text),
+  isRunning: (id) => agent.isRunning(id),
+  stopChat: (id) => void agent.stop(id),
+  findChat: (id) => store.get().chats.find((c) => c.id === id),
+  note: (chat, text) => {
+    const item = { id: randomUUID(), kind: 'note' as const, text, ts: Date.now() }
+    store.upsertItem(chat.id, item)
+    emitChat(chat.id, { item })
+  },
+  defaultBranch: (ws) => store.get().repos.find((r) => r.id === ws.repoId)?.defaultBranch ?? ws.baseRef.replace(/^origin\//, '')
+})
 
 /** What add-on views may ask the app to do; see addonApi.ts for the permission checks in front of it. */
 const addonDeps: addonHost.Deps = {
@@ -390,10 +576,14 @@ const addonDeps: addonHost.Deps = {
     chats: () => store.get().chats,
     chatItems: (id) => store.chatItems(id),
     pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId)),
-    createWorkspace: (repoId) => createWorkspace(repoId),
+    createWorkspace: (repoId, source) => createWorkspace(repoId, source),
     sendToChat: (chat, text) => sendToChat(chat, text),
     stopChat: (id) => agent.stop(id),
     prStatus: orchestratorHost.prStatus,
+    prByNumber: async (repo, number) => {
+      const pr = await gh.prForBranch(repo.path, String(number))
+      return { pr, checks: pr ? await gh.checks(repo.path, String(number)).catch(() => []) : [] }
+    },
     notify: (title, body, workspaceId) => {
       if (!store.get().settings.notifications || !Notification.isSupported()) return
       const n = new Notification({ title, body })
@@ -404,9 +594,9 @@ const addonDeps: addonHost.Deps = {
       })
       n.show()
     },
-    openWorkspace: (workspaceId) => {
+    openWorkspace: (workspaceId, beside) => {
       const chat = store.get().chats.find((c) => c.workspaceId === workspaceId && !c.review) ?? store.get().chats.find((c) => c.workspaceId === workspaceId)
-      if (chat) send('navigate', workspaceId, chat.id)
+      if (chat) send('navigate', workspaceId, chat.id, beside)
     },
     saved: () => {
       store.save()
@@ -417,12 +607,13 @@ const addonDeps: addonHost.Deps = {
     const key = store.get().settings.anthropicApiKey.trim()
     return key ? { ANTHROPIC_API_KEY: key } : ({} as Record<string, string>)
   },
-  send
+  send,
+  inspectViews: () => win?.webContents.openDevTools({ mode: 'detach' })
 }
 
 function orchestratorChat(ws: Workspace, title: string): Chat {
   const s = store.get()
-  let chat = s.chats.find((c) => c.workspaceId === ws.id)
+  let chat = s.chats.find((c) => c.workspaceId === ws.id && !c.thread)
   if (!chat) {
     chat = newChat(ws.id)
     chat.title = title
@@ -479,7 +670,7 @@ async function openGroupOrchestrator(groupId: string) {
   return { workspace: ws, chat }
 }
 
-function saveGroup(input: { id?: string; name: string; repoIds: string[] }) {
+function saveGroup(input: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }) {
   const s = store.get()
   const name = String(input?.name ?? '').trim()
   const known = new Set(s.repos.map((r) => r.id))
@@ -497,6 +688,11 @@ function saveGroup(input: { id?: string; name: string; repoIds: string[] }) {
     group.name = name
     group.repoIds = repoIds
   }
+  // Short names only; the renderer falls back to the orchestrator mark for anything it doesn't know.
+  const icon = typeof input.icon === 'string' && /^[a-z0-9-]{1,40}$/.test(input.icon) ? input.icon : undefined
+  const color = typeof input.color === 'string' && /^[a-z]{1,20}$/.test(input.color) ? input.color : undefined
+  if (input.icon !== undefined) group.icon = icon
+  if (input.color !== undefined) group.color = color
   const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === group.id)
   if (orch) orch.title = name
   store.save()
@@ -512,6 +708,24 @@ async function deleteGroup(groupId: string) {
   }
   s.groups = (s.groups ?? []).filter((g) => g.id !== groupId)
   store.save()
+}
+
+/**
+ * An automation's chat: a thread on its project's orchestrator, or a chat on its repo's
+ * orchestrator. The orchestrator is opened first, so its own chat stays the first one.
+ */
+async function automationChat(a: Automation): Promise<Chat> {
+  const { workspace } = a.target.kind === 'project' ? await openGroupOrchestrator(a.target.groupId) : await openOrchestrator(a.target.repoId)
+  let chat = store.get().chats.find((c) => c.workspaceId === workspace.id && c.automationId === a.id)
+  if (!chat) {
+    chat = a.target.kind === 'project' ? newThread(workspace, a.name) : newChat(workspace.id)
+    chat.automationId = a.id
+    if (chat.model === 'codex') chat.model = 'opus'
+  }
+  chat.title = a.name
+  store.save()
+  send('state:changed')
+  return chat
 }
 
 /** The orchestrator that started a workspace: its project group's, or its repo's. */
@@ -538,7 +752,8 @@ function noteForOrchestrator(chat: Chat) {
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   if (!ws?.orchestrated || ws.orchestrator) return
   const orch = orchestratorOf(ws)
-  const orchChat = orch && store.get().chats.find((c) => c.workspaceId === orch.id)
+  // A project workspace reports to the thread that started it.
+  const orchChat = orch && updateTarget(ws, store.get().chats, orch.id)
   if (!orchChat) return
   const list = finished.get(orchChat.id) ?? new Map()
   list.set(ws.id, { title: ws.title, id: ws.id, state: chat.status === 'error' ? 'error' : 'finished', at: Date.now() })
@@ -600,10 +815,14 @@ function onChatDone(chat: Chat) {
     }, 0)
   }
   notifyDone(chat)
+  automations.onTurnDone(chat)
+  continueWork.onTurnDone(chat)
   noteForOrchestrator(chat)
   if (finished.has(chat.id)) scheduleWake(chat.id)
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   if (ws) autoSync(ws)
+  if (ws) void catchUpBranch(ws)
+  if (ws) stack.onTurnDone(ws, chat)
 }
 
 function notifyDone(chat: Chat) {
@@ -611,7 +830,7 @@ function notifyDone(chat: Chat) {
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   const n = new Notification({
     title: ws?.title ?? 'Choo Choo',
-    body: chat.status === 'error' ? 'The agent hit an error' : 'The agent finished and is waiting for you'
+    body: chat.paused ? continueWork.pauseText(chat) : chat.status === 'error' ? 'The agent hit an error' : 'The agent finished and is waiting for you'
   })
   n.on('click', () => {
     win?.show()
@@ -624,7 +843,7 @@ function notifyDone(chat: Chat) {
 function notifyAsk(chat: Chat, req: { toolName: string }) {
   if (!store.get().settings.notifications || win?.isFocused() || !Notification.isSupported()) return
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
-  const n = new Notification({ title: ws?.title ?? 'Choo Choo', body: `The agent wants to use ${req.toolName}` })
+  const n = new Notification({ title: ws?.title ?? 'Choo Choo', body: req.toolName === 'AskUserQuestion' ? 'The agent has a question for you' : `The agent wants to use ${req.toolName}` })
   n.on('click', () => {
     win?.show()
     win?.focus()
@@ -672,6 +891,7 @@ async function archiveWorkspace(id: string) {
   for (const c of store.get().chats.filter((c) => c.workspaceId === id)) {
     await agent.stop(c.id)
     await remote.bringBack(c, ws, emitChat)
+    await desktop.bringBackFromDesktop(c, ws, emitChat)
   }
   if (ws.orchestrator) {
     // Lives in the main checkout: never remove that.
@@ -749,10 +969,10 @@ async function removeProject(id: string, opts: { deleteFiles: boolean }) {
 }
 
 /** Env for Claude agents: workspace vars, the API key, and OpenTelemetry export if it's on. */
-function agentEnv(ws: Workspace): Record<string, string> {
-  const settings = store.get().settings
-  const repo = store.get().repos.find((r) => r.id === ws.repoId)
-  const env = { ...workspaceEnv(ws), ...telemetryEnv(settings.telemetry, { 'choo.repo': repo?.name ?? '', 'choo.workspace': ws.name, 'choo.branch': ws.branch }) }
+function agentEnv(ws: Workspace, chat?: Chat): Record<string, string> {
+  const s = store.get()
+  const settings = s.settings
+  const env = { ...workspaceEnv(ws), ...telemetryEnv(settings.telemetry, telemetryTags(ws, chat, s)) }
   const key = settings.anthropicApiKey.trim()
   if (key) env.ANTHROPIC_API_KEY = key
   return env
@@ -815,8 +1035,17 @@ function registerIpc() {
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))
   h('group:orchestrator', (groupId: string) => openGroupOrchestrator(groupId))
-  h('group:save', (g: { id?: string; name: string; repoIds: string[] }) => saveGroup(g))
+  h('group:save', (g: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }) => saveGroup(g))
   h('group:delete', (groupId: string) => deleteGroup(groupId))
+  h('automation:save', (a: Parameters<typeof automations.save>[0]) => automations.save(a))
+  h('automation:enable', (id: string, on: boolean) => automations.setEnabled(id, on))
+  h('automation:delete', (id: string) => automations.remove(id))
+  h('automation:run', (id: string) => automations.runNow(id))
+  h('continue:add', (chatId: string, prompt: string, top?: boolean) => void continueWork.add(chatId, prompt, { top }))
+  h('continue:move', (id: string, to: number) => continueWork.move(id, to))
+  h('continue:edit', (id: string, prompt: string) => continueWork.edit(id, prompt))
+  h('continue:remove', (id: string) => continueWork.remove(id))
+  h('continue:run', (id: string) => continueWork.runNow(id))
   h('ws:restore', async (id: string) => {
     const ws = findWs(id)
     if (ws.orchestrator) {
@@ -867,13 +1096,19 @@ function registerIpc() {
     })
     store.save()
   })
-  h('chat:create', (wsId: string) => newChat(wsId))
+  h('chat:create', (wsId: string) => {
+    const ws = findWs(wsId)
+    // On a project's orchestrator a new chat is a new thread.
+    return ws.orchestrator && ws.groupId && store.get().settings.experimentalProjects ? newThread(ws) : newChat(wsId)
+  })
   h('chat:close', async (id: string) => {
     await agent.stop(id)
+    continueWork.forgetChat(id)
     const closing = store.get().chats.find((c) => c.id === id)
     if (closing) {
       pty.kill(remote.phoneTerminalId(closing))
       pty.kill(cloud.cloudTerminalId(closing))
+      pty.kill(desktop.desktopTerminalId(closing))
     }
     const s = store.get()
     s.chats = s.chats.filter((c) => c.id !== id)
@@ -890,7 +1125,17 @@ function registerIpc() {
   })
   h('chat:update', (id: string, patch: Partial<Chat>) => {
     const c = findChat(id)
-    if (patch.model) c.model = patch.model
+    if (patch.model) {
+      const change = onModelPicked(store.chatItems(id), c.model, patch.model, randomUUID(), Date.now())
+      if (change && 'put' in change) {
+        store.upsertItem(id, change.put)
+        emitChat(id, { item: change.put })
+      } else if (change) {
+        // The renderer reloads the chat's items after a model change, so it drops this too.
+        store.replaceItems(id, store.chatItems(id).filter((x) => x.id !== change.remove))
+      }
+      c.model = patch.model
+    }
     if (patch.effort) c.effort = patch.effort
     if (patch.title) c.title = patch.title
     if (patch.unread !== undefined) c.unread = patch.unread
@@ -925,18 +1170,117 @@ function registerIpc() {
   h('scripts:run', (id: string, kind: 'setup' | 'run') => runScript(findWs(id), kind))
   ipcMain.on('scripts:stop', (_e, id: string, kind: string) => pty.kill(`${id}:${kind}`))
   h('scripts:running', (id: string, kind: string) => pty.isAlive(`${id}:${kind}`))
-  h('pr:get', (id: string) => {
+  h('pr:get', async (id: string) => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    await followPr(ws, pr)
+    if (pr?.state === 'OPEN') pr.behindBy = await gh.prBehindBy(ws.path, pr)
+    return pr
+  })
+  // For sidebar rows: no catching up on the branch and no compare call. The PR watch keeps the branch current.
+  h('pr:state', async (id: string) => {
     const ws = findWs(id)
-    return gh.prForBranch(ws.path, ws.branch)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    await followPr(ws, pr)
+    return pr
   })
   h('pr:comments', async (id: string) => {
-    const ws = findWs(id)
-    const pr = await gh.prForBranch(ws.path, ws.branch)
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
     return pr ? gh.prComments(ws.path, pr.number) : []
   })
-  h('checks:get', (id: string) => {
+  h('pr:review', async (id: string) => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return pr ? { pr, info: await gh.prReview(ws.path, pr.number) } : null
+  })
+  h('pr:diffTarget', async (id: string) => {
     const ws = findWs(id)
-    return gh.checks(ws.path, ws.branch)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) return null
+    const [lines, head, status] = await Promise.all([
+      gh.prDiffLines(ws.path, pr.number),
+      git.git(ws.path, ['rev-parse', 'HEAD']).catch(() => ''),
+      git.git(ws.path, ['status', '--porcelain', '-z']).catch(() => '')
+    ])
+    // -z: "XY path\0", with a second path after renames.
+    const dirty = status.split('\0').filter((e) => e.length > 3).map((e) => e.slice(3))
+    return { lines, headMatches: !!pr.headRefOid && head.trim() === pr.headRefOid, dirty, head: head.trim() || undefined }
+  })
+  // The PR's author pushed: check, fast-forward, or (after a force-push) switch the worktree to the PR's head.
+  h('pr:follow', async (id: string, how: 'check' | 'ff' | 'reset') => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr || pr.state !== 'OPEN' || !pr.headRefOid) return null
+    const r = await git.followPrHead(ws.path, pr.number, pr.headRefOid, how === 'reset' || how === 'ff' ? how : 'check')
+    if (r.state === 'updated') send('pr:changed', ws.id)
+    return r
+  })
+  h('pr:rangeDiffs', (id: string, from: string, to: string, files: string[]) => git.rangeDiffs(findWs(id).path, from, to, files))
+  h('pr:changedSince', async (id: string, sha: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return pr ? git.changedSince(ws.path, sha, pr.number) : null
+  })
+  // Since your review: what the author changed in the PR since `sha`, with the base branch's changes left out.
+  h('pr:interdiff', async (id: string, sha: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) return null
+    const to = (await git.git(ws.path, ['rev-parse', 'HEAD'])).trim()
+    const ignore = activeGlobs(normalizeReviewSettings(store.get().settings.reviews))
+    return interdiff.interdiff(ws.path, { from: sha, to, base: pr.baseRefName || 'main', prNumber: pr.number, ignore })
+  })
+  // GitHub's per-file Viewed ticks (Settings › Reviews › Sync "Viewed" ticks with GitHub).
+  h('pr:viewed', async (id: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    return pr ? gh.prViewed(ws.path, pr.number) : null
+  })
+  h('pr:setViewed', (id: string, prId: string, path: string, viewed: boolean) => gh.setPrViewed(findWs(id).path, prId, path, viewed))
+  h('pr:interdiffFile', async (id: string, sha: string, file: string) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) return ''
+    const to = (await git.git(ws.path, ['rev-parse', 'HEAD'])).trim()
+    return interdiff.interdiffFile(ws.path, { from: sha, to, base: pr.baseRefName || 'main', prNumber: pr.number, file })
+  })
+  h('pr:submitReview', async (id: string, drafts: ReviewDraft[], body: string, event: ReviewEvent) => {
+    const ws = findWs(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) throw new Error('This workspace has no PR to review.')
+    const r = await gh.submitReview(ws.path, pr.number, drafts, body, event, pr.headRefOid)
+    send('pr:changed', ws.id)
+    return r
+  })
+  h('pr:replyThread', async (id: string, threadId: string, body: string) => {
+    const ws = findWs(id)
+    await gh.replyToThread(ws.path, threadId, body)
+    send('pr:changed', ws.id)
+  })
+  h('pr:resolveThread', async (id: string, threadId: string) => {
+    const ws = findWs(id)
+    await gh.resolveThread(ws.path, threadId)
+    send('pr:changed', ws.id)
+  })
+  h('stack:status', (id: string) => stack.status(findWs(id)))
+  h('stack:addLayer', (id: string) => stack.addLayer(findWs(id)))
+  h('stack:switch', (id: string, branch: string) => stack.switchLayer(findWs(id), branch))
+  h('stack:restack', async (id: string, ontoBase: boolean) => {
+    const r = await stack.restack(findWs(id), ontoBase)
+    if (r.conflict) throw new Error(`Restacking ${r.conflict.branch} stopped on conflicts in ${r.conflict.files.join(', ')}. Ask the agent to resolve them, then restack again.`)
+  })
+  h('stack:setAuto', (id: string, on: boolean) => stack.setAuto(findWs(id), on))
+  h('stack:feedback', (id: string, chatId: string, opts: FeedbackOptions) => stack.addressFeedback(findWs(id), findChat(chatId), opts))
+  h('stack:continue', (id: string) => stack.continueJob(findWs(id)))
+  h('stack:stop', (id: string) => stack.stopJob(findWs(id)))
+  h('stack:dissolve', (id: string) => stack.dissolve(findWs(id)))
+  h('stack:linkGithub', (id: string) => stack.linkGithub(findWs(id)))
+  h('stack:mergeThrough', (id: string, branch: string) => stack.mergeThrough(findWs(id), branch))
+  h('stack:installCli', () => stack.installCli())
+  h('checks:get', async (id: string) => {
+    const ws = await wsForPr(id)
+    return gh.checks(ws.path, prRef(ws))
   })
   h('checks:rerun', (id: string, link: string) => gh.rerunFailed(findWs(id).path, link))
   h('ws:artifacts', (id: string) => artifacts(findWs(id)))
@@ -954,28 +1298,22 @@ function registerIpc() {
     if ('theme' in patch) applyNativeTheme(s.settings)
     if ('archiveRetentionDays' in patch) void archive.cleanupArchives()
     updates.onSettingsChanged(Object.keys(patch))
+    if ('reviews' in patch) reviewWatch.reschedule()
     return s.settings
   })
   h('folder:pick', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] })
     return r.canceled ? null : (r.filePaths[0] ?? null)
   })
-  h('repo:clone', async (url: string, dir?: string) => {
-    url = url.trim()
-    const root = dir?.trim() ? resolve(dir.trim().replace(/^~(?=$|\/)/, homedir())) : REPOS_ROOT
-    // owner/repo shorthand (or a github.com URL) clones through gh, so private repos use the gh login.
-    const gh_ = url.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
-    if (!gh_ && !/^(https:\/\/|git@|ssh:\/\/)/.test(url)) throw new Error('Enter owner/repo, or an https or ssh git URL')
-    mkdirSync(root, { recursive: true })
-    let dest = join(root, git.repoNameFromUrl(url))
-    for (let n = 2; existsSync(dest); n++) dest = join(root, `${git.repoNameFromUrl(url)}-${n}`)
-    if (gh_) await gh.cloneRepo(gh_, dest)
-    else await git.clone(url, dest)
-    return addRepo(dest)
-  })
+  h('repo:clone', (url: string, dir?: string) => cloneAndAdd(url, dir))
   h('gh:repos', () => gh.listMyRepos())
-  h('prs:inbox', () => loadPrInbox())
+  // The PRs list, with review updates on the PRs you review (src/main/reviewWatch.ts).
+  h('prs:inbox', () => reviewWatch.check())
+  // Opening a PR you review, or the PRs page: look at GitHub unless it was just looked at.
+  h('reviews:checkSoon', () => reviewWatch.checkSoon())
+  h('reviews:seen', (keys: string[]) => reviewWatch.seen(keys))
   h('models:details', () => modelDetails())
+  h('limits:get', (force?: boolean) => subscriptionLimits(store.get().settings.anthropicApiKey ?? '', !!force))
   h('conductor:preview', () => previewConductor())
   h('conductor:import', (opts: { useWorkspacesRoot: boolean }) => importConductor(opts))
   h('repo:quickstart', async (name: string) => {
@@ -988,16 +1326,27 @@ function registerIpc() {
     return addRepo(dest)
   })
   h('pr:merge', async (id: string) => {
-    const ws = findWs(id)
-    const pr = await gh.prForBranch(ws.path, ws.branch)
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
     if (!pr) throw new Error('No pull request for this branch')
     await gh.mergePr(ws.path, pr.number)
   })
   h('pr:ready', async (id: string) => {
-    const ws = findWs(id)
-    const pr = await gh.prForBranch(ws.path, ws.branch)
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
     if (!pr) throw new Error('No pull request for this branch')
     await gh.markPrReady(ws.path, pr.number)
+  })
+  h('pr:update', async (id: string) => {
+    const ws = await wsForPr(id)
+    const pr = await gh.prForBranch(ws.path, prRef(ws))
+    if (!pr) throw new Error('No pull request for this branch')
+    await gh.updatePrBranch(ws.path, pr.number)
+    try {
+      await git.pullBranch(ws.path, ws.branch)
+    } catch (e) {
+      throw new Error(`The branch is updated on GitHub, but the worktree could not take the new commits: ${(e as Error).message}`)
+    }
   })
   h('chat:send', (id: string, text: string, images: string[] = []) => {
     // The person wrote, so the orchestrator may wake itself again.
@@ -1103,45 +1452,54 @@ function registerIpc() {
   h('chat:phone', (id: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
-    return remote.continueOnPhone(chat, ws, agentEnv(ws), emitChat, (i, c) => send('pty:exit', i, c), (i, d) => send('pty:data', i, d))
+    return remote.continueOnPhone(chat, ws, agentEnv(ws, chat), emitChat, (i, c) => send('pty:exit', i, c), (i, d) => send('pty:data', i, d))
   })
   h('chat:cloud', (id: string, task: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
-    return cloud.runInCloud(chat, ws, typeof task === 'string' ? task : '', agentEnv(ws), emitChat, cloudOut)
+    return cloud.runInCloud(chat, ws, typeof task === 'string' ? task : '', agentEnv(ws, chat), emitChat, cloudOut)
   })
   h('chat:cloudSend', (id: string, text: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
-    return cloud.sendToCloud(chat, ws, String(text ?? ''), agentEnv(ws), emitChat)
+    return cloud.sendToCloud(chat, ws, String(text ?? ''), agentEnv(ws, chat), emitChat)
   })
   h('chat:cloudBack', (id: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
-    return cloud.teleportBack(chat, ws, agentEnv(ws), emitChat, cloudOut)
+    return cloud.teleportBack(chat, ws, agentEnv(ws, chat), emitChat, cloudOut)
   })
   h('chat:cloudForget', (id: string) => cloud.forgetCloud(findChat(id), emitChat))
+  h('chat:desktop', (id: string) => {
+    const chat = findChat(id)
+    const ws = findWs(chat.workspaceId)
+    return desktop.openInDesktop(chat, ws, agentEnv(ws, chat), emitChat)
+  })
+  h('chat:desktopBack', (id: string) => {
+    const chat = findChat(id)
+    return desktop.bringBackFromDesktop(chat, findWs(chat.workspaceId), emitChat)
+  })
   h('chat:phoneBack', (id: string) => {
     const chat = findChat(id)
     return remote.bringBack(chat, findWs(chat.workspaceId), emitChat)
   })
-  ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny') => agent.respondPermission(id, d))
+  ipcMain.on('permission:respond', (_e, id: string, d: 'allow' | 'always' | 'deny', answers?: Record<string, string>) => agent.respondPermission(id, d, answers))
   h('permission:pending', () => agent.pendingPermissions())
   h('git:changes', (wsId: string) => {
     const ws = findWs(wsId)
-    return git.changes(ws.path, ws.baseRef)
+    return git.changes(ws.path, diffBase(ws))
   })
   h('git:stats', async (wsId: string) => {
     const ws = findWs(wsId)
     try {
-      return git.summarize(await git.changes(ws.path, ws.baseRef))
+      return git.summarize(await git.changes(ws.path, diffBase(ws)))
     } catch {
       return { additions: 0, deletions: 0, files: 0 }
     }
   })
   h('git:fileDiff', (wsId: string, file: string) => {
     const ws = findWs(wsId)
-    return git.fileDiff(ws.path, ws.baseRef, file)
+    return git.fileDiff(ws.path, diffBase(ws), file)
   })
   h('pty:create', (id: string, wsId: string) => {
     const ws = findWs(wsId)
@@ -1206,6 +1564,15 @@ function buildMenu() {
         { label: 'Toggle Right Panel', accelerator: 'CmdOrCtrl+Alt+B', click: m('toggle-right') },
         { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+J', click: m('toggle-terminal') },
         { type: 'separator' },
+        { label: 'Split Right', accelerator: 'CmdOrCtrl+\\', click: m('split-right') },
+        { label: 'Split Down', accelerator: 'CmdOrCtrl+Shift+\\', click: m('split-down') },
+        { label: 'Maximize Pane', accelerator: 'CmdOrCtrl+Shift+Return', click: m('maximize-pane') },
+        { label: 'Close Pane', accelerator: 'CmdOrCtrl+Alt+W', click: m('close-pane') },
+        { label: 'Focus Pane Left', accelerator: 'CmdOrCtrl+Alt+Left', click: m('focus-left') },
+        { label: 'Focus Pane Right', accelerator: 'CmdOrCtrl+Alt+Right', click: m('focus-right') },
+        { label: 'Focus Pane Above', accelerator: 'CmdOrCtrl+Alt+Up', click: m('focus-top') },
+        { label: 'Focus Pane Below', accelerator: 'CmdOrCtrl+Alt+Down', click: m('focus-bottom') },
+        { type: 'separator' },
         { role: 'reload', accelerator: 'CmdOrCtrl+Shift+R' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
@@ -1215,7 +1582,8 @@ function buildMenu() {
         { role: 'togglefullscreen' }
       ]
     },
-    { role: 'windowMenu' }
+    { role: 'windowMenu' },
+    { role: 'help', submenu: [{ label: 'Comment on Choo Choo…', accelerator: 'CmdOrCtrl+Shift+K', click: m('comment-mode') }] }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -1319,6 +1687,7 @@ app.whenReady().then(async () => {
   // Packaged builds get the icon from the .icns; in dev, show the brand icon in the Dock too.
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
+  initLimitsHistory(join(app.getPath('userData'), 'data'))
   // Projects added before avatars existed: look up their GitHub owner once.
   void Promise.all(store.get().repos.filter((r) => r.githubOwner === undefined).map(async (r) => (r.githubOwner = existsSync(r.path) ? await git.githubOwner(r.path) : ''))).then(() => {
     store.save()
@@ -1338,19 +1707,98 @@ app.whenReady().then(async () => {
     runSetup: (ws) => void runScript(ws, 'setup'),
     notifyChanged: () => send('state:changed')
   })
-  registerDevFeedback(() => win)
+  registerUiComment({
+    getWin: () => win,
+    repos: () => store.get().repos,
+    reposRoot: REPOS_ROOT,
+    addRepo,
+    createWorkspace: (repoId, o) => createWorkspace(repoId, undefined, [], o),
+    sendToChat: (chat, text, images) => sendToChat(chat, text, images)
+  })
   buildMenu()
   createWindow()
+  automations.init({
+    chatFor: automationChat,
+    send: (chat, text) => sendToChat(chat, text),
+    isRunning: (id) => agent.isRunning(id),
+    loadPrs: async () => (await loadPrInbox()).prs,
+    loadRepoItems: async (repoId) => {
+      const repo = store.get().repos.find((r) => r.id === repoId)
+      if (!repo || !existsSync(repo.path)) throw new Error('Repo not found')
+      const slug = githubSlug(await originUrl(repo.path).catch(() => ''))
+      if (!slug) throw new Error('Not a GitHub repo')
+      return { slug, items: await gh.recentIssues(repo.path) }
+    },
+    changed: () => {
+      store.save()
+      send('state:changed')
+    }
+  })
+  let awake: number | null = null
+  continueWork.init({
+    send: (chat, text, images) => sendToChat(chat, text, images),
+    isRunning: (id) => agent.isRunning(id),
+    limits: async (force) => (await subscriptionLimits(store.get().settings.anthropicApiKey ?? '', force)).find((l) => l.provider === 'claude') ?? null,
+    projectOf: (chatId) => {
+      const chat = store.get().chats.find((c) => c.id === chatId)
+      const ws = chat && store.get().workspaces.find((w) => w.id === chat.workspaceId)
+      if (!ws) return undefined
+      // Orchestrators carry their project in groupId; the work a project started carries it in orchestratorId.
+      const own = ws.groupId ?? (ws.orchestratorId && store.get().groups?.some((g) => g.id === ws.orchestratorId) ? ws.orchestratorId : undefined)
+      return own ?? (store.get().settings.experimentalProjects ? store.get().groups?.find((g) => g.repoIds.includes(ws.repoId))?.id : undefined) ?? ws.repoId
+    },
+    notify: (title, body) => {
+      if (!store.get().settings.notifications || !Notification.isSupported()) return
+      const n = new Notification({ title, body })
+      n.on('click', () => {
+        win?.show()
+        win?.focus()
+      })
+      n.show()
+    },
+    keepAwake: (on) => {
+      if (on && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension')
+      else if (!on && awake !== null) {
+        powerSaveBlocker.stop(awake)
+        awake = null
+      }
+    },
+    onReset: () => automations.onUsageReset(),
+    changed: () => {
+      store.save()
+      send('state:changed')
+    }
+  })
+  powerMonitor.on('resume', () => continueWork.onWake())
   updates.startUpdater(send)
+  reviewWatch.start({
+    loadInbox: loadPrInbox,
+    broadcast: (inbox) => send('prs:inbox', inbox),
+    onUpdates: (updates) => void automations.onReviewUpdates(updates),
+    notify: (pr, title, body) => {
+      if (!Notification.isSupported()) return
+      const n = new Notification({ title, body })
+      n.on('click', () => {
+        win?.show()
+        win?.focus()
+        send('reviews:open', pr)
+      })
+      n.show()
+    }
+  })
   // PR and check changes: cheap ETag probes, and the UI refetches only when one reports a change.
   const prWatch = startPrWatch({
+    // Agents switch branches on their own (gh pr checkout); follow them before probing GitHub.
+    beforeTick: async () => {
+      for (const w of store.get().workspaces) await catchUpBranch(w)
+    },
     targets: () => {
       const s = store.get()
       return s.workspaces
         .filter((w) => !w.archived && !w.orchestrator)
         .flatMap((w) => {
           const repo = s.repos.find((r) => r.id === w.repoId)
-          return repo?.githubOwner && w.branch !== repo.defaultBranch ? [{ id: w.id, path: w.path, branch: w.branch }] : []
+          return repo?.githubOwner && w.branch !== repo.defaultBranch ? [{ id: w.id, path: w.path, branch: w.branch, pr: w.stack ? undefined : w.prNumber }] : []
         })
     },
     focused: () => !!win?.isFocused(),

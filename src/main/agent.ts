@@ -8,7 +8,9 @@ import { BUILTIN_ADVISOR_TOOL, builtinAdvisorResult, enabledSubagents, expandSho
 import * as orchestrator from './orchestrator'
 import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
 import { buildSystemPrompt } from '@shared/systemPrompt'
-import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, runningTasks } from './claudeOptions'
+import { onModelReported } from '@shared/modelSwitch'
+import { limitFromEvent, limitFromText, type ChatPause } from '@shared/continueWork'
+import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, questionReply, runningTasks } from './claudeOptions'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[] }) => void
 
@@ -84,17 +86,28 @@ const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'WebSearch', 'Web
 for (const t of orchestrator.READ_ONLY) READ_ONLY_TOOLS.add(t)
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
 
-const pending = new Map<string, { req: PermissionRequest; resolve: (d: PermissionDecision) => void }>()
+type Answer = { decision: PermissionDecision; answers?: Record<string, string> }
+const pending = new Map<string, { req: PermissionRequest; resolve: (a: Answer) => void }>()
 
-export function respondPermission(id: string, decision: PermissionDecision) {
+/** Settles a pending ask. `answers` carries the picks for an AskUserQuestion card (question text -> answer). */
+export function respondPermission(id: string, decision: PermissionDecision, answers?: Record<string, string>) {
   const p = pending.get(id)
   if (!p) return
   pending.delete(id)
-  p.resolve(decision)
+  p.resolve({ decision, answers })
 }
 
 export function pendingPermissions(): PermissionRequest[] {
   return [...pending.values()].map((p) => p.req)
+}
+
+/**
+ * Whether a call to a tool on a chat's always-ask list still needs the person's OK. The list overrides
+ * the chat's permission setting, but not the person's own "Always allow" for that tool in this chat:
+ * without that, a run of the same call (cloning eight repos) asks eight times.
+ */
+export function alwaysAskNeedsOk(alwaysAllow: string[] | undefined, toolName: string): boolean {
+  return !alwaysAllow?.includes(toolName)
 }
 
 /** Whether a tool call needs the user's OK under a chat's permission setting. */
@@ -223,7 +236,14 @@ export async function send(
   opts: { fromAdvisor?: boolean } = {}
 ) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
-  if (chat.remote) throw new Error(chat.remote.kind === 'cloud' ? 'This chat runs in the cloud. Bring it back first.' : 'This chat is continuing on your phone. Bring it back first.')
+  if (chat.remote)
+    throw new Error(
+      chat.remote.kind === 'cloud'
+        ? 'This chat runs in the cloud. Bring it back first.'
+        : chat.remote.kind === 'desktop'
+          ? 'This chat is open in Claude desktop. Bring it back first.'
+          : 'This chat is continuing on your phone. Bring it back first.'
+    )
   const now = Date.now()
   const checkpoint = (await git.snapshot(ws.path)) ?? undefined
   const userItem: ChatItem = {
@@ -243,6 +263,10 @@ export async function send(
   chat.status = 'running'
   chat.unread = false
   chat.advisorBlocker = false
+  // A new turn ends a pause; if this one stops on the limit too, it counts as a retry.
+  const prevPause = chat.paused
+  chat.paused = undefined
+  let limitHit: ChatPause | null = null
   if (chat.model !== 'codex') {
     const g = goalCommand(text)
     if (g === null) chat.goal = undefined
@@ -303,16 +327,22 @@ export async function send(
     const extras = settings.extras
     const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, systemAppend(extras, !!chat.planMode))
     // `autoAllowTools` is ours, not the SDK's: tools the caller vouches for as read-only.
-    const { autoAllowTools, ...extra } = (extraOptions?.(sdkMod) ?? {}) as Record<string, unknown> & { autoAllowTools?: string[] }
+    // `alwaysAskTools`: tools that need the person's OK even when the chat allows everything.
+    const { autoAllowTools, alwaysAskTools, ...extra } = (extraOptions?.(sdkMod) ?? {}) as Record<string, unknown> & { autoAllowTools?: string[]; alwaysAskTools?: string[] }
     const autoAllow = new Set(autoAllowTools ?? [])
+    const alwaysAsk = new Set(alwaysAskTools ?? [])
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
       if (toolName === 'ExitPlanMode' && chat.planMode) {
         // The plan card asks the user; the agent must not start building on its own.
         return { behavior: 'deny', message: 'The plan is shown to the user for approval. Stop here and wait for their reply.' }
       }
-      if (autoAllow.has(toolName) || !needsApproval(chat.permission, chat.alwaysAllow, toolName)) return { behavior: 'allow', updatedInput: input }
+      // A question for the user always goes to the user, whatever the permission setting:
+      // allowing it without answers makes Claude carry on as if nobody replied.
+      const question = toolName === 'AskUserQuestion'
+      const ok = alwaysAsk.has(toolName) ? !alwaysAskNeedsOk(chat.alwaysAllow, toolName) : autoAllow.has(toolName) || !needsApproval(chat.permission, chat.alwaysAllow, toolName)
+      if (!question && ok) return { behavior: 'allow', updatedInput: input }
       const req: PermissionRequest = { id: randomUUID(), chatId: chat.id, toolName, input }
-      const decision = await new Promise<PermissionDecision>((resolve) => {
+      const { decision, answers } = await new Promise<Answer>((resolve) => {
         pending.set(req.id, { req, resolve })
         const cancel = () => respondPermission(req.id, 'deny')
         opts.signal.addEventListener('abort', cancel, { once: true })
@@ -321,10 +351,13 @@ export async function send(
         onAsk?.(chat, req)
       })
       emit(chat.id, { permissionDone: req.id })
+      if (question) return questionReply(input, decision, answers)
       if (decision === 'deny') return { behavior: 'deny', message: 'The user declined this tool call.' }
       if (decision === 'always') {
         chat.alwaysAllow = [...new Set([...(chat.alwaysAllow ?? []), toolName])]
         store.save()
+        // Calls made side by side are already waiting on their own cards: this answers them too.
+        for (const p of [...pending.values()]) if (p.req.chatId === chat.id && p.req.toolName === toolName) respondPermission(p.req.id, 'allow')
       }
       return { behavior: 'allow', updatedInput: input }
     }
@@ -370,6 +403,9 @@ export async function send(
       if ((msg.type === 'assistant' || msg.type === 'user') && msg.uuid) lastUuid = msg.uuid
       if (applyTaskEvent(tasks, msg)) emit(chat.id, { tasks: runningTasks(tasks) })
       switch (msg.type) {
+        case 'rate_limit_event':
+          limitHit = limitFromEvent(msg, Date.now()) ?? limitHit
+          break
         case 'active_goal':
           chat.goal = goalFrom(msg.value)
           store.save()
@@ -379,6 +415,11 @@ export async function send(
           if (msg.subtype === 'init') {
             if (msg.session_id) chat.sdkSessionId = msg.session_id
             if (Array.isArray(msg.slash_commands)) reportedCommands.set(ws.id, msg.slash_commands)
+            if (typeof msg.model === 'string' && msg.model) {
+              const change = onModelReported(store.chatItems(chat.id), chat.model, msg.model, chat.reportedModel, randomUUID(), Date.now())
+              if (change && 'put' in change) put(change.put)
+              chat.reportedModel = msg.model
+            }
             store.save()
           } else if (msg.subtype === 'commands_changed' && Array.isArray(msg.commands)) {
             reportedCommands.set(ws.id, msg.commands.map((c: { name: string }) => c.name))
@@ -399,6 +440,10 @@ export async function send(
         }
         case 'assistant': {
           const parentId: string | undefined = msg.parent_tool_use_id ?? undefined
+          if (msg.error === 'rate_limit' && !parentId && !limitHit) {
+            const text = (msg.message?.content ?? []).map((b: { type?: string; text?: string }) => (b.type === 'text' ? b.text : '')).join('')
+            limitHit = limitFromText(text, Date.now())
+          }
           for (const block of msg.message?.content ?? []) {
             if (block.type === 'text' && block.text) {
               if (parentId) continue
@@ -463,6 +508,7 @@ export async function send(
           // Claude Code only ends a turn under an active /goal once the goal is met or cleared.
           if (turnOk && chat.goal) chat.goal = undefined
           if (!turnOk) {
+            limitHit ??= limitFromText(typeof msg.result === 'string' ? msg.result : (msg.errors ?? []).join('\n'), Date.now())
             const hint = authHint(typeof msg.result === 'string' ? msg.result : (msg.errors ?? []).join('\n'))
             if (hint) put({ id: randomUUID(), kind: 'error', text: hint, ts: Date.now() })
             if (msg.subtype === 'error_max_budget_usd' && budget)
@@ -490,7 +536,8 @@ export async function send(
     chat.status = 'idle'
   } catch (e) {
     const aborted = abort.signal.aborted
-    chat.status = aborted ? 'idle' : 'error'
+    if (!aborted) limitHit ??= limitFromText((e as Error).message, Date.now())
+    chat.status = aborted || limitHit ? 'idle' : 'error'
     put({
       id: randomUUID(),
       kind: 'error',
@@ -503,6 +550,8 @@ export async function send(
     for (const [id, p] of pending) if (p.req.chatId === chat.id) respondPermission(id, 'deny')
     if (streamItem) put({ ...streamItem, streaming: false })
     running.delete(chat.id)
+    // Stopped on a plan usage limit: Continue work queues it to resume after the reset.
+    if (limitHit && !turnOk && !abort.signal.aborted) chat.paused = { ...limitHit, ...(prevPause ? { retries: (prevPause.retries ?? 0) + 1 } : {}) }
     if (lastUuid) chat.lastUuid = lastUuid
     chat.unread = true
     store.save()

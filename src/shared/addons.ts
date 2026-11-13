@@ -112,6 +112,33 @@ export interface AddonInfo {
   manifest?: AddonManifest
   errors: string[]
   granted: string[]
+  /** Read straight from a folder on this Mac (a folder source), so Choo Choo reloads it as its files change. */
+  dev?: boolean
+  /** Goes up each time the add-on is reloaded; its frames start over when it changes. */
+  rev?: number
+}
+
+/** What happened when a folder was loaded with Develop add-on. */
+export interface AddonDevResult {
+  canceled?: boolean
+  folder?: string
+  /** A source with the folder's marketplace name is already added from somewhere else. Ask before replacing it. */
+  replace?: { name: string; from: string }
+  /** Add-on ids that were installed or reinstalled from the folder. */
+  installed?: string[]
+  /** Add-on ids in the folder, installed or not. */
+  ids?: string[]
+  /** Ids that couldn't be installed, with why. */
+  skipped?: { id: string; reason: string }[]
+}
+
+/** Sent when a dev add-on reloaded because its files changed. */
+export interface AddonReloaded {
+  key: string
+  name: string
+  files: string[]
+  state: AddonState
+  errors: string[]
 }
 
 /** An add-on a source offers that isn't installed yet. */
@@ -145,11 +172,11 @@ const PERMISSIONS: Record<string, PermissionText> = {
   'repos:read': { label: 'See your projects', detail: 'Names and default branches of the projects in Choo Choo.' },
   'workspaces:read': { label: 'See workspaces and their status', detail: 'Titles, branches, whether an agent is running or waiting for you, and the last thing it said.' },
   'chat:read': { label: 'Read chat transcripts', detail: 'What you and the agents wrote in a workspace, and which tools ran.' },
-  'workspaces:start': { label: 'Start workspaces', detail: 'Create a worktree and branch and give its agent a task. Agents run with your default permissions.' },
+  'workspaces:start': { label: 'Start workspaces', detail: 'Create a worktree and branch and give its agent a task, or open a pull request in a workspace of its own. Agents run with your default permissions.' },
   'workspaces:message': { label: 'Message agents', detail: 'Send a follow-up to the agent in an existing workspace.' },
   'workspaces:stop': { label: 'Stop agents', detail: "Stop a workspace's running agent." },
-  'prs:read': { label: 'See pull requests and checks', detail: "Each workspace's pull request, its state and its CI checks." },
-  'files:read': { label: "Read your projects' .choo-choo folders", detail: "Text files in the .choo-choo folder of each project's main checkout, such as plans. Nothing else in the project." },
+  'prs:read': { label: 'See pull requests and checks', detail: "Each workspace's pull request, and any pull request of your projects it asks for by number: its state and its CI checks." },
+  'files:read': { label: "Read your projects' .choo-choo folders", detail: "Text files in the .choo-choo folder of each project's main checkout and of its workspaces, such as plans. Nothing else in the project." },
   'files:write': { label: "Change your projects' .choo-choo folders", detail: "Create, change and delete text files in the .choo-choo folder of each project's main checkout. They show up in git like any other change." },
   storage: { label: 'Keep its own data on this Mac', detail: 'Up to 1 MB, only readable by this add-on.' },
   notify: { label: 'Show notifications', detail: 'System notifications with a title and a line of text.' },
@@ -191,7 +218,9 @@ export const METHOD_PERMISSION: Record<string, string | null> = {
   'workspaces.start': 'workspaces:start',
   'workspaces.message': 'workspaces:message',
   'workspaces.stop': 'workspaces:stop',
+  'workspaces.forPr': 'workspaces:start',
   'prs.status': 'prs:read',
+  'prs.get': 'prs:read',
   'files.list': 'files:read',
   'files.read': 'files:read',
   'files.write': 'files:write',

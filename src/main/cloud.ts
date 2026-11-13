@@ -85,7 +85,10 @@ function changed(chat: Chat, emit: Emit) {
 
 /** Starts a cloud session for the workspace. The link arrives on the chat once Claude Code prints it. */
 export async function runInCloud(chat: Chat, ws: Workspace, task: string, env: Record<string, string>, emit: Emit, out: PtyOut): Promise<Chat> {
-  if (chat.remote) throw new Error(chat.remote.kind === 'cloud' ? 'This chat already runs in the cloud' : 'Bring this chat back from your phone first')
+  if (chat.remote)
+    throw new Error(
+      chat.remote.kind === 'cloud' ? 'This chat already runs in the cloud' : chat.remote.kind === 'desktop' ? 'Bring this chat back from Claude desktop first' : 'Bring this chat back from your phone first'
+    )
   if (ws.orchestrator) throw new Error("The orchestrator's tools only run inside Choo Choo, so it can't move to the cloud")
   if (agent.isRunning(chat.id)) throw new Error('Wait for the agent to finish, or stop it, first')
   let committed: boolean

@@ -2,10 +2,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { Chat, ChatItem, CheckRun, PrInfo, Repo, RepoGroup, Workspace } from '@shared/types'
+import type { Chat, ChatItem, CheckRun, PrInfo, Repo, RepoGroup, Workspace, WorkspaceSource } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
 import { toolShape } from './addons'
+import { AUTO_UPDATE_PREFIX, ROUTED_PREFIX, autoUpdateLine, type AutoUpdateEntry } from '@shared/projects'
+import { diffBase } from '@shared/stack'
 
 /**
  * The orchestrator is a chat that lives in the repo's main checkout. The person tells it what
@@ -30,7 +32,8 @@ export function groupScope(group: RepoGroup, repos: Repo[]): Scope {
 
 /** What the orchestrator needs from the app. Kept small so this file has no Electron imports. */
 export interface Host {
-  createWorkspace(repoId: string): Promise<{ workspace: Workspace; chat: Chat }>
+  /** With a source, the workspace checks out that PR's or branch's head instead of a new branch. */
+  createWorkspace(repoId: string, source?: WorkspaceSource): Promise<{ workspace: Workspace; chat: Chat }>
   /** Starts a turn in a chat. Throws if the chat is busy. */
   sendToChat(chat: Chat, text: string): void
   stopChat(chatId: string): Promise<void>
@@ -43,6 +46,47 @@ export interface Host {
   sendToCloud(chat: Chat, ws: Workspace, text: string): Promise<void>
   /** The pull request for the workspace's branch and its checks. */
   prStatus(ws: Workspace): Promise<{ pr: PrInfo | null; checks: CheckRun[] }>
+  /** Repos the person has in Choo Choo, and GitHub repos they can reach, matching a query. Projects only. */
+  findRepos?(groupId: string, query: string): Promise<{ local: { name: string; path: string; github?: string; inProject: boolean }[]; github: { nameWithOwner: string; description?: string; private?: boolean }[] }>
+  /** Adds a repo to the project: one already in Choo Choo by name, or a GitHub owner/name it clones. Projects only. */
+  addRepoToProject?(groupId: string, ref: string, opts: { clone: boolean }): Promise<Repo>
+  /** Tells the window the state changed, after a tool edits a workspace in place. */
+  changed?(): void
+}
+
+/**
+ * Which chat of a project's orchestrator this turn runs in. The orchestrator chat ("router")
+ * forwards each message to a thread; a thread does the work. See docs/prd/projects.md.
+ */
+export interface ProjectRole {
+  kind: 'router' | 'thread'
+  chatId: string
+  title: string
+  threads: {
+    list(): Chat[]
+    /** Makes a new thread chat with this title. */
+    create(title: string): Chat
+    /** Sends a message into a thread as if the person wrote it there, queued if the thread is busy. */
+    forward(chat: Chat, text: string): void
+  }
+}
+
+/**
+ * Set when this turn is an automation run: start_workspace then takes a finding id, and the app
+ * enforces the per-run cap and skips findings an earlier run already handled.
+ */
+export interface AutomationHooks {
+  name: string
+  chatId: string
+  maxFindings: number
+  /**
+   * Holds a slot for this finding, or says why not: an earlier run handled it, or this run is
+   * at its cap. Synchronous, so parallel calls can't both take the last slot.
+   */
+  claim(findingId: string): string | undefined
+  /** Gives the slot back when the workspace couldn't be made. */
+  release(findingId: string): void
+  record(findingId: string, title: string, workspace: Workspace): void
 }
 
 /** Tools an add-on gives the orchestrator. The add-on's background page answers the calls. */
@@ -83,12 +127,13 @@ export function writeMemory(scope: Scope, content: string) {
   renameSync(`${f}.tmp`, f)
 }
 
-export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[] = []): string {
+export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[] = [], role?: ProjectRole, run?: AutomationHooks): string {
   const intro = scope.group
     ? [
         `You are the orchestrator for the ${scope.name} project in Choo Choo. It spans these repositories:`,
         ...scope.repos.map((r) => `- ${r.name} at ${r.path}`),
-        'The person tells you what they want; you get it done by directing other agents. Pass `repo` to start_workspace to say which repository each piece of work belongs in. Work that spans repos gets one workspace per repo.'
+        'The person tells you what they want; you get it done by directing other agents. Pass `repo` to start_workspace to say which repository each piece of work belongs in. Work that spans repos gets one workspace per repo.',
+        "The project isn't limited to these. When the docs, the code or what the person tells you point at another repository (a service named in a doc, a shared library, a client of this API), call find_repos. If it is already in Choo Choo, add it with add_repo_to_project and say so. If it isn't, ask with clone_repo, which shows the person an approval card. Don't add repos on a hunch."
       ]
     : [`You are the orchestrator for the ${scope.name} repository in Choo Choo. The person tells you what they want; you get it done by directing other agents.`]
   return [
@@ -96,6 +141,7 @@ export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[
     '',
     'How you work:',
     '- Each workspace is its own git worktree and branch with its own coding agent. Start one per independent piece of work with start_workspace, and give it a complete, self-contained task: the goal, the relevant files, constraints, and what "done" means (for example tests pass and a PR is open).',
+    '- To continue an existing pull request or branch (fix review comments, rebase, finish it), pass pr or branch to start_workspace rather than asking the agent to check it out, so the workspace shows that PR.',
     '- Run independent tasks in parallel. Keep dependent work in one workspace, or wait for the first to finish before starting the next.',
     '- After starting work, call wait_for_workspaces, then check results with read_workspace. Send corrections or next steps with message_workspace. You do not have to wait: when a workspace you started finishes while you are idle, Choo Choo wakes you with an automatic update so you can check it and report back.',
     '- Use pr_status to see a workspace\'s pull request and CI checks, and to wait for checks to finish.',
@@ -105,6 +151,16 @@ export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[
     '- When a workspace needs a tool approval, tell the person; you cannot approve for them.',
     '- Keep replies short: what you started, what finished, what needs the person.',
     '',
+    ...roleLines(role),
+    ...(run
+      ? [
+          'Automation:',
+          `- This chat belongs to the automation "${run.name}". Its runs start on a schedule, a GitHub event or a button press, not from a message the person typed, and nobody watches them live.`,
+          `- Each run: check what the automation asks, then open one workspace per finding with start_workspace, passing finding_id and finding_title. At most ${run.maxFindings} per run. The app refuses findings an earlier run already handled, so you never need to track that yourself.`,
+          '- End with a short summary: what you checked, which workspaces you opened, and what you skipped.',
+          ''
+        ]
+      : []),
     ...(addons.length
       ? [
           'Add-ons:',
@@ -120,6 +176,29 @@ export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[
     memory.trim() || '(empty)',
     '</memory>'
   ].join('\n')
+}
+
+function roleLines(role?: ProjectRole): string[] {
+  if (!role) return []
+  if (role.kind === 'router')
+    return [
+      'This chat:',
+      "- This is the project's orchestrator chat, the front door. The project's work is split into threads: separate conversations with you, one per topic. Threads start the workspaces; you route.",
+      "- For each message from the person, call list_threads, then send_to_thread: pass thread_id when it fits an existing thread's topic, or new_thread_title (two to four words) when it is new work that fits none. Forward the person's message in full, adding any context from this chat the thread needs.",
+      '- Then reply with one short line saying where it went. Do not do the work here and do not wait for the thread.',
+      "- Each thread owns the workspaces and pull requests it started; list_workspaces shows which thread owns each. Send work on an existing PR to the thread that owns it.",
+      '- Answer quick questions about status yourself with list_threads, list_workspaces, read_workspace or pr_status, without forwarding.',
+      ''
+    ]
+  return [
+    'This chat:',
+    `- You are in the thread "${role.title}" of this project. Other threads cover other topics and share your memory.`,
+    '- This thread owns the workspaces it starts, and their pull requests: you see them through to merge, answer their reviews and fix their CI. The sidebar lists them under this thread. list_workspaces shows yours; pass all to see the other threads\' work too.',
+    "- Leave other threads' workspaces to them. Read them for context if useful, but don't message, stop or archive one unless the person asks. If the person wants this thread to manage one, call take_workspace.",
+    `- Messages that start with ${ROUTED_PREFIX} came from the person through the orchestrator chat.`,
+    '- Updates about workspaces this thread owns come back to this thread.',
+    ''
+  ]
 }
 
 function text(t: string) {
@@ -187,13 +266,14 @@ function mainChat(ws: Workspace): Chat {
   return chat
 }
 
-function summary(ws: Workspace, pending: Set<string>, scope: Scope) {
+function summary(ws: Workspace, pending: Set<string>, scope: Scope, role?: ProjectRole) {
   markSeen(ws)
   const cloud = cloudChat(ws)?.remote
   return {
     id: ws.id,
     title: ws.title,
     ...(scope.group ? { repo: scope.repos.find((r) => r.id === ws.repoId)?.name } : {}),
+    ...(role ? { thread: role.threads.list().find((c) => c.id === ws.threadId)?.title ?? null, ...(role.kind === 'thread' ? { yours: ws.threadId === role.chatId } : {}) } : {}),
     branch: ws.branch,
     status: statusOf(ws, pending),
     ...(cloud ? { cloudSession: cloud.url ?? 'starting' } : {}),
@@ -214,51 +294,107 @@ export function checksSummary(checks: CheckRun[]): { state: 'none' | 'pending' |
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Options merged into the orchestrator's query(): its tools, its prompt and what it may not do. */
-export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'), scope: Scope, host: Host, addons: AddonToolset[] = []): Record<string, unknown> {
+export function queryOptions(
+  sdk: typeof import('@anthropic-ai/claude-agent-sdk'),
+  scope: Scope,
+  host: Host,
+  addons: AddonToolset[] = [],
+  role?: ProjectRole,
+  run?: AutomationHooks
+): Record<string, unknown> {
   const { tool, createSdkMcpServer } = sdk
   const inScope = (w: Workspace) => scope.repos.some((r) => r.id === w.repoId)
   const live = () => store.get().workspaces.filter((w) => inScope(w) && !w.archived && !w.orchestrator)
-  const repoNames = scope.repos.map((r) => r.name)
+  const repoNames = () => scope.repos.map((r) => r.name)
   const pickRepo = (name?: string): Repo => {
     if (!name) {
       if (scope.repos.length === 1) return scope.repos[0]
-      throw new Error(`Say which repo with \`repo\`: one of ${repoNames.join(', ')}.`)
+      throw new Error(`Say which repo with \`repo\`: one of ${repoNames().join(', ')}.`)
     }
     const r = scope.repos.find((x) => x.name === name || x.id === name) ?? scope.repos.find((x) => x.name.toLowerCase() === name.toLowerCase())
-    if (!r) throw new Error(`No repo ${name} here. Use one of ${repoNames.join(', ')}.`)
+    if (!r) throw new Error(`No repo ${name} in this ${scope.group ? 'project' : 'repo'}. Use one of ${repoNames().join(', ')}${scope.group ? ', or add it with add_repo_to_project' : ''}.`)
     return r
   }
 
+  type StartArgs = { task: string; repo?: string; where?: 'local' | 'cloud'; model?: Chat['model']; plan_first?: boolean; pr?: number; branch?: string }
+  const startWorkspace = async (a: StartArgs, finding?: { id: string; title: string }) => {
+    const repo = pickRepo(a.repo)
+    const open = live().find((w) => w.repoId === repo.id && ((a.pr && w.prNumber === a.pr) || (!a.pr && a.branch && w.branch === a.branch)))
+    if (open) {
+      if (run && finding) run.release(finding.id)
+      const elsewhere = role?.kind === 'thread' && open.threadId !== role.chatId
+      return text(
+        `Workspace ${open.id} (${open.title}) is already on that ${a.pr ? 'PR' : 'branch'}.${elsewhere ? ' Another thread owns it: take it over with take_workspace if the person wants this thread to manage it,' : ''} Use message_workspace to give it the task.`
+      )
+    }
+    const source: WorkspaceSource | undefined = a.pr ? { kind: 'pr', number: a.pr } : a.branch ? { kind: 'branch', name: a.branch } : undefined
+    const { workspace, chat } = await host.createWorkspace(repo.id, source)
+    workspace.orchestrated = true
+    workspace.orchestratorId = scope.id
+    if (role?.kind === 'thread') workspace.threadId = role.chatId
+    if (run && finding) {
+      workspace.threadId = run.chatId
+      run.record(finding.id, finding.title || a.task.split('\n')[0].slice(0, 60), workspace)
+    }
+    if (a.where === 'cloud') {
+      store.save()
+      await host.runInCloud(chat, workspace, a.task)
+      return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'in-cloud', note: 'The cloud session link shows in list_workspaces once Claude Code prints it. Follow progress with pr_status.' }))
+    }
+    if (a.model) chat.model = a.model
+    if (a.plan_first) chat.planMode = true
+    store.save()
+    host.sendToChat(chat, a.task)
+    return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'running' }))
+  }
+
   const tools = [
-    tool('list_workspaces', `List the active workspaces in ${scope.group ? 'this project' : 'this repo'} with their status and the last thing each agent said.`, {}, async () => {
-      const pending = host.pendingChatIds()
-      return text(JSON.stringify(live().map((w) => summary(w, pending, scope)), null, 2))
-    }),
+    role?.kind === 'thread'
+      ? tool(
+          'list_workspaces',
+          "List the active workspaces this thread owns (the ones it started or took over) with their status and the last thing each agent said. Pass all to see every workspace in the project, with the thread that owns each.",
+          { all: z.boolean().optional() },
+          async (a) => {
+            const pending = host.pendingChatIds()
+            const list = live().filter((w) => a.all || w.threadId === role.chatId)
+            return text(JSON.stringify(list.map((w) => summary(w, pending, scope, role)), null, 2))
+          }
+        )
+      : tool('list_workspaces', `List the active workspaces in ${scope.group ? 'this project' : 'this repo'} with their status and the last thing each agent said.`, {}, async () => {
+          const pending = host.pendingChatIds()
+          return text(JSON.stringify(live().map((w) => summary(w, pending, scope, role)), null, 2))
+        }),
     tool(
       'start_workspace',
-      'Create a new workspace (worktree, branch and agent) and give its agent a task. Returns right away; the agent works in the background.',
+      'Create a new workspace (worktree, branch and agent) and give its agent a task. Returns right away; the agent works in the background. To continue an existing pull request or branch, pass pr or branch so the workspace starts on it and shows that PR.',
       {
         task: z.string().describe('Complete instructions for the agent. It cannot see this conversation.'),
-        ...(scope.group ? { repo: z.string().describe(`Which repository: ${repoNames.join(', ')}.`) } : {}),
+        ...(scope.group ? { repo: z.string().describe(`Which repository: ${repoNames().join(', ')}, or one you added with add_repo_to_project.`) } : {}),
         where: z.enum(['local', 'cloud']).optional().describe('local (default) runs on this Mac. cloud runs in a Claude Code cloud session that keeps going with the Mac closed.'),
         model: z.enum(['opus', 'fable', 'sonnet', 'haiku', 'codex']).optional().describe('Defaults to the person\'s default model. Ignored in the cloud.'),
-        plan_first: z.boolean().optional().describe('Start in plan mode: the agent proposes a plan and waits instead of editing. Local only.')
+        plan_first: z.boolean().optional().describe('Start in plan mode: the agent proposes a plan and waits instead of editing. Local only.'),
+        pr: z.number().int().positive().optional().describe('Work on this existing pull request: the workspace checks out its branch.'),
+        branch: z.string().optional().describe('Work on this existing branch on origin instead of a new one. Ignored when pr is set.'),
+        ...(run
+          ? {
+              finding_id: z.string().min(1).describe('A stable id for what this workspace handles: an issue key, URL or PR number. Runs skip ids already handled.'),
+              finding_title: z.string().max(80).optional().describe('A few words naming the finding, for the run history.')
+            }
+          : {})
       },
       async (a) => {
-        const repo = pickRepo((a as { repo?: string }).repo)
-        const { workspace, chat } = await host.createWorkspace(repo.id)
-        workspace.orchestrated = true
-        workspace.orchestratorId = scope.id
-        if (a.where === 'cloud') {
-          store.save()
-          await host.runInCloud(chat, workspace, a.task)
-          return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'in-cloud', note: 'The cloud session link shows in list_workspaces once Claude Code prints it. Follow progress with pr_status.' }))
+        const finding = run ? { id: String((a as { finding_id?: string }).finding_id ?? '').trim(), title: String((a as { finding_title?: string }).finding_title ?? '').trim() } : undefined
+        if (run && finding) {
+          if (!finding.id) throw new Error('Pass finding_id.')
+          const no = run.claim(finding.id)
+          if (no) return text(`Skipped: ${no}`)
         }
-        if (a.model) chat.model = a.model
-        if (a.plan_first) chat.planMode = true
-        store.save()
-        host.sendToChat(chat, a.task)
-        return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'running' }))
+        try {
+          return await startWorkspace(a as StartArgs, finding)
+        } catch (e) {
+          if (run && finding) run.release(finding.id)
+          throw e
+        }
       }
     ),
     tool(
@@ -288,7 +424,7 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
         markSeen(ws)
         let changes = ''
         try {
-          const files = await git.changes(ws.path, ws.baseRef)
+          const files = await git.changes(ws.path, diffBase(ws))
           const s = git.summarize(files)
           changes = `${s.files} files, +${s.additions} -${s.deletions}\n${files.map((f) => `${f.status} ${f.path} +${f.additions} -${f.deletions}`).join('\n')}`
         } catch (e) {
@@ -330,7 +466,7 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
           await sleep(2000)
         }
         const pending = host.pendingChatIds()
-        const out = wss.map((w) => summary(w, pending, scope))
+        const out = wss.map((w) => summary(w, pending, scope, role))
         const still = out.filter((o) => o.status === 'running').length
         return text((still ? `Timed out with ${still} still running.\n` : '') + JSON.stringify(out, null, 2))
       }
@@ -398,6 +534,64 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
     )
   ]
 
+  // A project takes in more repos as docs or the person point at them. Cloning a new one asks first.
+  const find = scope.group ? host.findRepos : undefined
+  const add = scope.group ? host.addRepoToProject : undefined
+  const joined = (repo: Repo) => {
+    if (!scope.repos.some((r) => r.id === repo.id)) scope.repos.push(repo)
+    return text(JSON.stringify({ added: repo.name, path: repo.path, note: 'Pass this name as repo to start_workspace. You can read its files from the next turn on.' }))
+  }
+  const projectTools =
+    find && add
+      ? [
+          tool(
+            'find_repos',
+            'Find repositories outside this project: ones already in Choo Choo, and GitHub repos the person can access. Matches names and descriptions.',
+            { query: z.string().describe('Words from the repo name or description, or an owner/name.') },
+            async (a) => text(JSON.stringify(await find(scope.id, a.query), null, 2))
+          ),
+          tool(
+            'add_repo_to_project',
+            'Add a repository that is already in Choo Choo (find_repos lists it under local) to this project, so you can start workspaces in it.',
+            { repo: z.string().describe('The repo name from find_repos local.') },
+            async (a) => joined(await add(scope.id, a.repo, { clone: false }))
+          ),
+          tool(
+            'clone_repo',
+            'Ask the person to clone a GitHub repository they can access and add it to this project. They see an approval card with your reason. Only for a repo not yet in Choo Choo.',
+            {
+              repo: z.string().describe('owner/name on GitHub.'),
+              reason: z.string().describe('One sentence on why the work needs it, shown to the person.')
+            },
+            async (a) => joined(await add(scope.id, a.repo, { clone: true }))
+          )
+        ]
+      : []
+
+  // A thread manages its own workspaces and PRs, and can take over one another thread (or none) owns.
+  const threadTools =
+    role?.kind === 'thread'
+      ? [
+          tool(
+            'take_workspace',
+            'Make this thread the owner of a workspace in the project, and so of its PR: it moves under this thread in the sidebar and its updates come here. Only when the person asks, or the work clearly belongs to this thread and no other thread is working on it.',
+            { workspace_id: z.string() },
+            async (a) => {
+              const ws = ownWorkspace(scope, a.workspace_id)
+              if (ws.threadId === role.chatId) return text(`${ws.title} is already this thread's.`)
+              const from = role.threads.list().find((c) => c.id === ws.threadId)?.title
+              ws.threadId = role.chatId
+              store.save()
+              host.changed?.()
+              return text(`This thread now owns ${ws.title}${from ? ` (was "${from}")` : ''}.`)
+            }
+          )
+        ]
+      : []
+
+  // The orchestrator chat routes; threads start the work.
+  const ownTools = [...(role?.kind === 'router' ? [...tools.filter((t) => t.name !== 'start_workspace'), ...routerTools(tool, role)] : tools), ...threadTools, ...projectTools]
+
   const context = { repoIds: scope.repos.map((r) => r.id) }
   const addonServers = Object.fromEntries(
     addons.map((set) => [
@@ -413,26 +607,65 @@ export function queryOptions(sdk: typeof import('@anthropic-ai/claude-agent-sdk'
 
   return {
     mcpServers: {
-      choo: createSdkMcpServer({ name: 'choo', version: '1.0.0', tools, alwaysLoad: true, timeout: (MAX_WAIT_MIN + 2) * 60_000 }),
+      choo: createSdkMcpServer({ name: 'choo', version: '1.0.0', tools: ownTools, alwaysLoad: true, timeout: (MAX_WAIT_MIN + 2) * 60_000 }),
       ...addonServers
     },
     // Memory can change between turns, so render the prompt fresh each time.
-    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, readMemory(scope), addons), snapshot: false },
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, readMemory(scope), addons, role, run), snapshot: false },
     disallowedTools: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'],
     // Add-on tools that only read need no OK from the person, like the built-in ones below.
-    autoAllowTools: addons.flatMap((set) => set.tools.filter((t) => t.readOnly).map((t) => `mcp__${set.server}__${t.name}`))
+    // An automation's start_workspace is vouched for by the person who made it; the app caps it.
+    // Cloning a repo the person hasn't added asks whatever the chat's permission setting, until they pick Always allow on a card.
+    alwaysAskTools: projectTools.length ? ['mcp__choo__clone_repo'] : [],
+    autoAllowTools: [...addons.flatMap((set) => set.tools.filter((t) => t.readOnly).map((t) => `mcp__${set.server}__${t.name}`)), ...(run ? ['mcp__choo__start_workspace'] : [])]
   }
 }
 
+/** The orchestrator chat's own tools: see the project's threads, and forward a message to one. */
+function routerTools(tool: typeof import('@anthropic-ai/claude-agent-sdk').tool, role: ProjectRole) {
+  return [
+    tool('list_threads', "List this project's threads: id, title, whether it is running, and the last thing you said there.", {}, async () =>
+      text(
+        JSON.stringify(
+          role.threads.list().map((c) => ({ id: c.id, title: c.title, status: c.status, lastMessage: clip(lastAssistantText(c.id), 300) })),
+          null,
+          2
+        )
+      )
+    ),
+    tool(
+      'send_to_thread',
+      "Forward the person's message to a thread, which then works on it. Pass thread_id for an existing thread, or new_thread_title to start a new one. Returns right away.",
+      {
+        message: z.string().describe("The person's message, in full, plus any context from this chat the thread needs."),
+        thread_id: z.string().optional(),
+        new_thread_title: z.string().max(60).optional().describe('Two to four words naming the topic, for a new thread.')
+      },
+      async (a) => {
+        const threads = role.threads.list()
+        let chat = a.thread_id ? threads.find((c) => c.id === a.thread_id) : undefined
+        if (a.thread_id && !chat) throw new Error(`No thread ${a.thread_id}. Call list_threads for ids, or pass new_thread_title.`)
+        const created = !chat
+        if (!chat) {
+          const title = a.new_thread_title?.trim()
+          if (!title) throw new Error('Pass thread_id or new_thread_title.')
+          chat = role.threads.create(title)
+        }
+        role.threads.forward(chat, `${ROUTED_PREFIX}\n${a.message}`)
+        return text(JSON.stringify({ thread_id: chat.id, title: chat.title, created }))
+      }
+    )
+  ]
+}
+
 /** Tools that only read, so they never need the person's OK. */
-export const READ_ONLY = ['list_workspaces', 'read_workspace', 'wait_for_workspaces', 'pr_status'].map((t) => `mcp__choo__${t}`)
+export const READ_ONLY = ['list_workspaces', 'read_workspace', 'wait_for_workspaces', 'pr_status', 'list_threads', 'find_repos'].map((t) => `mcp__choo__${t}`)
 
 /** The message that wakes an idle orchestrator when workspaces it started finish. */
-export function autoUpdatePrompt(done: { title: string; id: string; state: 'finished' | 'error' | 'needs-approval' }[]): string {
-  const what = (s: string) => (s === 'error' ? 'hit an error' : s === 'needs-approval' ? 'is waiting for the person to approve a tool call' : 'finished')
+export function autoUpdatePrompt(done: AutoUpdateEntry[]): string {
   return [
-    '[Automatic update from Choo Choo, not from the person]',
-    ...done.map((d) => `- ${d.title} (${d.id}) ${what(d.state)}.`),
+    AUTO_UPDATE_PREFIX,
+    ...done.map(autoUpdateLine),
     '',
     'Check on them with read_workspace, send next steps if the work is not done, and tell the person briefly where things stand. Do not message the person if nothing changed for them.'
   ].join('\n')

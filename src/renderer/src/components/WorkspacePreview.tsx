@@ -4,6 +4,7 @@ import type { PrInfo, Workspace, WorkspacePreview as Preview } from '@shared/typ
 import { useStore, ago, reportError } from '../store'
 import { IconDown, IconPR } from '../icons'
 import { prPrompt } from './RightPanel'
+import { prBaseFor, targetBranch } from '@shared/stack'
 import { fmt } from './Stats'
 
 // PR lookups go through gh, so keep them for a minute per workspace.
@@ -87,8 +88,9 @@ export function WorkspacePreviewCard({ ws, rect, cardProps, onClose }: { ws: Wor
     st.setActiveChat(ws.id, chatId)
     st.selectWorkspace(ws.id)
     const repo = st.repos.find((r) => r.id === ws.repoId)
+    const base = ws.stack ? prBaseFor(ws.stack, ws.branch, repo?.defaultBranch ?? 'main') : targetBranch(ws)
     try {
-      await window.api.sendMessage(chatId, prPrompt(ws, repo?.defaultBranch ?? 'main', draft))
+      await window.api.sendMessage(chatId, prPrompt(ws, base, draft))
     } catch (e) {
       reportError(e)
     }
