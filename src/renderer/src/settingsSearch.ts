@@ -134,6 +134,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   // Updates
   { section: 'updates', label: 'Check for Choo Choo updates', keywords: 'update version upgrade release' },
   { section: 'updates', label: 'Update channel', hint: 'Stable or Beta.', keywords: 'beta prerelease stable' },
+  { section: 'updates', label: 'Pick up interrupted chats after a restart', hint: 'Continue chats a restart, quit or crash cut off.', keywords: 'resume restart quit crash interrupted continue session' },
   { section: 'updates', label: 'Check for Claude Code updates', keywords: 'update version upgrade cli npm' },
 
   // Telemetry

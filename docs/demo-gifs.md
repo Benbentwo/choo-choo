@@ -10,6 +10,9 @@ No model is called. `scripts/demo/bin/` goes first on the app's `PATH`, and Sett
 
 - `bin/claude` speaks enough of the Agent SDK's stream-json protocol to replay scripted turns. A turn is picked by matching the prompt against `match` regexes in a script under `scripts/demo/scripts/`. Steps stream text, show tool calls (a `writeFile` really writes the file, so Changes and diffs are real), and can call the app's own MCP tools (`"mcp": "choo"`), so `send_to_thread` and `start_workspace` really create threads, branches and worktrees. The app's naming prompts get titles from the script's `titles`.
 - `bin/gh` answers the PRs page searches from a JSON file and fails everything else.
+- `CHOO_DEMO_UPDATE` (a scene's `update` option, read by `src/main/updater.ts` in source builds only) gives the app a made-up downloaded update and release list, so the update card and What's new show without GitHub. Restarting just shows "Restarting…".
+
+A scene gets a second argument, `relaunch()`, which closes the app and opens it again on the same world (the `resume-after-restart` scene uses it to cut a turn off). Scenes with `opts: { noGif: true }` only take screenshots.
 
 Everything else (sidebar, worktrees, diffs, split panes) is the app's own code.
 

@@ -1,16 +1,18 @@
 # Path-based PR labels (actions/labeler v5). Label names live in .github/labels.yml.
+# docs, ci, dependencies and tests pick a release notes section (Docs, Maintenance), so they only go on PRs
+# that change nothing else: a feature that also touches a workflow or package.json stays a feature.
 docs:
   - changed-files:
       - any-glob-to-all-files: ['**/*.md', 'docs/**', 'LICENSE']
 ci:
   - changed-files:
-      - any-glob-to-any-file: ['.github/workflows/**', '.github/*.yml']
+      - any-glob-to-all-files: ['.github/**']
 dependencies:
   - changed-files:
-      - any-glob-to-any-file: ['package.json', 'package-lock.json']
+      - any-glob-to-all-files: ['package.json', 'package-lock.json']
 tests:
   - changed-files:
-      - any-glob-to-any-file: ['test/**', 'vitest.config.mts']
+      - any-glob-to-all-files: ['test/**', 'vitest.config.mts']
 'area: agent':
   - changed-files:
       - any-glob-to-any-file: ['src/main/agent.ts', 'src/main/codex.ts', 'src/main/orchestrator.ts', 'src/main/claudeBinary.ts', 'src/main/commands.ts']

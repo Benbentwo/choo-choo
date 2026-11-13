@@ -200,6 +200,8 @@ const api: Api = {
   updateStatus: inv('updates:status') as Api['updateStatus'],
   checkForUpdates: inv('updates:check') as Api['checkForUpdates'],
   installAppUpdate: inv('updates:install-app') as Api['installAppUpdate'],
+  cancelRestart: inv('updates:cancel-restart') as Api['cancelRestart'],
+  releaseNotes: inv('updates:notes') as Api['releaseNotes'],
   updateClaude: inv('updates:update-claude') as Api['updateClaude'],
   onUpdateStatus: (cb) => on<[UpdateStatus]>('updates:changed', cb),
   shareStatus: inv('share:status') as Api['shareStatus'],

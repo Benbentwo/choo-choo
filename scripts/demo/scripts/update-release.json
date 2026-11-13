@@ -1,0 +1,27 @@
+{
+  "current": "0.4.0",
+  "latest": "0.5.0",
+  "releases": [
+    {
+      "tag_name": "v0.5.0",
+      "prerelease": false,
+      "published_at": "2026-11-13T18:00:00Z",
+      "html_url": "https://github.com/Benbentwo/choo-choo/releases/tag/v0.5.0",
+      "body": "## Download\n\nGrab the `.dmg` for your Mac below: `arm64` for Apple silicon, `x64` for Intel.\n\n## What's changed\n\n- Command palette: search every setting by name (#140) @maya-chen\n\n## New features\n\n- Updates: What's new shows the release notes before you restart (#142) @maya-chen\n- Updates: Restart when idle waits for running chats, and cut-off chats pick up after a restart (#142) @maya-chen\n- Terminal: open a second terminal tab per workspace (#138) @sam-lee\n\n## Fixes\n\n- Fix the diff view jumping to the top after a push (#141) @sam-lee\n\n## Docs\n\n- Docs: explain worktree cleanup (#139) @sam-lee\n\n## Maintenance\n\n- deps: bump @anthropic-ai/claude-agent-sdk from 0.3.330 to 0.3.334 (#143) @[dependabot[bot]](https://github.com/apps/dependabot)\n- ci: cache Electron downloads (#137) @sam-lee\n\n**Full changelog:** https://github.com/Benbentwo/choo-choo/compare/v0.4.1...v0.5.0"
+    },
+    {
+      "tag_name": "v0.4.1",
+      "prerelease": false,
+      "published_at": "2026-11-08T18:00:00Z",
+      "html_url": "https://github.com/Benbentwo/choo-choo/releases/tag/v0.4.1",
+      "body": "## Download\n\nGrab the `.dmg` for your Mac below: `arm64` for Apple silicon, `x64` for Intel.\n\n## What's changed\n\n## New features\n\n- Sidebar: pin a workspace to the top (#131) @maya-chen\n\n## Fixes\n\n- Fix a blank chat after renaming a branch (#133) @sam-lee\n- Fix notifications showing twice for the same review (#134) @maya-chen\n\n**Full changelog:** https://github.com/Benbentwo/choo-choo/compare/v0.4.0...v0.4.1"
+    },
+    {
+      "tag_name": "v0.4.0",
+      "prerelease": false,
+      "published_at": "2026-11-02T18:00:00Z",
+      "html_url": "https://github.com/Benbentwo/choo-choo/releases/tag/v0.4.0",
+      "body": "## Download\n\nGrab the `.dmg` for your Mac below: `arm64` for Apple silicon, `x64` for Intel.\n\n## What's changed\n\n- Older notes\n\n**Full changelog:** https://github.com/Benbentwo/choo-choo/compare/v0.3.9...v0.4.0"
+    }
+  ]
+}

@@ -15,6 +15,10 @@ export interface AppUpdateStatus {
   /** The release page. */
   url?: string
   checkedAt?: number
+  /** Chats running right now, while an update is ready: restarting would cut their turns off. */
+  running?: number
+  /** "Restart to update" was clicked while chats ran: the app restarts once they finish. */
+  restartWhenIdle?: boolean
 }
 
 export interface ClaudeUpdateStatus {

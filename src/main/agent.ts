@@ -11,6 +11,7 @@ import * as notion from './integrations/notion'
 import { buildSystemPrompt } from '@shared/systemPrompt'
 import { onModelReported } from '@shared/modelSwitch'
 import { limitFromEvent, limitFromText, type ChatPause } from '@shared/continueWork'
+import type { InterruptReason } from '@shared/restart'
 import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, questionReply, runningTasks } from './claudeOptions'
 
 type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[] }) => void
@@ -148,6 +149,25 @@ export function isRunning(chatId: string) {
   return running.has(chatId)
 }
 
+/** How many chats have a turn running, for "Restart to update" to wait on. */
+export function runningCount() {
+  return running.size
+}
+
+/** Set as the app quits, so the stopped turns say why and pick up on the next launch. */
+let quitting: InterruptReason | null = null
+
+/** Marks every running chat as cut off by a quit or restart. Call before stopAll(). */
+export function markInterrupted(reason: InterruptReason) {
+  quitting = reason
+  const at = Date.now()
+  for (const id of running.keys()) {
+    const chat = store.get().chats.find((c) => c.id === id)
+    if (chat) chat.interrupted = { reason, at }
+  }
+  store.save()
+}
+
 /** Stops one background task of a running Claude turn. */
 export async function stopTask(chatId: string, taskId: string) {
   const q = running.get(chatId)?.query
@@ -234,7 +254,7 @@ export async function send(
   onAsk?: (chat: Chat, req: PermissionRequest) => void,
   /** Builds extra query() options, such as the orchestrator's tools. */
   extraOptions?: (sdk: Awaited<ReturnType<typeof loadSdk>>) => Record<string, unknown>,
-  opts: { fromAdvisor?: boolean } = {}
+  opts: { fromAdvisor?: boolean; afterRestart?: boolean } = {}
 ) {
   if (running.has(chat.id)) throw new Error('Agent is already running in this chat')
   if (chat.remote)
@@ -255,7 +275,8 @@ export async function send(
     ts: now,
     checkpoint,
     resumeAt: chat.lastUuid,
-    ...(opts.fromAdvisor ? { fromAdvisor: true } : {})
+    ...(opts.fromAdvisor ? { fromAdvisor: true } : {}),
+    ...(opts.afterRestart ? { afterRestart: true } : {})
   }
   store.upsertItem(chat.id, userItem)
   emit(chat.id, { item: userItem })
@@ -264,6 +285,7 @@ export async function send(
   chat.status = 'running'
   chat.unread = false
   chat.advisorBlocker = false
+  chat.interrupted = undefined
   // A new turn ends a pause; if this one stops on the limit too, it counts as a retry.
   const prevPause = chat.paused
   chat.paused = undefined
@@ -546,7 +568,7 @@ export async function send(
     put({
       id: randomUUID(),
       kind: 'error',
-      text: aborted ? 'Stopped' : authHint((e as Error).message) ?? ((e as Error).message || String(e)),
+      text: aborted ? (quitting ? 'Cut off by the restart. This picks up when Choo Choo opens again.' : 'Stopped') : authHint((e as Error).message) ?? ((e as Error).message || String(e)),
       ts: Date.now()
     })
   } finally {
@@ -554,6 +576,8 @@ export async function send(
     emit(chat.id, { tasks: [] })
     for (const [id, p] of pending) if (p.req.chatId === chat.id) respondPermission(id, 'deny')
     if (streamItem) put({ ...streamItem, streaming: false })
+    // Tool calls the stop cut off would otherwise spin forever.
+    if (abort.signal.aborted) for (const t of tools.values()) if (t.result === undefined) put({ ...t, result: quitting ? 'Cut off by the restart' : 'Stopped', isError: true })
     running.delete(chat.id)
     // Stopped on a plan usage limit: Continue work queues it to resume after the reset.
     if (limitHit && !turnOk && !abort.signal.aborted) chat.paused = { ...limitHit, ...(prevPause ? { retries: (prevPause.retries ?? 0) + 1 } : {}) }

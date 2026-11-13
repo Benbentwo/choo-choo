@@ -102,6 +102,8 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Auto-update from GitHub releases (signed builds install in place; unsigned ones offer brew upgrade or the download page)
 - ✅ Update channels: Stable (published releases) or Beta (a signed prerelease from every merge to main), in Settings > Updates. See [decision 0015](decisions/0015-beta-channel-uses-prereleases.md).
 - ✅ Claude Code version and update check (Settings > Updates; runs `claude update` for an installed copy)
+- ✅ What's new: the update card and Settings > Updates show the release notes of every version between yours and the update, in plain words (choo-choo addition, [PRD](prd/update-checks.md))
+- ✅ Restart when idle: installing an update waits for running chats, and turns cut off by a restart, quit or crash pick up in the same session on the next launch (choo-choo addition, [decision 0021](decisions/0021-restart-waits-then-resumes.md))
 
 ### Beyond Conductor
 - ✅ Shared sessions: share a workspace (branch, uncommitted files, chats) with coworkers through the repo's own remote; they continue with their own Claude login

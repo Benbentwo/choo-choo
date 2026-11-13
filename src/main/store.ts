@@ -25,8 +25,13 @@ export function load(): AppState {
   state.settings = { ...DEFAULT_SETTINGS, ...state.settings }
   state.settings.extras = normalizeExtras(state.settings.extras)
   state.settings.telemetry = normalizeTelemetry(state.settings.telemetry)
-  // A chat cannot still be running after a restart.
-  for (const c of state.chats) if (c.status === 'running') c.status = 'idle'
+  // A chat cannot still be running after a restart. One that was is picked up again (shared/restart.ts):
+  // a quit marks it first; still running with no mark means the app closed without quitting.
+  for (const c of state.chats)
+    if (c.status === 'running') {
+      c.status = 'idle'
+      c.interrupted ??= { reason: 'crash', at: Date.now() }
+    }
   return state
 }
 

@@ -83,9 +83,21 @@ jobs:
         env:
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
-          subject=$(git log -1 --format=%s HEAD)
-          printf 'Beta build of %s.\n\n%s\n\nTurn on Settings > Updates > Update channel > Beta to get these builds automatically.\n' \
-            "$(git rev-parse --short HEAD)" "$subject" > notes.md
+          # Every PR merged since the last beta, not just this one: a newer merge cancels the build in
+          # progress, and docs-only merges don't build. The app shows these lines under What's new.
+          prev=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
+            --jq '[.[] | select(.prerelease and (.draft | not) and (.tag_name | test("-beta\\.")))][0].tag_name // ""')
+          changes=""
+          if [ -n "$prev" ]; then
+            changes=$(gh api "repos/$GITHUB_REPOSITORY/compare/$prev...$SHA" --jq '[.commits[].commit.message | split("\n")[0]] | reverse | .[]' 2>/dev/null | head -n 50 || true)
+          fi
+          [ -z "$changes" ] && changes=$(git log -1 --format=%s HEAD)
+          {
+            printf 'Beta build of %s.\n\n## What'"'"'s changed\n\n' "$(git rev-parse --short HEAD)"
+            printf '%s\n' "$changes" | sed 's/^/- /'
+            printf '\nTurn on Settings > Updates > Update channel > Beta to get these builds automatically.\n'
+          } > notes.md
+          cat notes.md
           # A draft until every file is uploaded, so the updater never sees a half-finished release.
           gh release create "$TAG" --draft --prerelease --title "$TAG" --target "$SHA" --notes-file notes.md
       - uses: actions/setup-node@v4

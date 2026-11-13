@@ -77,7 +77,11 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Real terminals.** Setup, Run (⌘R) and terminal tabs per workspace, driven by `choo-choo.json` or `conductor.json`.
 - **Codex too.** Optionally run OpenAI's Codex CLI as a workspace agent.
 - **Keyboard first.** ⌘K search, ⌘T/⌘W tabs, ⌘B/⌘J panels, ⌘⇧U next unread.
-- **Native Mac app.** Signed and notarized builds for Apple silicon and Intel that update themselves, on a Stable or Beta channel.
+- **Native Mac app.** Signed and notarized builds for Apple silicon and Intel that update themselves, on a Stable or Beta channel. **What's new** shows what an update brings, and restarting waits for running chats; a chat that a restart cuts off picks up where it left off.
+
+<p align="center">
+  <img src="docs/media/gifs/app-updates.gif" alt="An update has downloaded while a chat is running. What's new lists the changes since your version, and Restart when idle waits for the chat to finish before restarting." width="900">
+</p>
 
 ## Coming from Conductor
 
