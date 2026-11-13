@@ -27,6 +27,8 @@ import { registerUiComment } from './uiComment'
 import * as conductor from './conductorImport'
 import { modelDetails } from './models'
 import { initLimitsHistory, subscriptionLimits } from './limits'
+import * as usageHistory from './usageHistory'
+import { buildDashboard, usageCsv, usageHistorySettings, windowDetail } from '@shared/usageHistory'
 import { listOutputStyles } from './claudeOptions'
 import * as mcp from './mcp'
 import * as plugins from './plugins'
@@ -1299,6 +1301,7 @@ function registerIpc() {
     if ('archiveRetentionDays' in patch) void archive.cleanupArchives()
     updates.onSettingsChanged(Object.keys(patch))
     if ('reviews' in patch) reviewWatch.reschedule()
+    if ('usageHistory' in patch) usageHistory.configureUsageHistory(usageHistorySettings(s.settings.usageHistory))
     return s.settings
   })
   h('folder:pick', async () => {
@@ -1313,6 +1316,21 @@ function registerIpc() {
   h('reviews:checkSoon', () => reviewWatch.checkSoon())
   h('reviews:seen', (keys: string[]) => reviewWatch.seen(keys))
   h('models:details', () => modelDetails())
+  h('usage:dashboard', async (range: { from: number; to: number }) => {
+    await usageHistory.syncTranscripts().catch(() => 0)
+    const st = store.get()
+    return buildDashboard({ readings: usageHistory.readings(range.from, range.to), msgs: usageHistory.messages(range.from, range.to), from: range.from, to: range.to, attribute: usageHistory.attributor(st), ...usageHistory.historyStart() })
+  })
+  h('usage:window', (o: { key: string; start: number; end: number }) =>
+    windowDetail({ ...o, readings: usageHistory.readings(o.start, o.end), msgs: usageHistory.messages(o.start, o.end), attribute: usageHistory.attributor(store.get()) })
+  )
+  h('usage:csv', async (range: { from: number; to: number }) => {
+    const day = (t: number) => new Date(t).toISOString().slice(0, 10)
+    const r = await dialog.showSaveDialog(win!, { defaultPath: `claude-usage-${day(range.from)}-to-${day(range.to)}.csv`, filters: [{ name: 'CSV', extensions: ['csv'] }] })
+    if (r.canceled || !r.filePath) return null
+    writeFileSync(r.filePath, usageCsv(usageHistory.messages(range.from, range.to), usageHistory.attributor(store.get())))
+    return r.filePath
+  })
   h('limits:get', (force?: boolean) => subscriptionLimits(store.get().settings.anthropicApiKey ?? '', !!force))
   h('conductor:preview', () => previewConductor())
   h('conductor:import', (opts: { useWorkspacesRoot: boolean }) => importConductor(opts))
@@ -1688,6 +1706,10 @@ app.whenReady().then(async () => {
   if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(join(app.getAppPath(), 'resources/icon.png'))
   store.load()
   initLimitsHistory(join(app.getPath('userData'), 'data'))
+  usageHistory.initUsageHistory(join(app.getPath('userData'), 'data'), usageHistorySettings(store.get().settings.usageHistory))
+  // Copy new transcript lines now and then, so history outlives Claude Code's 30-day cleanup.
+  setTimeout(() => void usageHistory.syncTranscripts().catch(() => 0), 15_000)
+  setInterval(() => void usageHistory.syncTranscripts().catch(() => 0), 15 * 60_000)
   // Projects added before avatars existed: look up their GitHub owner once.
   void Promise.all(store.get().repos.filter((r) => r.githubOwner === undefined).map(async (r) => (r.githubOwner = existsSync(r.path) ? await git.githubOwner(r.path) : ''))).then(() => {
     store.save()

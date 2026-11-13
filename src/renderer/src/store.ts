@@ -77,6 +77,8 @@ interface UI {
   automationRuns: AutomationRun[]
   /** The Up next (Continue work) page is open. */
   continuePage: boolean
+  /** The Usage page is open. */
+  usagePage: boolean
   continueQueue: QueueItem[]
   /** A sidebar row being added to Up next: the dialog asks what it should do. */
   queueTarget: QueueTarget | null
@@ -120,7 +122,7 @@ interface UI {
   usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'reviews' | 'projects' | 'continue' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance' | 'experimental'
+  settingsTab: 'general' | 'reviews' | 'projects' | 'continue' | 'usage' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance' | 'experimental'
   recentPaths: string[]
   modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */
@@ -169,7 +171,7 @@ export const useStore = create<UI>((set, get) => ({
   addonPage: null,
   addonPress: null,
   prsPage: false,
-  automationsPage: false, continuePage: false,
+  automationsPage: false, continuePage: false, usagePage: false,
   automations: [],
   continueQueue: [],
   queueTarget: null,
@@ -226,7 +228,7 @@ export const useStore = create<UI>((set, get) => ({
     reconcileLayout()
   },
   selectWorkspace: (id, fromHistory) => {
-    if (!id) return set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: false, panesShown: false })
+    if (!id) return set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: false, usagePage: false, panesShown: false })
     showView(viewFor(id))
     if (fromHistory) return
     const { history, historyIndex } = get()
@@ -343,7 +345,7 @@ export function applyLayout(next: L.Layout | null, opts: { show?: boolean; save?
       openDoc[l.view.wsId] = g.doc
     }
     Object.assign(patch, { activeChat, openDoc })
-    if (opts.show !== false) Object.assign(patch, { panesShown: true, draftRepo: null, prsPage: false, automationsPage: false, continuePage: false })
+    if (opts.show !== false) Object.assign(patch, { panesShown: true, draftRepo: null, prsPage: false, automationsPage: false, continuePage: false, usagePage: false })
   }
   st.set(patch)
   if (opts.save !== false) saveLayoutSoon(next)
@@ -559,7 +561,7 @@ export function reportError(e: unknown) {
 
 /** Opens the new-workspace composer for a repo. The worktree is created when the person presses Create. */
 export function newWorkspace(repoId: string) {
-  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, automationsPage: false, continuePage: false, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: repoId, addonPage: null, prsPage: false, automationsPage: false, continuePage: false, usagePage: false, panesShown: false })
 }
 
 /** Shows an add-on's view in the center. */
@@ -589,17 +591,22 @@ export function runAddonAction(addon: AddonInfo, action: AddonAction, ctx: Addon
 
 /** Shows the PRs page in the center and reloads its list. */
 export function openPrsPage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, automationsPage: false, continuePage: false, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: true, automationsPage: false, continuePage: false, usagePage: false, panesShown: false })
   void refreshPrInbox()
 }
 
 /** Opens the Automations page. */
 export function openContinuePage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: true, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: true, usagePage: false, panesShown: false })
+}
+
+/** Opens the Usage page: plan usage history. */
+export function openUsagePage() {
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: false, usagePage: true, panesShown: false })
 }
 
 export function openAutomationsPage() {
-  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: true, continuePage: false, panesShown: false })
+  useStore.getState().set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: true, continuePage: false, usagePage: false, panesShown: false })
 }
 
 let inboxLoad: Promise<void> | null = null

@@ -164,6 +164,10 @@ export const IconGrip = (p: SVGProps<SVGSVGElement>) => (
 export const IconUpNext = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M4 6h11M4 12h11M4 18h7M17 15l3 3-3 3M20 18h-6" /></svg>
 )
+/** Usage: bars rising, for the plan usage history page. */
+export const IconUsage = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 20h16M7 16v-4M12 16V8M17 16v-7" /></svg>
+)
 export const IconPause = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M9 5v14M15 5v14" /></svg>
 )

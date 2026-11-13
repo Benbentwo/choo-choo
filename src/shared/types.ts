@@ -3,6 +3,7 @@ import type { ReflectProposal, ReflectResult } from './reflect'
 import type { UpdateStatus } from './updates'
 import type { InboxPr, PrInbox } from './prInbox'
 import type { Automation, AutomationRun, GithubWatchState } from './automations'
+import type { UsageDashboard, UsageHistorySettings, WindowDetail } from './usageHistory'
 import type { ChatPause, ContinueSettings, QueueItem, ResetLog, UsageLimitState } from './continueWork'
 import type { Layout, SavedLayout } from './layout'
 import type { AddonActionContext, AddonCallResult, AddonContext, AddonDevResult, AddonGrant, AddonInfo, AddonReloaded, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
@@ -566,6 +567,8 @@ export interface Settings extends AppearanceSettings {
   experimentalProjects?: boolean
   /** Continue work: resuming chats when the usage window resets. See shared/continueWork.ts. */
   continueWork?: Partial<ContinueSettings>
+  /** Usage history behind the Usage page. On by default, kept 12 months. See shared/usageHistory.ts. */
+  usageHistory?: Partial<UsageHistorySettings>
   /** Add-ons turned on in Choo Choo and the permissions agreed to, by plugin id. */
   addons?: Record<string, AddonGrant>
   /** Review updates: notifications for PRs you review, and the since-your-review diff (shared/reviewUpdates.ts). */
@@ -1087,6 +1090,12 @@ export interface Api {
   pickFolder(): Promise<string | null>
   /** Plan limits for Claude and Codex, whichever are signed in. Cached for a minute unless force. */
   subscriptionLimits(force?: boolean): Promise<SubscriptionLimits[]>
+  /** The Usage page: window history, where usage went, by model, busiest hours. Reads new transcript lines first. */
+  usageDashboard(range: { from: number; to: number }): Promise<UsageDashboard>
+  /** One window: what filled it, estimated by workspace and chat. */
+  usageWindow(o: { key: string; start: number; end: number }): Promise<WindowDetail>
+  /** Saves the responses in range as CSV. Returns the path, or null if cancelled. */
+  exportUsageCsv(range: { from: number; to: number }): Promise<string | null>
   /** Removes a project. With deleteFiles, its workspace folders (and archived copies) are deleted; otherwise they're kept as a leftover. */
   removeProject(repoId: string, opts: { deleteFiles: boolean }): Promise<void>
   /** Permanently deletes a workspace: its folder, archived copy and chats. The branch is kept. */

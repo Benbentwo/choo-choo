@@ -8,6 +8,7 @@ import { Home } from './components/Home'
 import { PrInboxPage } from './components/PrInbox'
 import { AutomationsPage } from './components/Automations'
 import { ContinueWorkPage, QueueDialog } from './components/ContinueWork'
+import { UsagePage } from './components/UsagePage'
 import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
 import { TitleTips } from './components/Tip'
@@ -160,6 +161,8 @@ export function App() {
           <AutomationsPage />
         ) : s.continuePage ? (
           <ContinueWorkPage />
+        ) : s.usagePage ? (
+          <UsagePage />
         ) : s.draftRepo ? (
           <NewWorkspace repoId={s.draftRepo} />
         ) : (
