@@ -182,7 +182,14 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     const pr = await gh.prHead(repo.path, source.number)
     branch = pr.isCrossRepository ? `pr-${source.number}` : pr.headRefName
     if (pr.isCrossRepository) await git.addWorktreeForPull(repo.path, path, source.number, branch)
-    else await git.addWorktreeForRemoteBranch(repo.path, path, branch)
+    else {
+      // A merged PR's branch is usually deleted from GitHub; its head is still at pull/<n>/head.
+      try {
+        await git.addWorktreeForRemoteBranch(repo.path, path, branch)
+      } catch {
+        await git.addWorktreeForPull(repo.path, path, source.number, branch)
+      }
+    }
     title = `#${source.number} ${pr.title}`
     named = true
     prNumber = source.number

@@ -121,7 +121,7 @@ export function projectTree(group: RepoGroup, repos: Repo[], workspaces: Workspa
     if (t) owned.set(t.id, [...(owned.get(t.id) ?? []), w])
     else loose.push(w)
   }
-  const nodes: ThreadNode[] = threads.filter((t) => owned.has(t.id)).map((thread) => ({ thread, repos: byRepo(group, repos, owned.get(thread.id)!) }))
+  const nodes: ThreadNode[] = threads.map((thread) => ({ thread, repos: byRepo(group, repos, owned.get(thread.id) ?? []) }))
   if (loose.length) nodes.push({ repos: byRepo(group, repos, loose) })
   return nodes
 }

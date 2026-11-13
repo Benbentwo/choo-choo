@@ -110,7 +110,6 @@ function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string
           {tree.map((node) => (
             <ThreadNodeView key={threadKey(node)} group={group} node={node} orchId={orch?.id} folded={folded} />
           ))}
-          {tree.length === 0 && <div className="py-1 pr-2 pl-7 text-[12px] text-faint">No open work yet. Tell the orchestrator what you want.</div>}
           {archived.length > 0 && (
             <button className="block py-0.5 pl-7 text-[11px] text-faint hover:text-fg" onClick={() => setShowArchived(!showArchived)}>
               {showArchived ? 'Hide archived' : `Archived (${archived.length})`}
@@ -166,7 +165,7 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
         title={thread ? 'Open this thread' : 'Work no thread owns: started before threads, or its thread was deleted'}
       >
         <button
-          className="rounded p-0.5 text-faint hover:text-fg"
+          className={`rounded p-0.5 text-faint hover:text-fg ${count ? '' : 'invisible'}`}
           title={isFolded ? 'Unfold' : 'Fold'}
           onClick={(e) => {
             e.stopPropagation()

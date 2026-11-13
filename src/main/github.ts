@@ -199,11 +199,21 @@ export async function cloneRepo(nameWithOwner: string, dest: string) {
 
 type Listed = { number: number; title: string; author?: { login: string }; headRefName?: string }
 
+/**
+ * PRs to start a workspace from: open ones first, then the most recently merged, so work that already
+ * landed can be picked up again.
+ */
 export async function listPrs(cwd: string, query: string): Promise<SourceOption[]> {
-  const args = ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,title,author,headRefName']
-  if (query) args.push('--search', query)
-  const { stdout } = await exec('gh', args, { cwd })
-  return (JSON.parse(stdout) as Listed[]).map((p) => ({ source: { kind: 'pr', number: p.number }, title: `#${p.number} ${p.title}`, detail: `${p.author?.login ?? ''} · ${p.headRefName}` }))
+  const list = async (state: 'open' | 'merged', limit: number) => {
+    const args = ['pr', 'list', '--state', state, '--limit', String(limit), '--json', 'number,title,author,headRefName']
+    if (query) args.push('--search', query)
+    const { stdout } = await exec('gh', args, { cwd })
+    return (JSON.parse(stdout) as Listed[]).map(
+      (p): SourceOption => ({ source: { kind: 'pr', number: p.number }, title: `#${p.number} ${p.title}`, detail: `${state === 'merged' ? 'merged · ' : ''}${p.author?.login ?? ''} · ${p.headRefName}` })
+    )
+  }
+  const [open, merged] = await Promise.all([list('open', 50), list('merged', 20).catch(() => [])])
+  return [...open, ...merged]
 }
 
 export async function listIssues(cwd: string, query: string): Promise<SourceOption[]> {
