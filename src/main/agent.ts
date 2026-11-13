@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { isAbsolute } from 'node:path'
 import type { BackgroundTask, Chat, ChatItem, PermissionDecision, PermissionRequest, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
@@ -525,7 +527,11 @@ export async function send(
         ...(budget ? { maxBudgetUsd: budget } : {}),
         // Spawned here rather than by the SDK so a stop that hangs can kill the process and what it started.
         spawnClaudeCodeProcess: (o: { command: string; args: string[]; cwd?: string; env: NodeJS.ProcessEnv; signal: AbortSignal }) => {
-          const child = spawn(o.command, o.args, { cwd: o.cwd, env: o.env, signal: o.signal, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+          // The same call the SDK makes itself: the Claude Code binary by absolute path (or node/bun for a
+          // script build), with the SDK's own arguments, and no shell, so nothing in them is interpreted.
+          const runtime = o.command === 'node' || o.command === 'bun'
+          if (!runtime && !(isAbsolute(o.command) && existsSync(o.command))) throw new Error(`Claude Code not found at ${o.command}`)
+          const child = spawn(o.command, o.args, { cwd: o.cwd, env: o.env, signal: o.signal, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: false })
           child.on('error', () => {})
           child.stderr.on('data', (d) => (stderrTail = (stderrTail + d).slice(-4000)))
           r.pid = child.pid
