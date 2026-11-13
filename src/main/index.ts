@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -1534,6 +1534,30 @@ function registerIpc() {
   h('shell:open', (url: string) => {
     if (/^https?:\/\//.test(url)) return shell.openExternal(url)
   })
+  h('ws:link-context', async (id: string) => {
+    const s = store.get()
+    const ws = s.workspaces.find((w) => w.id === id)
+    const repo = ws && s.repos.find((r) => r.id === ws.repoId)
+    if (!ws || !repo) return {}
+    return { slug: await repoSlug(repo), ref: ws.branch || repo.defaultBranch, root: ws.path }
+  })
+  h('clipboard:write', (c: { html?: string; text: string }) =>
+    clipboard.write([new ClipboardItem({ 'text/plain': c.text ?? '', ...(c.html ? { 'text/html': `<meta charset="utf-8">${c.html}` } : {}) })])
+  )
+  ipcMain.on('menu:context', (e, opts: { link?: string; selection?: boolean }) => {
+    const items: Electron.MenuItemConstructorOptions[] = []
+    const link = opts.link
+    if (link) {
+      if (/^(https?|mailto):/i.test(link)) items.push({ label: 'Open Link', click: () => void shell.openExternal(link) })
+      items.push({ label: 'Copy Link', click: () => void clipboard.writeText(link.replace(/^mailto:/i, '')) })
+    }
+    if (opts.selection) {
+      if (items.length) items.push({ type: 'separator' })
+      items.push({ label: 'Copy', click: () => e.sender.copy() }, { label: 'Copy for Slack', click: () => e.sender.send('menu', 'copy-slack') })
+    }
+    if (!items.length) return
+    Menu.buildFromTemplate(items).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined })
+  })
 }
 
 function buildMenu() {
@@ -1574,7 +1598,21 @@ function buildMenu() {
         { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' }
       ]
     },
-    { role: 'editMenu' },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { label: 'Copy for Slack', accelerator: 'CmdOrCtrl+Alt+C', click: m('copy-slack') },
+        { role: 'paste' },
+        { role: 'pasteAndMatchStyle' },
+        { role: 'delete' },
+        { role: 'selectAll' }
+      ]
+    },
     {
       label: 'View',
       submenu: [

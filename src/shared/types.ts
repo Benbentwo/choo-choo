@@ -10,6 +10,7 @@ import type { AddonActionContext, AddonCallResult, AddonContext, AddonDevResult,
 import type { PrDiffTarget, PrHeadSync, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
 import type { Interdiff, ReviewSettings } from './reviewUpdates'
 import type { ReviewWatchState } from './reviewWatch'
+import type { LinkContext } from './linkHref'
 export interface Repo {
   id: string
   name: string
@@ -1157,6 +1158,12 @@ export interface Api {
   onPtyData(cb: (id: string, data: string) => void): () => void
   onPtyExit(cb: (id: string, code: number) => void): () => void
   openExternal(url: string): Promise<void>
+  /** GitHub slug, branch and folder of a workspace, so copied chat links can open files on GitHub. */
+  linkContext(workspaceId: string): Promise<LinkContext>
+  /** Writes HTML and/or text to the system clipboard (for copies made outside a copy event). */
+  writeClipboard(content: { html?: string; text: string }): Promise<void>
+  /** Shows the app's right-click menu: Open/Copy Link for a link, Copy/Copy for Slack for a selection. */
+  showContextMenu(opts: { link?: string; selection: boolean }): void
   revealInFinder(path: string): Promise<void>
   onMenu(cb: (action: string) => void): () => void
   onStateChanged(cb: () => void): () => void

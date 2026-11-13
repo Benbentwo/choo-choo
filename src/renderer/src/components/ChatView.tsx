@@ -9,6 +9,7 @@ import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import { setDraft } from './Composer'
 import { splitFences, tidyMarkdown } from '../markdown'
 import { MARKDOWN_COMPONENTS } from './CodeBlock'
+import { primeLinkContext } from '../richCopy'
 import { API_PRICE_NOTE } from './UsageGraphs'
 import { IconDown, IconRight, IconTool } from '../icons'
 import { RouteItem } from './Projects'
@@ -36,6 +37,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   useEffect(() => setShowEarlier(false), [chat.id, clearAt])
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  useEffect(() => primeLinkContext(chat.workspaceId), [chat.workspaceId])
 
   useEffect(() => {
     const el = ref.current
@@ -65,6 +67,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   return (
     <div
       ref={ref}
+      data-workspace-id={chat.workspaceId}
       className="selectable flex-1 overflow-y-auto"
       onScroll={(e) => {
         const el = e.currentTarget
