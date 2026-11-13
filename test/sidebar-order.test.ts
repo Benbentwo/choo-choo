@@ -86,8 +86,8 @@ describe('suggestTitleFromChats', () => {
 
 describe('sortProjectWork', () => {
   const w = (id: string, title: string, createdAt: number, prNumber?: number) => ({ id, title, createdAt, prNumber })
-  const list = [w('a', 'Import VPCs', 1, 1357), w('b', 'Add alarms', 3), w('c', 'Import IAM roles', 2)]
-  const prs = { c: { number: 1354, title: 'Import IAM roles' } }
+  const list = [w('a', 'Fix login bug', 1, 1357), w('b', 'Add dark mode', 3), w('c', 'Fix crash on start', 2)]
+  const prs = { c: { number: 1354, title: 'Fix crash on start' } }
   const ids = (l: { id: string }[]) => l.map((x) => x.id)
   it('sorts by creation time either way', () => {
     expect(ids(sortProjectWork(list, 'newest'))).toEqual(['b', 'c', 'a'])
