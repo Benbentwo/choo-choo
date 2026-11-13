@@ -53,6 +53,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Usage history and the Usage page](prd/usage-history.md) | In review |
 | [Rich copy from chat](prd/rich-copy.md) | Shipped |
 | [Settings search](prd/settings-search.md) | In review (PR #118) |
+| [Stop that always stops](prd/stop.md) | In review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

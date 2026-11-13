@@ -5,6 +5,7 @@ import type { Chat, Effort, ExtraAgentId, ModelId, OutputStyleInfo, Permission, 
 import { useStore, reportError, modelLabel, setCodeComments, codeCommentsMessage, destOf, reviewTarget, openDoc } from '../store'
 import { IconDown, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
+import { FORCE_STOP_AFTER_MS } from '@shared/stop'
 
 export const MODELS: { id: ModelId; label: string }[] = [
   { id: 'opus', label: 'Opus' },
@@ -36,6 +37,59 @@ const draftListeners = new Set<(chatId: string) => void>()
 export function setDraft(chatId: string, text: string) {
   drafts[chatId] = text
   for (const l of draftListeners) l(chatId)
+}
+
+/** Puts text back in a chat's message box, after anything already typed there. */
+export function appendDraft(chatId: string, text: string) {
+  const cur = drafts[chatId]?.trim()
+  setDraft(chatId, cur ? `${cur}\n\n${text}` : text)
+}
+
+/** Stops the chat's turn; pressing again while it is stopping kills it right away. */
+export function stopChat(chat: Chat) {
+  return window.api.stopChat(chat.id, chat.stopping ? { force: true } : undefined).catch(reportError)
+}
+
+/**
+ * The Stop button. It turns into "Stopping…" the moment it's pressed, and if the turn still hasn't
+ * ended a few seconds later, into "Force stop".
+ */
+function StopButton({ chat, subtle }: { chat: Chat; subtle: boolean }) {
+  const [pressedAt, setPressedAt] = useState<number | null>(null)
+  const since = chat.stopping ?? pressedAt
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!since) return
+    const t = setInterval(() => setNow(Date.now()), 500)
+    return () => clearInterval(t)
+  }, [since])
+  if (!since)
+    return (
+      <button
+        className={`rounded-md p-1.5 hover:opacity-90 ${subtle ? 'border border-line text-muted hover:text-fg' : 'bg-fg text-bg'}`}
+        title="Stop (Esc)"
+        data-testid="stop-button"
+        onClick={() => {
+          setPressedAt(Date.now())
+          void stopChat(chat)
+        }}
+      >
+        <IconStop />
+      </button>
+    )
+  const slow = now - since >= FORCE_STOP_AFTER_MS
+  return (
+    <button
+      className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] ${slow ? 'bg-del/15 text-del hover:bg-del/25' : 'border border-line text-muted hover:text-fg'}`}
+      title={slow ? 'Claude is taking a while to stop. Click to kill it and everything it started now. (Esc)' : 'Stopping… Click again to force stop. (Esc)'}
+      data-testid="stop-button"
+      data-stopping={slow ? 'slow' : 'yes'}
+      onClick={() => void window.api.stopChat(chat.id, { force: true }).catch(reportError)}
+    >
+      <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+      {slow ? 'Force stop' : 'Stopping…'}
+    </button>
+  )
 }
 
 export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
@@ -369,7 +423,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
               e.preventDefault()
               void submit()
             }
-            if (e.key === 'Escape' && running) void window.api.stopChat(chat.id)
+            if (e.key === 'Escape' && running) void stopChat(chat)
           }}
           rows={3}
           placeholder={limited && chat.model !== 'codex' ? "You're out of usage for this window. A message goes to Up next and is sent when it resets." : mode === 'review' ? "Ask about this PR, or click a line in a diff to comment" : 'Ask to make changes, @mention files, run /commands'}
@@ -482,11 +536,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
           <button className="rounded p-1.5 text-muted hover:bg-hover hover:text-fg" title="Add folder" onClick={() => void addFolder()}>
             <IconPlus />
           </button>
-          {running && (
-            <button className={`rounded-md p-1.5 hover:opacity-90 ${hasContent ? 'border border-line text-muted hover:text-fg' : 'bg-fg text-bg'}`} title="Stop (Esc)" onClick={() => void window.api.stopChat(chat.id)}>
-              <IconStop />
-            </button>
-          )}
+          {running && <StopButton key={chat.id} chat={chat} subtle={hasContent} />}
           {(!running || hasContent) && (
             <button className="rounded-md bg-fg p-1.5 text-bg hover:opacity-90 disabled:opacity-30" disabled={!hasContent} title={running ? (whileRunning === 'queue' ? 'Queue: send when Claude finishes (Enter)' : 'Steer: send now, Claude reads it at its next step (Enter)') : 'Send (Enter)'} onClick={() => void submit()}>
               <IconUp />

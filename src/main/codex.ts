@@ -16,8 +16,13 @@ export interface CodexRun {
   env: Record<string, string>
   signal: AbortSignal
   onThread(id: string): void
+  /** Gets the Codex process id, so a stop that hangs can kill it. */
+  onSpawn?(pid: number | undefined): void
   put(item: ChatItem): void
 }
+
+/** How long Codex gets to stop after Ctrl-C before it is killed. */
+export const CODEX_KILL_MS = 5000
 
 /** Arguments for `codex exec --json`, resuming a thread when we have one. */
 /** Codex has no "max" effort; its highest is xhigh. */
@@ -120,7 +125,13 @@ export function runCodex(o: CodexRun): Promise<{ ok: boolean; usage?: { input_to
     })
     let stderr = ''
     let result: { ok: boolean; usage?: { input_tokens: number; output_tokens: number } } = { ok: false }
-    const onAbort = () => proc.kill('SIGINT')
+    o.onSpawn?.(proc.pid)
+    let killTimer: ReturnType<typeof setTimeout> | undefined
+    const onAbort = () => {
+      proc.kill('SIGINT')
+      // Codex ignored Ctrl-C: kill it.
+      killTimer = setTimeout(() => proc.kill('SIGKILL'), CODEX_KILL_MS)
+    }
     o.signal.addEventListener('abort', onAbort)
     proc.stderr.on('data', (d) => (stderr = (stderr + d).slice(-4000)))
     createInterface({ input: proc.stdout }).on('line', (line) => {
@@ -146,6 +157,7 @@ export function runCodex(o: CodexRun): Promise<{ ok: boolean; usage?: { input_to
       resolve(result)
     })
     function cleanup() {
+      clearTimeout(killTimer)
       o.signal.removeEventListener('abort', onAbort)
       rmSync(dir, { recursive: true, force: true })
     }

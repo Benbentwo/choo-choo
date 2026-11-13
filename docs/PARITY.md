@@ -59,7 +59,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Spelling in text fields: right-click a red-underlined word in the composer or any input for the system dictionary's suggestions and Learn Spelling, followed by Undo, Redo, Cut, Copy, Paste and Select All (no model involved; [PRD](prd/rich-copy.md))
 - ✅ Compact chat format (Settings › Appearance): each stretch of tool calls folds into one collapsed Working row
 - ✅ Code blocks in your own messages: text between ``` fences shows as a monospace block that keeps its spacing. While the cursor is inside an open fence the composer turns monospace and Enter adds a line; closing the fence or ⌘Enter sends.
-- ✅ Stop (button or Esc)
+- ✅ Stop (button or Esc). It shows Stopping… at once, ends with a "Stopped by you" marker, and if Claude Code doesn't respond within a few seconds it is force stopped with everything it started; press Stop again to force it sooner. Queued messages go back to the message box, and nothing restarts a stopped chat on its own (choo-choo addition, [PRD](prd/stop.md))
 - ✅ Send while Claude works: Steer (default, folded in at the next step) or Queue (sent after), set in Settings > General
 - ✅ `/clear` folds the messages before it behind a "Context cleared" divider, with Show earlier messages
 - ✅ @mention file autocomplete, /command autocomplete (built-ins, project and user commands, skills)

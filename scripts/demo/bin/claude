@@ -7,6 +7,7 @@ const { readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 const { dirname, resolve } = require('node:path')
 const { randomUUID } = require('node:crypto')
 const readline = require('node:readline')
+const { spawn } = require('node:child_process')
 
 const args = process.argv.slice(2)
 const log = (s) => process.env.CHOO_DEMO_LOG && require('node:fs').appendFileSync(process.env.CHOO_DEMO_LOG, `${process.pid} ${s}\n`)
@@ -28,6 +29,18 @@ const modelArg = (args.find((a) => a.startsWith('--model=')) ?? '').slice(8) || 
 const model = { opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5', haiku: 'claude-haiku-5-5', fable: 'claude-fable-5-2' }[modelArg] || modelArg
 const out = (m) => process.stdout.write(JSON.stringify(m) + '\n')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms / speed))
+
+// Real shell commands a step started (`"bash"`), killed on interrupt the way Claude Code kills a running tool.
+const children = new Set()
+// A turn with `"stuck": true` plays a Claude Code that doesn't answer a stop: it ignores interrupts, its
+// input closing and SIGTERM, so only a force stop (SIGKILL) ends it.
+let stuck = false
+let interrupted = false
+process.on('SIGTERM', () => {
+  if (stuck) return
+  for (const c of children) c.kill('SIGKILL')
+  process.exit(143)
+})
 
 let reqSeq = 0
 const waiting = new Map()
@@ -70,6 +83,8 @@ async function playTurn(prompt) {
   const naming = /^(Name this coding task|Below is a coding session)/.test(prompt)
   const turn = naming ? null : pickTurn(prompt)
   const started = Date.now()
+  stuck = !!turn?.stuck
+  interrupted = false
   if (!turn) {
     // Naming and other one-shot helper prompts.
     const m = /Task:\n([\s\S]*)$/.exec(prompt)
@@ -78,13 +93,21 @@ async function playTurn(prompt) {
     out({ type: 'assistant', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), message: { id: randomUUID(), role: 'assistant', model, content: [{ type: 'text', text: reply }] } })
   } else {
     for (const step of turn.steps) {
+      if (interrupted) break
       if (step.sleep) await sleep(step.sleep)
       if (step.text) await streamText(step.text)
       if (step.tool) {
         const id = `toolu_${randomUUID().replace(/-/g, '').slice(0, 20)}`
         const name = step.mcp ? `mcp__${step.mcp}__${step.tool}` : step.tool
         out({ type: 'assistant', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), message: { id: randomUUID(), role: 'assistant', model, content: [{ type: 'tool_use', id, name, input: step.input ?? {} }] } })
-        await sleep(step.wait ?? 600)
+        if (step.bash) {
+          // Really run it, so stopping has a real process to end.
+          const child = spawn('sh', ['-c', step.bash], { stdio: 'ignore' })
+          children.add(child)
+          await new Promise((r) => child.on('exit', r))
+          children.delete(child)
+        } else await sleep(step.wait ?? 600)
+        if (interrupted) break
         if (step.writeFile) {
           const f = resolve(process.cwd(), step.writeFile.path)
           mkdirSync(dirname(f), { recursive: true })
@@ -95,14 +118,17 @@ async function playTurn(prompt) {
       }
     }
   }
+  if (interrupted) return
   out({
-    type: 'result', subtype: 'success', is_error: false, session_id: sessionId, uuid: randomUUID(),
+    type: 'result', subtype: 'success', is_error: false, session_id: sessionId, uuid: randomUUID(), queued_turn_count: pending,
     duration_ms: Date.now() - started, num_turns: 1, result: '', total_cost_usd: turn?.cost ?? 0.01,
     modelUsage: { [model]: { inputTokens: 1000, outputTokens: 200, contextWindow: 1000000 } }
   })
 }
 
 let queue = Promise.resolve()
+// Prompts that arrived while a turn was playing, reported on each result as Claude Code does.
+let pending = 0
 let inited = false
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', (line) => {
@@ -122,12 +148,19 @@ rl.on('line', (line) => {
       ? { commands: [], agents: [], output_style: 'default', available_output_styles: ['default'], models: [], account: {} }
       : {}
     out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response } })
-    if (sub === 'interrupt') process.exit(0)
+    if (sub === 'interrupt' && !stuck) {
+      // As Claude Code does: end the running tool and the turn, then wait for more input.
+      interrupted = true
+      for (const c of children) c.kill('SIGKILL')
+      out({ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: sessionId, uuid: randomUUID(), duration_ms: 0, num_turns: 1, queued_turn_count: pending, errors: ['[Request interrupted by user]'] })
+    }
     return
   }
   if (m.type === 'user') {
     const prompt = textOf(m.message?.content)
+    pending++
     queue = queue.then(async () => {
+      pending--
       if (!inited) {
         inited = true
         out({ type: 'system', subtype: 'init', session_id: sessionId, uuid: randomUUID(), model, cwd: process.cwd(), tools: [], mcp_servers: [], slash_commands: [], permissionMode: 'bypassPermissions', apiKeySource: 'none' })
@@ -136,4 +169,8 @@ rl.on('line', (line) => {
     })
   }
 })
-rl.on('close', () => queue.then(() => process.exit(0)))
+rl.on('close', () => {
+  if (stuck) return
+  for (const c of children) c.kill('SIGKILL')
+  queue.then(() => process.exit(0))
+})

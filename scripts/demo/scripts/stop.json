@@ -1,0 +1,24 @@
+{
+  "titles": [
+    { "match": "end-to-end", "title": "Run the end-to-end tests", "branch": "e2e-run" },
+    { "match": "search filters", "title": "Search filters", "branch": "search-filters" }
+  ],
+  "turns": [
+    {
+      "match": "end-to-end",
+      "stuck": true,
+      "steps": [
+        { "text": "Running the end-to-end suite. It starts a browser for each test, so this takes a while." },
+        { "tool": "Bash", "input": { "command": "npm run test:e2e", "description": "Run the end-to-end tests" }, "bash": "exec sleep 6011" }
+      ]
+    },
+    {
+      "match": "search filters",
+      "steps": [
+        { "text": "Adding price and distance filters to the search page. First, the existing search query." },
+        { "tool": "Read", "input": { "file_path": "src/pages/Search.tsx" }, "result": "export function Search() { … }", "wait": 700 },
+        { "tool": "Bash", "input": { "command": "npm test -- search", "description": "Run the search tests" }, "bash": "exec sleep 6012" }
+      ]
+    }
+  ]
+}

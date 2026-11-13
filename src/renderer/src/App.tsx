@@ -15,6 +15,7 @@ import { TitleTips } from './components/Tip'
 import { useAppearance } from './appearance'
 import { useShareRefresh } from './components/ShareModals'
 import { IconCollapse } from './icons'
+import { appendDraft } from './components/Composer'
 
 export function App() {
   const s = useStore()
@@ -74,6 +75,7 @@ export function App() {
       if (e.permission) addPermission(e.permission)
       if (e.permissionDone) removePermission(e.permissionDone)
       if (e.tasks) st.set({ tasks: { ...st.tasks, [e.chatId]: e.tasks } })
+      if (e.draft) appendDraft(e.chatId, e.draft)
       if (e.chat) {
         st.upsertChat(e.chat)
         if (e.chat.status !== 'running') void refreshStats(e.chat.workspaceId)

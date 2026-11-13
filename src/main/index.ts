@@ -570,7 +570,7 @@ const orchestratorHost: orchestrator.Host = {
     return r
   },
   sendToChat: (chat, text) => sendToChat(chat, text),
-  stopChat: (id) => agent.stop(id),
+  stopChat: (id) => agent.stop(id, { by: 'the orchestrator' }),
   archiveWorkspace: async (id) => {
     await archiveWorkspace(id)
     send('state:changed')
@@ -818,12 +818,14 @@ function wakeOrchestrator(orchChatId: string) {
   if (!orchChat || !list?.size) return
   // Busy: it may be waiting on these already. Try again when its turn ends.
   if (agent.isRunning(orchChat.id)) return
+  // The person stopped it: leave it stopped until they write again, and just list what finished.
+  const held = agent.wasStopped(orchChat.id)
   finished.delete(orchChatId)
   // Skip what the orchestrator already looked at after it finished.
   const fresh = [...list.values()].filter((d) => orchestrator.seenAt(d.id) < d.at)
   if (!fresh.length) return
   const wakes = autoWakes.get(orchChatId) ?? 0
-  if (store.get().settings.orchestratorAutoUpdates && wakes < MAX_AUTO_WAKES && !orchChat.remote) {
+  if (store.get().settings.orchestratorAutoUpdates && wakes < MAX_AUTO_WAKES && !orchChat.remote && !held) {
     autoWakes.set(orchChatId, wakes + 1)
     try {
       sendToChat(orchChat, orchestrator.autoUpdatePrompt(fresh))
@@ -842,6 +844,16 @@ function wakeOrchestrator(orchChatId: string) {
 }
 
 function onChatDone(chat: Chat) {
+  const stopped = agent.wasStopped(chat.id)
+  // Stopped: what waited for this turn goes back in the message box instead of starting a new one.
+  const waiting = stopped ? afterTurn.get(chat.id) ?? [] : []
+  if (stopped) afterTurn.delete(chat.id)
+  if (waiting.length) {
+    emitChat(chat.id, { draft: waiting.map((w) => w.text).join('\n\n') })
+    const note: ChatItem = { id: randomUUID(), kind: 'note', text: `${waiting.length === 1 ? 'Your waiting message is' : 'Your waiting messages are'} back in the message box.`, ts: Date.now() }
+    store.upsertItem(chat.id, note)
+    emitChat(chat.id, { item: note })
+  }
   const next = afterTurn.get(chat.id)?.shift()
   if (next) {
     // Let the finished turn wind down (the advisor may still run) before sending what waited.
@@ -856,12 +868,13 @@ function onChatDone(chat: Chat) {
   notifyDone(chat)
   automations.onTurnDone(chat)
   continueWork.onTurnDone(chat)
-  noteForOrchestrator(chat)
-  if (finished.has(chat.id)) scheduleWake(chat.id)
+  // A stopped workspace doesn't wake its orchestrator, and a stopped orchestrator isn't woken right back up.
+  if (!stopped) noteForOrchestrator(chat)
+  if (finished.has(chat.id) && !stopped) scheduleWake(chat.id)
   const ws = store.get().workspaces.find((w) => w.id === chat.workspaceId)
   if (ws) autoSync(ws)
   if (ws) void catchUpBranch(ws)
-  if (ws) stack.onTurnDone(ws, chat)
+  if (ws) (stopped ? stack.onTurnStopped(ws, chat) : stack.onTurnDone(ws, chat))
 }
 
 function notifyDone(chat: Chat) {
@@ -1450,7 +1463,7 @@ function registerIpc() {
     if (key) env.ANTHROPIC_API_KEY = key
     return agent.reviewPlan(chat, ws, planItemId, env, emitChat)
   })
-  h('chat:stop', (id: string) => agent.stop(id))
+  h('chat:stop', (id: string, opts?: { force?: boolean }) => agent.stop(id, { force: !!opts?.force }))
   h('chat:stopTask', (id: string, taskId: string) => agent.stopTask(id, taskId))
   h('chat:outputStyles', (wsId: string) => listOutputStyles(findWs(wsId).path))
   // MCP servers, managed through Claude Code itself in the repo's main checkout.
