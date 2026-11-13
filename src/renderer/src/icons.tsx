@@ -52,6 +52,9 @@ export const IconRight = (p: SVGProps<SVGSVGElement>) => (
 export const IconDown = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="m6 9 6 6 6-6" /></svg>
 )
+export const IconSort = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4" /></svg>
+)
 export const IconUp = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M12 19V5M5 12l7-7 7 7" /></svg>
 )

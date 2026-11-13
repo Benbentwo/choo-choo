@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { prMenuItems } from '../prState'
 import type { Chat, PrInfo, RepoGroup, Workspace } from '@shared/types'
 import { foldKey, parseAutoUpdate, projectArchived, projectThreads, projectTree, routerChat, stripRouted, threadKey, type ThreadNode } from '@shared/projects'
-import { useStore, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, showView, viewFor } from '../store'
-import { IconArchive, IconBranch, IconDown, IconPlus, IconX } from '../icons'
+import { useStore, setProjectWorkSort, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, showView, viewFor } from '../store'
+import { IconArchive, IconBranch, IconDown, IconPlus, IconSort, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
 import { ProjectIcon } from './ProjectIcon'
+import { sortProjectWork, type ProjectWorkSort } from '@shared/sidebarOrder'
 import { askToQueue, setQueueDrag } from './ContinueWork'
 
 /**
@@ -145,6 +146,8 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
   const unread = !!thread?.unread && !active
   const toggle = () => setRepoCollapsed(tKey, !isFolded)
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
+  const [sortAt, setSortAt] = useState<{ x: number; y: number } | null>(null)
+  const sort = s.settings.projectWorkSort ?? 'newest'
   return (
     <div>
       <div
@@ -175,7 +178,33 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
         <span className="w-3 shrink-0 text-center text-faint">#</span>
         <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''} ${thread ? '' : 'italic'}`}>{thread?.title ?? 'No thread'}</span>
         {thread?.status === 'running' ? <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-add" /> : unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />}
-        {isFolded && <span className="text-[11px] text-faint">{count}</span>}
+        {isFolded ? (
+          <span className="text-[11px] text-faint">{count}</span>
+        ) : (
+          count > 1 && (
+            <button
+              title={`Sort work: ${WORK_SORTS.find((o) => o.id === sort)?.label}`}
+              className={`shrink-0 rounded p-0.5 text-faint hover:text-fg ${sortAt ? 'block' : 'hidden group-hover:block'}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                const r = e.currentTarget.getBoundingClientRect()
+                setSortAt({ x: r.left, y: r.bottom + 2 })
+              }}
+            >
+              <IconSort width={11} height={11} />
+            </button>
+          )
+        )}
+        {sortAt && (
+          <span onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+            <Menu
+              anchor={null}
+              at={sortAt}
+              items={[{ kind: 'label', label: 'Sort by' }, ...WORK_SORTS.map((o): MenuItem => ({ label: o.label, checked: sort === o.id, onClick: () => setProjectWorkSort(o.id) }))]}
+              onClose={() => setSortAt(null)}
+            />
+          </span>
+        )}
         {menuAt && thread && (
           <span onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
             <Menu
@@ -194,17 +223,7 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
       {!isFolded &&
         repos.map(({ repo, workspaces }) => {
           const key = foldKey.projectRepo(group.id, threadKey(node), repo.id)
-          const repoFolded = folded(key)
-          return (
-            <div key={repo.id}>
-              <button className="flex h-7 w-full items-center gap-1.5 rounded-md pr-2 pl-10 text-left text-[12px] text-muted hover:bg-hover hover:text-fg" onClick={() => setRepoCollapsed(key, !repoFolded)}>
-                <IconDown width={11} height={11} className={`text-faint ${repoFolded ? '-rotate-90' : ''}`} />
-                <span className="flex-1 truncate font-mono">{repo.name}</span>
-                {repoFolded && <span className="text-[11px] text-faint">{workspaces.length}</span>}
-              </button>
-              {!repoFolded && workspaces.map((w) => <ProjectWorkRow key={w.id} ws={w} />)}
-            </div>
-          )
+          return <ProjectRepoWork key={repo.id} name={repo.name} workspaces={workspaces} folded={folded(key)} onFold={(f) => setRepoCollapsed(key, f)} />
         })}
     </div>
   )
@@ -213,8 +232,59 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
 /** PRs looked up for project rows, so folding and re-rendering don't ask GitHub again. */
 const prCache = new Map<string, { version: number; branch: string; pr: PrInfo | null }>()
 
+/** The PR of each workspace, by id, looked up once per PR change. */
+function useWorkPrs(workspaces: Workspace[]): Record<string, PrInfo | null> {
+  const versions = useStore((s) => s.prVersion)
+  const fresh = () => Object.fromEntries(workspaces.map((w) => [w.id, prCache.get(w.id)?.pr ?? null]))
+  const [prs, setPrs] = useState(fresh)
+  const sig = workspaces.map((w) => `${w.id}:${w.branch}:${versions[w.id] ?? 0}`).join(',')
+  useEffect(() => {
+    let live = true
+    setPrs(fresh())
+    for (const w of workspaces) {
+      const version = versions[w.id] ?? 0
+      const c = prCache.get(w.id)
+      if (c && c.version === version && c.branch === w.branch) continue
+      void window.api.getPr(w.id).then(
+        (p) => {
+          prCache.set(w.id, { version, branch: w.branch, pr: p })
+          if (live) setPrs((cur) => ({ ...cur, [w.id]: p }))
+        },
+        () => {}
+      )
+    }
+    return () => {
+      live = false
+    }
+  }, [sig])
+  return prs
+}
+
+const WORK_SORTS: { id: ProjectWorkSort; label: string }[] = [
+  { id: 'newest', label: 'Newest first' },
+  { id: 'oldest', label: 'Oldest first' },
+  { id: 'pr', label: 'PR number' },
+  { id: 'title', label: 'Title' }
+]
+
+/** A repo under a project thread and its work, in the order picked with the thread's sort arrow. */
+function ProjectRepoWork({ name, workspaces, folded, onFold }: { name: string; workspaces: Workspace[]; folded: boolean; onFold: (folded: boolean) => void }) {
+  const sort = useStore((s) => s.settings.projectWorkSort ?? 'newest')
+  const prs = useWorkPrs(workspaces)
+  return (
+    <div>
+      <button className="flex h-7 w-full items-center gap-1.5 rounded-md pr-2 pl-10 text-left text-[12px] text-muted hover:bg-hover hover:text-fg" onClick={() => onFold(!folded)}>
+        <IconDown width={11} height={11} className={`text-faint ${folded ? '-rotate-90' : ''}`} />
+        <span className="flex-1 truncate font-mono">{name}</span>
+        {folded && <span className="text-[11px] text-faint">{workspaces.length}</span>}
+      </button>
+      {!folded && sortProjectWork(workspaces, sort, prs).map((w) => <ProjectWorkRow key={w.id} ws={w} pr={prs[w.id] ?? null} />)}
+    </div>
+  )
+}
+
 /** One piece of a project's work: its PR number and title once there is a PR, else the workspace name. */
-function ProjectWorkRow({ ws }: { ws: Workspace }) {
+function ProjectWorkRow({ ws, pr }: { ws: Workspace; pr: PrInfo | null }) {
   const s = useStore()
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   // The same actions as a workspace row in the plain repo list.
@@ -228,24 +298,6 @@ function ProjectWorkRow({ ws }: { ws: Workspace }) {
     { kind: 'sep' },
     { label: 'Archive workspace', onClick: () => void archiveWorkspace(ws.id) }
   ]
-  const version = s.prVersion[ws.id] ?? 0
-  const cached = prCache.get(ws.id)
-  const [pr, setPr] = useState<PrInfo | null>(cached?.pr ?? null)
-  useEffect(() => {
-    const c = prCache.get(ws.id)
-    if (c && c.version === version && c.branch === ws.branch) return setPr(c.pr)
-    let live = true
-    void window.api.getPr(ws.id).then(
-      (p) => {
-        prCache.set(ws.id, { version, branch: ws.branch, pr: p })
-        if (live) setPr(p)
-      },
-      () => {}
-    )
-    return () => {
-      live = false
-    }
-  }, [ws.id, ws.branch, version])
   const chats = s.chats.filter((c) => c.workspaceId === ws.id)
   const running = chats.some((c) => c.status === 'running')
   const asking = chats.some((c) => (s.permissions[c.id]?.length ?? 0) > 0)

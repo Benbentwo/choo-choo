@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { moveId, sortWorkspaces } from '../src/shared/sidebarOrder'
+import { moveId, sortProjectWork, sortWorkspaces } from '../src/shared/sidebarOrder'
 import { namingContext, suggestTitleFromChats } from '../src/main/naming'
 
 // The model's reply, or the error running it throws, for each test.
@@ -81,5 +81,22 @@ describe('suggestTitleFromChats', () => {
     sdk.error = new Error('Claude Code process exited with code 1')
     await expect(suggestTitleFromChats(chats)).rejects.toThrow("Couldn't reach Claude to name this workspace: Claude Code process exited with code 1")
     expect(console.error).toHaveBeenCalledWith('[naming] regenerate name failed:', sdk.error)
+  })
+})
+
+describe('sortProjectWork', () => {
+  const w = (id: string, title: string, createdAt: number, prNumber?: number) => ({ id, title, createdAt, prNumber })
+  const list = [w('a', 'Import VPCs', 1, 1357), w('b', 'Add alarms', 3), w('c', 'Import IAM roles', 2)]
+  const prs = { c: { number: 1354, title: 'Import IAM roles' } }
+  const ids = (l: { id: string }[]) => l.map((x) => x.id)
+  it('sorts by creation time either way', () => {
+    expect(ids(sortProjectWork(list, 'newest'))).toEqual(['b', 'c', 'a'])
+    expect(ids(sortProjectWork(list, 'oldest'))).toEqual(['a', 'c', 'b'])
+  })
+  it('sorts by PR number, looked-up PRs first, work without a PR last', () => {
+    expect(ids(sortProjectWork(list, 'pr', prs))).toEqual(['c', 'a', 'b'])
+  })
+  it('sorts by the title the row shows', () => {
+    expect(ids(sortProjectWork(list, 'title', { b: { number: 9, title: 'Zebra' } }))).toEqual(['c', 'a', 'b'])
   })
 })

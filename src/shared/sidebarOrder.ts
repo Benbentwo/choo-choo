@@ -26,3 +26,25 @@ export function moveId(ids: string[], id: string, target: string, after: boolean
   rest.splice(rest.indexOf(target) + (after ? 1 : 0), 0, id)
   return rest
 }
+
+export type ProjectWorkSort = 'newest' | 'oldest' | 'pr' | 'title'
+
+/**
+ * Sorts the work under a project thread's repo. `pr` puts the lowest PR number first and work
+ * without a PR last; `title` uses the PR title when there is one, as the row shows.
+ */
+export function sortProjectWork<W extends Pick<Workspace, 'id' | 'title' | 'createdAt' | 'prNumber'>>(
+  list: W[],
+  sort: ProjectWorkSort,
+  prs: Record<string, { number: number; title: string } | null | undefined> = {}
+): W[] {
+  const newest = (a: W, b: W) => b.createdAt - a.createdAt
+  const num = (w: W) => prs[w.id]?.number ?? w.prNumber ?? Infinity
+  const title = (w: W) => prs[w.id]?.title ?? w.title
+  return [...list].sort((a, b) => {
+    if (sort === 'oldest') return a.createdAt - b.createdAt
+    if (sort === 'pr') return num(a) === num(b) ? newest(a, b) : num(a) < num(b) ? -1 : 1
+    if (sort === 'title') return title(a).localeCompare(title(b), undefined, { numeric: true }) || newest(a, b)
+    return newest(a, b)
+  })
+}
