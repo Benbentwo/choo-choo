@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import type { Workspace } from '@shared/types'
+import type { PrInfo, Workspace } from '@shared/types'
 import * as git from './git'
 
 /**
@@ -16,6 +16,18 @@ export async function syncWorkspaceBranch(ws: Workspace): Promise<boolean> {
   const pr = await git.pullNumberOf(ws.path, branch)
   if (pr) ws.prNumber = pr
   else delete ws.prNumber
+  return true
+}
+
+/**
+ * Points the workspace at the branch its open PR merges into, so Changes compares with the PR's target
+ * and not the branch the workspace was started from (a PR opened from a branch, or retargeted on GitHub).
+ * Returns true when `baseRef` moved. Stacks manage their own bases.
+ */
+export async function followPrBase(ws: Workspace, repoPath: string, pr: PrInfo | null): Promise<boolean> {
+  if (ws.stack || ws.orchestrator || pr?.state !== 'OPEN' || !pr.baseRefName) return false
+  if (ws.baseRef.replace(/^origin\//, '') === pr.baseRefName) return false
+  ws.baseRef = await git.baseRefFor(repoPath, pr.baseRefName)
   return true
 }
 

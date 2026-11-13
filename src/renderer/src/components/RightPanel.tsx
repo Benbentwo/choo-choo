@@ -16,7 +16,7 @@ import { StackTab } from './Stack'
 import { PrSyncBanner } from './ReviewFollowUp'
 import { SinceReviewToggle } from './SinceReview'
 import { useSinceReview, useViewed } from '../sinceReview'
-import { prBaseFor } from '@shared/stack'
+import { prBaseFor, targetBranch } from '@shared/stack'
 import * as L from '@shared/layout'
 
 type TabDef = { id: RightTab; label: string; stack?: boolean }
@@ -303,7 +303,8 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
       const chat = s.chats.find((c) => c.id === chatId)
       const { extras } = s.settings
       const reviewFirst = extras.agents.reviewer && extras.reviewBeforePr && chat?.model !== 'codex'
-      await window.api.sendMessage(chatId, prPrompt(ws, prBaseFor(ws.stack, ws.branch, repo?.defaultBranch ?? 'main'), draft, reviewFirst))
+      const base = ws.stack ? prBaseFor(ws.stack, ws.branch, repo?.defaultBranch ?? 'main') : targetBranch(ws)
+      await window.api.sendMessage(chatId, prPrompt(ws, base, draft, reviewFirst))
     } catch (e) {
       reportError(e)
     }
@@ -431,7 +432,7 @@ function PrButton({ ws, hasChanges }: { ws: Workspace; hasChanges: boolean }) {
             <IconEye /> Submit review{drafts > 0 ? ` (${drafts})` : ''}
           </button>
         ) : pr && action === 'resolve' ? (
-          <button className="flex items-center gap-1.5 px-2.5 py-1 text-amber-400 hover:bg-hover disabled:opacity-40" disabled={agentBusy} onClick={() => void ask(resolveConflictsPrompt(pr, repo?.defaultBranch ?? 'main'))} title="Ask the agent to merge the base branch and resolve conflicts">
+          <button className="flex items-center gap-1.5 px-2.5 py-1 text-amber-400 hover:bg-hover disabled:opacity-40" disabled={agentBusy} onClick={() => void ask(resolveConflictsPrompt(pr, pr.baseRefName ?? targetBranch(ws)))} title="Ask the agent to merge the base branch and resolve conflicts">
             <IconPR /> Resolve conflicts
           </button>
         ) : pr && action === 'fix' ? (

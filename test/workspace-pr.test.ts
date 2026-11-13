@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import type { Workspace } from '../src/shared/types'
-import { prRef, syncWorkspaceBranch } from '../src/main/workspacePr'
+import { followPrBase, prRef, syncWorkspaceBranch } from '../src/main/workspacePr'
+import { diffBase, targetBranch } from '../src/shared/stack'
 import { prForBranch } from '../src/main/github'
 
 const run = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -69,6 +70,29 @@ describe('workspace follows the branch its agent checked out', () => {
     expect(await syncWorkspaceBranch(w)).toBe(true)
     expect(w.prNumber).toBeUndefined()
     expect(prRef(w)).toBe('feature/existing')
+  })
+
+  it('compares with the branch an open PR merges into, not the one the workspace started from', async () => {
+    const pr = { number: 5, url: '', state: 'OPEN' as const, isDraft: false, title: 't', baseRefName: 'release' }
+    const w = ws()
+    expect(await followPrBase(w, root + '/repo', pr)).toBe(true)
+    expect(w.baseRef).toBe('release') // no origin in this repo, so the local branch
+    expect(diffBase(w)).toBe('release')
+    expect(await followPrBase(w, root + '/repo', pr)).toBe(false)
+    const onOrigin = { ...ws(), baseRef: 'origin/release' }
+    expect(await followPrBase(onOrigin, root + '/repo', pr)).toBe(false)
+    const merged = ws()
+    expect(await followPrBase(merged, root + '/repo', { ...pr, state: 'MERGED' })).toBe(false)
+    expect(merged.baseRef).toBe('main')
+    const stacked = { ...ws(), stack: { layers: [{ branch: 'me/oslo' }], autoRestack: false } }
+    expect(await followPrBase(stacked, root + '/repo', pr)).toBe(false)
+  })
+
+  it('compares a stacked branch with the one below it', () => {
+    const stack = { layers: [{ branch: 'a' }, { branch: 'b' }], autoRestack: false }
+    expect(diffBase({ ...ws(), baseRef: 'origin/main', branch: 'a', stack })).toBe('origin/main')
+    expect(diffBase({ ...ws(), baseRef: 'origin/main', branch: 'b', stack })).toBe('a')
+    expect(targetBranch({ ...ws(), baseRef: 'origin/develop' })).toBe('develop')
   })
 
   it('never touches stacks or orchestrators, which manage their own branch', async () => {

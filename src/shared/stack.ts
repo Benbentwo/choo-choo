@@ -1,5 +1,19 @@
-import type { GithubStack, PrComment, Stack, StackJob, StackLayerStatus } from './types'
+import type { GithubStack, PrComment, Stack, StackJob, StackLayerStatus, Workspace } from './types'
 import { prCommentsPrompt } from './prComments'
+
+/**
+ * The ref a workspace's changes are compared with: in a stack, the branch below the checked-out one;
+ * otherwise the branch it targets (`baseRef`, kept in step with its PR's base branch).
+ */
+export function diffBase(ws: Pick<Workspace, 'branch' | 'baseRef' | 'stack'>): string {
+  const i = ws.stack ? layerIndex(ws.stack, ws.branch) : -1
+  return i > 0 ? ws.stack!.layers[i - 1].branch : ws.baseRef
+}
+
+/** The branch a workspace's PR merges into, as a branch name (no `origin/`). */
+export function targetBranch(ws: Pick<Workspace, 'branch' | 'baseRef' | 'stack'>): string {
+  return diffBase(ws).replace(/^origin\//, '')
+}
 
 /** Position of a branch in the stack, or -1. */
 export function layerIndex(stack: Stack, branch: string): number {

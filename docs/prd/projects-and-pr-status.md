@@ -5,7 +5,7 @@
 | Status | In review (PR #53) |
 | Owner | Claude |
 | Requested by | Ben, in-app comments, 2026-11-06 |
-| Last updated | 2026-11-10 |
+| Last updated | 2026-11-13 |
 
 ## Problem
 
@@ -39,6 +39,7 @@ There was no way to take a project out of Choo Choo or clean up the workspace fo
 6. Create PR opens a draft by default. While the PR is a draft, the PR menu offers Mark ready for review, which runs `gh pr ready`.
 7. A workspace on a branch that already has a PR shows that PR, however the workspace was made. When the agent checks out another branch itself (`gh pr checkout 12`, `git switch feature`, as orchestrator-started agents often do), the workspace follows it: its branch is re-read before every PR lookup, after every agent turn and on every PR watch tick, and the PR button switches from Create PR to that branch's PR. Fork PRs (checked out from `refs/pull/<n>/head`) are looked up by number. Stacked workspaces and orchestrators manage their own branch and are left alone.
 8. While an open PR is behind its base branch and has no conflicts, the PR menu offers Update branch with the number of commits behind. It runs `gh pr update-branch` (a merge of the base, as on GitHub), then pulls the result into the worktree: a fast-forward, or a merge when there are unpushed commits (backed out, with an error, if that conflicts). It is hidden while an agent is working.
+9. Changes, the `+N -M` stats and file diffs compare a workspace with its target branch (`diffBase()` in `src/shared/stack.ts`): the branch its open PR merges into (followed when the PR is retargeted on GitHub, and set at creation for workspaces opened from a PR), the branch below it in a stack, or else the branch it started from. Review prompts, Create PR, Resolve conflicts and the orchestrator's change summaries use the same base.
 
 ## Design
 

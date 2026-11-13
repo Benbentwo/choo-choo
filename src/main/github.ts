@@ -214,8 +214,8 @@ export async function listIssues(cwd: string, query: string): Promise<SourceOpti
 }
 
 export async function prHead(cwd: string, number: number) {
-  const { stdout } = await exec('gh', ['pr', 'view', String(number), '--json', 'headRefName,isCrossRepository,title'], { cwd })
-  return JSON.parse(stdout) as { headRefName: string; isCrossRepository: boolean; title: string }
+  const { stdout } = await exec('gh', ['pr', 'view', String(number), '--json', 'headRefName,baseRefName,isCrossRepository,title'], { cwd })
+  return JSON.parse(stdout) as { headRefName: string; baseRefName?: string; isCrossRepository: boolean; title: string }
 }
 
 export async function issueText(cwd: string, number: number) {
