@@ -432,7 +432,7 @@ export function ContinueCard() {
         <span className="text-[12px] text-muted">
           {cs.maxConcurrent} at a time, stops at {cs.stopAtPercent}%
         </span>
-        <button className={btn} onClick={() => s.set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: true, panesShown: false })}>
+        <button className={btn} onClick={() => s.set({ selectedWs: null, draftRepo: null, addonPage: null, prsPage: false, automationsPage: false, continuePage: true, usagePage: false, panesShown: false })}>
           {count > 3 ? `See all ${count}` : 'Open Up next'}
         </button>
       </div>

@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LimitWindow, SubscriptionLimits } from '@shared/types'
 import { claudeExecutable } from './claudeBinary'
+import { recordReading } from './usageHistory'
 
 /**
  * Plan usage limits for the AI subscriptions in use, for the sidebar footer.
@@ -260,8 +261,8 @@ function record(key: string, t: number, p: number, resetsAt?: number, windowMs?:
   const keepFrom = Date.now() - 9 * 24 * HOUR
   history[key] = list.filter((x) => x.t >= keepFrom).slice(-2000)
   dirty = true
-  void resetsAt
-  void windowMs
+  // The long-term history behind the Usage page.
+  recordReading(key, t, p, resetsAt, windowMs)
 }
 
 function flush() {

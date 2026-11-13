@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReviewSettingsSection } from './ReviewSettings'
 import { ContinueSettingsSection } from './ContinueWork'
 import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, PromptCustom, Settings, Telemetry } from '@shared/types'
+import { usageHistorySettings } from '@shared/usageHistory'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, openGroupOrchestrator, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
 import { EFFORT_LABEL, EFFORTS, MODELS, PERMISSIONS } from './Composer'
@@ -203,6 +204,7 @@ const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'reviews', label: 'Reviews', hint: 'When a PR you review changes for you, and how you catch up on it.' },
   { id: 'projects', label: 'Projects', hint: 'Your projects and their workspaces.' },
   { id: 'continue', label: 'Continue work', hint: 'What happens when a chat hits your plan\'s usage limit, and what starts when the window resets.' },
+  { id: 'usage', label: 'Usage history', hint: 'What the Usage page keeps: plan window readings and a summary of each Claude Code response. Stays on this Mac.' },
   { id: 'agents', label: 'Agents', hint: 'Extra agents and the advisor.' },
   { id: 'prompts', label: 'Prompts', hint: 'Custom instructions added to chats, for every project or one.' },
   { id: 'mcp', label: 'MCP', hint: 'MCP servers Claude Code loads for each project.' },
@@ -213,6 +215,40 @@ const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'telemetry', label: 'Telemetry', hint: 'Export traces and metrics with OpenTelemetry.' },
   { id: 'experimental', label: 'Experimental', hint: 'Features still being tried out. Off by default.' },
 ]
+
+function UsageHistorySettings({ settings, save }: { settings: Settings; save: (patch: Partial<Settings>) => void }) {
+  const u = usageHistorySettings(settings.usageHistory)
+  const set = (patch: Partial<typeof u>) => save({ usageHistory: { ...u, ...patch } })
+  const row = (label: string, hint: string, control: React.ReactNode) => (
+    <div className="flex items-start gap-4 border-b border-line px-5 py-3.5 last:border-0">
+      <div className="flex-1">
+        <div>{label}</div>
+        <div className="mt-0.5 text-[12px] text-faint">{hint}</div>
+      </div>
+      <div className="shrink-0">{control}</div>
+    </div>
+  )
+  return (
+    <>
+      {row(
+        'Keep usage history',
+        "Saves your plan window readings while Choo Choo is open, and copies a summary of each Claude Code response (time, folder, model, token counts; never the text) before Claude Code's 30-day cleanup deletes its transcripts. Turning it off stops saving; what's saved stays until it ages out.",
+        <input type="checkbox" checked={u.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+      )}
+      {row(
+        'Keep for',
+        'Older months are deleted when Choo Choo starts.',
+        <select className="rounded-md border border-line bg-bg px-2 py-1 outline-none" value={u.keepMonths} onChange={(e) => set({ keepMonths: Number(e.target.value) })}>
+          {[3, 6, 12, 24].map((n) => (
+            <option key={n} value={n}>
+              {n} months
+            </option>
+          ))}
+        </select>
+      )}
+    </>
+  )
+}
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const settings = useStore((s) => s.settings)
@@ -251,6 +287,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <ProjectsSettings />
         ) : tab === 'continue' ? (
           <ContinueSettingsSection />
+        ) : tab === 'usage' ? (
+          <UsageHistorySettings settings={settings} save={(patch) => void save(patch)} />
         ) : tab === 'appearance' ? (
           <AppearanceSettings />
         ) : tab === 'reviews' ? (

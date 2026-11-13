@@ -35,7 +35,7 @@ The footer card shows a small gradient area graph for the provider's first windo
 - **Y axis:** percent used.
 - **Lines:** a red dashed line at the cap (100%), a dotted vertical line at reset, a faint dotted diagonal for an even pace, and a dashed line projecting the current rate.
 - **Pace text:** "On track", "Ahead of pace: at this rate you hit the cap <when>, before it resets <when>", or "At the cap". The rate comes from readings over the last quarter of the window when they cover at least a twentieth of it, otherwise from the average since the window started.
-- **History:** Codex history comes from its logs. Claude only reports the current number, so Choo Choo records readings in `limits-history.json` in its data folder, keeping 9 days. A Claude graph fills in from the first launch onward.
+- **History:** Codex history comes from its logs. Claude only reports the current number, so Choo Choo records readings in `limits-history.json` in its data folder, keeping 9 days. A Claude graph fills in from the first launch onward. Every reading also goes to the long-term history behind the Usage page ([usage-history.md](usage-history.md)).
 
 ## Requirements
 

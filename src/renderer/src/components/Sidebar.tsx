@@ -7,9 +7,9 @@ import { Menu, type MenuItem } from './Menu'
 import { LimitsFooter } from './LimitsFooter'
 import { addProjectItems } from './AddProject'
 import * as L from '@shared/layout'
-import { useStore, showView, viewFor, openAddonPage, type DragItem, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, openAutomationsPage, openContinuePage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
+import { useStore, showView, viewFor, openAddonPage, type DragItem, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, openAutomationsPage, openContinuePage, openUsagePage, reportError, setSidebarRowHidden, setRepoCollapsed } from '../store'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
-import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconMerged, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack, IconUpNext } from '../icons'
+import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconMerged, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack, IconUpNext, IconUsage } from '../icons'
 import { StackRows } from './Stack'
 import { Stats } from './Stats'
 import { prMenuItems, usePrState } from '../prState'
@@ -183,7 +183,7 @@ export function Sidebar() {
       </div>
 
       <nav className="px-2 pb-3">
-        <NavItem icon={<IconHome />} label="Home" active={!s.panesShown && !s.draftRepo && !s.prsPage && !s.automationsPage && !s.continuePage} onClick={() => s.selectWorkspace(null)} />
+        <NavItem icon={<IconHome />} label="Home" active={!s.panesShown && !s.draftRepo && !s.prsPage && !s.automationsPage && !s.continuePage && !s.usagePage} onClick={() => s.selectWorkspace(null)} />
         <NavItem icon={<IconPlus />} label="Create" onClick={() => s.set({ modal: 'create' })} />
         <NavItem icon={<IconSearch />} label="Search" onClick={() => openPalette()} hint="⌘K" />
         <NavItem
@@ -204,6 +204,7 @@ export function Sidebar() {
           badge={s.continueQueue.length || undefined}
           drop={queueDrop}
         />
+        <NavItem icon={<IconUsage />} label="Usage" title="Your plan usage over time: windows, limit hits, and where it went" active={s.usagePage && !s.selectedWs} onClick={openUsagePage} />
         {projectsOn && (
           <NavItem
             icon={<IconRefresh />}
