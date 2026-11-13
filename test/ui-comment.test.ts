@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commentPrompt, commentSlug, commentTargets, defaultCommentTarget, isUpstreamRemote, issueUrl, sidebarVersion } from '../src/shared/uiComment'
+import { commentPrompt, commentSlug, commentTargets, defaultCommentTarget, isUpstreamRemote, issueUrl, showCommentBubble, sidebarVersion } from '../src/shared/uiComment'
 
 describe('sidebarVersion', () => {
   it('shows the version in a packaged build', () => {
@@ -26,6 +26,22 @@ describe('comment targets', () => {
     expect(commentTargets(true)).not.toContain('local')
     expect(defaultCommentTarget(false)).toBe('local')
     expect(defaultCommentTarget(true)).toBe('workspace')
+  })
+})
+
+describe('showCommentBubble', () => {
+  it('shows the bubble by default, in packaged builds too', () => {
+    expect(showCommentBubble({ setting: undefined, active: false, toast: false })).toBe(true)
+    expect(showCommentBubble({ setting: true, active: false, toast: false })).toBe(true)
+  })
+  it('hides it when the setting is off, except while comment mode or a result is showing', () => {
+    expect(showCommentBubble({ setting: false, active: false, toast: false })).toBe(false)
+    expect(showCommentBubble({ setting: false, active: true, toast: false })).toBe(true)
+    expect(showCommentBubble({ setting: false, active: false, toast: true })).toBe(true)
+  })
+  it('sends packaged-build comments to a workspace, never the local checkout', () => {
+    expect(defaultCommentTarget(true)).toBe('workspace')
+    expect(commentTargets(true)).toEqual(['workspace', 'issue'])
   })
 })
 

@@ -51,7 +51,7 @@ async function launch(world, script, video, ghData) {
   return { app, page }
 }
 
-/** A visible pointer, a click ripple, and no dev-only chrome (comment pill, sha-dev version). */
+/** A visible pointer, a click ripple, and no comment bubble or sha-dev version. */
 async function dress(page) {
   await page.evaluate(() => {
     const style = document.createElement('style')
