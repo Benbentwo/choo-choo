@@ -61,3 +61,24 @@ describe('git', () => {
     expect(await g.git(repo, ['worktree', 'list'])).not.toContain('dallas')
   })
 })
+
+describe('addWorktreeForPrBranch', () => {
+  it('uses the branch on origin, or the PR head when a merged PR deleted it', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'choo-pr-'))
+    const origin = join(root, 'origin.git')
+    await g.git(root, ['clone', '-q', '--bare', repo, origin])
+    const clone = join(root, 'clone')
+    await g.git(root, ['clone', '-q', origin, clone])
+    const head = (await g.git(repo, ['rev-parse', 'main'])).trim()
+    // An open PR's branch, and a merged PR whose branch is gone but whose head GitHub keeps at pull/<n>/head.
+    await g.git(origin, ['update-ref', 'refs/heads/feat/open', head])
+    await g.git(origin, ['update-ref', 'refs/pull/7/head', head])
+
+    await g.addWorktreeForPrBranch(clone, join(root, 'wt-open'), 6, 'feat/open')
+    expect((await g.git(join(root, 'wt-open'), ['rev-parse', '--abbrev-ref', '@{u}'])).trim()).toBe('origin/feat/open')
+
+    await g.addWorktreeForPrBranch(clone, join(root, 'wt-merged'), 7, 'feat/merged')
+    expect((await g.git(join(root, 'wt-merged'), ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe('feat/merged')
+    expect((await g.git(join(root, 'wt-merged'), ['rev-parse', 'HEAD'])).trim()).toBe(head)
+  })
+})
