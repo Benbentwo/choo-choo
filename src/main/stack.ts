@@ -647,6 +647,14 @@ async function step(ws: Workspace, j: Job) {
 }
 
 /** After an agent turn in a stack: drive the running job, or restack the PRs above if they fell behind. */
+/** The person stopped the chat a stack job was driving: the job stops too instead of taking its next step. */
+export function onTurnStopped(ws: Workspace, chat: Chat) {
+  const j = jobs.get(ws.id)
+  if (!j || j.view.chatId !== chat.id) return
+  jobs.delete(ws.id)
+  host.changed(ws.id)
+}
+
 export function onTurnDone(ws: Workspace, chat: Chat) {
   if (!ws.stack) return
   // Let the advisor's follow-up (if any) start first; if it does, the next turn's end lands here again.

@@ -36,6 +36,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 **Work in parallel**
 - **Agents in isolated worktrees.** Press + to start a workspace: a fresh git worktree and branch where a Claude Code agent works without touching your other checkouts.
 - **Chat built for coding agents.** Opus, Sonnet and Haiku with effort levels, plan mode, @file mentions, /slash commands and skills, image attachments, and "revert to here" checkpoints.
+- **Stop that always stops.** Stop (or Esc) shows Stopping… right away and ends the turn within seconds. If Claude doesn't respond, Force stop ends it and everything it started, and queued messages go back to the message box.
 - **Orchestrator.** Tell a repo's orchestrator what you want and it splits the work into workspaces, briefs each agent, reads their diffs and follows up.
 - **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
 - **Split panels and resizable panes.** Put workspaces and chats side by side, drag either sidebar to size it, and expand the right panel with ⌘⇧E.
@@ -43,6 +44,10 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 <p align="center">
   <img src="docs/media/gifs/projects-threads.gif" alt="A request in a project's chat starts a thread. The thread starts a workspace in each of two repos, and each agent makes its change in its own worktree." width="900"><br>
   <sub>Ask a project for something; it opens a thread, which starts a workspace (git worktree and agent) in each repo it touches.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/media/gifs/stop.gif" alt="Claude is running a long test command and doesn't respond to Stop. The button shows Stopping…, then turns into Force stop; clicking it ends the turn and the chat shows Stopped by you." width="900">
 </p>
 
 **Review and ship**

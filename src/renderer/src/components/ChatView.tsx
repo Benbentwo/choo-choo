@@ -11,7 +11,7 @@ import { splitFences, tidyMarkdown } from '../markdown'
 import { MARKDOWN_COMPONENTS } from './CodeBlock'
 import { primeLinkContext } from '../richCopy'
 import { API_PRICE_NOTE } from './UsageGraphs'
-import { IconDown, IconRight, IconTool } from '../icons'
+import { IconDown, IconRight, IconStop, IconTool } from '../icons'
 import { RouteItem } from './Projects'
 import { parseAutoUpdate, stripRouted, type AutoUpdateEntry } from '@shared/projects'
 import { stripRunMarker } from '@shared/automations'
@@ -99,10 +99,18 @@ export function ChatView({ chat }: { chat: Chat }) {
         {renderItems(current)}
         <PausedBanner chat={chat} />
         <PermissionCards chat={chat} />
-        {chat.status === 'running' && !pendingCount && !endsInLiveWork && (
-          <div className="mt-3 flex items-center gap-2 text-faint">
-            <span className="h-3 w-3 animate-spin rounded-full border-2 border-faint border-t-fg" /> Working…
+        {chat.status === 'running' && chat.stopping ? (
+          <div className="mt-3 flex items-center gap-2 text-faint" data-testid="stopping">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-faint border-t-fg" /> Stopping…
           </div>
+        ) : (
+          chat.status === 'running' &&
+          !pendingCount &&
+          !endsInLiveWork && (
+            <div className="mt-3 flex items-center gap-2 text-faint">
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-faint border-t-fg" /> Working…
+            </div>
+          )
         )}
       </div>
     </div>
@@ -195,14 +203,18 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
             <ActionItem label={buttonAction(item.text)!} text={item.text} />
           ) : (
             <div
-              className={`max-w-[85%] rounded-xl px-4 py-2.5 whitespace-pre-wrap ${item.fromAdvisor ? 'border border-advisor/40 bg-advisor/10' : 'bg-raised'}`}
+              className={`max-w-[85%] rounded-xl px-4 py-2.5 whitespace-pre-wrap ${item.fromAdvisor ? 'border border-advisor/40 bg-advisor/10' : 'bg-raised'} ${item.unsent ? 'opacity-50' : ''}`}
             >
               {item.fromAdvisor && <div className="mb-1 text-[11px] font-medium text-advisor">From the advisor</div>}
               {stripRouted(item.text).routed && <div className="mb-1 text-[11px] text-faint">Sent here from the orchestrator chat</div>}
               {stripRunMarker(item.text).reason && <div className="mb-1 text-[11px] text-faint">Automation run · {stripRunMarker(item.text).reason}</div>}
               {item.afterRestart && <div className="mb-1 text-[11px] font-medium text-faint">Sent automatically after Choo Choo restarted</div>}
-              {item.sentWhileRunning && (
-                <div className="mb-1 text-[11px] text-faint">{item.sentWhileRunning === 'steer' ? 'Sent while Claude was working · steered in' : 'Sent while Claude was working · queued'}</div>
+              {item.unsent ? (
+                <div className="mb-1 text-[11px] text-faint">Not sent: the turn was stopped first. It's back in the message box.</div>
+              ) : (
+                item.sentWhileRunning && (
+                  <div className="mb-1 text-[11px] text-faint">{item.sentWhileRunning === 'steer' ? 'Sent while Claude was working · steered in' : 'Sent while Claude was working · queued'}</div>
+                )
               )}
               {item.images && item.images.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-2">
@@ -225,6 +237,17 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
         </div>
       )
     case 'note':
+      if (item.stopped)
+        return (
+          <div className="my-4 flex items-center gap-3 text-[12px] text-muted" data-testid="stopped-marker">
+            <div className="h-px flex-1 bg-line" />
+            <span className="flex items-center gap-1.5">
+              <IconStop className="text-del" />
+              {item.text}
+            </span>
+            <div className="h-px flex-1 bg-line" />
+          </div>
+        )
       return <div className="my-3 text-center text-[11px] text-faint">{item.text}</div>
     case 'model':
       return <ModelSwitch item={item} />

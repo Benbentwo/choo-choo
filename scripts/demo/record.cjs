@@ -226,6 +226,57 @@ const scenes = {
     }),
 
   // Settings search: type to find a setting in any section, Enter jumps to it and flashes the row.
+  stop: () =>
+    record('stop', { script: 'stop.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Run the end-to-end tests')
+      await d.page.getByText('npm run test:e2e', { exact: false }).first().waitFor({ timeout: 30_000 })
+      await d.wait(1500)
+      await d.shot?.('1-working')
+      // This Claude ignores the stop, as a stuck one would: Stopping…, then Force stop.
+      await d.click(d.page.getByTestId('stop-button'))
+      await d.wait(900)
+      await d.shot?.('2-stopping')
+      await d.page.locator('[data-testid="stop-button"][data-stopping="slow"]').waitFor({ timeout: 30_000 })
+      await d.moveTo(d.page.getByTestId('stop-button'))
+      await d.wait(1200)
+      await d.shot?.('3-force-stop')
+      await d.click(d.page.getByTestId('stop-button'))
+      await d.page.getByTestId('stopped-marker').waitFor({ timeout: 30_000 })
+      await d.wait(1800)
+      await d.shot?.('4-stopped')
+      // The test run it started is gone too.
+      let left = ''
+      try {
+        left = execFileSync('pgrep', ['-f', 'sleep 6011']).toString().trim()
+      } catch {}
+      console.log(left ? `stop: test run still alive (${left})` : 'stop: test run process is gone')
+    }),
+
+  'stop-queued': () =>
+    record('stop-queued', { script: 'stop.json', settings: { whileRunning: 'queue' }, opts: { noGif: true } }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Add search filters for price and distance')
+      await d.page.getByText('npm test -- search', { exact: false }).first().waitFor({ timeout: 30_000 })
+      await d.wait(800)
+      await d.click(d.page.locator('textarea').first())
+      await d.type('Then add a reset filters button', 20)
+      await d.page.keyboard.press('Enter')
+      await d.wait(1200)
+      await d.shot?.('5-queued')
+      await d.page.keyboard.press('Escape')
+      await d.page.getByTestId('stopped-marker').waitFor({ timeout: 30_000 })
+      await d.wait(1200)
+      await d.shot?.('6-stopped-queued-back')
+      let left = ''
+      try {
+        left = execFileSync('pgrep', ['-f', 'sleep 6012']).toString().trim()
+      } catch {}
+      console.log(left ? `stop-queued: test run still alive (${left})` : 'stop-queued: test run process is gone')
+    }),
+
   'settings-search': () =>
     record('settings-search', {}, async (d) => {
       await d.wait(600)

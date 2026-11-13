@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { spawn } from 'node:child_process'
 import type { BackgroundTask, Chat, ChatItem, PermissionDecision, PermissionRequest, Workspace } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
@@ -12,15 +13,69 @@ import { buildSystemPrompt } from '@shared/systemPrompt'
 import { onModelReported } from '@shared/modelSwitch'
 import { limitFromEvent, limitFromText, type ChatPause } from '@shared/continueWork'
 import type { InterruptReason } from '@shared/restart'
+import { killLeftovers, killTree, snapshotTree, type Proc } from './processTree'
+import { stoppedText } from '@shared/stop'
 import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, questionReply, runningTasks } from './claudeOptions'
 
-type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[] }) => void
+type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[]; draft?: string }) => void
 
 interface Running {
   abort: AbortController
   query?: { interrupt(): Promise<unknown>; stopTask?(taskId: string): Promise<void> }
   /** Sends another message into the running turn; false once the turn is ending. */
   push?: (text: string, images: string[], mode: 'steer' | 'queue') => boolean
+  emit: Emit
+  /** The Claude Code (or Codex) process running this turn. */
+  pid?: number
+  /** Set once someone pressed Stop. */
+  stopping?: { at: number; by?: string; forced?: boolean; tree?: Proc[] }
+  /** User messages queued to run after this turn ('queue' mode) that haven't started yet. */
+  queued: Extract<ChatItem, { kind: 'user' }>[]
+  /** Resolves once the turn has fully ended. */
+  done: Promise<void>
+  /** Ends the turn now, whatever the process is doing: the last step of a stop. */
+  forceEnd: () => void
+}
+
+/**
+ * How long a stop waits at each step before trying something stronger: Claude Code's own interrupt
+ * (what Esc does in the terminal), then closing the process, then killing it and everything it started.
+ */
+export const stopTimings = { interruptMs: 3000, closeMs: 5000, killMs: 4000 }
+
+/** Chats whose last turn ended because someone pressed Stop. Cleared when the next turn starts. */
+const stoppedChats = new Set<string>()
+
+/** True when the chat's last turn was stopped, so nothing should pick it up again on its own. */
+export function wasStopped(chatId: string) {
+  return stoppedChats.has(chatId)
+}
+
+/** Resolves to `fallback` if `p` hasn't settled within `ms`. */
+function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(fallback), ms)
+    p.then(
+      (v) => {
+        clearTimeout(t)
+        resolve(v)
+      },
+      () => {
+        clearTimeout(t)
+        resolve(fallback)
+      }
+    )
+  })
+}
+
+/** Iterates `source` until it ends or `forced` rejects, whichever comes first. */
+export async function* untilForced<T>(source: AsyncIterable<T>, forced: Promise<never>): AsyncGenerator<T> {
+  const it = source[Symbol.asyncIterator]()
+  for (;;) {
+    const next = await Promise.race([it.next(), forced])
+    if (next.done) return
+    yield next.value
+  }
 }
 
 const running = new Map<string, Running>()
@@ -161,7 +216,9 @@ let quitting: InterruptReason | null = null
 export function markInterrupted(reason: InterruptReason) {
   quitting = reason
   const at = Date.now()
-  for (const id of running.keys()) {
+  for (const [id, r] of running) {
+    // A chat someone was stopping stays stopped: the restart must not pick it back up.
+    if (r.stopping) continue
     const chat = store.get().chats.find((c) => c.id === id)
     if (chat) chat.interrupted = { reason, at }
   }
@@ -175,17 +232,53 @@ export async function stopTask(chatId: string, taskId: string) {
   await q.stopTask(taskId)
 }
 
-export async function stop(chatId: string) {
+/**
+ * Stops a chat's turn and resolves once it has ended. It shows "Stopping…" right away, asks Claude Code
+ * to interrupt (as Esc does), and if that doesn't end the turn in time, closes the process, then
+ * kills it and every process it started. `force` (Stop pressed again) skips straight to the kill.
+ * `by` names who stopped it when it wasn't the person, such as the orchestrator.
+ */
+export async function stop(chatId: string, opts: { force?: boolean; by?: string } = {}) {
   advising.get(chatId)?.abort()
   reviewingPlans.get(chatId)?.abort()
   const r = running.get(chatId)
   if (!r) return
-  if (!r.query) return r.abort.abort()
-  try {
-    await r.query.interrupt()
-  } catch {
-    r.abort.abort()
+  if (r.stopping) {
+    if (opts.force) await forceStop(r)
+    return r.done
   }
+  r.stopping = { at: Date.now(), ...(opts.by ? { by: opts.by } : {}) }
+  // Nothing more goes into this turn.
+  r.push = () => false
+  const chat = store.get().chats.find((c) => c.id === chatId)
+  if (chat) {
+    chat.stopping = r.stopping.at
+    chat.interrupted = undefined
+    store.save()
+    r.emit(chat.id, { chat })
+  }
+  if (opts.force) return forceStop(r)
+  const stopping = r.stopping
+  // What the turn has running now, to clean up if closing it leaves anything behind.
+  const tree = snapshotTree(r.pid).then((t) => (stopping.tree = t))
+  if (!r.query || !(await within(r.query.interrupt().then(() => true), stopTimings.interruptMs, false))) r.abort.abort()
+  if (!(await within(r.done.then(() => true), stopTimings.closeMs, false))) {
+    r.abort.abort()
+    if (!(await within(r.done.then(() => true), stopTimings.killMs, false))) return forceStop(r)
+  }
+  await tree
+  if (r.abort.signal.aborted) await killLeftovers(stopping.tree ?? [])
+}
+
+/** Kills the turn's process and everything it started, and ends the turn without waiting on it. */
+async function forceStop(r: Running) {
+  r.stopping ??= { at: Date.now() }
+  r.stopping.forced = true
+  r.abort.abort()
+  await killTree(r.pid, 'SIGKILL')
+  if (r.stopping.tree) await killLeftovers(r.stopping.tree)
+  r.forceEnd()
+  await within(r.done, 2000, undefined)
 }
 
 function dataUrlToBlock(url: string) {
@@ -237,7 +330,8 @@ function inputChannel(first: object, done: Promise<void>) {
 export function pushMessage(chat: Chat, text: string, images: string[], mode: 'steer' | 'queue', emit: Emit): boolean {
   const r = running.get(chat.id)
   if (!r?.push || !r.push(text, images, mode)) return false
-  const item: ChatItem = { id: randomUUID(), kind: 'user', text, images: images.length ? images : undefined, ts: Date.now(), sentWhileRunning: mode }
+  const item: Extract<ChatItem, { kind: 'user' }> = { id: randomUUID(), kind: 'user', text, images: images.length ? images : undefined, ts: Date.now(), sentWhileRunning: mode }
+  if (mode === 'queue') r.queued.push(item)
   store.upsertItem(chat.id, item)
   emit(chat.id, { item })
   return true
@@ -286,6 +380,8 @@ export async function send(
   chat.unread = false
   chat.advisorBlocker = false
   chat.interrupted = undefined
+  chat.stopping = undefined
+  stoppedChats.delete(chat.id)
   // A new turn ends a pause; if this one stops on the limit too, it counts as a retry.
   const prevPause = chat.paused
   chat.paused = undefined
@@ -299,8 +395,14 @@ export async function send(
   emit(chat.id, { chat })
 
   const abort = new AbortController()
-  const r: Running = { abort }
+  let forceEnd = () => {}
+  const forced = new Promise<never>((_, reject) => (forceEnd = () => reject(new Error('Stopped'))))
+  forced.catch(() => {})
+  let finishTurn = () => {}
+  const r: Running = { abort, emit, queued: [], done: new Promise<void>((res) => (finishTurn = res)), forceEnd: () => forceEnd() }
   running.set(chat.id, r)
+  // The tail of Claude Code's stderr, for the error when it exits early.
+  let stderrTail = ''
 
   // Streaming text for the current assistant message, keyed by content-block index.
   let streamItem: Extract<ChatItem, { kind: 'assistant' }> | null = null
@@ -324,7 +426,7 @@ export async function send(
   try {
     if (chat.model === 'codex') {
       const started = Date.now()
-      const res = await runCodex({
+      const res = await Promise.race([forced, runCodex({
         cwd: ws.path,
         prompt,
         effort: chat.effort,
@@ -337,8 +439,9 @@ export async function send(
           chat.codexThreadId = id
           store.save()
         },
+        onSpawn: (pid) => (r.pid = pid),
         put
-      })
+      })])
       put({ id: randomUUID(), kind: 'result', ok: res.ok, durationMs: Date.now() - started, ts: Date.now() })
       turnOk = res.ok
       chat.status = 'idle'
@@ -420,13 +523,22 @@ export async function send(
         // Claude Code advisor, fast mode and output style for this chat.
         ...(session.settings ? { settings: session.settings } : {}),
         ...(budget ? { maxBudgetUsd: budget } : {}),
+        // Spawned here rather than by the SDK so a stop that hangs can kill the process and what it started.
+        spawnClaudeCodeProcess: (o: { command: string; args: string[]; cwd?: string; env: NodeJS.ProcessEnv; signal: AbortSignal }) => {
+          const child = spawn(o.command, o.args, { cwd: o.cwd, env: o.env, signal: o.signal, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+          child.on('error', () => {})
+          child.stderr.on('data', (d) => (stderrTail = (stderrTail + d).slice(-4000)))
+          r.pid = child.pid
+          return child
+        },
         ...extra,
         ...(Object.keys(mcpServers).length ? { mcpServers } : {})
       } as never
     })
     r.query = q
 
-    for await (const msg of q as AsyncIterable<any>) {
+    let stopEnded = false
+    for await (const msg of untilForced(q as AsyncIterable<any>, forced)) {
       if ((msg.type === 'assistant' || msg.type === 'user') && msg.uuid) lastUuid = msg.uuid
       if (applyTaskEvent(tasks, msg)) emit(chat.id, { tasks: runningTasks(tasks) })
       switch (msg.type) {
@@ -528,9 +640,20 @@ export async function send(
           }
           break
         }
-        case 'result':
+        case 'result': {
+          const queuedLeft = msg.queued_turn_count ?? 0
+          if (r.stopping) {
+            // Stopped: end here, and close the process if messages are queued so none starts a new turn.
+            endTurn()
+            if (queuedLeft > 0 || r.queued.length) abort.abort()
+            if (msg.session_id) chat.sdkSessionId = msg.session_id
+            stopEnded = true
+            break
+          }
+          // The next queued message starts now; the rest still wait.
+          r.queued = (queuedLeft > 0 ? r.queued.slice(-queuedLeft) : r.queued).slice(1)
           // A message queued while this turn ran gets its own turn and result; keep the input open for it.
-          if (!((msg.queued_turn_count ?? 0) > 0)) endTurn()
+          if (!(queuedLeft > 0)) endTurn()
           turnOk = msg.subtype === 'success' && !msg.is_error
           // Claude Code only ends a turn under an active /goal once the goal is met or cleared.
           if (turnOk && chat.goal) chat.goal = undefined
@@ -558,36 +681,56 @@ export async function send(
             if (main?.[1].contextWindow) chat.contextWindow = main[1].contextWindow
           }
           break
+        }
       }
+      // The stopped turn has ended: whatever Claude Code sends after this isn't shown.
+      if (stopEnded) break
     }
     chat.status = 'idle'
   } catch (e) {
-    const aborted = abort.signal.aborted
+    const aborted = abort.signal.aborted || !!r.stopping
     if (!aborted) limitHit ??= limitFromText((e as Error).message, Date.now())
     chat.status = aborted || limitHit ? 'idle' : 'error'
-    put({
-      id: randomUUID(),
-      kind: 'error',
-      text: aborted ? (quitting ? 'Cut off by the restart. This picks up when Choo Choo opens again.' : 'Stopped') : authHint((e as Error).message) ?? ((e as Error).message || String(e)),
-      ts: Date.now()
-    })
+    // A stop gets its own marker below.
+    if (!r.stopping) {
+      const raw = (e as Error).message || String(e)
+      const detail = /exited with code/i.test(raw) && stderrTail.trim() ? `${raw}: ${stderrTail.trim().split('\n').slice(-3).join('\n')}` : raw
+      put({
+        id: randomUUID(),
+        kind: 'error',
+        text: aborted ? (quitting ? 'Cut off by the restart. This picks up when Choo Choo opens again.' : 'Stopped') : authHint(detail) ?? detail,
+        ts: Date.now()
+      })
+    }
   } finally {
     endTurn()
+    const stopped = r.stopping
+    if (stopped) chat.status = 'idle'
     emit(chat.id, { tasks: [] })
     for (const [id, p] of pending) if (p.req.chatId === chat.id) respondPermission(id, 'deny')
     if (streamItem) put({ ...streamItem, streaming: false })
-    // Tool calls the stop cut off would otherwise spin forever.
-    if (abort.signal.aborted) for (const t of tools.values()) if (t.result === undefined) put({ ...t, result: quitting ? 'Cut off by the restart' : 'Stopped', isError: true })
+    // Tool calls the stop cut off (a subagent's too) would otherwise spin forever.
+    if (abort.signal.aborted || stopped) for (const t of tools.values()) if (t.result === undefined) put({ ...t, result: quitting && !stopped ? 'Cut off by the restart' : 'Stopped', isError: true })
     running.delete(chat.id)
-    // Stopped on a plan usage limit: Continue work queues it to resume after the reset.
-    if (limitHit && !turnOk && !abort.signal.aborted) chat.paused = { ...limitHit, ...(prevPause ? { retries: (prevPause.retries ?? 0) + 1 } : {}) }
+    if (stopped) {
+      // Queued messages that never ran go back in the message box.
+      const unsent = r.queued
+      for (const u of unsent) put({ ...u, unsent: true })
+      put({ id: randomUUID(), kind: 'note', stopped: true, text: stoppedText({ by: stopped.by, forced: stopped.forced, unsent: unsent.length }), ts: Date.now() })
+      if (unsent.length) emit(chat.id, { draft: unsent.map((u) => u.text).join('\n\n') })
+      chat.stopping = undefined
+      stoppedChats.add(chat.id)
+    }
+    // Stopped on a plan usage limit: Continue work queues it to resume after the reset. Not after a stop.
+    if (limitHit && !turnOk && !abort.signal.aborted && !stopped) chat.paused = { ...limitHit, ...(prevPause ? { retries: (prevPause.retries ?? 0) + 1 } : {}) }
     if (lastUuid) chat.lastUuid = lastUuid
     chat.unread = true
     store.save()
     emit(chat.id, { chat })
+    finishTurn()
     onDone?.(chat)
   }
-  if (turnOk && !abort.signal.aborted && store.get().settings.extras.advisor) {
+  if (turnOk && !abort.signal.aborted && !r.stopping && store.get().settings.extras.advisor) {
     await advise(chat, ws, userItem.id, env, emit, (msg) => send(chat, ws, msg, env, emit, onDone, [], onAsk, extraOptions, { fromAdvisor: true }), !opts.fromAdvisor)
   }
 }
@@ -673,5 +816,9 @@ export async function revert(chat: Chat, ws: Workspace, itemId: string): Promise
 export function stopAll() {
   for (const a of advising.values()) a.abort()
   for (const a of reviewingPlans.values()) a.abort()
-  for (const r of running.values()) r.abort.abort()
+  for (const r of running.values()) {
+    r.abort.abort()
+    // The app is going away: don't leave a process behind that ignored the close.
+    if (r.stopping) void killTree(r.pid, 'SIGKILL')
+  }
 }

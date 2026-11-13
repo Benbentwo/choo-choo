@@ -341,6 +341,8 @@ export interface Chat {
   paused?: ChatPause
   /** The app quit, restarted or crashed during a turn; it picks up on the next launch. See shared/restart.ts. */
   interrupted?: ChatInterrupt
+  /** When someone pressed Stop on the running turn; cleared once it has ended. A restart never picks such a chat up. */
+  stopping?: number
   createdAt: number
 }
 
@@ -443,8 +445,17 @@ export type ChatItem =
       sentWhileRunning?: 'steer' | 'queue'
       /** Sent automatically to pick up a turn the app's restart cut off. */
       afterRestart?: boolean
+      /** Queued while Claude worked, but the turn was stopped before it ran. Its text went back to the message box. */
+      unsent?: boolean
     }
-  | { id: string; kind: 'note'; text: string; ts: number }
+  | {
+      id: string
+      kind: 'note'
+      text: string
+      /** The marker a stopped turn ends with. */
+      stopped?: boolean
+      ts: number
+    }
   | {
       id: string
       kind: 'model'
@@ -839,6 +850,8 @@ export interface ChatEvent {
   permissionDone?: string
   /** Background tasks of the running turn. Empty when none are running. */
   tasks?: BackgroundTask[]
+  /** Text to put back in the chat's message box, such as queued messages a stop kept from sending. */
+  draft?: string
 }
 
 /** An MCP server as Claude Code reports it for a repo. */
@@ -1144,7 +1157,8 @@ export interface Api {
   /** `beside`: an add-on page asked to show the workspace next to itself (choo.ui.openWorkspace with beside). */
   onNavigate(cb: (workspaceId: string, chatId: string, beside?: { key: string; viewId: string; repoId?: string }) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
-  stopChat(chatId: string): Promise<void>
+  /** Stops the chat's turn. `force` kills it right away (Stop pressed again while stopping). */
+  stopChat(chatId: string, opts?: { force?: boolean }): Promise<void>
   /** Hands the chat's session to Remote Control, to steer from claude.ai/code or the Claude app. */
   continueOnPhone(chatId: string): Promise<Chat>
   /** Stops Remote Control and copies the turns made there into the chat. */

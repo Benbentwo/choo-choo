@@ -9,6 +9,7 @@ The GIFs in the README (`docs/media/gifs/`) are recorded from the real, built ap
 No model is called. `scripts/demo/bin/` goes first on the app's `PATH`, and Settings is set to use the installed Claude Code, so the app runs these stand-ins:
 
 - `bin/claude` speaks enough of the Agent SDK's stream-json protocol to replay scripted turns. A turn is picked by matching the prompt against `match` regexes in a script under `scripts/demo/scripts/`. Steps stream text, show tool calls (a `writeFile` really writes the file, so Changes and diffs are real), and can call the app's own MCP tools (`"mcp": "choo"`), so `send_to_thread` and `start_workspace` really create threads, branches and worktrees. The app's naming prompts get titles from the script's `titles`.
+- A script step with `"bash"` really runs that shell command, so stopping has a real process to end, and a turn with `"stuck": true` plays a Claude Code that ignores Stop (interrupts, its input closing and SIGTERM) until it is force stopped. The `stop` scenes use them.
 - `bin/gh` answers the PRs page searches from a JSON file and fails everything else.
 - `CHOO_DEMO_UPDATE` (a scene's `update` option, read by `src/main/updater.ts` in source builds only) gives the app a made-up downloaded update and release list, so the update card and What's new show without GitHub. Restarting just shows "Restarting…".
 
