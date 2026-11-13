@@ -35,7 +35,7 @@ import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
 import * as automations from './automations'
 import * as continueWork from './continueWork'
-import { projectThreads, routerChat, threadTitle, updateTarget } from '@shared/projects'
+import { projectThreads, routerChat, telemetryTags, threadTitle, updateTarget } from '@shared/projects'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import { onModelPicked } from '@shared/modelSwitch'
@@ -343,7 +343,7 @@ function sendFromPerson(chat: Chat, text: string, images: string[]) {
   // `/desktop` (or `/app`) hands the chat to Claude desktop, as it does in Claude Code's terminal.
   if (desktop.DESKTOP_COMMAND.test(text.trim()) && !images.length && chat.model !== 'codex') {
     const ws = findWs(chat.workspaceId)
-    return desktop.openInDesktop(chat, ws, agentEnv(ws), emitChat).then(() => undefined)
+    return desktop.openInDesktop(chat, ws, agentEnv(ws, chat), emitChat).then(() => undefined)
   }
   // Out of usage: hold the message in Up next instead of sending it into a refused turn.
   if (!agent.isRunning(chat.id) && continueWork.isLimited() && chat.model !== 'codex') {
@@ -363,7 +363,6 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
   const ws = findWs(chat.workspaceId)
   const repo = store.get().repos.find((r) => r.id === ws.repoId)
   if (!ws.named) void nameWorkspace(ws, text)
-  const env = agentEnv(ws)
   let extra: Parameters<typeof agent.send>[8]
   if (ws.orchestrator && repo) {
     const scope = scopeFor(ws, repo)
@@ -378,6 +377,8 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
     const run = automations.hooksFor(chat)
     extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets(), role, run)
   }
+  // After a new thread is titled, so its telemetry carries the title.
+  const env = agentEnv(ws, chat)
   void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
 }
 
@@ -537,10 +538,10 @@ const orchestratorHost: orchestrator.Host = {
   },
   pendingChatIds: () => new Set(agent.pendingPermissions().map((p) => p.chatId)),
   runInCloud: async (chat, ws, task) => {
-    await cloud.runInCloud(chat, ws, task, agentEnv(ws), emitChat, cloudOut)
+    await cloud.runInCloud(chat, ws, task, agentEnv(ws, chat), emitChat, cloudOut)
     send('state:changed')
   },
-  sendToCloud: (chat, ws, text) => cloud.sendToCloud(chat, ws, text, agentEnv(ws), emitChat),
+  sendToCloud: (chat, ws, text) => cloud.sendToCloud(chat, ws, text, agentEnv(ws, chat), emitChat),
   prStatus: async (ws) => {
     await catchUpBranch(ws)
     const pr = await gh.prForBranch(ws.path, prRef(ws))
@@ -968,10 +969,10 @@ async function removeProject(id: string, opts: { deleteFiles: boolean }) {
 }
 
 /** Env for Claude agents: workspace vars, the API key, and OpenTelemetry export if it's on. */
-function agentEnv(ws: Workspace): Record<string, string> {
-  const settings = store.get().settings
-  const repo = store.get().repos.find((r) => r.id === ws.repoId)
-  const env = { ...workspaceEnv(ws), ...telemetryEnv(settings.telemetry, { 'choo.repo': repo?.name ?? '', 'choo.workspace': ws.name, 'choo.branch': ws.branch }) }
+function agentEnv(ws: Workspace, chat?: Chat): Record<string, string> {
+  const s = store.get()
+  const settings = s.settings
+  const env = { ...workspaceEnv(ws), ...telemetryEnv(settings.telemetry, telemetryTags(ws, chat, s)) }
   const key = settings.anthropicApiKey.trim()
   if (key) env.ANTHROPIC_API_KEY = key
   return env
@@ -1451,28 +1452,28 @@ function registerIpc() {
   h('chat:phone', (id: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
-    return remote.continueOnPhone(chat, ws, agentEnv(ws), emitChat, (i, c) => send('pty:exit', i, c), (i, d) => send('pty:data', i, d))
+    return remote.continueOnPhone(chat, ws, agentEnv(ws, chat), emitChat, (i, c) => send('pty:exit', i, c), (i, d) => send('pty:data', i, d))
   })
   h('chat:cloud', (id: string, task: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
-    return cloud.runInCloud(chat, ws, typeof task === 'string' ? task : '', agentEnv(ws), emitChat, cloudOut)
+    return cloud.runInCloud(chat, ws, typeof task === 'string' ? task : '', agentEnv(ws, chat), emitChat, cloudOut)
   })
   h('chat:cloudSend', (id: string, text: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
-    return cloud.sendToCloud(chat, ws, String(text ?? ''), agentEnv(ws), emitChat)
+    return cloud.sendToCloud(chat, ws, String(text ?? ''), agentEnv(ws, chat), emitChat)
   })
   h('chat:cloudBack', (id: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
-    return cloud.teleportBack(chat, ws, agentEnv(ws), emitChat, cloudOut)
+    return cloud.teleportBack(chat, ws, agentEnv(ws, chat), emitChat, cloudOut)
   })
   h('chat:cloudForget', (id: string) => cloud.forgetCloud(findChat(id), emitChat))
   h('chat:desktop', (id: string) => {
     const chat = findChat(id)
     const ws = findWs(chat.workspaceId)
-    return desktop.openInDesktop(chat, ws, agentEnv(ws), emitChat)
+    return desktop.openInDesktop(chat, ws, agentEnv(ws, chat), emitChat)
   })
   h('chat:desktopBack', (id: string) => {
     const chat = findChat(id)

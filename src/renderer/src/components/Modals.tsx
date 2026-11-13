@@ -456,7 +456,7 @@ function TelemetrySection({ t, save }: { t: Telemetry; save: (patch: Partial<Tel
   return (
     <>
       <div className="border-b border-line px-5 py-2.5 text-[12px] text-faint">
-        Send OpenTelemetry metrics, events and traces from Claude agents to any OTLP collector, such as Honeycomb, Datadog, Grafana or a local collector. Each export is tagged with choo.repo, choo.workspace and choo.branch. Applies from the next message you send.
+        Send OpenTelemetry metrics, events and traces from Claude agents to any OTLP collector, such as Honeycomb, Datadog, Grafana or a local collector. Each export is tagged with choo.repo, choo.workspace and choo.branch, plus choo.project and choo.thread for project work. Applies from the next message you send.
       </div>
       <Row label="Export telemetry" hint="Off by default. Export errors never stop the agent.">
         <input type="checkbox" checked={t.enabled} onChange={(e) => save({ enabled: e.target.checked })} />

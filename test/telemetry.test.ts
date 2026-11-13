@@ -51,3 +51,34 @@ describe('telemetryEnv', () => {
     expect(normalizeTelemetry({ enabled: true }).endpoint).toBe('http://localhost:4318')
   })
 })
+
+import { telemetryTags } from '../src/shared/projects'
+import type { Chat, Workspace } from '../src/shared/types'
+
+describe('telemetryTags', () => {
+  const repos = [{ id: 'r1', name: 'web-app', path: '/r', defaultBranch: 'main' }]
+  const groups = [{ id: 'g1', name: 'Search revamp', repoIds: ['r1'], createdAt: 0 }]
+  const ws = (w: Partial<Workspace>): Workspace => ({ id: 'w', repoId: 'r1', name: 'lisbon', branch: 'add-search', baseRef: 'main', path: '/w', title: 't', createdAt: 0, ...w })
+  const chat = (c: Partial<Chat>): Chat => ({ id: 'c', workspaceId: 'orch', title: 'Orchestrator', model: 'opus', effort: 'high', status: 'idle', createdAt: 0, ...c })
+  const orch = ws({ id: 'orch', name: 'orchestrator', branch: 'main', orchestrator: true, groupId: 'g1' })
+  const thread = chat({ id: 't1', title: 'Search box', thread: true })
+  const work = ws({ id: 'w1', orchestrated: true, orchestratorId: 'g1', threadId: 't1' })
+  const s = { repos, groups, workspaces: [orch, work], chats: [chat({ id: 'router' }), thread] }
+
+  it('tags a plain workspace with repo, workspace and branch only', () => {
+    expect(telemetryTags(ws({}), undefined, s)).toEqual({ 'choo.repo': 'web-app', 'choo.workspace': 'lisbon', 'choo.branch': 'add-search' })
+  })
+
+  it('adds the project to its orchestrator chat, and the thread to a thread', () => {
+    expect(telemetryTags(orch, s.chats[0], s)).toEqual({ 'choo.repo': 'web-app', 'choo.workspace': 'orchestrator', 'choo.branch': 'main', 'choo.project': 'Search revamp' })
+    expect(telemetryTags(orch, thread, s)['choo.thread']).toBe('Search box')
+  })
+
+  it('tags a workspace a thread started with its project and thread', () => {
+    expect(telemetryTags(work, undefined, s)).toMatchObject({ 'choo.project': 'Search revamp', 'choo.thread': 'Search box' })
+  })
+
+  it('works without groups', () => {
+    expect(telemetryTags(work, undefined, { ...s, groups: undefined })['choo.project']).toBeUndefined()
+  })
+})

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CheckRun, FileChange, PrComment, PrInfo, Workspace } from '@shared/types'
 import { canUpdateBranch, fixChecksPrompt, nextPrAction, resolveConflictsPrompt, summarizeChecks } from '@shared/prStatus'
 import { newSince, prCommentsPrompt } from '@shared/prComments'
@@ -52,9 +53,22 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   const split = !!s.layout && L.leaves(s.layout).length > 1
   const { mode } = useWorkspaceMode(ws)
   const reviewCount = (s.codeComments[ws.id] ?? []).length
-  const [more, setMore] = useState(false)
+  const [more, setMore] = useState<{ top: number; left: number } | null>(null)
   const extra = MORE.find((t) => t.id === s.rightTab)
   const tabs = [...TABS[mode].filter((t) => !t.stack || ws.stack), ...(extra ? [extra] : [])]
+  // The More menu closes on a click elsewhere or Escape.
+  useEffect(() => {
+    if (!more) return
+    const off = (e: MouseEvent) => !(e.target as Element).closest?.('[data-more]') && setMore(null)
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMore(null)
+    window.addEventListener('mousedown', off)
+    window.addEventListener('keydown', esc)
+    return () => {
+      window.removeEventListener('mousedown', off)
+      window.removeEventListener('keydown', esc)
+    }
+  }, [!!more])
+
   // Reviewing: take the PR author's new commits as they're pushed, and move draft comments with them.
   useFollowPrHead(ws)
 
@@ -110,18 +124,31 @@ export function RightPanel({ ws }: { ws: Workspace }) {
               </button>
             )
           })}
-          <div className="relative">
-            <button className={`flex items-center gap-1 rounded-md px-2 py-1 ${more ? 'text-fg' : 'text-faint hover:text-fg'}`} onClick={() => setMore(!more)}>
-              More <IconDown width={11} height={11} />
-            </button>
-            {more && (
-              <div className="absolute top-8 left-0 z-30 w-40 rounded-lg border border-line bg-raised p-1 shadow-xl" onMouseLeave={() => setMore(false)}>
+          <button
+            data-more
+            className={`flex items-center gap-1 rounded-md px-2 py-1 ${more ? 'text-fg' : 'text-faint hover:text-fg'}`}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect()
+              setMore(more ? null : { top: r.bottom + 4, left: r.left })
+            }}
+          >
+            More <IconDown width={11} height={11} />
+          </button>
+          {/* Portaled: the tab row scrolls sideways, which would clip a menu inside it. */}
+          {more &&
+            createPortal(
+              <div
+                className="no-drag fixed z-50 w-40 rounded-lg border border-line bg-raised p-1 shadow-xl"
+                style={{ top: more.top, left: Math.min(more.left, window.innerWidth - 168) }}
+                onMouseLeave={() => setMore(null)}
+                data-more
+              >
                 {MORE.map((t) => (
-                  <MenuBtn key={t.id} label={t.label} onClick={() => { setMore(false); s.set({ rightTab: t.id }) }} />
+                  <MenuBtn key={t.id} label={t.label} onClick={() => { setMore(null); s.set({ rightTab: t.id }) }} />
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
-          </div>
           <div className="flex-1" />
           <button className="rounded p-1 text-faint hover:text-fg" onClick={() => { setSearching(!searching); setFilter('') }} title="Filter files">
             <IconSearch />
@@ -499,6 +526,29 @@ function MenuBtn(p: { label: string; onClick: () => void }) {
     <button onClick={p.onClick} className="block w-full rounded px-2 py-1.5 text-left hover:bg-hover">
       {p.label}
     </button>
+  )
+}
+
+/**
+ * The right panel beside an orchestrator, including a project's orchestrator chat and its threads.
+ * It runs in the repo's own checkout and has no branch of its own, so it gets only the Usage tab:
+ * the graphs for the chat or thread open in the center.
+ */
+export function OrchestratorPanel({ ws }: { ws: Workspace }) {
+  const s = useStore()
+  const group = ws.groupId ? s.groups.find((g) => g.id === ws.groupId) : undefined
+  return (
+    <aside className="flex w-[420px] shrink-0 flex-col border-l border-line bg-panel" data-testid="orchestrator-panel">
+      <div className="drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-[12.5px]">
+        <span className="truncate text-muted">{group ? group.name : s.repos.find((r) => r.id === ws.repoId)?.name} / Orchestrator</span>
+      </div>
+      <div className="flex h-10 shrink-0 items-center gap-1 px-2">
+        <span className="rounded-md bg-raised px-2.5 py-1 text-fg">Usage</span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <GraphsTab ws={ws} />
+      </div>
+    </aside>
   )
 }
 
