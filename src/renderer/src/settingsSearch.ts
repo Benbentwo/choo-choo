@@ -65,6 +65,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { section: 'appearance', label: 'Reduce motion', hint: 'Turns off transitions and animations.', keywords: 'animation accessibility a11y' },
 
   // Reviews
+  { section: 'reviews', label: 'Notify me when someone asks for my review', hint: 'A macOS notification when a new PR asks for your review.', keywords: 'review request requested new pr notification alert' },
   { section: 'reviews', label: "Tell me when a PR I'm reviewing changes for me", keywords: 'review updates notify pull request reviewer' },
   { section: 'reviews', label: "The PR's own changes moved", hint: 'New or edited code in the PR, not counting the base branch.', keywords: 'push commit' },
   { section: 'reviews', label: 'Someone answers my comment', keywords: 'reply thread' },
