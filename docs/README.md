@@ -52,7 +52,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Continue work (resume at usage reset)](prd/continue-work.md) | In review |
 | [Usage history and the Usage page](prd/usage-history.md) | In review |
 | [Rich copy from chat](prd/rich-copy.md) | Shipped |
-| [Settings search](prd/settings-search.md) | In review |
+| [Settings search](prd/settings-search.md) | In review (PR #118) |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 
