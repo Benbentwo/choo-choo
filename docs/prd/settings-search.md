@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | In review (PR #118) |
 | Owner | Choo Choo maintainers |
 | Requested by | Ben, 2026-11-13 |
 | Last updated | 2026-11-13 |
