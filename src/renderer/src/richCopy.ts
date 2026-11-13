@@ -31,7 +31,7 @@ function wrapInTable(frag: DocumentFragment, ancestor: Element): Node {
 }
 
 /** The selection as clean HTML, or null when it isn't (only) Claude's chat text. */
-function selectionHtml(sel: Selection): string | null {
+export function selectionHtml(sel: Selection): string | null {
   const box = document.createElement('div')
   for (let i = 0; i < sel.rangeCount; i++) {
     const range = sel.getRangeAt(i)
@@ -55,6 +55,9 @@ export function installRichCopy() {
   document.addEventListener('copy', (e) => {
     const sel = window.getSelection()
     if (!sel || sel.isCollapsed || !e.clipboardData) return
+    // Text fields copy their own text; leave the composer and inputs alone.
+    const t = e.target as Element | null
+    if (t?.closest?.('input, textarea, [contenteditable]')) return
     const html = selectionHtml(sel)
     if (html == null) return
     e.preventDefault()
