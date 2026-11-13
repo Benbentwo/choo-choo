@@ -127,38 +127,13 @@ jobs:
             dist/*.dmg
             dist/*.zip
 
-  # Updates the cask in Benbentwo/homebrew-tap so `brew install --cask benbentwo/tap/choo-choo` gets this release.
-  # Needs a HOMEBREW_TAP_TOKEN secret that can push to that repo; skipped with a warning without it.
+  # Points the cask in Benbentwo/homebrew-tap at this release (see homebrew.yml).
   homebrew:
     needs: mac
     if: ${{ !inputs.test_only }}
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
-      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-      TAG: ${{ needs.mac.outputs.tag }}
-      VERSION: ${{ needs.mac.outputs.version }}
-      SIGNED: ${{ needs.mac.outputs.signed }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Update the Homebrew cask
-        run: |
-          if [ -z "$TAP_TOKEN" ]; then
-            echo "::warning::No HOMEBREW_TAP_TOKEN secret; skipping the Homebrew cask update."
-            exit 0
-          fi
-          mkdir -p dl
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dl \
-            --pattern "ChooChoo-$VERSION-arm64.dmg" --pattern "ChooChoo-$VERSION-x64.dmg"
-          arm=$(shasum -a 256 "dl/ChooChoo-$VERSION-arm64.dmg" | cut -d' ' -f1)
-          intel=$(shasum -a 256 "dl/ChooChoo-$VERSION-x64.dmg" | cut -d' ' -f1)
-          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/Benbentwo/homebrew-tap.git" tap
-          mkdir -p tap/Casks
-          scripts/homebrew-cask.sh "$VERSION" "$arm" "$intel" "${SIGNED:-false}" > tap/Casks/choo-choo.rb
-          cd tap
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/choo-choo.rb
-          if git diff --cached --quiet; then echo "Cask already up to date."; exit 0; fi
-          git commit -m "choo-choo $VERSION"
-          git push origin HEAD:main
+    uses: ./.github/workflows/homebrew.yml
+    with:
+      tag: ${{ needs.mac.outputs.tag }}
+      signed: ${{ needs.mac.outputs.signed }}
+    secrets:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
