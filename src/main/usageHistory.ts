@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -75,7 +75,13 @@ export function recordReading(k: string, t: number, p: number, r?: number, w?: n
   if (prev && t <= prev.t) return
   const sameReset = !r || !prev?.r || Math.abs(prev.r - r) < 120_000
   if (prev && Math.abs(prev.p - p) < 0.5 && sameReset && t - prev.t < 15 * 60_000) return
-  const x: UsageReading = { t, k, p: Math.round(p * 10) / 10, ...(r ? { r } : {}), ...(w ? { w } : {}) }
+  const x: UsageReading = {
+    t,
+    k,
+    p: Math.round(p * 10) / 10,
+    ...(r ? { r } : {}),
+    ...(w ? { w } : {})
+  }
   last.set(k, x)
   try {
     appendFileSync(join(dir, `readings-${month(t)}.jsonl`), JSON.stringify(x) + '\n')
@@ -96,23 +102,29 @@ function readFiles<T>(kind: 'readings' | 'messages', from: number, to: number): 
     const m = f.match(new RegExp(`^${kind}-(\\d{4}-\\d{2})\\.jsonl$`))
     if (!m || m[1] < lo || m[1] > hi) continue
     const path = join(dir, f)
-    const st = statSync(path)
-    const key = `${st.size}:${st.mtimeMs}`
-    let hit = parsed.get(path)
-    if (hit?.key !== key) {
-      const rows: unknown[] = []
-      for (const line of readFileSync(path, 'utf8').split('\n')) {
-        if (!line) continue
-        try {
-          rows.push(JSON.parse(line))
-        } catch {
-          /* a line cut by a crash */
+    // One handle: the cache key and the contents come from the same open file.
+    const fd = openSync(path, 'r')
+    try {
+      const st = fstatSync(fd)
+      const key = `${st.size}:${st.mtimeMs}`
+      let hit = parsed.get(path)
+      if (hit?.key !== key) {
+        const rows: unknown[] = []
+        for (const line of readFileSync(fd, 'utf8').split('\n')) {
+          if (!line) continue
+          try {
+            rows.push(JSON.parse(line))
+          } catch {
+            /* a line cut by a crash */
+          }
         }
+        hit = { key, rows }
+        parsed.set(path, hit)
       }
-      hit = { key, rows }
-      parsed.set(path, hit)
+      out.push(...(hit.rows as T[]))
+    } finally {
+      closeSync(fd)
     }
-    out.push(...(hit.rows as T[]))
   }
   return out
 }
@@ -126,10 +138,15 @@ export function messages(from: number, to: number): UsageMsg[] {
 }
 
 /** The earliest stored reading and response. */
-export function historyStart(): { firstReading?: number; firstResponse?: number } {
+export function historyStart(): {
+  firstReading?: number
+  firstResponse?: number
+} {
   if (!dir || !existsSync(dir)) return {}
   const first = (kind: string) => {
-    const f = readdirSync(dir!).filter((x) => x.startsWith(`${kind}-`)).sort()[0]
+    const f = readdirSync(dir!)
+      .filter((x) => x.startsWith(`${kind}-`))
+      .sort()[0]
     if (!f) return undefined
     const line = readFileSync(join(dir!, f), 'utf8').split('\n').find(Boolean)
     try {
@@ -231,17 +248,18 @@ export function syncTranscripts(root = join(process.env.CLAUDE_CONFIG_DIR || joi
       return d.getTime()
     })()
     for (const f of transcriptFiles(root)) {
-      let size: number
+      let fh: Awaited<ReturnType<typeof open>>
       try {
-        size = statSync(f.path).size
+        fh = await open(f.path, 'r')
       } catch {
         continue
       }
-      let from = state[f.path] ?? 0
-      if (size < from) from = 0 // rewritten; ids keep it from counting twice
-      if (size === from) continue
-      const fh = await open(f.path, 'r')
       try {
+        // Size from the open handle, so it matches what is read.
+        const size = (await fh.stat()).size
+        let from = state[f.path] ?? 0
+        if (size < from) from = 0 // rewritten; ids keep it from counting twice
+        if (size === from) continue
         const CHUNK = 32 * 1024 * 1024
         while (from < size) {
           const len = Math.min(CHUNK, size - from)
@@ -261,10 +279,10 @@ export function syncTranscripts(root = join(process.env.CLAUDE_CONFIG_DIR || joi
           for (const [mo, lines] of byMonth) appendFileSync(join(dir!, `messages-${mo}.jsonl`), lines.join('\n') + '\n')
           added += rows.length
         }
+        state[f.path] = from
       } finally {
         await fh.close()
       }
-      state[f.path] = from
     }
     // Forget transcripts Claude Code has deleted.
     for (const p of Object.keys(state)) if (!existsSync(p)) delete state[p]
@@ -287,8 +305,16 @@ export function attributor(state: Pick<AppState, 'repos' | 'workspaces' | 'chats
   for (const c of state.chats) if (c.sdkSessionId) bySession.set(c.sdkSessionId, { title: c.title, wsId: c.workspaceId })
   // Longest path first, so a worktree wins over the repo that holds it.
   const paths = [
-    ...state.workspaces.map((w) => ({ path: w.path, wsId: w.id as string | undefined, repoId: w.repoId })),
-    ...state.repos.map((r) => ({ path: r.path, wsId: undefined as string | undefined, repoId: r.id }))
+    ...state.workspaces.map((w) => ({
+      path: w.path,
+      wsId: w.id as string | undefined,
+      repoId: w.repoId
+    })),
+    ...state.repos.map((r) => ({
+      path: r.path,
+      wsId: undefined as string | undefined,
+      repoId: r.id
+    }))
   ]
     .filter((x) => x.path)
     .sort((a, b) => b.path.length - a.path.length)
@@ -297,9 +323,18 @@ export function attributor(state: Pick<AppState, 'repos' | 'workspaces' | 'chats
     const w = wsId ? wsById.get(wsId) : undefined
     const gid = w?.groupId ?? (w?.orchestratorId && groups.has(w.orchestratorId) ? w.orchestratorId : undefined)
     const g = gid ? groups.get(gid) : undefined
-    if (g) return { id: `project:${g.id}`, label: `Project: ${g.name}`, kind: 'project' }
+    if (g)
+      return {
+        id: `project:${g.id}`,
+        label: `Project: ${g.name}`,
+        kind: 'project'
+      }
     const r = repos.get(repoId)
-    return { id: `repo:${repoId}`, label: r?.name ?? 'Unknown repo', kind: 'repo' }
+    return {
+      id: `repo:${repoId}`,
+      label: r?.name ?? 'Unknown repo',
+      kind: 'repo'
+    }
   }
   const cache = new Map<string, UsageGroup>()
   return {
@@ -316,7 +351,11 @@ export function attributor(state: Pick<AppState, 'repos' | 'workspaces' | 'chats
         if (p) g = groupOfWs(p.wsId, p.repoId)
         else {
           const name = m.cwd ? basename(m.cwd) : 'unknown folder'
-          g = { id: `outside:${name}`, label: `Outside Choo Choo · ${name}`, kind: 'outside' }
+          g = {
+            id: `outside:${name}`,
+            label: `Outside Choo Choo · ${name}`,
+            kind: 'outside'
+          }
         }
       }
       cache.set(ck, g)
@@ -328,7 +367,9 @@ export function attributor(state: Pick<AppState, 'repos' | 'workspaces' | 'chats
         const w = wsById.get(c.wsId)
         return { title: c.title || 'Untitled chat', workspace: w?.title }
       }
-      return { title: `Terminal session in ${cwd ? basename(cwd) : 'an unknown folder'}` }
+      return {
+        title: `Terminal session in ${cwd ? basename(cwd) : 'an unknown folder'}`
+      }
     }
   }
 }
