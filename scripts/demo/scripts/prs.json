@@ -1,0 +1,15 @@
+{
+  "review": [
+    { "repo": "trailhead/web", "number": 482, "title": "Show trip weather on the itinerary", "author": "maya-chen", "ago": 12, "checks": "SUCCESS", "additions": 214, "deletions": 38, "review": "REVIEW_REQUIRED" },
+    { "repo": "trailhead/api", "number": 233, "title": "Rate limit the search endpoint", "author": "jordan-k", "ago": 55, "checks": "PENDING", "additions": 96, "deletions": 4, "review": "REVIEW_REQUIRED" },
+    { "repo": "trailhead/web", "number": 479, "title": "Faster map tiles on slow connections", "author": "alex-p", "ago": 180, "checks": "FAILURE", "additions": 61, "deletions": 70, "review": "REVIEW_REQUIRED" },
+    { "repo": "trailhead/mobile", "number": 91, "title": "Offline trail maps", "author": "maya-chen", "ago": 300, "checks": "SUCCESS", "additions": 812, "deletions": 120, "review": "REVIEW_REQUIRED", "draft": true }
+  ],
+  "reviewed": [
+    { "repo": "trailhead/api", "number": 229, "title": "Paginate the bookings list", "author": "jordan-k", "ago": 90, "checks": "SUCCESS", "additions": 140, "deletions": 33, "review": "CHANGES_REQUESTED" }
+  ],
+  "mine": [
+    { "repo": "trailhead/web", "number": 485, "title": "Apple Pay at checkout", "author": "sam-rivera", "ago": 5, "checks": "SUCCESS", "additions": 23, "deletions": 0, "review": "APPROVED" },
+    { "repo": "trailhead/api", "number": 236, "title": "Payment intent endpoint", "author": "sam-rivera", "ago": 7, "checks": "PENDING", "additions": 9, "deletions": 0, "review": "REVIEW_REQUIRED" }
+  ]
+}

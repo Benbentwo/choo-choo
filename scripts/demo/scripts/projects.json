@@ -1,0 +1,170 @@
+{
+  "titles": [
+    {
+      "match": "Apple Pay button",
+      "title": "Apple Pay button",
+      "branch": "apple-pay-button"
+    },
+    {
+      "match": "payment intent",
+      "title": "Payment intent endpoint",
+      "branch": "payment-intent-endpoint"
+    }
+  ],
+  "turns": [
+    {
+      "match": "In trailhead-web",
+      "steps": [
+        {
+          "sleep": 5500
+        },
+        {
+          "text": "I'll look at the checkout page first."
+        },
+        {
+          "tool": "Read",
+          "input": {
+            "file_path": "src/pages/Checkout.tsx"
+          },
+          "result": "export function Checkout() { \u2026 }",
+          "wait": 1300
+        },
+        {
+          "tool": "Write",
+          "input": {
+            "file_path": "src/components/ApplePayButton.tsx"
+          },
+          "writeFile": {
+            "path": "src/components/ApplePayButton.tsx",
+            "content": "import { createPaymentIntent } from '../api'\n\n/** Shows Apple Pay when the browser supports it, and pays the cart total. */\nexport function ApplePayButton({ total }: { total: number }) {\n  if (!('ApplePaySession' in window)) return null\n  const pay = async () => {\n    const intent = await createPaymentIntent(total)\n    const session = new ApplePaySession(3, {\n      countryCode: 'US',\n      currencyCode: 'USD',\n      merchantCapabilities: ['supports3DS'],\n      supportedNetworks: ['visa', 'masterCard', 'amex'],\n      total: { label: 'Trailhead', amount: total.toFixed(2) }\n    })\n    session.onpaymentauthorized = () => session.completePayment(intent.ok ? 0 : 1)\n    session.begin()\n  }\n  return <button className=\"apple-pay\" onClick={pay} aria-label=\"Pay with Apple Pay\" />\n}\n"
+          },
+          "result": "File created.",
+          "wait": 1300
+        },
+        {
+          "tool": "Edit",
+          "input": {
+            "file_path": "src/pages/Checkout.tsx",
+            "old_string": "<CartSummary />",
+            "new_string": "<CartSummary />\n      <ApplePayButton total={total} />"
+          },
+          "writeFile": {
+            "path": "src/pages/Checkout.tsx",
+            "content": "import { CartSummary } from '../components/CartSummary'\nimport { ApplePayButton } from '../components/ApplePayButton'\nimport { useCart } from '../cart'\n\nexport function Checkout() {\n  const { total } = useCart()\n  return (\n    <main>\n      <h1>Checkout</h1>\n      <CartSummary />\n      <ApplePayButton total={total} />\n    </main>\n  )\n}\n"
+          },
+          "result": "Edited.",
+          "wait": 1300
+        },
+        {
+          "tool": "Bash",
+          "input": {
+            "command": "npm test -- checkout",
+            "description": "Run the checkout tests"
+          },
+          "result": "\u2713 checkout.test.tsx (4 tests)\nTest Files  1 passed",
+          "wait": 1400
+        },
+        {
+          "text": "Added `ApplePayButton` and put it under the cart summary on the checkout page. It only shows in browsers with Apple Pay, and the checkout tests pass."
+        }
+      ]
+    },
+    {
+      "match": "In trailhead-api",
+      "steps": [
+        {
+          "text": "Adding the endpoint next to the orders route."
+        },
+        {
+          "tool": "Read",
+          "input": {
+            "file_path": "src/routes/orders.ts"
+          },
+          "result": "export async function createOrder\u2026",
+          "wait": 600
+        },
+        {
+          "tool": "Write",
+          "input": {
+            "file_path": "src/routes/payments.ts"
+          },
+          "writeFile": {
+            "path": "src/routes/payments.ts",
+            "content": "import { payments } from '../providers'\n\n/** POST /payments/intent: starts a payment for the cart total, in cents. */\nexport async function createPaymentIntent(req: { amount: number; currency?: string }) {\n  if (!Number.isInteger(req.amount) || req.amount <= 0) throw new Error('amount must be a positive number of cents')\n  const intent = await payments.intents.create({ amount: req.amount, currency: req.currency ?? 'usd', methods: ['card', 'apple_pay'] })\n  return { id: intent.id, clientSecret: intent.clientSecret }\n}\n"
+          },
+          "result": "File created.",
+          "wait": 900
+        },
+        {
+          "tool": "Bash",
+          "input": {
+            "command": "npm test -- payments",
+            "description": "Run the payments tests"
+          },
+          "result": "\u2713 payments.test.ts (6 tests)",
+          "wait": 1600
+        },
+        {
+          "text": "`POST /payments/intent` is in `src/routes/payments.ts`. It checks the amount and allows card and Apple Pay. Tests pass."
+        }
+      ]
+    },
+    {
+      "match": "^\\[Automatic update",
+      "steps": [
+        {
+          "text": "Both pieces are done: the web workspace added the Apple Pay button to checkout, and the API workspace added `POST /payments/intent`. Tests pass in both. Want me to open the PRs?"
+        }
+      ]
+    },
+    {
+      "match": "^\\[Sent here from the orchestrator chat\\]",
+      "steps": [
+        {
+          "text": "This needs a change in each repo, so I'll start two workspaces: one for the button in trailhead-web and one for the payment endpoint in trailhead-api."
+        },
+        {
+          "tool": "start_workspace",
+          "mcp": "choo",
+          "input": {
+            "repo": "trailhead-web",
+            "task": "In trailhead-web, add an Apple Pay button to the checkout page. Show it only when the browser supports Apple Pay, and pay the cart total through POST /payments/intent. Done when the checkout tests pass."
+          },
+          "wait": 500
+        },
+        {
+          "tool": "start_workspace",
+          "mcp": "choo",
+          "input": {
+            "repo": "trailhead-api",
+            "task": "In trailhead-api, add POST /payments/intent that creates a payment intent for an amount in cents and allows card and Apple Pay. Done when the payments tests pass."
+          },
+          "wait": 500
+        },
+        {
+          "text": "Both agents are working. I'll check their diffs when they finish."
+        }
+      ]
+    },
+    {
+      "match": ".",
+      "steps": [
+        {
+          "text": "That's new work, so it gets its own thread."
+        },
+        {
+          "tool": "send_to_thread",
+          "mcp": "choo",
+          "input": {
+            "new_thread_title": "Apple Pay at checkout",
+            "message": "Add Apple Pay to checkout: a button in the web app, and an endpoint in the API that creates the payment intent."
+          },
+          "wait": 400
+        },
+        {
+          "text": "Started the **Apple Pay at checkout** thread. It will split the work across both repos."
+        }
+      ]
+    }
+  ]
+}

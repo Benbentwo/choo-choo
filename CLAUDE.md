@@ -10,6 +10,8 @@ Read [docs/README.md](docs/README.md) before starting a feature. It links the [p
 - New feature: copy `docs/prd/TEMPLATE.md` to `docs/prd/<feature>.md` and add it to the table in `docs/README.md`.
 - Changing a feature: update its PRD (status, behavior) and `docs/PARITY.md` in the same PR.
 - Making a call later work should follow: add a record from `docs/decisions/TEMPLATE.md`.
+- The README is for people discovering the app; developer and maintainer notes go in `docs/` (`docs/development.md`, `docs/releasing.md`).
+- New or changed user-facing feature: add or update its README GIF in the same PR, recorded from the real app with `scripts/demo/record.cjs` ([docs/demo-gifs.md](docs/demo-gifs.md)).
 
 ## Commits and PRs
 
