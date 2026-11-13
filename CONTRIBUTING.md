@@ -43,6 +43,10 @@ PRs are labeled automatically from their branch name, title and files (start a t
 
 CI builds the app on macOS for both Apple silicon and Intel. A maintainer reviews and squash-merges.
 
+## Adding an integration
+
+Write `src/main/integrations/<name>.ts` exporting a `Provider` (see `index.ts`), sign in with `startLoopback` and `pkce` from `oauth.ts` (or `mcpOAuth.ts` for a hosted MCP server), store the result with `setAuth` from `tokens.ts`, and add it to the `providers` list. Integrations sign in with OAuth, never pasted tokens ([decision 0003](docs/decisions/0003-oauth-for-integrations.md)).
+
 ## Ground rules
 
 - **Use official Claude access only.** Agents must run through the Claude Agent SDK and the bundled Claude Code binary, or an Anthropic API key. We can't accept code that reuses a Claude subscription by imitating Claude Code or by reading its stored credentials, because Anthropic's terms forbid it. Other model providers are welcome through their own official CLIs or APIs.

@@ -31,15 +31,37 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 
 ## Features
 
-- **Parallel agents, isolated worktrees.** Press + to start a workspace: a fresh git worktree and branch where a Claude Code agent works without touching your other checkouts.
+**Work in parallel**
+- **Agents in isolated worktrees.** Press + to start a workspace: a fresh git worktree and branch where a Claude Code agent works without touching your other checkouts.
 - **Chat built for coding agents.** Opus, Sonnet and Haiku with effort levels, plan mode, @file mentions, /slash commands and skills, image attachments, and "revert to here" checkpoints.
-- **Review before you ship.** Changes view with diffs, an agent code review whose findings show inline with Fix buttons, and per-tool permission prompts.
-- **PRs in one click.** Create a PR (or draft), watch checks, re-run failures and squash-merge, all through your `gh` login.
+- **Orchestrator.** Tell a repo's orchestrator what you want and it splits the work into workspaces, briefs each agent, reads their diffs and follows up.
+- **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
+- **Split panels and resizable panes.** Put workspaces and chats side by side, drag either sidebar to size it, and expand the right panel with ⌘⇧E.
+
+**Review and ship**
+- **Build and Review modes.** Each workspace knows whether you're building it or reviewing someone else's PR, and the top right shows the PR and one button for the next step.
+- **Review before you ship.** Diffs against the PR's target branch, an agent code review with inline Fix buttons, and line comments that go to the agent or into a GitHub review.
+- **PRs page.** Every open PR waiting on your review, plus your own, grouped by repo. One click opens a workspace on the PR's branch. "Since your review" shows only what the author changed.
+- **Stacked PRs.** Keep a stack of PRs in one workspace, switch layers in one click, and let the app restack the PRs above after a change.
+- **PRs in one click.** Create a PR or draft, watch checks, re-run failures and squash-merge, all through your `gh` login.
+
+**Stay on top of usage**
+- **Plan limits in the sidebar**, and a **Usage page** with a year of plan window history, every limit hit, and which repos and chats used it.
+- **Up next.** Chats that stop at the usage limit resume in order when the window resets, along with any work you queue for the next window.
+
+**Make it yours**
+- **Add-ons.** Claude Code plugins with a Choo Choo manifest add views, buttons and tools. Install them from any git repo, including private ones for your team. See [Writing an add-on](docs/addon-api.md).
+- **Integrations.** Sign in to Notion and start a workspace from a page; agents can search and update it too. MCP servers, plugins and skills are managed in Settings.
+- **Appearance.** Themes, accents, fonts, size and density.
+
+**Everywhere else**
+- **Continue on your phone, in the cloud or in Claude desktop**, and bring the chat back when you return.
+- **Shared sessions.** Send a coworker a link to your workspace: branch, uncommitted changes and chats.
+- **Copy that pastes well.** Replies copy cleanly into Notion and Docs, or as Slack-ready text, and file links point at GitHub.
 - **Real terminals.** Setup, Run (⌘R) and terminal tabs per workspace, driven by `choo-choo.json` or `conductor.json`.
-- **Start from Notion.** Sign in to Notion, then start a workspace from a Notion page or task. Agents can also search, read and update Notion while you're signed in.
 - **Codex too.** Optionally run OpenAI's Codex CLI as a workspace agent.
 - **Keyboard first.** ⌘K search, ⌘T/⌘W tabs, ⌘B/⌘J panels, ⌘⇧U next unread.
-- **Native Mac app.** Apple silicon and Intel builds, desktop notifications, update checks for the app and for Claude Code (Settings > Updates, each with its own on/off toggle).
+- **Native Mac app.** Signed and notarized builds for Apple silicon and Intel that update themselves, on a Stable or Beta channel.
 
 ## Coming from Conductor
 
@@ -65,21 +87,11 @@ With [Homebrew](https://brew.sh):
 brew install --cask benbentwo/tap/choo-choo
 ```
 
-Releases are signed and notarized, so the app opens normally and updates itself (Settings > Updates). `brew upgrade --cask --greedy choo-choo` also works. For beta builds, install the same cask and pick Settings > Updates > Update channel > **Beta**; there's no separate beta cask.
+Or download the `.dmg` from the [latest release](https://github.com/Benbentwo/choo-choo/releases/latest) (`arm64` for Apple silicon, `x64` for Intel) and drag Choo Choo to Applications.
 
-Or install it by hand:
-
-1. Download the `.dmg` for your Mac from the [latest release](https://github.com/Benbentwo/choo-choo/releases/latest): `arm64` for Apple silicon, `x64` for Intel.
-2. Open it and drag Choo Choo to Applications.
-3. Release 0.1.0 wasn't signed, so macOS blocks its first launch. Clear the download quarantine once (later releases don't need this):
-
-   ```sh
-   xattr -cr "/Applications/Choo Choo.app"
-   ```
+Builds are signed and notarized, and the app updates itself (Settings > Updates). To try new features early, pick Settings > Updates > Update channel > **Beta**: you'll get a signed build from every merge to `main`.
 
 You'll also want the [`gh` CLI](https://cli.github.com/) (`brew install gh`, then `gh auth login`) for PR features.
-
-Want the newest code? Every push to `main` builds test copies: open the latest [Preview build](https://github.com/Benbentwo/choo-choo/actions/workflows/preview.yml) run and download `choo-choo-apple-silicon` or `choo-choo-intel` from Artifacts.
 
 ## Signing in
 
@@ -95,34 +107,15 @@ Codex is optional: install the Codex CLI (`npm i -g @openai/codex`) and run `cod
 ## How it works
 
 - Each workspace is a git worktree under `~/choo-choo/workspaces/<repo>/<city>`, on its own branch.
-- App data lives in `~/Library/Application Support/Choo Choo/data`.
+- App data lives in `~/Library/Application Support/Choo Choo/data`, as plain JSON files.
 - Setup, run and archive scripts come from `choo-choo.json`, falling back to `conductor.json`.
 - Scripts and agents see `CONDUCTOR_ROOT_PATH`, `CONDUCTOR_WORKSPACE_NAME`, `CONDUCTOR_WORKSPACE_PATH`, `CONDUCTOR_DEFAULT_BRANCH` and `CONDUCTOR_PORT`, also available as `CHOO_*`.
-- PR features use the `gh` CLI, so install it and run `gh auth login`.
+- The orchestrator keeps a memory file per repository at `~/choo-choo/memory/<repo>.md`, which you can edit.
+- Integrations sign in through your browser (no pasted tokens), and their tokens are encrypted with the macOS keychain.
+- Shared sessions are pushed to a hidden ref, `refs/choo-choo/shares/<id>`, in the repo's own remote. There is no Choo Choo server, so only people who can read the repo can open a share.
+- Settings > Telemetry can send OpenTelemetry metrics, events and traces from agents to any OTLP collector. Only structure is exported unless you turn on content options.
 
-### Orchestrator
-
-Click the orchestrator icon next to a repository in the sidebar. Tell the orchestrator what you want and it splits the work into workspaces, gives each agent a task, waits for them, reads their transcripts and diffs, and sends follow-ups. It runs in the repo's main checkout and cannot edit files there. It keeps a memory file per repository at `~/choo-choo/memory/<repo>.md`, which it reads on every turn and which you can edit yourself.
-
-## Integrations
-
-Settings > Integrations lists the services you can sign in to. Each one signs in through your browser; there are no tokens to paste. Tokens are encrypted with the macOS keychain (Electron `safeStorage`) in `~/Library/Application Support/Choo Choo/data/integrations.json`.
-
-**Notion** needs no setup: Choo Choo signs in to Notion's hosted MCP server (`mcp.notion.com`) and registers itself on the fly, so there is no Notion app or client secret. After signing in, pick the Notion tab in the new-workspace composer to start from a page or task (search, or paste a page link); the page becomes the agent's brief. While Notion is connected, agents also get Notion's tools to search, read and update pages. Turn that off with the checkbox under Notion.
-
-Adding a service: write `src/main/integrations/<name>.ts` exporting a `Provider` (see `index.ts`), sign in with `startLoopback` and `pkce` from `oauth.ts` (or `mcpOAuth.ts` for a hosted MCP server), store the result with `setAuth` from `tokens.ts`, and add it to the `providers` list.
-
-## Shared sessions
-
-Share a workspace with a coworker from the workspace's ⋯ menu > Share with coworkers. Choo Choo pushes one commit to a hidden ref, `refs/choo-choo/shares/<id>`, in the repository's `origin` remote. It holds the branch, your uncommitted and untracked files (not gitignored ones), and every chat in the workspace. You get a `choo-choo://share` link to send. By default the share updates after every agent turn.
-
-Your coworker clicks the link, or uses Open shared session on the home screen, which also lists every share in their repositories. Choo Choo clones the repo if they don't have it, makes a workspace on your branch with your changes in place, and shows your chats. Their next message continues the conversation with their own Claude login, and the agent gets your transcript as context. While the workspace is open, new turns you make show up within 30 seconds, for chats they haven't continued themselves.
-
-Only people who can read the repository can open a share, so a share in a public repository is public. Nothing about your Claude login or settings is included, and things that look like API keys or tokens are blanked out of the chats. Stop sharing deletes the ref.
-
-## Observability
-
-Settings > Telemetry sends OpenTelemetry data from Claude agents to any OTLP collector (Honeycomb, Datadog, Grafana, or a local collector on `http://localhost:4318`). You get metrics for tokens, cost and tool decisions, an event per prompt, API request and tool result, and traces with a span per turn, model request and tool call. Every export carries `choo.repo`, `choo.workspace` and `choo.branch` resource attributes. Only structure is exported unless you turn on the content options. See the [Agent SDK observability guide](https://code.claude.com/docs/en/agent-sdk/observability).
+Each feature has a PRD with the details in [docs/prd/](docs/README.md#prds).
 
 ## Develop
 
@@ -140,29 +133,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) to send a change.
 
 Project docs live in [docs/](docs/README.md): the [product overview](docs/product.md), [architecture](docs/architecture.md), a PRD for each feature area and the decision records behind them.
 
-### Comment mode: point at the UI and let Claude change it
+### Comment mode
 
-Dev mode has a built-in way to give Claude Code feedback on the running app:
+In dev mode, press ⌘⇧K (or click the "Comment" pill), click any element and type what should change. The note and screenshots land in `.feedback/`, and a Claude Code session told to "watch for my comments" makes the change ([CLAUDE.md](CLAUDE.md) explains how). In a release build, ⌘⇧K opens a workspace on this repo with your note, or a prefilled GitHub issue.
 
-1. Run `npm run dev`.
-2. Open Claude Code in this repo and say "watch for my comments". [CLAUDE.md](CLAUDE.md) tells it how: it runs `scripts/watch-feedback.sh` in the background and gets a line for each new comment.
-3. In the app, press ⌘⇧K (or click the "Comment" pill in the bottom-right), click any element, type what should change, and press Enter.
-
-Each comment is saved to `.feedback/` in your checkout with the element's selector, its React component, and two screenshots. Claude reads it, makes the change, and moves it to `.feedback/done/`. UI edits hot-reload; main-process edits restart the app. `.feedback/` is gitignored, so comments stay on your machine.
-
-In a release build, ⌘⇧K (Help > Comment on Choo Choo…) works the same way, but **Fix it** opens a new workspace on this repo with your note and a screenshot, and Claude starts on the fix there. The first time, the app clones the repo, or your fork if you can't push to it, so the PR goes upstream. Pick **GitHub issue** instead to open a prefilled issue in your browser.
-
-## Release
-
-[Release Drafter](.github/release-drafter.yml) keeps a draft release up to date as PRs merge, with notes grouped by label (`feature`, `bug`, `docs`, `chore`...) and the next version picked from them: `breaking` bumps major, `feature` or `enhancement` bumps minor, anything else bumps patch. PRs get area labels from the files they touch ([labeler.yml](.github/labeler.yml)), and the label set lives in [labels.yml](.github/labels.yml).
-
-To ship, open **Actions > Release > Run workflow** (optionally type a version). It builds the app for Apple silicon and Intel, attaches the `.dmg`, `.zip` and update files to the draft, and publishes it. Publishing the draft by hand on the Releases page works too; the workflow then attaches the files. The app's version comes from the release tag.
-
-Every merge to `main` also ships a **beta**: the [Beta workflow](.github/workflows/beta.yml) builds, signs and notarizes the app and publishes it as a prerelease named after the draft's next version, like `v0.2.0-beta.57`. People who pick Settings > Updates > Update channel > **Beta** update to these; everyone else stays on **Stable** (published releases). Prereleases are never marked Latest, so the Homebrew cask and the download link skip them. Merges that only change docs don't build, a newer merge cancels an older build, and only the 10 newest betas are kept. Beta builds need the signing secrets below.
-
-Add a `HOMEBREW_TAP_TOKEN` secret (a fine-grained token with Contents read and write on `Benbentwo/homebrew-tap` only) and each stable release also updates the Homebrew cask, written by `scripts/homebrew-cask.sh` from the [Homebrew cask workflow](.github/workflows/homebrew.yml). Run that workflow by hand to point the cask at an existing release. Betas never go in the cask. Add `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` repository secrets to sign and notarize builds (Actions > Release > Run workflow with **Test build only** checked signs, notarizes and checks a build without touching any release); without them the app is unsigned and can't update itself on macOS, so it offers `brew upgrade` (when Homebrew installed it) or the release page instead.
-
-Agents run the Claude Code binary bundled with the Agent SDK (the SDK's `claudeCodeVersion`), unless Settings > General > Claude Code picks your installed `claude`. Dependabot opens a PR whenever a new SDK is out; merge it and release to ship the newer Claude Code. An installed `claude` can be updated from Settings > Updates, which runs `claude update`.
+Maintainers: releases, betas, signing and the Homebrew cask are covered in [docs/releasing.md](docs/releasing.md).
 
 ## License
 
