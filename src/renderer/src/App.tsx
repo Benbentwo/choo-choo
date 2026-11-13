@@ -3,7 +3,7 @@ import { isReviewing } from '@shared/prInbox'
 import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons, refreshPrInbox, applyPrInbox, openPrWorkspace, reviewingPr, loadStack, splitPane, closePane, toggleMaximize, focusDir, openWorkspaceBeside, reportError } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Panes } from './components/Panes'
-import { RightPanel } from './components/RightPanel'
+import { OrchestratorPanel, RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
 import { PrInboxPage } from './components/PrInbox'
 import { AutomationsPage } from './components/Automations'
@@ -152,7 +152,7 @@ export function App() {
         {s.panesShown && s.layout ? (
           <>
             <Panes />
-            {s.rightOpen && rightWs && !rightWs.orchestrator && <RightPanel ws={rightWs} />}
+            {s.rightOpen && rightWs && (rightWs.orchestrator ? <OrchestratorPanel ws={rightWs} /> : <RightPanel ws={rightWs} />)}
           </>
         ) : s.prsPage ? (
           <PrInboxPage />

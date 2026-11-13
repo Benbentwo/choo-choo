@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Status | In review (PR #33) |
+| Status | Shipped (PR #33, PR #37 usage graphs); project tags and usage everywhere added 2026-11-13 |
 | Requested by | Ben, 2026-11-06 |
-| Last updated | 2026-11-06 |
+| Last updated | 2026-11-13 |
 
 ## Problem
 
@@ -28,10 +28,12 @@ Settings > Telemetry (also in ⌘K). Off by default. Endpoint (default `http://l
 ## Requirements
 
 1. Configure Claude Code through its env vars: `CLAUDE_CODE_ENABLE_TELEMETRY`, `OTEL_*` exporters, protocol, endpoint, headers, service name. Traces also set `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`.
-2. Tag every export with `choo.repo`, `choo.workspace` and `choo.branch` resource attributes (percent-encoded).
+2. Tag every export with `choo.repo`, `choo.workspace` and `choo.branch` resource attributes (percent-encoded). Project work also gets `choo.project` (the project's name), and a project thread's turns, or a workspace a thread started, get `choo.thread` (the thread's title). Tags come from `telemetryTags()` in `src/shared/projects.ts`.
 3. Short export intervals (2s logs and traces, 10s metrics) so short turns don't drop data.
 4. Never use the `console` exporter: stdout is the SDK's message channel.
 5. Applies to chats, the advisor and reflection (everything that uses `agentEnv`).
+
+6. Session usage graphs work the same for every workspace: repo workspaces, a project's or repo's orchestrator chat, project threads, and workspaces a thread started. Each place shows them in the right panel (More › Usage in a workspace; the Usage panel beside an orchestrator or thread, which has no branch of its own), the ⋯ menu's Usage and context, the Usage link after a turn, and ⌘K.
 
 ## Design
 
@@ -43,4 +45,4 @@ Data goes only to the endpoint the person sets. Raw API body logging (`OTEL_LOG_
 
 ## Testing
 
-`test/telemetry.test.ts` covers the env builder.
+`test/telemetry.test.ts` covers the env builder and the project/thread tags.

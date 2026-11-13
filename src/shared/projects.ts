@@ -153,3 +153,24 @@ export const PROJECT_COLORS: { id: string; label: string; hex: string }[] = [
   { id: 'pink', label: 'Pink', hex: '#ec4899' },
   { id: 'slate', label: 'Gray', hex: '#94a3b8' }
 ]
+
+/**
+ * Telemetry tags for one agent turn. Every workspace gets choo.repo, choo.workspace and
+ * choo.branch; work that belongs to a project also gets choo.project, and a thread's turns (or a
+ * workspace a thread started) get choo.thread, so a backend can filter project work like any repo.
+ */
+export function telemetryTags(ws: Workspace, chat: Chat | undefined, s: { repos: Repo[]; groups?: RepoGroup[]; workspaces: Workspace[]; chats: Chat[] }): Record<string, string> {
+  const repo = s.repos.find((r) => r.id === ws.repoId)
+  const tags: Record<string, string> = { 'choo.repo': repo?.name ?? '', 'choo.workspace': ws.name, 'choo.branch': ws.branch }
+  const groups = s.groups ?? []
+  const group = ws.orchestrator ? groups.find((g) => g.id === ws.groupId) : groups.find((g) => g.id === ws.orchestratorId)
+  if (!group) return tags
+  tags['choo.project'] = group.name
+  const thread = ws.orchestrator
+    ? chat?.thread
+      ? chat
+      : undefined
+    : workspaceThread(ws, s.chats, s.workspaces.find((w) => w.orchestrator && w.groupId === group.id && !w.archived)?.id)
+  if (thread) tags['choo.thread'] = thread.title
+  return tags
+}
