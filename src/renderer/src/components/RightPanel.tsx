@@ -52,7 +52,8 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   const split = !!s.layout && L.leaves(s.layout).length > 1
   const { mode } = useWorkspaceMode(ws)
   const reviewCount = (s.codeComments[ws.id] ?? []).length
-  const [more, setMore] = useState(false)
+  // Where the More menu opens. It is fixed-positioned because the scrolling tab bar would clip it.
+  const [more, setMore] = useState<{ top: number; left: number } | null>(null)
   const extra = MORE.find((t) => t.id === s.rightTab)
   const tabs = [...TABS[mode].filter((t) => !t.stack || ws.stack), ...(extra ? [extra] : [])]
   // Reviewing: take the PR author's new commits as they're pushed, and move draft comments with them.
@@ -111,13 +112,19 @@ export function RightPanel({ ws }: { ws: Workspace }) {
             )
           })}
           <div className="relative">
-            <button className={`flex items-center gap-1 rounded-md px-2 py-1 ${more ? 'text-fg' : 'text-faint hover:text-fg'}`} onClick={() => setMore(!more)}>
+            <button
+              className={`flex items-center gap-1 rounded-md px-2 py-1 ${more ? 'text-fg' : 'text-faint hover:text-fg'}`}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect()
+                setMore(more ? null : { top: r.bottom + 4, left: r.left })
+              }}
+            >
               More <IconDown width={11} height={11} />
             </button>
             {more && (
-              <div className="absolute top-8 left-0 z-30 w-40 rounded-lg border border-line bg-raised p-1 shadow-xl" onMouseLeave={() => setMore(false)}>
+              <div className="fixed z-30 w-40 rounded-lg border border-line bg-raised p-1 shadow-xl" style={more} onMouseLeave={() => setMore(null)}>
                 {MORE.map((t) => (
-                  <MenuBtn key={t.id} label={t.label} onClick={() => { setMore(false); s.set({ rightTab: t.id }) }} />
+                  <MenuBtn key={t.id} label={t.label} onClick={() => { setMore(null); s.set({ rightTab: t.id }) }} />
                 ))}
               </div>
             )}
