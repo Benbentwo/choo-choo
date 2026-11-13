@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { continueSettings, insertIndex, limitFromEvent, limitFromText, moveItem, pickToStart, shouldWait, toMs, untilText, type QueueItem } from '../src/shared/continueWork'
+import { continueSettings, insertIndex, limitFromEvent, limitFromText, moveItem, parseQueueTarget, pickToStart, shouldWait, toMs, untilText, type QueueItem } from '../src/shared/continueWork'
 import type { Chat, SubscriptionLimits } from '../src/shared/types'
 
 const home = mkdtempSync(join(tmpdir(), 'choo-continue-'))
@@ -78,6 +78,13 @@ describe('ordering Up next', () => {
     expect(s.stopAtPercent).toBe(20)
     expect(s.prompt).toMatch(/usage limit/)
   })
+  it('reads sidebar rows dropped on Up next', () => {
+    expect(parseQueueTarget(JSON.stringify({ kind: 'ws', wsId: 'w1' }))).toEqual({ kind: 'ws', wsId: 'w1' })
+    expect(parseQueueTarget(JSON.stringify({ kind: 'thread', chatId: 'c1' }))).toEqual({ kind: 'thread', chatId: 'c1' })
+    expect(parseQueueTarget(JSON.stringify({ kind: 'project', groupId: 'g1', extra: 1 }))).toEqual({ kind: 'project', groupId: 'g1' })
+    expect(parseQueueTarget(JSON.stringify({ kind: 'ws' }))).toBeNull()
+    expect(parseQueueTarget('not json')).toBeNull()
+  })
   it('formats countdowns', () => {
     expect(untilText(NOW + 83 * 60_000, NOW)).toBe('in 1h 23m')
     expect(untilText(NOW + 4 * 60_000, NOW)).toBe('in 4m')
@@ -147,6 +154,17 @@ describe('the scheduler', () => {
     expect(position).toBe(2)
     await cw.tick()
     expect(sent).toEqual([])
+  })
+
+  it('a dragged-in chat with no prompt continues where it left off', async () => {
+    await pause('a')
+    const { item } = cw.add('c', '  ')
+    expect(item.prompt).toMatch(/where you left off/)
+    expect(item.source).toBe('queued')
+    five = { percent: 0, resetsAt: NOW + 6 * HOUR }
+    vi.setSystemTime(NOW + HOUR + 61_000)
+    await cw.tick()
+    expect(sent.find((x) => x.chatId === 'c')?.text).toMatch(/keep going/)
   })
 
   it('after the reset, starts two at a time, then the next when one finishes', async () => {

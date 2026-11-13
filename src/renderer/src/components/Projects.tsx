@@ -6,6 +6,7 @@ import { useStore, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTa
 import { IconArchive, IconBranch, IconDown, IconPlus, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
 import { ProjectIcon } from './ProjectIcon'
+import { askToQueue, setQueueDrag } from './ContinueWork'
 
 /**
  * Projects (Settings › Experimental): the sidebar tree project › thread › repo › workspace, each
@@ -50,9 +51,20 @@ function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string
   const tree = projectTree(group, s.repos, s.workspaces, s.chats, orch?.id)
   const count = tree.reduce((n, t) => n + t.repos.reduce((m, r) => m + r.workspaces.length, 0), 0)
   const isFolded = folded(foldKey.project(group.id))
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   return (
     <div>
-      <div className={`group flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-1.5 ${active ? 'bg-raised' : 'hover:bg-hover'}`} onClick={() => void openGroupOrchestrator(group.id)} title="Open the orchestrator chat">
+      <div
+        className={`group flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-1.5 ${active ? 'bg-raised' : 'hover:bg-hover'}`}
+        onClick={() => void openGroupOrchestrator(group.id)}
+        title="Open the orchestrator chat. Drag onto Up next to queue the project for the next window."
+        draggable
+        onDragStart={(e) => setQueueDrag(e, { kind: 'project', groupId: group.id })}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setMenuAt({ x: e.clientX, y: e.clientY })
+        }}
+      >
         <button
           className="rounded p-0.5 text-faint hover:text-fg"
           title={isFolded ? 'Unfold' : 'Fold'}
@@ -76,6 +88,21 @@ function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string
         >
           Edit
         </button>
+        {menuAt && (
+          <span onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+            <Menu
+              anchor={null}
+              at={menuAt}
+              items={[
+                { label: 'Open orchestrator', onClick: () => void openGroupOrchestrator(group.id) },
+                { label: 'Edit project…', onClick: () => editGroup(group.id) },
+                { kind: 'sep' },
+                { label: 'Queue for next window…', hint: 'Up next', onClick: () => askToQueue({ kind: 'project', groupId: group.id }) }
+              ]}
+              onClose={() => setMenuAt(null)}
+            />
+          </span>
+        )}
       </div>
       {!isFolded && (
         <div>
@@ -117,11 +144,19 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
   const active = !!thread && !!orchId && s.selectedWs === orchId && s.activeChat[orchId] === thread.id
   const unread = !!thread?.unread && !active
   const toggle = () => setRepoCollapsed(tKey, !isFolded)
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   return (
     <div>
       <div
         role="button"
         tabIndex={0}
+        draggable={!!thread}
+        onDragStart={(e) => thread && setQueueDrag(e, { kind: 'thread', chatId: thread.id })}
+        onContextMenu={(e) => {
+          if (!thread) return
+          e.preventDefault()
+          setMenuAt({ x: e.clientX, y: e.clientY })
+        }}
         className={`group flex h-8 cursor-pointer items-center gap-1.5 rounded-md pr-2 pl-5 ${active ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
         onClick={() => (thread ? void openGroupOrchestrator(group.id, thread.id) : toggle())}
         onKeyDown={(e) => e.key === 'Enter' && (thread ? void openGroupOrchestrator(group.id, thread.id) : toggle())}
@@ -141,6 +176,20 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
         <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''} ${thread ? '' : 'italic'}`}>{thread?.title ?? 'No thread'}</span>
         {thread?.status === 'running' ? <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-add" /> : unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />}
         {isFolded && <span className="text-[11px] text-faint">{count}</span>}
+        {menuAt && thread && (
+          <span onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+            <Menu
+              anchor={null}
+              at={menuAt}
+              items={[
+                { label: 'Open thread', onClick: () => void openGroupOrchestrator(group.id, thread.id) },
+                { kind: 'sep' },
+                { label: 'Queue for next window…', hint: 'Up next', onClick: () => askToQueue({ kind: 'thread', chatId: thread.id }) }
+              ]}
+              onClose={() => setMenuAt(null)}
+            />
+          </span>
+        )}
       </div>
       {!isFolded &&
         repos.map(({ repo, workspaces }) => {
@@ -175,6 +224,8 @@ function ProjectWorkRow({ ws }: { ws: Workspace }) {
     { label: 'Reveal in Finder', onClick: () => void window.api.revealInFinder(ws.path) },
     { label: 'Copy branch name', onClick: () => void navigator.clipboard.writeText(ws.branch) },
     { kind: 'sep' },
+    { label: 'Queue for next window…', hint: 'Up next', onClick: () => askToQueue({ kind: 'ws', wsId: ws.id }) },
+    { kind: 'sep' },
     { label: 'Archive workspace', onClick: () => void archiveWorkspace(ws.id) }
   ]
   const version = s.prVersion[ws.id] ?? 0
@@ -206,6 +257,14 @@ function ProjectWorkRow({ ws }: { ws: Workspace }) {
       tabIndex={0}
       onClick={(e) => (e.metaKey ? showView(viewFor(ws.id), 'right') : s.selectWorkspace(ws.id))}
       onKeyDown={(e) => e.key === 'Enter' && s.selectWorkspace(ws.id)}
+      draggable
+      onDragStart={(e) => {
+        e.stopPropagation()
+        e.dataTransfer.setData('text/plain', ws.id)
+        useStore.getState().set({ drag: { kind: 'ws', wsId: ws.id } })
+        setQueueDrag(e, { kind: 'ws', wsId: ws.id })
+      }}
+      onDragEnd={() => useStore.getState().set({ drag: null })}
       onContextMenu={(e) => {
         e.preventDefault()
         setMenuAt({ x: e.clientX, y: e.clientY })

@@ -1742,7 +1742,9 @@ app.whenReady().then(async () => {
       const chat = store.get().chats.find((c) => c.id === chatId)
       const ws = chat && store.get().workspaces.find((w) => w.id === chat.workspaceId)
       if (!ws) return undefined
-      return ws.groupId ?? (store.get().settings.experimentalProjects ? store.get().groups?.find((g) => g.repoIds.includes(ws.repoId))?.id : undefined) ?? ws.repoId
+      // Orchestrators carry their project in groupId; the work a project started carries it in orchestratorId.
+      const own = ws.groupId ?? (ws.orchestratorId && store.get().groups?.some((g) => g.id === ws.orchestratorId) ? ws.orchestratorId : undefined)
+      return own ?? (store.get().settings.experimentalProjects ? store.get().groups?.find((g) => g.repoIds.includes(ws.repoId))?.id : undefined) ?? ws.repoId
     },
     notify: (title, body) => {
       if (!store.get().settings.notifications || !Notification.isSupported()) return

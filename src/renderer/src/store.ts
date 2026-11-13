@@ -4,7 +4,7 @@ import { readCachedAppearance } from './appearanceCache'
 import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
 import type { Automation, AutomationRun } from '@shared/automations'
-import type { QueueItem, ResetLog, UsageLimitState } from '@shared/continueWork'
+import type { QueueItem, QueueTarget, ResetLog, UsageLimitState } from '@shared/continueWork'
 import { isTheirs, type CommentDest, type PrHeadSync, type PrReviewInfo } from '@shared/prReview'
 import type { Interdiff } from '@shared/reviewUpdates'
 import * as L from '@shared/layout'
@@ -78,6 +78,8 @@ interface UI {
   /** The Up next (Continue work) page is open. */
   continuePage: boolean
   continueQueue: QueueItem[]
+  /** A sidebar row being added to Up next: the dialog asks what it should do. */
+  queueTarget: QueueTarget | null
   usageLimit: UsageLimitState | null
   resetLog: ResetLog[]
   /** Last load of the PRs page's list, and its error. */
@@ -170,6 +172,7 @@ export const useStore = create<UI>((set, get) => ({
   automationsPage: false, continuePage: false,
   automations: [],
   continueQueue: [],
+  queueTarget: null,
   usageLimit: null,
   resetLog: [],
   automationRuns: [],
