@@ -47,6 +47,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Build and Review workspace modes](prd/workspace-modes.md) | In review |
 | [Continue work (resume at usage reset)](prd/continue-work.md) | In review |
 | [Usage history and the Usage page](prd/usage-history.md) | In review |
+| [Rich copy from chat](prd/rich-copy.md) | Shipped |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

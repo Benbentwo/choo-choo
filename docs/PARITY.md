@@ -53,6 +53,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Chat tabs per workspace, ⌘T / ⌘W
 - ✅ Model picker (Opus / Fable / Sonnet / Haiku) and effort (Low / Medium / High / Extra high / Max). Switching models mid-chat draws a "Switched to model X" rule, confirmed with the model Claude Code reports on the next turn
 - ✅ Streaming replies with markdown, collapsible tool calls, cost and duration
+- ✅ Copying from a reply puts clean HTML on the clipboard, so pastes into Notion, Docs or Slack keep tables, headings, lists, links and code without the app's theme (choo-choo addition, [PRD](prd/rich-copy.md))
 - ✅ Compact chat format (Settings › Appearance): each stretch of tool calls folds into one collapsed Working row
 - ✅ Code blocks in your own messages: text between ``` fences shows as a monospace block that keeps its spacing. While the cursor is inside an open fence the composer turns monospace and Enter adds a line; closing the fence or ⌘Enter sends.
 - ✅ Stop (button or Esc)
