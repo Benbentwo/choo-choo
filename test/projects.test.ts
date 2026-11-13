@@ -24,13 +24,14 @@ describe('projects', () => {
     ]
     const repos = ['api', 'web', 'docs'].map(repo)
     const tree = projectTree(group, repos, wss, chats, 'orch')
-    // Newest thread first; t3 has no open work so it stays out; unowned work comes last.
+    // Newest thread first, even with no open work (t3); unowned work comes last.
     expect(tree.map((n) => [n.thread?.id ?? null, n.repos.map((r) => [r.repo.id, r.workspaces.map((w) => w.id)])])).toEqual([
+      ['t3', []],
       ['t2', [['web', ['x']]]],
       ['t1', [['api', ['b', 'a']], ['web', ['w']]]],
       [null, [['docs', ['n', 'gone']]]]
     ])
-    expect(tree.map(threadKey)).toEqual(['t2', 't1', 'none'])
+    expect(tree.map(threadKey)).toEqual(['t3', 't2', 't1', 'none'])
     expect(workspaceThread(wss[0], chats, 'orch')?.id).toBe('t1')
     expect(workspaceThread(wss[0], chats, undefined)).toBeUndefined()
     // The orchestrator chat isn't a thread, so work it "owns" is unowned.

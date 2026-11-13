@@ -37,6 +37,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 ### Workspaces sidebar
 - ✅ "My workspaces" repo list; add a local repo or clone from URL
 - ✅ "+" per repo creates a workspace: a git worktree at `~/choo-choo/workspaces/<repo>/<city>` on `<prefix>/<city>`
+- ✅ New workspace from a PR: the source picker lists open PRs, then the 20 most recently merged (tagged "merged"), so landed work can be picked up again. A merged PR whose branch was deleted on GitHub is checked out from its `pull/<n>/head` ref (choo-choo addition)
 - ✅ Base branch per repo: the new-workspace screen has a "Starts a new branch from" dropdown (detected from `origin/HEAD` at first; the choice is remembered and PRs target it)
 - ✅ Diff stats (+N -M), running spinner, unread dot
 - ✅ Hide repositories, "Show hidden repositories"

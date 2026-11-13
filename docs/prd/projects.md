@@ -4,7 +4,7 @@
 |---|---|
 | Status | Shipped behind Settings › Experimental (PR #79). Automations are their own feature: [automations.md](automations.md) |
 | Requested by | Ben, 2026-11-10 |
-| Last updated | 2026-11-12 (threads own their PRs, in review) |
+| Last updated | 2026-11-13 (threads without open work stay in the sidebar) |
 
 ## Problem
 
@@ -31,7 +31,7 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 
 ![Orchestrator chat](../media/projects/orchestrator-chat.png)
 
-- **Sidebar:** a Projects section above the repos. Each project folds. Under it, the threads with open work, newest first (`# Signup flow rework`; clicking one opens it, with a dot while it runs or has unread replies). Under each thread, the repos it has work in, and under each repo that thread's workspaces: `#418 Verify endpoint` once a PR exists, else the workspace's name with a "no PR" tag. Work no thread owns (started before threads, or its thread was deleted) comes last under *No thread*. Workspaces that belong to a project leave the plain repo list below. Threads with no open work are only in the Threads panel.
+- **Sidebar:** a Projects section above the repos. Each project folds. Under it, every thread, newest first (`# Signup flow rework`; clicking one opens it, with a dot while it runs or has unread replies). Under each thread, the repos it has work in, and under each repo that thread's workspaces: `#418 Verify endpoint` once a PR exists, else the workspace's name with a "no PR" tag. Work no thread owns (started before threads, or its thread was deleted) comes last under *No thread*. Workspaces that belong to a project leave the plain repo list below. A thread with no open work still shows, with no fold arrow, so it can be opened from the sidebar (Ben, 2026-11-13).
 - **Sorting work:** hovering a thread row with more than one piece of work shows a sort arrow. It orders the work under each of that thread's repos by Newest first (the default), Oldest first, PR number (lowest first, work without a PR last) or Title (the PR title once there is one, as the row shows). The choice applies to every project thread and is saved.
 - **Orchestrator chat:** clicking the project opens it. Each message is forwarded to a thread ("Sent to # Signup flow rework", Open thread) or starts one ("New thread # Onboarding dark mode"). Quick status questions are answered there.
 - **Threads:** the Threads button in the header opens the list on the right: the orchestrator chat first, then threads, newest first, each with its last line. New starts an empty thread; it takes its title from its first message. Clicking one opens it in place of the orchestrator chat.

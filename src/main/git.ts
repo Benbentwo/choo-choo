@@ -218,6 +218,22 @@ export async function addWorktreeForRemoteBranch(repo: string, path: string, nam
   }
 }
 
+/**
+ * Checks out a same-repo PR's branch into a new worktree. A merged PR's branch is usually deleted from
+ * GitHub, so when origin no longer has it the PR head is fetched from `pull/<n>/head` instead. An existing
+ * local branch is always used as is, so local commits are never overwritten.
+ */
+export async function addWorktreeForPrBranch(repo: string, path: string, number: number, name: string) {
+  await tryGit(repo, ['worktree', 'prune'])
+  if (await tryGit(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])) {
+    await git(repo, ['worktree', 'add', path, name])
+  } else if ((await tryGit(repo, ['fetch', 'origin', name, '--quiet'])) !== null) {
+    await git(repo, ['worktree', 'add', '--track', '-b', name, path, `origin/${name}`])
+  } else {
+    await addWorktreeForPull(repo, path, number, name)
+  }
+}
+
 /** Fetches a PR head (works for forks) into local branch `local` and checks it out into a new worktree. */
 export async function addWorktreeForPull(repo: string, path: string, number: number, local: string) {
   await tryGit(repo, ['worktree', 'prune'])
