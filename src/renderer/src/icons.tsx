@@ -174,3 +174,11 @@ export const IconUsage = (p: SVGProps<SVGSVGElement>) => (
 export const IconPause = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M9 5v14M15 5v14" /></svg>
 )
+/** Expand a panel to fill the space beside it. */
+export const IconExpand = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5" /></svg>
+)
+/** Put an expanded panel back. */
+export const IconCollapse = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M19 10h-5V5M5 14h5v5M14 10l6-6M10 14l-6 6" /></svg>
+)

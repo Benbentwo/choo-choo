@@ -133,6 +133,8 @@ interface UI {
   historyIndex: number
   sidebarOpen: boolean
   rightOpen: boolean
+  /** The right panel fills the chat area (⌘⇧E); the chat panes fold into a strip. */
+  rightExpanded: boolean
   bottomOpen: boolean
   /** Per workspace: the person switched between building and reviewing by hand. */
   wsMode: Record<string, 'build' | 'review'>
@@ -209,6 +211,7 @@ export const useStore = create<UI>((set, get) => ({
   historyIndex: -1,
   sidebarOpen: true,
   rightOpen: true,
+  rightExpanded: false,
   bottomOpen: true,
   wsMode: (() => { try { return JSON.parse(localStorage.getItem('wsMode') ?? '{}') } catch { return {} } })(),
   rightTab: 'changes',
@@ -769,6 +772,20 @@ export function setProjectWorkSort(sort: NonNullable<Settings['projectWorkSort']
     .saveSettings({ projectWorkSort: sort })
     .then((settings) => useStore.getState().set({ settings }))
     .catch(reportError)
+}
+
+/** Save a dragged sidebar or right panel width (shared/panelWidths.ts clamps it when drawn). */
+export function savePanelWidth(field: 'sidebarWidth' | 'rightWidth', width: number | undefined) {
+  useStore.getState().set({ settings: { ...useStore.getState().settings, [field]: width } })
+  void window.api
+    .saveSettings({ [field]: width })
+    .then((settings) => useStore.getState().set({ settings }))
+    .catch(reportError)
+}
+
+/** Expand the right panel over the chat area, or put it back. Expanding opens it if it was hidden. */
+export function toggleRightExpanded(on = !useStore.getState().rightExpanded) {
+  useStore.getState().set(on ? { rightExpanded: true, rightOpen: true } : { rightExpanded: false })
 }
 
 /** Collapse a project in the sidebar so only its row shows, or expand it again. */

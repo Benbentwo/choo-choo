@@ -1618,6 +1618,7 @@ function buildMenu() {
       submenu: [
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: m('toggle-sidebar') },
         { label: 'Toggle Right Panel', accelerator: 'CmdOrCtrl+Alt+B', click: m('toggle-right') },
+        { label: 'Expand Right Panel', accelerator: 'CmdOrCtrl+Shift+E', click: m('expand-right') },
         { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+J', click: m('toggle-terminal') },
         { type: 'separator' },
         { label: 'Split Right', accelerator: 'CmdOrCtrl+\\', click: m('split-right') },

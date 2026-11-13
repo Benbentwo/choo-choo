@@ -533,6 +533,10 @@ export interface Settings extends AppearanceSettings {
   sidebarCollapsed?: string[]
   /** How work under a project thread's repo is ordered (shared/sidebarOrder.ts). Newest first when unset. */
   projectWorkSort?: 'newest' | 'oldest' | 'pr' | 'title'
+  /** Sidebar width in pixels, dragged by its right edge (shared/panelWidths.ts). Default when unset. */
+  sidebarWidth?: number
+  /** Right panel width in pixels, dragged by its left edge (shared/panelWidths.ts). Default when unset. */
+  rightWidth?: number
   /** Split panels: how the center is divided, restored on the next start (shared/layout.ts). */
   layout?: Layout | null
   /** Layouts saved by name from the layout menu. */

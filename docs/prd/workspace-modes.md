@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #89) |
 | Owner | Choo Choo maintainers |
 | Requested by | Ben, 2026-11-12 |
 | Last updated | 2026-11-12 |
