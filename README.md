@@ -64,6 +64,11 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Add-ons.** Claude Code plugins with a Choo Choo manifest add views, buttons and tools. Install them from any git repo, including private ones for your team. See [Writing an add-on](docs/addon-api.md).
 - **Integrations.** Sign in to Notion and start a workspace from a page; agents can search and update it too. MCP servers, plugins and skills are managed in Settings.
 - **Appearance.** Themes, accents, fonts, size and density.
+- **Searchable Settings.** Press ⌘F in Settings and type; Enter jumps to the setting and highlights it.
+
+<p align="center">
+  <img src="docs/media/gifs/settings-search.gif" alt="Typing notif in Settings search lists matching settings from General, Reviews and Continue work. Enter opens one and highlights it, then dark mode finds Theme." width="900">
+</p>
 
 **Everywhere else**
 - **Continue on your phone, in the cloud or in Claude desktop**, and bring the chat back when you return.

@@ -257,3 +257,31 @@ a,
   background-color: rgb(249 115 22 / 0.75);
   color: #fff;
 }
+
+/* A setting opened from Settings search: a short accent wash so the eye lands on it. */
+@keyframes choo-setting-flash {
+  0%,
+  35% {
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-accent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+.settings-flash {
+  animation: choo-setting-flash 1.8s ease-out;
+  border-radius: 4px;
+}
+/* With motion reduced the wash holds still until the class comes off. */
+[data-reduce-motion] .settings-flash {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-flash {
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-accent);
+  }
+}
