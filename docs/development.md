@@ -22,7 +22,7 @@ Start at [docs/README.md](README.md): the [product overview](product.md), [archi
 
 ## Comment mode
 
-In dev mode, press ⌘⇧K (or click the "Comment" pill), click any element and type what should change. The note and screenshots land in `.feedback/`, and a Claude Code session told to "watch for my comments" makes the change ([CLAUDE.md](../CLAUDE.md) explains how). In a release build, ⌘⇧K opens a workspace on this repo with your note, or a prefilled GitHub issue.
+In dev mode, press ⌘⇧K (or click the 💬 Comment bubble at the bottom right), click any element and type what should change. The note and screenshots land in `.feedback/`, and a Claude Code session told to "watch for my comments" makes the change ([CLAUDE.md](../CLAUDE.md) explains how). In a release build, the same bubble or ⌘⇧K opens a workspace on this repo with your note, or a prefilled GitHub issue.
 
 ## README GIFs
 

@@ -578,6 +578,8 @@ export interface Settings extends AppearanceSettings {
   telemetry: Telemetry
   /** Wake an idle orchestrator when a workspace it started finishes, so it checks and reports back. */
   orchestratorAutoUpdates: boolean
+  /** Draw the floating comment bubble at the bottom right. ⌘⇧K and Help › Comment on Choo Choo work either way. */
+  commentBubble?: boolean
   /** Experimental: project groups become projects, with threads and a repo › PR tree in the sidebar. */
   experimentalProjects?: boolean
   /** Continue work: resuming chats when the usage window resets. See shared/continueWork.ts. */
@@ -715,6 +717,7 @@ export const DEFAULT_SETTINGS: Settings = {
   anthropicApiKey: '',
   notifications: true,
   orchestratorAutoUpdates: true,
+  commentBubble: true,
   claudeBinary: 'bundled',
   checkAppUpdates: true,
   updateChannel: 'stable',

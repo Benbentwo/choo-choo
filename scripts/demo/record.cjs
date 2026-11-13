@@ -53,7 +53,7 @@ async function launch(world, script, video, ghData, update) {
   return { app, page }
 }
 
-/** A visible pointer, a click ripple, and no dev-only chrome (comment pill, sha-dev version). */
+/** A visible pointer, a click ripple, and no comment bubble or sha-dev version. */
 async function dress(page) {
   await page.evaluate(() => {
     const style = document.createElement('style')
@@ -223,6 +223,34 @@ const scenes = {
       await d2.page.getByText('Trip notes now show under the itinerary', { exact: false }).first().waitFor({ timeout: 30_000 })
       await d2.wait(1200)
       await d2.shot?.('6-picked-up-after-restart')
+    }),
+
+  // Settings search: type to find a setting in any section, Enter jumps to it and flashes the row.
+  'settings-search': () =>
+    record('settings-search', {}, async (d) => {
+      await d.wait(600)
+      await d.menu('settings')
+      await d.wait(900)
+      const box = d.page.getByRole('searchbox', { name: 'Search settings' })
+      await d.click(box)
+      await d.type('notif', 90)
+      await d.wait(1400)
+      await d.shot?.('settings-search-results')
+      await d.page.keyboard.press('ArrowDown')
+      await d.wait(500)
+      await d.page.keyboard.press('ArrowDown')
+      await d.wait(700)
+      await d.page.keyboard.press('Enter')
+      await d.wait(500)
+      await d.shot?.('settings-search-jump')
+      await d.wait(1600)
+      await d.page.keyboard.press('Meta+f')
+      await d.type('dark mode', 90)
+      await d.wait(1200)
+      await d.page.keyboard.press('Enter')
+      await d.wait(400)
+      await d.shot?.('settings-search-theme')
+      await d.wait(2000)
     }),
 
   // The PRs page: PRs waiting on your review and your own, grouped by repo, with filters.

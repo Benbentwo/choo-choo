@@ -44,6 +44,15 @@ export function commentTargets(packaged: boolean): CommentTarget[] {
   return packaged ? ['workspace', 'issue'] : ['local', 'workspace', 'issue']
 }
 
+/**
+ * Whether the floating "💬 Comment ⌘⇧K" bubble is drawn at the bottom right. It shows in dev and
+ * packaged builds alike unless Settings › General › Comment bubble is off; while comment mode is on,
+ * or a result is showing, it stays so there is always a way out and a place for the result.
+ */
+export function showCommentBubble(o: { setting: boolean | undefined; active: boolean; toast: boolean }): boolean {
+  return o.setting !== false || o.active || o.toast
+}
+
 export function defaultCommentTarget(packaged: boolean): CommentTarget {
   return packaged ? 'workspace' : 'local'
 }
