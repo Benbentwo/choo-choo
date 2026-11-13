@@ -763,6 +763,10 @@ export function setSidebarRowHidden(keys: string | string[], hidden: boolean) {
 }
 
 /** Collapse a project in the sidebar so only its row shows, or expand it again. */
+export function setProjectWorkSort(sort: NonNullable<Settings['projectWorkSort']>) {
+  useStore.getState().set({ settings: { ...useStore.getState().settings, projectWorkSort: sort } })
+}
+
 export function setRepoCollapsed(repoId: string, collapsed: boolean) {
   saveSidebarList('sidebarCollapsed', repoId, collapsed)
 }
