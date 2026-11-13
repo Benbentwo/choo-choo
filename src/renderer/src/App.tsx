@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { isReviewing } from '@shared/prInbox'
-import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons, refreshPrInbox, applyPrInbox, openPrWorkspace, reviewingPr, loadStack, splitPane, closePane, toggleMaximize, focusDir, openWorkspaceBeside, reportError } from './store'
+import { useStore, refreshState, refreshStats, addRepository, newWorkspace, newChatTab, closeChatTab, goToNextUnread, addPermission, removePermission, openPalette, loadModelDetails, refreshAddons, refreshPrInbox, applyPrInbox, openPrWorkspace, reviewingPr, loadStack, splitPane, closePane, toggleMaximize, focusDir, openWorkspaceBeside, reportError, toggleRightExpanded } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Panes } from './components/Panes'
 import { OrchestratorPanel, RightPanel } from './components/RightPanel'
@@ -14,6 +14,7 @@ import { Modals } from './components/Modals'
 import { TitleTips } from './components/Tip'
 import { useAppearance } from './appearance'
 import { useShareRefresh } from './components/ShareModals'
+import { IconCollapse } from './icons'
 
 export function App() {
   const s = useStore()
@@ -22,6 +23,20 @@ export function App() {
   // While an add-on page or empty pane has focus, the right panel keeps showing the last workspace, so the panes don't jump.
   const rightWs = s.workspaces.find((w) => w.id === s.rightWs && !w.archived) ?? null
   useShareRefresh(ws)
+  const expanded = s.rightExpanded && s.rightOpen && !!rightWs && s.panesShown && !!s.layout
+
+  // Esc puts an expanded right panel back, unless something else (a modal, a text field) wants it.
+  useEffect(() => {
+    if (!expanded) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || useStore.getState().modal) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.closest('.xterm'))) return
+      toggleRightExpanded(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expanded])
 
   // Opening a workspace on a PR you review: it's looked at, and GitHub gets a fresh look.
   const reviewingHere = s.prInbox?.prs.find((p) => !!ws && p.workspaceId === ws.id && isReviewing(p))
@@ -101,7 +116,9 @@ export function App() {
         case 'toggle-sidebar':
           return st.set({ sidebarOpen: !st.sidebarOpen })
         case 'toggle-right':
-          return st.set({ rightOpen: !st.rightOpen })
+          return st.set({ rightOpen: !st.rightOpen, rightExpanded: false })
+        case 'expand-right':
+          return toggleRightExpanded()
         case 'toggle-terminal':
           return st.set({ bottomOpen: !st.bottomOpen, rightOpen: true })
         case 'split-right':
@@ -152,7 +169,11 @@ export function App() {
       <div className="flex min-w-0 flex-1">
         {s.panesShown && s.layout ? (
           <>
-            <Panes />
+            {/* Expanded, the right panel takes the chat area. The panes stay mounted (hidden) so chats keep their place. */}
+            {expanded && <ChatStrip />}
+            <div className={expanded ? 'hidden' : 'flex min-w-0 flex-1'}>
+              <Panes />
+            </div>
             {s.rightOpen && rightWs && (rightWs.orchestrator ? <OrchestratorPanel ws={rightWs} /> : <RightPanel ws={rightWs} />)}
           </>
         ) : s.prsPage ? (
@@ -182,5 +203,23 @@ export function App() {
         </div>
       )}
     </div>
+  )
+}
+
+/** What's left of the chat while the right panel is expanded: a strip that puts it back. */
+function ChatStrip() {
+  const s = useStore()
+  const chatId = s.selectedWs ? s.activeChat[s.selectedWs] : undefined
+  const title = s.chats.find((c) => c.id === chatId)?.title || s.workspaces.find((w) => w.id === s.selectedWs)?.title || 'Chat'
+  return (
+    <button
+      data-testid="chat-strip"
+      title="Back to the chat (⌘⇧E or Esc)"
+      onClick={() => toggleRightExpanded(false)}
+      className={`flex w-[34px] shrink-0 flex-col items-center gap-3 border-r border-line bg-bg pb-3 text-muted hover:bg-hover hover:text-fg ${s.sidebarOpen ? 'pt-3' : 'pt-12'}`}
+    >
+      <IconCollapse width={13} height={13} />
+      <span className="truncate text-[12px] [writing-mode:vertical-rl] rotate-180">{title} · chat</span>
+    </button>
   )
 }

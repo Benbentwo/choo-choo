@@ -4,9 +4,11 @@ import type { CheckRun, FileChange, PrComment, PrInfo, Workspace } from '@shared
 import { canUpdateBranch, fixChecksPrompt, nextPrAction, resolveConflictsPrompt, summarizeChecks } from '@shared/prStatus'
 import { newSince, prCommentsPrompt } from '@shared/prComments'
 import { isTheirs, type PrReviewInfo } from '@shared/prReview'
-import { useStore, reportError, openDoc, destOf, type RightTab } from '../store'
+import { useStore, reportError, openDoc, destOf, savePanelWidth, toggleRightExpanded, type RightTab } from '../store'
+import { CHAT_MIN, RIGHT, rightMax, rightWidth, sidebarWidth } from '@shared/panelWidths'
+import { PanelEdge } from './PanelEdge'
 import { useFollowPrHead, useWorkspaceMode, type WsMode } from '../prReview'
-import { IconComment, IconDown, IconEye, IconPR, IconSearch } from '../icons'
+import { IconCollapse, IconComment, IconDown, IconEye, IconExpand, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
 import { ArtifactsTab, ChecksTab, FilesTab, ReviewTab } from './RightTabs'
 import { fmt } from './Stats'
@@ -90,7 +92,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
   }, [ws.id, stats])
 
   return (
-    <aside className="flex w-[420px] shrink-0 flex-col border-l border-line bg-panel">
+    <RightAside>
       <div className="drag flex h-11 shrink-0 items-center justify-end gap-2 border-b border-line px-3">
         {split && (
           <span className="mr-auto flex min-w-0 items-center gap-1.5 text-[12.5px]" title="The right panel follows the focused pane">
@@ -99,6 +101,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
           </span>
         )}
         {!ws.orchestrator && <AddonActions place="workspace-header" repoId={ws.repoId} workspaceId={ws.id} className="rounded-md border border-line p-[7px] text-muted hover:bg-hover" />}
+        <ExpandButton />
         <PrButton ws={ws} hasChanges={changes.length > 0} />
         <MergedActions ws={ws} />
       </div>
@@ -182,7 +185,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
       </div>
 
       <BottomPanel ws={ws} />
-    </aside>
+    </RightAside>
   )
 }
 
@@ -530,6 +533,60 @@ function MenuBtn(p: { label: string; onClick: () => void }) {
 }
 
 /**
+ * The right panel's frame: sized by its left edge (shared/panelWidths.ts), or filling the chat
+ * area when expanded (⌘⇧E). The chat keeps at least CHAT_MIN pixels, also as the window narrows.
+ */
+function RightAside({ children, testId }: { children: React.ReactNode; testId?: string }) {
+  const s = useStore()
+  const expanded = s.rightExpanded
+  // The width keeps room for the chat, so it's worked out again when the window is resized.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const onResize = () => setTick((n) => n + 1)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  const side = s.sidebarOpen ? sidebarWidth(s.settings.sidebarWidth) : 0
+  const width = rightWidth(s.settings.rightWidth, window.innerWidth, side)
+  return (
+    <aside
+      data-testid={testId ?? 'right-panel'}
+      data-expanded={expanded || undefined}
+      className={`relative flex min-w-0 flex-col border-l border-line bg-panel ${expanded ? 'flex-1' : 'shrink-0'}`}
+      style={expanded ? undefined : { width, maxWidth: `max(${RIGHT.min}px, calc(100vw - ${side}px - ${CHAT_MIN}px))` }}
+    >
+      {!expanded && (
+        <PanelEdge
+          side="left"
+          min={RIGHT.min}
+          max={() => rightMax(window.innerWidth, side)}
+          hint="drag far right to hide (⌘⌥B)"
+          onCommit={(w) => savePanelWidth('rightWidth', w)}
+          onReset={() => savePanelWidth('rightWidth', RIGHT.def)}
+          onClose={() => s.set({ rightOpen: false })}
+        />
+      )}
+      {children}
+    </aside>
+  )
+}
+
+/** Expand the right panel over the chat area, or put it back (⌘⇧E). */
+function ExpandButton() {
+  const expanded = useStore((st) => st.rightExpanded)
+  return (
+    <button
+      data-testid="expand-right"
+      className={`no-drag rounded-md border border-line p-[7px] hover:bg-hover ${expanded ? 'bg-raised text-fg' : 'text-muted'}`}
+      title={expanded ? 'Restore (⌘⇧E or Esc)' : 'Expand (⌘⇧E)'}
+      onClick={() => toggleRightExpanded()}
+    >
+      {expanded ? <IconCollapse width={13} height={13} /> : <IconExpand width={13} height={13} />}
+    </button>
+  )
+}
+
+/**
  * The right panel beside an orchestrator, including a project's orchestrator chat and its threads.
  * It runs in the repo's own checkout and has no branch of its own, so it gets only the Usage tab:
  * the graphs for the chat or thread open in the center.
@@ -538,9 +595,10 @@ export function OrchestratorPanel({ ws }: { ws: Workspace }) {
   const s = useStore()
   const group = ws.groupId ? s.groups.find((g) => g.id === ws.groupId) : undefined
   return (
-    <aside className="flex w-[420px] shrink-0 flex-col border-l border-line bg-panel" data-testid="orchestrator-panel">
+    <RightAside testId="orchestrator-panel">
       <div className="drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-[12.5px]">
-        <span className="truncate text-muted">{group ? group.name : s.repos.find((r) => r.id === ws.repoId)?.name} / Orchestrator</span>
+        <span className="mr-auto truncate text-muted">{group ? group.name : s.repos.find((r) => r.id === ws.repoId)?.name} / Orchestrator</span>
+        <ExpandButton />
       </div>
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <span className="rounded-md bg-raised px-2.5 py-1 text-fg">Usage</span>
@@ -548,7 +606,7 @@ export function OrchestratorPanel({ ws }: { ws: Workspace }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <GraphsTab ws={ws} />
       </div>
-    </aside>
+    </RightAside>
   )
 }
 
