@@ -17,11 +17,13 @@ import { BrandMark } from './BrandMark'
 import { UpdateBanners } from './Updates'
 import { AddonActions, addonViews } from './Addons'
 import { ProjectsSection } from './Projects'
+import { askToQueue, setQueueDrag, useQueueDrop } from './ContinueWork'
 import { foldKey, inProject } from '@shared/projects'
 import { buildLabel, sidebarVersion, type BuildInfo } from '@shared/uiComment'
 
 export function Sidebar() {
   const s = useStore()
+  const queueDrop = useQueueDrop()
   const [showHidden, setShowHidden] = useState(false)
   const [showArchived, setShowArchived] = useState<Record<string, boolean>>({})
   const [view, setView] = useState<View>(loadView)
@@ -200,6 +202,7 @@ export function Sidebar() {
           active={s.continuePage && !s.selectedWs}
           onClick={openContinuePage}
           badge={s.continueQueue.length || undefined}
+          drop={queueDrop}
         />
         {projectsOn && (
           <NavItem
@@ -458,9 +461,16 @@ function AppVersion() {
   )
 }
 
-function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; badge?: number; actions?: React.ReactNode; onClick: (e?: React.MouseEvent) => void; onContextMenu?: (e: React.MouseEvent) => void; drag?: DragItem }) {
+function NavItem(p: { icon: React.ReactNode; label: string; title?: string; active?: boolean; hint?: string; badge?: number; actions?: React.ReactNode; onClick: (e?: React.MouseEvent) => void; onContextMenu?: (e: React.MouseEvent) => void; drag?: DragItem; drop?: ReturnType<typeof useQueueDrop> }) {
   return (
-    <button onClick={(e) => p.onClick(e)} onContextMenu={p.onContextMenu} title={p.title} {...(p.drag ? paneDragProps(p.drag) : {})} className={`flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left ${p.active ? 'bg-raised' : 'hover:bg-hover'}`}>
+    <button
+      onClick={(e) => p.onClick(e)}
+      onContextMenu={p.onContextMenu}
+      title={p.title}
+      {...(p.drag ? paneDragProps(p.drag) : {})}
+      {...(p.drop?.props ?? {})}
+      className={`flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left ${p.drop?.over ? 'bg-accent/15 ring-1 ring-accent' : p.active ? 'bg-raised' : 'hover:bg-hover'}`}
+    >
       <span className="text-muted">{p.icon}</span>
       <span className="flex-1">{p.label}</span>
       {p.hint && <span className="text-[11px] text-faint">{p.hint}</span>}
@@ -563,6 +573,8 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
         { label: 'Reveal in Finder', onClick: () => void window.api.revealInFinder(w.path) },
         { label: 'Copy branch name', onClick: () => void navigator.clipboard.writeText(w.branch) },
         { kind: 'sep' },
+        { label: 'Queue for next window…', hint: 'Up next', onClick: () => askToQueue({ kind: 'ws', wsId: w.id }) },
+        { kind: 'sep' },
         { label: 'Archive workspace', onClick: () => void archiveWorkspace(w.id) }
       ]
   const dropLine = dnd?.drag?.over === w.id ? (dnd.drag.after ? 'shadow-[0_2px_0_var(--color-accent)]' : 'shadow-[0_-2px_0_var(--color-accent)]') : ''
@@ -586,6 +598,7 @@ function WsRow({ w, repoName, dnd }: { w: Workspace; repoName?: string; dnd?: Ws
         e.dataTransfer.effectAllowed = 'move'
         e.dataTransfer.setData('text/plain', w.id)
         useStore.getState().set({ drag: { kind: 'ws', wsId: w.id } })
+        if (!w.orchestrator) setQueueDrag(e, { kind: 'ws', wsId: w.id })
         dnd?.start()
       }}
       onDragOver={(e) => {

@@ -28,6 +28,27 @@ export interface QueueItem {
   addedAt: number
 }
 
+/** Something from the sidebar to add to Up next: a workspace (its current chat), a project thread, or a project (its orchestrator chat). */
+export type QueueTarget = { kind: 'ws'; wsId: string } | { kind: 'thread'; chatId: string } | { kind: 'project'; groupId: string }
+
+/** Drag data type for sidebar rows dropped on Up next. */
+export const QUEUE_DRAG_TYPE = 'application/x-choo-queue'
+
+/** Sent to a project's orchestrator when it's queued without a prompt. */
+export const PROJECT_CONTINUE_PROMPT = "Continue this project's open work: check each thread and workspace, and keep going on whatever is unfinished, most important first."
+
+export function parseQueueTarget(raw: string): QueueTarget | null {
+  try {
+    const t = JSON.parse(raw)
+    if (t?.kind === 'ws' && typeof t.wsId === 'string') return { kind: 'ws', wsId: t.wsId }
+    if (t?.kind === 'thread' && typeof t.chatId === 'string') return { kind: 'thread', chatId: t.chatId }
+    if (t?.kind === 'project' && typeof t.groupId === 'string') return { kind: 'project', groupId: t.groupId }
+  } catch {
+    /* not ours */
+  }
+  return null
+}
+
 /** The plan is out of usage until `until`. Cleared once /usage shows the window open again. */
 export interface UsageLimitState {
   kind: LimitKind
@@ -65,6 +86,9 @@ export interface ContinueSettings {
   /** Repo or project-group ids, highest priority first. */
   projectOrder: string[]
 }
+
+/** Sent to a chat queued without a prompt when it didn't stop on the limit. */
+export const KEEP_GOING_PROMPT = 'Continue where you left off: check the working tree, then keep going on whatever is unfinished.'
 
 export const DEFAULT_CONTINUE_PROMPT = 'Your last turn stopped at the usage limit. Check the working tree, then pick up where you left off.'
 

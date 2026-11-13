@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Chat, SubscriptionLimits } from '@shared/types'
 import {
+  KEEP_GOING_PROMPT,
   MAX_RETRIES,
   RECHECK_MS,
   RESET_GRACE_MS,
@@ -118,9 +119,10 @@ export function add(chatId: string, prompt: string, opts: { top?: boolean; image
   const chat = store.get().chats.find((c) => c.id === chatId)
   if (!chat) throw new Error('Chat not found')
   const text = prompt.trim()
-  // An empty prompt on a paused chat means "continue where it stopped".
-  if (!text && !chat.paused) throw new Error('Say what it should do')
-  const item: QueueItem = { id: randomUUID(), chatId, source: text ? 'queued' : 'paused', ...(text ? { prompt: text } : {}), ...(opts.images?.length ? { images: opts.images } : {}), addedAt: Date.now() }
+  // No prompt means "continue where it left off", with the continue prompt from Settings.
+  // A paused chat gets the continue prompt from Settings when it starts; any other chat just keeps going.
+  const paused = !text && !!chat.paused
+  const item: QueueItem = { id: randomUUID(), chatId, source: paused ? 'paused' : 'queued', ...(paused ? {} : { prompt: text || KEEP_GOING_PROMPT }), ...(opts.images?.length ? { images: opts.images } : {}), addedAt: Date.now() }
   const at = opts.top ? 0 : insertIndex(queue(), deps.projectOf, deps.projectOf(chatId), settings())
   queue().splice(at, 0, item)
   deps.changed()
@@ -137,8 +139,8 @@ export function edit(id: string, prompt: string) {
   const q = queue().find((x) => x.id === id)
   if (!q) throw new Error('Not in Up next')
   if (prompt.trim()) q.prompt = prompt.trim()
-  else if (q.source === 'paused') delete q.prompt
-  else throw new Error('Say what it should do')
+  else if (q.source === 'queued') q.prompt = KEEP_GOING_PROMPT
+  else delete q.prompt
   deps?.changed()
 }
 

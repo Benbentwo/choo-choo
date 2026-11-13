@@ -7,7 +7,7 @@ import { RightPanel } from './components/RightPanel'
 import { Home } from './components/Home'
 import { PrInboxPage } from './components/PrInbox'
 import { AutomationsPage } from './components/Automations'
-import { ContinueWorkPage } from './components/ContinueWork'
+import { ContinueWorkPage, QueueDialog } from './components/ContinueWork'
 import { NewWorkspace } from './components/NewWorkspace'
 import { Modals } from './components/Modals'
 import { TitleTips } from './components/Tip'
@@ -167,6 +167,7 @@ export function App() {
         )}
       </div>
       <Modals />
+      <QueueDialog />
       <TitleTips />
       {s.error && (
         <div className="anim-toast fixed right-4 bottom-4 z-50 max-w-md rounded-lg border border-del/40 bg-raised px-4 py-3 text-[12px] shadow-xl">

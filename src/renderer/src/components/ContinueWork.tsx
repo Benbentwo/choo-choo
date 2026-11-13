@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Chat } from '@shared/types'
-import { continueSettings, limitLabel, untilText, type ContinueSettings, type QueueItem } from '@shared/continueWork'
+import { KEEP_GOING_PROMPT, PROJECT_CONTINUE_PROMPT, QUEUE_DRAG_TYPE, continueSettings, limitLabel, parseQueueTarget, untilText, type ContinueSettings, type QueueItem, type QueueTarget } from '@shared/continueWork'
+import { routerChat } from '@shared/projects'
+import { createPortal } from 'react-dom'
 import { useStore, reportError } from '../store'
 import { IconGrip, IconPause, IconPlay, IconSidebar, IconUpNext, IconX } from '../icons'
 
@@ -60,7 +62,7 @@ const chip = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 text-[10
 const btn = 'no-drag shrink-0 rounded-md border border-line px-2 py-0.5 text-[11.5px] text-muted hover:bg-hover hover:text-fg disabled:opacity-40'
 
 function stoppedText(chat: Chat | undefined, item: QueueItem): string {
-  if (item.source === 'queued') return `"${item.prompt ?? ''}"`
+  if (item.source === 'queued') return !item.prompt || item.prompt === KEEP_GOING_PROMPT ? 'continues where it left off' : `"${item.prompt}"`
   const p = chat?.paused
   const when = p ? `stopped ${time(p.at)}` : 'waiting'
   return item.prompt ? `${when} · then: "${item.prompt}"` : `${when} · continues where it left off`
@@ -201,6 +203,7 @@ function Ring({ percent }: { percent: number }) {
 
 export function ContinueWorkPage() {
   const s = useStore()
+  const drop = useQueueDrop()
   const cs = useContinue()
   const now = useNow()
   const lim = s.usageLimit
@@ -208,7 +211,12 @@ export function ContinueWorkPage() {
   const last = s.resetLog[s.resetLog.length - 1]
   const sel = 'no-drag rounded-md border border-line bg-bg px-2 py-1 text-[12px] outline-none'
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
+    <div className="relative flex min-w-0 flex-1 flex-col" {...drop.props}>
+      {drop.over && (
+        <div className="pointer-events-none absolute inset-3 z-10 grid place-items-center rounded-xl border-2 border-dashed border-accent bg-accent/10 text-[14px] font-medium text-accent">
+          Drop to queue it for the next window
+        </div>
+      )}
       <div className="drag flex h-11 shrink-0 items-center gap-2 px-3">
         {!s.sidebarOpen && (
           <button title="Show sidebar" className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
@@ -223,7 +231,7 @@ export function ContinueWorkPage() {
       <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 gap-6 overflow-y-auto px-6 pt-4 pb-10">
         <div className="min-w-0 flex-1">
           <h1 className="text-[20px] font-[650] tracking-[-0.02em]">Continue work</h1>
-          <p className="mt-1 mb-5 text-[13px] text-muted">What Choo Choo starts, in this order, when your usage window resets. Drag to reorder.</p>
+          <p className="mt-1 mb-5 text-[13px] text-muted">What Choo Choo starts, in this order, when your usage window resets. Drag to reorder, or drag a project, thread or workspace here from the sidebar.</p>
 
           <div className="mb-4 flex items-center gap-4 rounded-lg border border-line bg-panel px-4 py-3">
             {lim ? <Ring percent={100} /> : <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-raised text-muted"><IconUpNext width={18} height={18} /></span>}
@@ -263,7 +271,7 @@ export function ContinueWorkPage() {
           ) : (
             <div className="rounded-lg border border-dashed border-line px-6 py-10 text-center text-muted">
               <div className="mb-1 text-fg">Nothing up next</div>
-              <div className="text-[12px]">When a chat stops on your plan's usage limit it waits here and continues after the reset. You can also line up new work on the right.</div>
+              <div className="text-[12px]">When a chat stops on your plan's usage limit it waits here and continues after the reset. To line up more, drag a project, thread or workspace here from the sidebar, right-click one and pick Queue for next window, or use the box on the right.</div>
             </div>
           )}
           {s.automations.some((a) => a.enabled && a.trigger.kind === 'usage_reset') && (
@@ -545,5 +553,139 @@ export function ContinueSettingsSection() {
         Choo Choo only resumes after the reset time Claude gives and after Claude Code's /usage shows the window open again. It never retries a refused window or switches accounts. Codex chats are not paused or resumed yet.
       </div>
     </>
+  )
+}
+
+// ---- Adding sidebar rows to Up next: drag a project, thread or workspace onto Up next, or right-click › Queue for next window.
+
+/** Opens the "Queue for next window" dialog for a sidebar row. */
+export function askToQueue(target: QueueTarget) {
+  useStore.getState().set({ queueTarget: target })
+}
+
+/** Makes a sidebar row carry a queue target while dragged (on top of whatever else its drag does). */
+export function setQueueDrag(e: React.DragEvent, target: QueueTarget) {
+  e.dataTransfer.setData(QUEUE_DRAG_TYPE, JSON.stringify(target))
+  e.dataTransfer.effectAllowed = 'copyMove'
+}
+
+/** Drop handlers for anything that takes a sidebar row into Up next. `over` is true while a row hovers it. */
+export function useQueueDrop(): { over: boolean; props: Pick<React.HTMLAttributes<HTMLElement>, 'onDragOver' | 'onDragEnter' | 'onDragLeave' | 'onDrop'> } {
+  const [over, setOver] = useState(false)
+  const ours = (e: React.DragEvent) => e.dataTransfer.types.includes(QUEUE_DRAG_TYPE)
+  return {
+    over,
+    props: {
+      onDragEnter: (e) => ours(e) && setOver(true),
+      onDragOver: (e) => {
+        if (!ours(e)) return
+        e.preventDefault()
+        e.stopPropagation()
+        e.dataTransfer.dropEffect = 'copy'
+        if (!over) setOver(true)
+      },
+      onDragLeave: (e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
+      },
+      onDrop: (e) => {
+        setOver(false)
+        const t = parseQueueTarget(e.dataTransfer.getData(QUEUE_DRAG_TYPE))
+        if (!t) return
+        e.preventDefault()
+        e.stopPropagation()
+        useStore.getState().set({ drag: null })
+        askToQueue(t)
+      }
+    }
+  }
+}
+
+/** The chat a target resolves to now, and how to name it. A project's orchestrator chat may not exist until it's opened. */
+function resolveTarget(s: ReturnType<typeof useStore.getState>, t: QueueTarget): { label: string; kind: string; chat?: Chat } {
+  if (t.kind === 'thread') {
+    const chat = s.chats.find((c) => c.id === t.chatId)
+    return { label: chat?.title ?? 'Thread', kind: 'Project thread', chat }
+  }
+  if (t.kind === 'project') {
+    const g = s.groups.find((x) => x.id === t.groupId)
+    const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === t.groupId && !w.archived)
+    return { label: g?.name ?? 'Project', kind: 'Project orchestrator', chat: orch ? routerChat(s.chats, orch.id) : undefined }
+  }
+  const ws = s.workspaces.find((w) => w.id === t.wsId)
+  const chats = s.chats.filter((c) => c.workspaceId === t.wsId && !c.review && !c.remote)
+  const chat = chats.find((c) => c.id === s.activeChat[t.wsId]) ?? [...chats].sort((a, b) => b.createdAt - a.createdAt)[0]
+  return { label: ws?.title ?? 'Workspace', kind: ws?.orchestrator ? 'Orchestrator' : 'Workspace', chat }
+}
+
+/** Asks what a dropped or right-clicked row should do when the window resets. */
+export function QueueDialog() {
+  const s = useStore()
+  const t = s.queueTarget
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => setText(''), [t])
+  if (!t) return null
+  const { label, kind, chat } = resolveTarget(s, t)
+  const close = () => s.set({ queueTarget: null })
+  const blankMeans = t.kind === 'project' ? 'Leave empty to have the orchestrator keep going on the project\'s open work.' : 'Leave empty to continue where it left off.'
+  const add = async (top: boolean) => {
+    setBusy(true)
+    try {
+      let id = chat?.id
+      if (!id && t.kind === 'project') {
+        const opened = await window.api.openGroupOrchestrator(t.groupId)
+        id = opened.chat.id
+      }
+      if (!id) throw new Error('This workspace has no chat to continue')
+      const prompt = text.trim() || (t.kind === 'project' ? PROJECT_CONTINUE_PROMPT : '')
+      await window.api.continueAdd(id, prompt, top)
+      close()
+    } catch (e) {
+      reportError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const limited = !!s.usageLimit
+  return createPortal(
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <div className="w-[480px] rounded-xl border border-line bg-panel p-4 shadow-2xl">
+        <div className="mb-0.5 flex items-center gap-2 font-semibold">
+          <IconUpNext width={15} height={15} /> Queue for next window
+        </div>
+        <div className="mb-3 text-[12px] text-muted">
+          {kind}: <span className="text-fg">{label}</span>
+          {chat && t.kind === 'ws' && chat.title !== label && chat.title !== 'New chat' ? ` › ${chat.title}` : ''}
+        </div>
+        <textarea
+          autoFocus
+          rows={3}
+          className="w-full resize-none rounded-md border border-line bg-bg px-2.5 py-2 text-[12.5px] outline-none focus:border-accent"
+          placeholder={t.kind === 'project' ? 'What should the orchestrator work on? e.g. Finish the open threads, then start the next milestone.' : 'What should it do? e.g. Address the review comments and push.'}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') close()
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void add(false)
+          }}
+        />
+        <div className="mt-1.5 text-[11.5px] text-faint">
+          {blankMeans} {limited ? 'It starts after your usage window resets, in its place in Up next.' : 'You have usage left, so it starts soon, in its place in Up next.'}
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <button className={btn} onClick={close}>
+            Cancel
+          </button>
+          <div className="flex-1" />
+          <button className={btn} disabled={busy} onClick={() => void add(true)}>
+            Put at top
+          </button>
+          <button className="rounded-md bg-fg px-3 py-1 text-[12px] font-semibold text-bg disabled:opacity-40" disabled={busy} onClick={() => void add(false)}>
+            Add to Up next
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }

@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped |
 | Owner | Claude |
 | Requested by | Ben, 2026-11-12 |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-13 |
 
 ## Problem
 
@@ -38,6 +38,11 @@ Claude Code already does this for one interactive session: the CLI's **Continue 
 - **A paused chat** shows a banner under its last message: "Paused at your 5-hour limit · Resumes around 3:48 PM, first in line", with Move to top, Don't resume and Run now. Its sidebar row shows ❚❚ #1. A message typed into any chat while out of usage is added to Up next instead of being sent into a refused turn.
 - **Up next** (sidebar, under PRs) is the Continue work page: a status card (which limit, when it resets, what will happen), quick pickers for how many run at once and where to stop, and the ordered list. Drag to reorder. Each row can be edited (what it sends), run now, or removed. A dashed line marks which items start right away at reset and which wait for a free slot. On the right: add work for the next window (pick a chat, type what it should do), project priority (drag to order), and the last reset.
 - **Home** shows a Continue work card with the first three items, only while the plan is out of usage for the current window (Ben, 2026-11-12). Otherwise Home is unchanged.
+- **Drag from the sidebar onto Up next** (the sidebar row or the open page): a workspace, a project thread, or a project. Right-click any of them for **Queue for next window…** to do the same without dragging. A small dialog asks what it should do; leave it empty to continue where it left off. A workspace queues its current chat; a thread queues the thread; a project queues its orchestrator, which with no prompt is told to keep going on the project's open work. Put at top or Add to Up next. When the window resets, each one gets a new turn in its own chat, in order.
+
+![Dragging a thread onto Up next](../media/continue-work/drag-over.png)
+![Queue dialog](../media/continue-work/queue-dialog.png)
+
 - **Sidebar footer**: under the plan limits, "❚❚ 2 paused · 3 up next at 3:48 PM" opens Up next.
 - **Settings › Continue work**: resume paused chats (on), start at most (2 at a time), stop starting new work once the window is at (60%), order new paused chats by (project priority, then time), the continue prompt, wait for weekly limits under a day away (on), keep the Mac awake while work waits (off), notify when Up next starts (on).
 - **Automations** gain a trigger, "When my usage window resets", which runs once per reset after Up next has started.
@@ -55,6 +60,7 @@ Claude Code already does this for one interactive session: the CLI's **Continue 
 7. Paused chats resume with the continue prompt; queued work sends its own text, in the same chat (same Claude session).
 8. The check runs every 30 seconds, when a turn ends, when the Mac wakes, and on launch. Late starts (asleep or closed at reset) are noted in the reset log.
 9. Keep Mac awake holds a `prevent-app-suspension` power-save blocker only while out of usage with items waiting.
+10. Workspaces, project threads and projects can be dragged from the sidebar onto Up next, or queued from their right-click menu. A workspace resolves to its active chat (else its newest non-review chat), a thread to its chat, a project to its orchestrator chat (opened if needed). An empty prompt sends "continue where you left off" (the Settings continue prompt for a paused chat; for a project, "keep going on the project's open work").
 
 ## Design
 
