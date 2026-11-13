@@ -15,11 +15,13 @@ An open-source, MIT-licensed alternative to [Conductor](https://conductor.build)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS](https://img.shields.io/badge/macOS-Apple%20silicon%20%7C%20Intel-lightgrey)
 
-[Download](https://github.com/Benbentwo/choo-choo/releases/latest) · [Features](#features) · [Coming from Conductor](#coming-from-conductor) · [Docs](docs/README.md) · [Contributing](CONTRIBUTING.md)
+[Download](https://github.com/Benbentwo/choo-choo/releases/latest) · [Features](#features) · [Coming from Conductor](#coming-from-conductor) · [Docs](docs/README.md) · [Contributing](#contributing)
 
 </div>
 
-<!-- Screenshot or GIF goes here: docs/media/hero.png (1600x1000, dark theme, a sample repo with 3 workspaces running). -->
+<p align="center">
+  <img src="docs/media/gifs/parallel-workspaces.gif" alt="Starting two workspaces from the sidebar. Each agent works in its own git worktree, and the two chats sit side by side in split panes." width="900">
+</p>
 
 ## Why Choo Choo
 
@@ -38,12 +40,21 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
 - **Split panels and resizable panes.** Put workspaces and chats side by side, drag either sidebar to size it, and expand the right panel with ⌘⇧E.
 
+<p align="center">
+  <img src="docs/media/gifs/projects-threads.gif" alt="A request in a project's chat starts a thread. The thread starts a workspace in each of two repos, and each agent makes its change in its own worktree." width="900"><br>
+  <sub>Ask a project for something; it opens a thread, which starts a workspace (git worktree and agent) in each repo it touches.</sub>
+</p>
+
 **Review and ship**
 - **Build and Review modes.** Each workspace knows whether you're building it or reviewing someone else's PR, and the top right shows the PR and one button for the next step.
 - **Review before you ship.** Diffs against the PR's target branch, an agent code review with inline Fix buttons, and line comments that go to the agent or into a GitHub review.
 - **PRs page.** Every open PR waiting on your review, plus your own, grouped by repo. One click opens a workspace on the PR's branch. "Since your review" shows only what the author changed.
 - **Stacked PRs.** Keep a stack of PRs in one workspace, switch layers in one click, and let the app restack the PRs above after a change.
 - **PRs in one click.** Create a PR or draft, watch checks, re-run failures and squash-merge, all through your `gh` login.
+
+<p align="center">
+  <img src="docs/media/gifs/prs-page.gif" alt="The PRs page lists PRs waiting on your review and your own, grouped by repo, with To review, Mine and All filters." width="900">
+</p>
 
 **Stay on top of usage**
 - **Plan limits in the sidebar**, and a **Usage page** with a year of plan window history, every limit hit, and which repos and chats used it.
@@ -117,27 +128,9 @@ Codex is optional: install the Codex CLI (`npm i -g @openai/codex`) and run `cod
 
 Each feature has a PRD with the details in [docs/prd/](docs/README.md#prds).
 
-## Develop
+## Contributing
 
-Requires macOS, Node 22+ and git.
-
-```sh
-npm install      # also downloads Electron and rebuilds node-pty for it
-npm run dev      # launch with hot reload
-npm run typecheck
-npm test         # unit tests
-npm run dist:mac # build arm64 and Intel .dmg and .zip files into dist/
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) to send a change.
-
-Project docs live in [docs/](docs/README.md): the [product overview](docs/product.md), [architecture](docs/architecture.md), a PRD for each feature area and the decision records behind them.
-
-### Comment mode
-
-In dev mode, press ⌘⇧K (or click the "Comment" pill), click any element and type what should change. The note and screenshots land in `.feedback/`, and a Claude Code session told to "watch for my comments" makes the change ([CLAUDE.md](CLAUDE.md) explains how). In a release build, ⌘⇧K opens a workspace on this repo with your note, or a prefilled GitHub issue.
-
-Maintainers: releases, betas, signing and the Homebrew cask are covered in [docs/releasing.md](docs/releasing.md).
+Bug reports, ideas and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to send a change, and [docs/development.md](docs/development.md) covers building from source and the project docs.
 
 ## License
 

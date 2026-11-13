@@ -1,0 +1,127 @@
+{
+  "titles": [
+    {
+      "match": "dark mode",
+      "title": "Dark mode toggle",
+      "branch": "dark-mode-toggle"
+    },
+    {
+      "match": "flaky",
+      "title": "Fix flaky orders test",
+      "branch": "fix-flaky-orders-test"
+    }
+  ],
+  "turns": [
+    {
+      "match": "dark mode",
+      "steps": [
+        {
+          "sleep": 8000
+        },
+        {
+          "text": "I'll find where the theme lives, then add a toggle to the header."
+        },
+        {
+          "tool": "Grep",
+          "input": {
+            "pattern": "theme",
+            "path": "src"
+          },
+          "result": "src/theme.ts",
+          "wait": 1200
+        },
+        {
+          "tool": "Read",
+          "input": {
+            "file_path": "src/theme.ts"
+          },
+          "result": "export const theme = { accent: \"#3b82f6\" }",
+          "wait": 1200
+        },
+        {
+          "tool": "Edit",
+          "input": {
+            "file_path": "src/theme.ts"
+          },
+          "writeFile": {
+            "path": "src/theme.ts",
+            "content": "export type Mode = 'light' | 'dark'\n\nexport const theme = { accent: '#3b82f6' }\n\n/** Follows the system setting until the person picks one. */\nexport function initialMode(): Mode {\n  const saved = localStorage.getItem('mode')\n  if (saved === 'light' || saved === 'dark') return saved\n  return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'\n}\n\nexport function setMode(mode: Mode) {\n  document.documentElement.dataset.mode = mode\n  localStorage.setItem('mode', mode)\n}\n"
+          },
+          "result": "Edited.",
+          "wait": 1500
+        },
+        {
+          "tool": "Write",
+          "input": {
+            "file_path": "src/components/ModeToggle.tsx"
+          },
+          "writeFile": {
+            "path": "src/components/ModeToggle.tsx",
+            "content": "import { useState } from 'react'\nimport { initialMode, setMode, type Mode } from '../theme'\n\nexport function ModeToggle() {\n  const [mode, set] = useState<Mode>(initialMode)\n  const flip = () => {\n    const next = mode === 'dark' ? 'light' : 'dark'\n    setMode(next)\n    set(next)\n  }\n  return <button onClick={flip} aria-label=\"Toggle dark mode\">{mode === 'dark' ? '\u2600\ufe0e' : '\u263e'}</button>\n}\n"
+          },
+          "result": "File created.",
+          "wait": 1500
+        },
+        {
+          "tool": "Bash",
+          "input": {
+            "command": "npm test",
+            "description": "Run the tests"
+          },
+          "result": "Test Files  9 passed",
+          "wait": 1800
+        },
+        {
+          "text": "Added a `ModeToggle` button. It starts from the system setting and remembers the choice. Tests pass."
+        }
+      ]
+    },
+    {
+      "match": "flaky",
+      "steps": [
+        {
+          "sleep": 2500
+        },
+        {
+          "text": "Let me run the orders test a few times to catch it failing."
+        },
+        {
+          "tool": "Bash",
+          "input": {
+            "command": "for i in 1 2 3 4 5; do npm test -- orders || break; done",
+            "description": "Repeat the orders test"
+          },
+          "result": "\u2717 orders.test.ts > createOrder returns a new id\n  expected 'a1f\u2026' not to be 'a1f\u2026'",
+          "wait": 2200
+        },
+        {
+          "text": "It fails when two orders get the same mocked id. The test stubs `crypto.randomUUID` once for the whole file."
+        },
+        {
+          "tool": "Edit",
+          "input": {
+            "file_path": "src/routes/orders.ts"
+          },
+          "writeFile": {
+            "path": "src/routes/orders.ts",
+            "content": "import { randomUUID } from 'node:crypto'\n\nexport async function createOrder(req: { items: string[] }, newId: () => string = randomUUID) {\n  return { id: newId(), items: req.items }\n}\n"
+          },
+          "result": "Edited.",
+          "wait": 1500
+        },
+        {
+          "tool": "Bash",
+          "input": {
+            "command": "for i in $(seq 20); do npm test -- orders || exit 1; done",
+            "description": "Repeat the orders test 20 times"
+          },
+          "result": "20 runs passed",
+          "wait": 2000
+        },
+        {
+          "text": "Fixed: `createOrder` takes the id generator as a parameter, so the test passes its own. 20 runs in a row pass."
+        }
+      ]
+    }
+  ]
+}

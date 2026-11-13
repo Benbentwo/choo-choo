@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+// A stand-in GitHub CLI for recording README GIFs: answers the PRs page searches from
+// $CHOO_DEMO_GH (a JSON file with `review`, `reviewed` and `mine` lists) and fails everything else
+// the way a repo with no GitHub remote would. See docs/demo-gifs.md.
+const { readFileSync } = require('node:fs')
+const args = process.argv.slice(2)
+const data = process.env.CHOO_DEMO_GH ? JSON.parse(readFileSync(process.env.CHOO_DEMO_GH, 'utf8')) : {}
+if (args[0] === 'auth' && args[1] === 'status') process.exit(0)
+if (args[0] === 'api' && args[1] === 'graphql') {
+  const q = args.find((a) => a.startsWith('query=')) ?? ''
+  const role = /^query=query \{\s*(review|reviewed|mine): search/.exec(q)?.[1]
+  if (role) {
+    const nodes = (data[role] ?? []).map((p) => ({
+      number: p.number, title: p.title, url: `https://github.com/${p.repo}/pull/${p.number}`, isDraft: !!p.draft,
+      headRefName: p.branch ?? `pr-${p.number}`, headRefOid: '0'.repeat(40), baseRefName: 'main', isCrossRepository: false,
+      updatedAt: new Date(Date.now() - (p.ago ?? 60) * 60_000).toISOString(), additions: p.additions ?? 10, deletions: p.deletions ?? 2,
+      reviewDecision: p.review ?? null, author: { login: p.author }, repository: { nameWithOwner: p.repo },
+      commits: { nodes: [{ commit: { statusCheckRollup: p.checks ? { state: p.checks } : null } }] }
+    }))
+    process.stdout.write(JSON.stringify({ data: { [role]: { nodes } } }))
+    process.exit(0)
+  }
+  process.stdout.write('{"data":{}}')
+  process.exit(0)
+}
+process.stderr.write('no git remotes found\n')
+process.exit(1)

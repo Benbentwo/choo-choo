@@ -1,0 +1,139 @@
+#!/usr/bin/env node
+// A stand-in for the Claude Code binary, for recording README GIFs. It speaks just enough of the
+// Agent SDK's stream-json protocol to play back scripted turns from $CHOO_DEMO_SCRIPT, including calls
+// to the app's own MCP tools (so start_workspace really creates the worktree). It never reaches a model.
+// See docs/demo-gifs.md.
+const { readFileSync, writeFileSync, mkdirSync } = require('node:fs')
+const { dirname, resolve } = require('node:path')
+const { randomUUID } = require('node:crypto')
+const readline = require('node:readline')
+
+const args = process.argv.slice(2)
+const log = (s) => process.env.CHOO_DEMO_LOG && require('node:fs').appendFileSync(process.env.CHOO_DEMO_LOG, `${process.pid} ${s}\n`)
+log(`argv ${JSON.stringify(args)}`)
+if (args.includes('--version') || args.includes('-v')) {
+  process.stdout.write('2.1.400 (Claude Code)\n')
+  process.exit(0)
+}
+// Subcommands the app runs outside a session (plugin list, mcp list, …): answer empty.
+if (args[0] && !args[0].startsWith('-')) {
+  process.stdout.write(args.includes('--json') ? '[]\n' : '')
+  process.exit(0)
+}
+
+const script = process.env.CHOO_DEMO_SCRIPT ? JSON.parse(readFileSync(process.env.CHOO_DEMO_SCRIPT, 'utf8')) : { turns: [] }
+const speed = Number(process.env.CHOO_DEMO_SPEED || 1)
+const sessionId = randomUUID()
+const modelArg = (args.find((a) => a.startsWith('--model=')) ?? '').slice(8) || (args.includes('--model') ? args[args.indexOf('--model') + 1] : 'opus')
+const model = { opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5', haiku: 'claude-haiku-5-5', fable: 'claude-fable-5-2' }[modelArg] || modelArg
+const out = (m) => process.stdout.write(JSON.stringify(m) + '\n')
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms / speed))
+
+let reqSeq = 0
+const waiting = new Map()
+function control(request) {
+  const request_id = `demo-${++reqSeq}`
+  out({ type: 'control_request', request_id, request })
+  return new Promise((resolve) => waiting.set(request_id, resolve))
+}
+
+let mcpId = 100
+async function callMcp(server, name, input) {
+  const res = await control({ subtype: 'mcp_message', server_name: server, message: { jsonrpc: '2.0', id: ++mcpId, method: 'tools/call', params: { name, arguments: input } } })
+  const r = res?.mcp_response?.result
+  const text = (r?.content ?? []).map((c) => c.text ?? '').join('\n') || JSON.stringify(res?.mcp_response?.error ?? r ?? {})
+  return { text, isError: !!(r?.isError || res?.mcp_response?.error) }
+}
+
+function textOf(content) {
+  if (typeof content === 'string') return content
+  return (content ?? []).map((b) => (b.type === 'text' ? b.text : '')).join('')
+}
+
+function pickTurn(prompt) {
+  for (const t of script.turns) if (new RegExp(t.match, 's').test(prompt)) return t
+  return null
+}
+
+async function streamText(text) {
+  out({ type: 'stream_event', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } })
+  const words = text.split(/(\s+)/)
+  for (let i = 0; i < words.length; i += 3) {
+    out({ type: 'stream_event', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: words.slice(i, i + 3).join('') } } })
+    await sleep(45)
+  }
+  out({ type: 'assistant', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), message: { id: randomUUID(), role: 'assistant', model, content: [{ type: 'text', text }] } })
+}
+
+async function playTurn(prompt) {
+  // The app's one-shot naming prompts get a JSON title; everything else plays the first matching turn.
+  const naming = /^(Name this coding task|Below is a coding session)/.test(prompt)
+  const turn = naming ? null : pickTurn(prompt)
+  const started = Date.now()
+  if (!turn) {
+    // Naming and other one-shot helper prompts.
+    const m = /Task:\n([\s\S]*)$/.exec(prompt)
+    const title = (script.titles ?? []).find((t) => new RegExp(t.match, 's').test(prompt))
+    const reply = title ? JSON.stringify({ title: title.title, branch: title.branch }) : m ? JSON.stringify({ title: 'Demo task', branch: 'demo-task' }) : 'OK.'
+    out({ type: 'assistant', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), message: { id: randomUUID(), role: 'assistant', model, content: [{ type: 'text', text: reply }] } })
+  } else {
+    for (const step of turn.steps) {
+      if (step.sleep) await sleep(step.sleep)
+      if (step.text) await streamText(step.text)
+      if (step.tool) {
+        const id = `toolu_${randomUUID().replace(/-/g, '').slice(0, 20)}`
+        const name = step.mcp ? `mcp__${step.mcp}__${step.tool}` : step.tool
+        out({ type: 'assistant', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), message: { id: randomUUID(), role: 'assistant', model, content: [{ type: 'tool_use', id, name, input: step.input ?? {} }] } })
+        await sleep(step.wait ?? 600)
+        if (step.writeFile) {
+          const f = resolve(process.cwd(), step.writeFile.path)
+          mkdirSync(dirname(f), { recursive: true })
+          writeFileSync(f, step.writeFile.content)
+        }
+        const r = step.mcp ? await callMcp(step.mcp, step.tool, step.input ?? {}) : { text: step.result ?? '', isError: false }
+        out({ type: 'user', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: r.text, is_error: r.isError }] } })
+      }
+    }
+  }
+  out({
+    type: 'result', subtype: 'success', is_error: false, session_id: sessionId, uuid: randomUUID(),
+    duration_ms: Date.now() - started, num_turns: 1, result: '', total_cost_usd: turn?.cost ?? 0.01,
+    modelUsage: { [model]: { inputTokens: 1000, outputTokens: 200, contextWindow: 1000000 } }
+  })
+}
+
+let queue = Promise.resolve()
+let inited = false
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  log(`in ${line.slice(0, 300)}`)
+  if (!line.trim()) return
+  let m
+  try { m = JSON.parse(line) } catch { return }
+  if (m.type === 'control_response') {
+    const id = m.response?.request_id
+    const w = waiting.get(id)
+    if (w) { waiting.delete(id); w(m.response?.response ?? {}) }
+    return
+  }
+  if (m.type === 'control_request') {
+    const sub = m.request?.subtype
+    const response = sub === 'initialize'
+      ? { commands: [], agents: [], output_style: 'default', available_output_styles: ['default'], models: [], account: {} }
+      : {}
+    out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response } })
+    if (sub === 'interrupt') process.exit(0)
+    return
+  }
+  if (m.type === 'user') {
+    const prompt = textOf(m.message?.content)
+    queue = queue.then(async () => {
+      if (!inited) {
+        inited = true
+        out({ type: 'system', subtype: 'init', session_id: sessionId, uuid: randomUUID(), model, cwd: process.cwd(), tools: [], mcp_servers: [], slash_commands: [], permissionMode: 'bypassPermissions', apiKeySource: 'none' })
+      }
+      await playTurn(prompt)
+    })
+  }
+})
+rl.on('close', () => queue.then(() => process.exit(0)))
