@@ -9,7 +9,7 @@ import type { Layout, SavedLayout } from './layout'
 import type { AddonActionContext, AddonCallResult, AddonContext, AddonDevResult, AddonGrant, AddonInfo, AddonReloaded, AddonSource, AvailableAddon, AddonAppEvent, AddonToolCall, PinStatus } from './addons'
 import type { PrDiffTarget, PrHeadSync, PrReviewInfo, ReviewDraft, ReviewEvent } from './prReview'
 import type { Interdiff, ReviewSettings } from './reviewUpdates'
-import type { ReviewWatchState } from './reviewWatch'
+import type { RequestSeen, ReviewWatchState } from './reviewWatch'
 import type { LinkContext } from './linkHref'
 export interface Repo {
   id: string
@@ -737,6 +737,8 @@ export interface AppState {
   automationLedger?: Record<string, string[]>
   /** Review updates: where each PR you review stood at the last look (shared/reviewWatch.ts). */
   reviewWatch?: ReviewWatchState
+  /** New review requests: PRs asking for your review at recent looks (shared/reviewWatch.ts). Unset until the setting is on. */
+  reviewRequests?: RequestSeen
   /** Where the PR inbox stood at the last GitHub poll, for GitHub-event automations. */
   githubWatch?: GithubWatchState
   /** Up next: what starts, in order, when the usage window resets. */

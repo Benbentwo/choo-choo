@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | Shipped (PRs #100, #101, #102) |
+| Status | Shipped (PRs #100, #101, #102; new review requests in a follow-up) |
 | Owner | Choo Choo maintainers |
 | Requested by | Ben, 2026-11-12 |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-13 |
 
 ## Problem
 
@@ -43,6 +43,8 @@ Keep quiet about: merges from the base branch (on), rebases that leave the chang
 **PRs page.** The To review list now also has the open PRs you already reviewed (GitHub drops them from "review requested" once you review). A PR that changed for you is bold with an orange dot and says why: "3 files changed since your review", "answered 2 of your comments", "asked for your review again", "ready for review". A quiet update says what happened in grey: "quiet update: merged main, the PR's own changes are the same". A new **Updated for you** filter lists only those; the sidebar's PRs row shows "2 new". The row's button reads **Review changes**. Opening the PR, or **Mark all seen**, clears the mark.
 
 **Notifications.** One macOS notification per PR that changed for you, naming who and why. Clicking it opens the PR in a workspace on the Review tab with Since your review on. Optional quiet hours.
+
+**New review requests** (opt-in, added 2026-11-13). Settings › Reviews › "Notify me when someone asks for my review" (off by default) sends a macOS notification when a PR newly asks for your review: "Review requested: #482 Show trip weather on the itinerary", "maya-chen asked for your review. trailhead/web". Clicking it opens the PR in a workspace on the Review tab. Only requests that appear after a check count: the first check after launch, or after turning the setting on, remembers the PRs already waiting and says nothing. PRs you already reviewed are left to "I'm asked to review again", and your own PRs never count. A request that drops off the list for a day is forgotten, so being asked again later notifies again; one failed check doesn't. Quiet hours apply. The list of requests seen lives in the app state as `reviewRequests` (`newRequests` in `src/shared/reviewWatch.ts`) and is dropped when the setting is off.
 
 **When it checks.** Every 2 minutes by default; 1, 2 and 5 minutes are offered and any number of minutes from 1 to 120 can be typed. It also checks when you open the PRs page, when you open a workspace on a PR you review, and when the window comes to the front.
 
@@ -90,5 +92,6 @@ On by default. Settings live in `Settings.reviews` and are filled in by `normali
 
 ## Future work
 
+- New review requests could also show "new" on the sidebar's PRs row, and start automations (automations already have a "review requested" event).
 - Notifications for your own PRs (new reviews and comments).
 - A menu-bar mode that keeps checking when the window is closed.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { inHours, look, markSeen, notification, toUpdate, type PrDetail, type PatchDelta, type ReviewWatchEntry } from '../src/shared/reviewWatch'
+import { inHours, look, markSeen, newRequests, notification, REQUEST_FORGET_MS, requestNotification, toUpdate, type PrDetail, type PatchDelta, type ReviewWatchEntry } from '../src/shared/reviewWatch'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '../src/shared/reviewUpdates'
 import { parseDetail, detailQuery } from '../src/main/reviewWatch'
 import { groupByRepo, matchesFilter, parsePrInbox, type InboxPr } from '../src/shared/prInbox'
@@ -224,5 +224,48 @@ describe('automations', () => {
     expect(e).toMatchObject({ event: 'review_update', repo: 'example-org/web-app', number: 61, detail: 'changed for you since your review: 2 files changed since your review, answered your comment', key: 'review_update:example-org/web-app#61:code:h2|reply:t1:x' })
     expect(GITHUB_EVENTS.some((x) => x.id === 'review_update')).toBe(true)
     expect(isReviewEvent('review_update')).toBe(true)
+  })
+})
+
+describe('new review requests', () => {
+  const asked = (number: number, over: Partial<InboxPr> = {}) => pr({ number, roles: ['review'], ...over })
+  const t0 = Date.parse('2026-11-13T09:00:00Z')
+
+  it('stays quiet on the first look and remembers the backlog', () => {
+    const { seen, news } = newRequests(undefined, [asked(1), asked(2)], t0)
+    expect(news).toEqual([])
+    expect(Object.keys(seen).sort()).toEqual(['example-org/web-app#1', 'example-org/web-app#2'])
+  })
+
+  it('tells about a PR that starts asking after that, once', () => {
+    const first = newRequests(undefined, [asked(1)], t0)
+    const second = newRequests(first.seen, [asked(1), asked(2)], t0 + 60_000)
+    expect(second.news.map((p) => p.number)).toEqual([2])
+    const third = newRequests(second.seen, [asked(1), asked(2)], t0 + 120_000)
+    expect(third.news).toEqual([])
+  })
+
+  it('an empty earlier look still counts as a look', () => {
+    expect(newRequests({}, [asked(3)], t0).news.map((p) => p.number)).toEqual([3])
+  })
+
+  it('leaves out PRs you already reviewed (that is "asked again") and your own', () => {
+    const { seen, news } = newRequests({}, [asked(4, { roles: ['review', 'reviewed'] }), asked(5, { roles: ['mine', 'review'] }), pr({ number: 6, roles: ['reviewed'] })], t0)
+    expect(news).toEqual([])
+    expect(seen).toEqual({})
+  })
+
+  it('keeps a request through a missed look, and forgets it after a day off the list', () => {
+    const first = newRequests({}, [asked(7)], t0)
+    const gone = newRequests(first.seen, [], t0 + 60_000)
+    expect(newRequests(gone.seen, [asked(7)], t0 + 120_000).news).toEqual([])
+    const later = newRequests(gone.seen, [], t0 + REQUEST_FORGET_MS + 1)
+    expect(later.seen).toEqual({})
+    expect(newRequests(later.seen, [asked(7)], t0 + REQUEST_FORGET_MS + 2).news.map((p) => p.number)).toEqual([7])
+  })
+
+  it('names the PR, who asked and the repo', () => {
+    expect(requestNotification(asked(8, { title: 'Add search' }))).toEqual({ title: 'Review requested: #8 Add search', body: 'dana asked for your review. example-org/web-app' })
+    expect(requestNotification(asked(9, { isDraft: true })).body).toContain('(draft)')
   })
 })
