@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { Settings } from '@shared/types'
-import type { UpdateStatus } from '@shared/updates'
+import { isNewer, type UpdateStatus } from '@shared/updates'
+import { changeCount, type ReleaseNote } from '@shared/releaseNotes'
+import { busyLine, waitingLine } from '@shared/restart'
 import { reportError } from '../store'
 
 /** Live update status from the main process. */
@@ -23,8 +26,8 @@ const btn = 'rounded-md border border-line px-2.5 py-1 hover:bg-hover disabled:o
 const primary = 'rounded-md bg-fg px-2.5 py-1 text-[12px] font-medium text-bg disabled:opacity-50'
 
 function appAction(a: UpdateStatus['app']): string | null {
-  if (a.state === 'ready') return 'Restart to update'
-  if (a.state === 'installing') return 'Updating…'
+  if (a.state === 'ready') return a.running ? 'Restart when idle' : 'Restart to update'
+  if (a.state === 'installing') return a.method === 'brew' ? 'Updating…' : 'Restarting…'
   if (a.state !== 'available') return null
   return a.method === 'brew' ? 'Update with Homebrew' : 'Download'
 }
@@ -40,9 +43,9 @@ function appLine(a: UpdateStatus['app']): string {
     case 'downloading':
       return `Downloading ${a.latest}…`
     case 'ready':
-      return `${a.latest} has downloaded`
+      return a.restartWhenIdle ? `${a.latest} has downloaded. ${waitingLine(a.running ?? 0)}` : `${a.latest} has downloaded${a.running ? `. ${busyLine(a.running)}` : ''}`
     case 'installing':
-      return `Running brew upgrade --cask choo-choo…`
+      return a.method === 'brew' ? `Running brew upgrade --cask choo-choo…` : 'Restarting…'
     case 'error':
     case 'unavailable':
       return a.error ?? 'Could not check'
@@ -123,14 +126,22 @@ export function UpdatesSettings({ settings, save }: { settings: Settings; save: 
           </>
         }
       >
-        {action && (
-          <button className={primary} disabled={a.state === 'installing'} onClick={() => void window.api.installAppUpdate().catch(reportError)}>
-            {action}
-          </button>
-        )}
+        <WhatsNewButton app={a} />
+        <RestartButtons app={a} action={action} />
         <button className={btn} disabled={a.state === 'checking' || a.state === 'downloading' || a.state === 'installing'} onClick={() => check('app')}>
           Check now
         </button>
+      </Row>
+      <Row
+        label="Pick up interrupted chats after a restart"
+        hint="When Choo Choo restarts, quits or closes while Claude is working, those chats continue in the same session the next time it opens."
+      >
+        <input
+          type="checkbox"
+          aria-label="Pick up interrupted chats after a restart"
+          checked={settings.resumeAfterRestart}
+          onChange={(e) => save({ resumeAfterRestart: e.target.checked })}
+        />
       </Row>
       <Row label="Check for Claude Code updates" hint="Compares the Claude Code your agents run with the newest release on npm, at start and every 6 hours.">
         <input type="checkbox" aria-label="Check for Claude Code updates" checked={settings.checkClaudeUpdates} onChange={(e) => save({ checkClaudeUpdates: e.target.checked })} />
@@ -183,14 +194,21 @@ export function UpdateBanners({ openSettings }: { openSettings: () => void }) {
   return (
     <>
       {action && (
-        <div className="mx-2 mb-2 rounded-lg border border-line bg-raised p-3">
-          <div className="mb-1 font-medium">{a.state === 'ready' ? 'Update ready' : 'Update available'}</div>
+        <div className="mx-2 mb-2 rounded-lg border border-line bg-raised p-3" data-testid="update-card">
+          <div className="mb-1 font-medium">{a.state === 'ready' || (a.state === 'installing' && a.method !== 'brew') ? 'Update ready' : 'Update available'}</div>
           <div className="mb-2 text-[12px] text-muted">
-            {a.state === 'ready' ? `Choo Choo ${a.latest} has downloaded.` : a.state === 'installing' ? 'Updating with Homebrew…' : `Choo Choo ${a.latest} is out. You have ${a.current}.`}
+            {a.state === 'ready'
+              ? `Choo Choo ${a.latest} has downloaded.${a.restartWhenIdle ? ` ${waitingLine(a.running ?? 0)}` : a.running ? ` ${busyLine(a.running)}` : ''}`
+              : a.state === 'installing'
+                ? a.method === 'brew'
+                  ? 'Updating with Homebrew…'
+                  : 'Restarting…'
+                : `Choo Choo ${a.latest} is out. You have ${a.current}.${a.running && a.method === 'brew' ? ` ${busyLine(a.running)}` : ''}`}
           </div>
-          <button className={primary} disabled={a.state === 'installing'} onClick={() => void window.api.installAppUpdate().catch(reportError)}>
-            {action}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <RestartButtons app={a} action={action} />
+            <WhatsNewButton app={a} />
+          </div>
         </div>
       )}
       {showClaude && (
@@ -217,5 +235,140 @@ export function UpdateBanners({ openSettings }: { openSettings: () => void }) {
         </div>
       )}
     </>
+  )
+}
+
+/** Whether installing quits the app, so it should wait for running chats. */
+const restarts = (a: UpdateStatus['app']) => a.state === 'ready' || (a.method === 'brew' && a.state === 'available')
+
+/**
+ * The install button, which waits for running chats (Restart when idle). While it waits: Restart now
+ * (their turns pick up after) and Cancel. With chats running and nothing pending, Restart now is offered too.
+ */
+function RestartButtons({ app: a, action }: { app: UpdateStatus['app']; action: string | null }) {
+  if (!action || (a.state === 'installing' && a.method !== 'brew')) return null
+  const install = (now?: boolean) => void window.api.installAppUpdate(now ? { now } : undefined).catch(reportError)
+  if (a.restartWhenIdle)
+    return (
+      <>
+        <button className={primary} onClick={() => install(true)} title="Running chats are cut off and pick up again after the restart">
+          Restart now
+        </button>
+        <button className={`${btn} text-[12px]`} onClick={() => void window.api.cancelRestart().catch(reportError)}>
+          Cancel
+        </button>
+      </>
+    )
+  const label = a.method === 'brew' && a.state === 'available' && a.running ? 'Update when idle' : action
+  return (
+    <>
+      <button className={primary} disabled={a.state === 'installing'} onClick={() => install()}>
+        {label}
+      </button>
+      {restarts(a) && !!a.running && (
+        <button className={`${btn} text-[12px]`} onClick={() => install(true)} title="Running chats are cut off and pick up again after the restart">
+          Restart now
+        </button>
+      )}
+    </>
+  )
+}
+
+/** "What's new" next to the install button, whenever a newer version is known. */
+export function WhatsNewButton({ app: a }: { app: UpdateStatus['app'] }) {
+  const [open, setOpen] = useState(false)
+  const show = !!a.latest && isNewer(a.latest, a.current) && ['available', 'downloading', 'ready', 'installing'].includes(a.state)
+  if (!show) return null
+  return (
+    <>
+      <button className={`${btn} text-[12px]`} onClick={() => setOpen(true)}>
+        What’s new
+      </button>
+      {open && <WhatsNew app={a} close={() => setOpen(false)} />}
+    </>
+  )
+}
+
+const day = (t?: number) => (t ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '')
+
+/** The release notes for every version between yours and the update, newest first. */
+export function WhatsNew({ app: a, close }: { app: UpdateStatus['app']; close: () => void }) {
+  const [notes, setNotes] = useState<ReleaseNote[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    window.api
+      .releaseNotes()
+      .then(setNotes)
+      .catch((e) => setError((e as Error)?.message ?? String(e)))
+  }, [a.latest])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [close])
+  const action = appAction(a)
+  const count = notes ? changeCount(notes) : 0
+  return createPortal(
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <div role="dialog" aria-label="What’s new" className="flex max-h-[80vh] w-[560px] flex-col rounded-xl border border-line bg-panel shadow-2xl">
+        <div className="border-b border-line px-5 py-4">
+          <div className="text-[15px] font-semibold">What’s new in Choo Choo {a.latest}</div>
+          <div className="mt-0.5 text-[12px] text-muted">
+            Since your version, {a.current}
+            {notes && notes.length > 1 ? ` · ${notes.length} releases, ${count} changes` : ''}
+          </div>
+        </div>
+        <div className="min-h-[120px] flex-1 overflow-y-auto px-5 py-3">
+          {error ? (
+            <div className="text-[12.5px] text-muted">
+              Couldn’t load the release notes ({error}).{' '}
+              <button className="text-accent hover:underline" onClick={() => void window.api.openExternal(a.url ?? 'https://github.com/Benbentwo/choo-choo/releases')}>
+                Open the release page
+              </button>
+            </div>
+          ) : !notes ? (
+            <div className="text-[12.5px] text-faint">Loading…</div>
+          ) : !count ? (
+            <div className="text-[12.5px] text-muted">Small fixes and polish.</div>
+          ) : (
+            notes
+              .filter((r) => r.sections.length)
+              .map((r) => (
+                <section key={r.version} className="mb-4 last:mb-1">
+                  <div className="mb-1.5 flex items-baseline gap-2">
+                    <span className="font-semibold">{r.version}</span>
+                    {r.prerelease && <span className="rounded bg-hover px-1.5 text-[10.5px] text-muted">beta</span>}
+                    <span className="text-[11.5px] text-faint">{day(r.publishedAt)}</span>
+                    <div className="flex-1" />
+                    {r.url && (
+                      <button className="text-[11.5px] text-faint hover:text-fg hover:underline" onClick={() => void window.api.openExternal(r.url!)}>
+                        Release page
+                      </button>
+                    )}
+                  </div>
+                  {r.sections.map((sec, i) => (
+                    <div key={i} className="mb-2">
+                      {sec.title && <div className="mb-0.5 text-[11.5px] font-medium uppercase tracking-wide text-faint">{sec.title}</div>}
+                      <ul className="list-disc space-y-0.5 pl-5 text-[13px]">
+                        {sec.items.map((it, j) => (
+                          <li key={j}>{it}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </section>
+              ))
+          )}
+        </div>
+        <div className="flex items-center gap-2 border-t border-line px-5 py-3">
+          <button className={btn} onClick={close}>
+            Close
+          </button>
+          <div className="flex-1" />
+          {action && <RestartButtons app={a} action={action} />}
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }

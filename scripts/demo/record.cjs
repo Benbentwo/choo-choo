@@ -15,7 +15,7 @@ const WORK = process.env.CHOO_DEMO_DIR || '/tmp/choo-demo'
 const W = 1280
 const H = 800
 
-async function launch(world, script, video, ghData) {
+async function launch(world, script, video, ghData, update) {
   const env = {
     ...process.env,
     HOME: `${world}/home`,
@@ -23,7 +23,9 @@ async function launch(world, script, video, ghData) {
     CLAUDE_CONFIG_DIR: `${world}/claude`,
     PATH: `${__dirname}/bin:${process.env.PATH}`,
     CHOO_DEMO_SCRIPT: script ? join(__dirname, 'scripts', script) : '',
-    CHOO_DEMO_GH: ghData ? join(__dirname, 'scripts', ghData) : ''
+    CHOO_DEMO_GH: ghData ? join(__dirname, 'scripts', ghData) : '',
+    // A made-up downloaded update and its release notes (src/main/updater.ts).
+    CHOO_DEMO_UPDATE: update ? join(__dirname, 'scripts', update) : ''
   }
   delete env.ANTHROPIC_API_KEY
   delete env.CLAUDE_CODE_OAUTH_TOKEN
@@ -146,20 +148,83 @@ function toGif(videoDir, name, { fps = 8, width = 1000, trimStart = 0 } = {}) {
   console.log(`${gif}  ${(statSync(gif).size / 1024).toFixed(0)} KB`)
 }
 
-async function record(name, { script, gh, settings, opts }, scene) {
+async function record(name, { script, gh, update, settings, opts }, scene) {
   const world = await freshWorld(name, settings)
   const video = join(WORK, `${name}-video`)
   rmSync(video, { recursive: true, force: true })
-  const { app, page } = await launch(world, script, video, gh)
+  const { app, page } = await launch(world, script, opts?.noGif ? undefined : video, gh, update)
   await page.waitForTimeout(1500)
   await dress(page)
-  await scene(director(app, page))
+  // A scene that restarts the app gets `relaunch`, which closes it and opens it again on the same world.
+  const ctx = { app, page }
+  const relaunch = async () => {
+    await ctx.app.close()
+    Object.assign(ctx, await launch(world, script, undefined, gh, update))
+    await ctx.page.waitForTimeout(1500)
+    await dress(ctx.page)
+    return director(ctx.app, ctx.page)
+  }
+  await scene(director(app, page), relaunch)
   const trimStart = Number(opts?.trimStart ?? 0.8)
-  await app.close()
-  toGif(video, name, { ...opts, trimStart })
+  await ctx.app.close()
+  if (!opts?.noGif) toGif(video, name, { ...opts, trimStart })
+}
+
+/** Starts a workspace on trailhead-web from the sidebar + and sends it a message. */
+async function startWorkspace(d, text) {
+  const plus = d.side('trailhead-web').locator('xpath=ancestor::*[.//button[@title="New workspace"]][1]').locator('button[title="New workspace"]').first()
+  await d.moveTo(d.side('trailhead-web'))
+  await d.click(plus)
+  await d.wait(900)
+  await d.click(d.page.locator('textarea').first())
+  await d.type(text, 26)
+  await d.page.keyboard.press('Enter')
 }
 
 const scenes = {
+  // An update has downloaded while a chat runs: What's new shows the release notes, and Restart when
+  // idle waits for the chat to finish before restarting.
+  'app-updates': () =>
+    record('app-updates', { script: 'updates.json', update: 'update-release.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Add trip notes to the itinerary page')
+      await d.wait(2500)
+      await d.moveTo(d.page.getByTestId('update-card'))
+      await d.wait(900)
+      await d.shot?.('1-update-ready-while-running')
+      await d.click(d.page.getByRole('button', { name: 'What’s new' }).first())
+      await d.wait(2200)
+      await d.shot?.('2-whats-new')
+      await d.click(d.page.getByRole('dialog').getByRole('button', { name: 'Close' }))
+      await d.wait(500)
+      await d.click(d.page.getByTestId('update-card').getByRole('button', { name: 'Restart when idle' }))
+      await d.wait(1500)
+      await d.shot?.('3-restart-when-idle')
+      await d.page.getByTestId('update-card').getByText('Restarting…').first().waitFor({ timeout: 60_000 })
+      await d.wait(1500)
+      await d.shot?.('4-restarting')
+    }),
+
+  // A chat's turn is cut off by a restart and picks up in the same chat when the app opens again.
+  // Screenshots only (CHOO_DEMO_SHOTS); no GIF.
+  'resume-after-restart': () =>
+    record('resume-after-restart', { script: 'updates.json', opts: { noGif: true } }, async (d, relaunch) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Add trip notes to the itinerary page')
+      await d.page.getByText('Now running the tests', { exact: false }).first().waitFor({ timeout: 30_000 })
+      await d.wait(1500)
+      await d.shot?.('5-running-before-restart')
+      const d2 = await relaunch()
+      await d2.menu('toggle-terminal')
+      await d2.click(d2.side('Trip notes on the itinerary'))
+      await d2.wait(800)
+      await d2.page.getByText('Trip notes now show under the itinerary', { exact: false }).first().waitFor({ timeout: 30_000 })
+      await d2.wait(1200)
+      await d2.shot?.('6-picked-up-after-restart')
+    }),
+
   // The PRs page: PRs waiting on your review and your own, grouped by repo, with filters.
   'prs-page': () =>
     record('prs-page', { gh: 'prs.json' }, async (d) => {

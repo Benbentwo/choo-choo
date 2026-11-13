@@ -1,0 +1,89 @@
+{
+  "titles": [
+    {
+      "match": "trip notes",
+      "title": "Trip notes on the itinerary",
+      "branch": "trip-notes"
+    }
+  ],
+  "turns": [
+    {
+      "match": "restarted while you were working",
+      "steps": [
+        {
+          "sleep": 1500
+        },
+        {
+          "text": "Picking up where I left off. The notes component was written before the restart; checking it's intact, then wiring it into the itinerary page."
+        },
+        {
+          "tool": "Read",
+          "input": {
+            "file_path": "src/TripNotes.tsx"
+          },
+          "result": "export function TripNotes() { \u2026 }",
+          "wait": 900
+        },
+        {
+          "tool": "Edit",
+          "input": {
+            "file_path": "src/Itinerary.tsx"
+          },
+          "writeFile": {
+            "path": "src/Itinerary.tsx",
+            "content": "import { TripNotes } from './TripNotes'\n\nexport function Itinerary() {\n  return (\n    <main>\n      <h1>Itinerary</h1>\n      <TripNotes />\n    </main>\n  )\n}\n"
+          },
+          "wait": 900
+        },
+        {
+          "text": "Done. Trip notes now show under the itinerary, saved per trip."
+        }
+      ]
+    },
+    {
+      "match": "trip notes",
+      "steps": [
+        {
+          "sleep": 1200
+        },
+        {
+          "text": "I'll add a notes box to the itinerary page that saves per trip."
+        },
+        {
+          "tool": "Grep",
+          "input": {
+            "pattern": "Itinerary",
+            "path": "src"
+          },
+          "result": "src/Itinerary.tsx",
+          "wait": 1500
+        },
+        {
+          "tool": "Write",
+          "input": {
+            "file_path": "src/TripNotes.tsx"
+          },
+          "writeFile": {
+            "path": "src/TripNotes.tsx",
+            "content": "import { useState } from 'react'\n\n/** Free-form notes for a trip, saved in the browser. */\nexport function TripNotes({ tripId }: { tripId: string }) {\n  const key = `notes:${tripId}`\n  const [text, setText] = useState(() => localStorage.getItem(key) ?? '')\n  return <textarea value={text} onChange={(e) => (setText(e.target.value), localStorage.setItem(key, e.target.value))} />\n}\n"
+          },
+          "wait": 1500
+        },
+        {
+          "text": "Now running the tests for the itinerary page."
+        },
+        {
+          "tool": "Bash",
+          "input": {
+            "command": "npm test -- itinerary"
+          },
+          "result": "\u2713 itinerary renders (12 ms)\n\u2713 notes persist per trip (8 ms)",
+          "wait": 14000
+        },
+        {
+          "text": "Tests pass. Trip notes are on the itinerary page."
+        }
+      ]
+    }
+  ]
+}

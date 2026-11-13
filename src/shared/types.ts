@@ -11,6 +11,8 @@ import type { PrDiffTarget, PrHeadSync, PrReviewInfo, ReviewDraft, ReviewEvent }
 import type { Interdiff, ReviewSettings } from './reviewUpdates'
 import type { RequestSeen, ReviewWatchState } from './reviewWatch'
 import type { LinkContext } from './linkHref'
+import type { ChatInterrupt } from './restart'
+import type { ReleaseNote } from './releaseNotes'
 export interface Repo {
   id: string
   name: string
@@ -337,6 +339,8 @@ export interface Chat {
   remote?: ChatRemote
   /** The last turn stopped on a plan usage limit. See shared/continueWork.ts. */
   paused?: ChatPause
+  /** The app quit, restarted or crashed during a turn; it picks up on the next launch. See shared/restart.ts. */
+  interrupted?: ChatInterrupt
   createdAt: number
 }
 
@@ -437,6 +441,8 @@ export type ChatItem =
       fromAdvisor?: boolean
       /** Sent while Claude was working: folded into that turn (steer) or run after it (queue). */
       sentWhileRunning?: 'steer' | 'queue'
+      /** Sent automatically to pick up a turn the app's restart cut off. */
+      afterRestart?: boolean
     }
   | { id: string; kind: 'note'; text: string; ts: number }
   | {
@@ -560,6 +566,8 @@ export interface Settings extends AppearanceSettings {
   updateChannel: 'stable' | 'beta'
   /** Check npm for new Claude Code versions. Checking by hand still works when off. */
   checkClaudeUpdates: boolean
+  /** On launch, continue chats whose turn a restart, quit or crash cut off. */
+  resumeAfterRestart: boolean
   /** Optional agents and features, adapted from oh-my-pi. All off by default. */
   extras: Extras
   /** Give agents Notion's MCP tools when Notion is connected. */
@@ -711,6 +719,7 @@ export const DEFAULT_SETTINGS: Settings = {
   checkAppUpdates: true,
   updateChannel: 'stable',
   checkClaudeUpdates: true,
+  resumeAfterRestart: true,
   extras: DEFAULT_EXTRAS,
   notionAgentTools: true,
   telemetry: DEFAULT_TELEMETRY,
@@ -1181,8 +1190,15 @@ export interface Api {
   updateStatus(): Promise<UpdateStatus>
   /** Checks now, whatever the Settings toggles say. */
   checkForUpdates(which?: 'app' | 'claude' | 'all'): Promise<UpdateStatus>
-  /** Restarts into a downloaded update, runs brew upgrade, or opens the release page. */
-  installAppUpdate(): Promise<void>
+  /**
+   * Restarts into a downloaded update, runs brew upgrade, or opens the release page. While chats run it
+   * waits for them (Restart when idle); `now` restarts anyway and they pick up after.
+   */
+  installAppUpdate(opts?: { now?: boolean }): Promise<void>
+  /** Stops waiting to restart for an update. */
+  cancelRestart(): Promise<void>
+  /** Release notes for every version between the running one and the update, newest first. */
+  releaseNotes(): Promise<ReleaseNote[]>
   /** Runs `claude update` on your installed Claude Code. */
   updateClaude(): Promise<UpdateStatus>
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void

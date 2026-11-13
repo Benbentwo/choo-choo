@@ -5,6 +5,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { isNewer, newestVersion, parseVersion, type AppUpdateMethod, type UpdateChannel, type UpdateStatus } from '@shared/updates'
+import { notesBetween, type GithubRelease, type ReleaseNote } from '@shared/releaseNotes'
+import { busyLine } from '@shared/restart'
 import * as store from './store'
 import { claudeSource, installedExecutable } from './claudeBinary'
 
@@ -14,12 +16,24 @@ type Send = (channel: string, ...args: unknown[]) => void
 const RELEASES = 'https://github.com/Benbentwo/choo-choo/releases'
 const LATEST_RELEASE_API = 'https://api.github.com/repos/Benbentwo/choo-choo/releases/latest'
 const RECENT_RELEASES_API = 'https://api.github.com/repos/Benbentwo/choo-choo/releases?per_page=30'
+const NOTES_API = 'https://api.github.com/repos/Benbentwo/choo-choo/releases?per_page=100'
 const LATEST_CLAUDE = 'https://registry.npmjs.org/@anthropic-ai/claude-code/latest'
 const EVERY = 6 * 60 * 60 * 1000
 const BREW = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']
 
+/**
+ * For recording the README GIFs (scripts/demo, source builds only): a JSON file with a made-up
+ * downloaded update `{ current, latest, releases }`, so the update card and What's new show without GitHub.
+ */
+const DEMO_FILE = app.isPackaged ? undefined : process.env.CHOO_DEMO_UPDATE || undefined
+let demoReleases: GithubRelease[] | null = null
+
 let send: Send = () => {}
+/** How many chats have a turn running. Restarting waits for this to reach 0. */
+let busy: () => number = () => 0
 let started = false
+/** Set once the app is quitting to install an update, so interrupted chats know why. */
+let restarting = false
 const status: UpdateStatus = {
   app: { current: app.getVersion(), channel: 'stable', method: 'download', state: 'idle' },
   claude: { source: 'bundled', state: 'idle' }
@@ -85,6 +99,7 @@ let checkingApp: Promise<void> | null = null
 /** Finds the newest release on your channel. Signed builds start downloading it right away. */
 export function checkApp(): Promise<void> {
   return (checkingApp ??= (async () => {
+    if (demoReleases) return
     if (!app.isPackaged) return setApp({ state: 'unavailable', error: 'Updates are only checked in the packaged app.' })
     if (['ready', 'installing', 'downloading'].includes(status.app.state)) return
     const ch = channel()
@@ -111,15 +126,31 @@ function brewBinary() {
   return BREW.find(existsSync)
 }
 
-/** Restarts into a downloaded update, upgrades through Homebrew, or opens the release page. */
-export async function installAppUpdate() {
-  if (status.app.state === 'ready') return autoUpdater.quitAndInstall()
+export const isRestartingForUpdate = () => restarting
+
+/** Whether installing quits the app: a downloaded update, or a Homebrew upgrade. */
+const restarts = () => status.app.state === 'ready' || (status.app.method === 'brew' && status.app.state === 'available')
+
+/**
+ * Restarts into a downloaded update, upgrades through Homebrew, or opens the release page.
+ * While chats are running it waits for them to finish (Restart when idle), unless `now` is set:
+ * then their turns are cut off and pick up again after the restart (shared/restart.ts).
+ */
+export async function installAppUpdate(opts: { now?: boolean } = {}) {
+  if (restarts() && !opts.now && busy() > 0) return setApp({ restartWhenIdle: true, running: busy() })
+  if (status.app.restartWhenIdle) setApp({ restartWhenIdle: false })
+  if (status.app.state === 'ready') {
+    if (demoReleases) return setApp({ state: 'installing' })
+    restarting = true
+    return autoUpdater.quitAndInstall()
+  }
   if (status.app.method === 'brew' && status.app.state === 'available') {
     const brew = brewBinary()
     if (brew) {
       setApp({ state: 'installing', error: undefined })
       try {
         await run(brew, ['upgrade', '--cask', 'choo-choo'], { timeout: 10 * 60 * 1000, env: { ...process.env, HOMEBREW_NO_ENV_HINTS: '1' } })
+        restarting = true
         app.relaunch()
         app.exit(0)
         return
@@ -130,6 +161,37 @@ export async function installAppUpdate() {
     }
   }
   await shell.openExternal(status.app.url ?? RELEASES)
+}
+
+/** Stops waiting to restart. The update stays downloaded and installs when you next quit. */
+export function cancelRestart() {
+  setApp({ restartWhenIdle: false })
+}
+
+/** Keeps the running count fresh while an update waits, and restarts once the last chat finishes. */
+function watchBusy() {
+  if (!restarts()) {
+    if (status.app.running !== undefined || status.app.restartWhenIdle) setApp({ running: undefined, restartWhenIdle: false })
+    return
+  }
+  const n = busy()
+  if (n !== status.app.running) setApp({ running: n })
+  if (status.app.restartWhenIdle && n === 0) void installAppUpdate()
+}
+
+let notesCache: { key: string; notes: Promise<ReleaseNote[]> } | null = null
+/** "What's new": release notes for every version after the running one, up to the update. */
+export function releaseNotes(): Promise<ReleaseNote[]> {
+  const { current, latest, channel: ch } = status.app
+  if (!latest || !isNewer(latest, current)) return Promise.resolve([])
+  const key = `${current}>${latest}:${ch}`
+  if (notesCache?.key !== key) {
+    const notes = (demoReleases ? Promise.resolve(demoReleases) : getJson<GithubRelease[]>(NOTES_API)).then((list) => notesBetween(list, current, latest, ch))
+    // A failed fetch isn't cached, so opening it again retries.
+    notes.catch(() => notesCache?.key === key && (notesCache = null))
+    notesCache = { key, notes }
+  }
+  return notesCache.notes
 }
 
 // ---------- Claude Code ----------
@@ -212,10 +274,17 @@ function scheduled() {
   else void readClaude()
 }
 
-export function startUpdater(sender: Send) {
+export function startUpdater(sender: Send, opts: { busy?: () => number } = {}) {
   if (started) return
   started = true
   send = sender
+  if (opts.busy) busy = opts.busy
+  if (DEMO_FILE) {
+    const demo = JSON.parse(readFileSync(DEMO_FILE, 'utf8')) as { current: string; latest: string; releases: GithubRelease[] }
+    demoReleases = demo.releases
+    Object.assign(status.app, { current: demo.current, latest: demo.latest, state: 'ready', method: 'auto' })
+  }
+  setInterval(watchBusy, 2_000).unref?.()
   status.app.channel = channel()
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
@@ -245,7 +314,14 @@ export function onSettingsChanged(keys: string[]) {
 /** For the menu item: tells the user the outcome either way. */
 export async function checkNow(win: BrowserWindow | null) {
   const show = (msg: string, detail?: string, buttons?: string[]) => (win ? dialog.showMessageBox(win, { message: msg, detail, buttons }) : null)
-  if (status.app.state === 'ready') return installAppUpdate()
+  if (status.app.state === 'ready') {
+    const n = busy()
+    if (!n) return installAppUpdate()
+    const r = await show(`Choo Choo ${status.app.latest} is ready to install.`, busyLine(n), ['Restart when idle', 'Restart now', 'Cancel'])
+    if (r?.response === 0) return installAppUpdate()
+    if (r?.response === 1) return installAppUpdate({ now: true })
+    return
+  }
   await checkApp()
   const a = status.app
   if (a.state === 'unavailable') return void show(a.error ?? 'Updates are unavailable.')

@@ -76,6 +76,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0018](decisions/0018-add-on-dev-mode-reads-folders-in-place.md) | Add-ons under development are read from their folder and reload as it changes |
 | [0019](decisions/0019-resume-only-after-reset.md) | Stopped chats resume only after the server's reset time and once /usage shows the window open; a few at a time, never by retrying or switching accounts |
 | [0020](decisions/0020-usage-history-local-estimates.md) | Usage history stays on the Mac (window readings plus text-free response summaries), and per-workspace shares of a window are labeled estimates |
+| [0021](decisions/0021-restart-waits-then-resumes.md) | Restarting for an update waits for running chats, and turns cut off by a restart, quit or crash resume their own session on the next launch |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 

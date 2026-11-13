@@ -6,11 +6,12 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } 
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { SourceOption, WorkspaceSource } from '@shared/types'
 import type { Automation } from '@shared/automations'
-import type { Artifact, Chat, FeedbackOptions, FilePreview, PrInfo, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
+import type { Artifact, Chat, ChatItem, FeedbackOptions, FilePreview, PrInfo, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
 import { diffBase } from '@shared/stack'
 import { editMenuItems } from '@shared/editMenu'
 import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
+import { RESUME_PROMPT, chatsToResume, interruptNote } from '@shared/restart'
 import { sessionUsage } from './usage'
 import * as store from './store'
 import * as git from './git'
@@ -361,7 +362,7 @@ function sendFromPerson(chat: Chat, text: string, images: string[]) {
 }
 
 /** Starts a turn. Fire and forget; progress arrives through chat:event. */
-function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fromAdvisor?: boolean } = {}) {
+function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fromAdvisor?: boolean; afterRestart?: boolean } = {}) {
   if (agent.isRunning(chat.id)) throw new Error('Agent is already running in this chat')
   const ws = findWs(chat.workspaceId)
   const repo = store.get().repos.find((r) => r.id === ws.repoId)
@@ -383,6 +384,41 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
   // After a new thread is titled, so its telemetry carries the title.
   const env = agentEnv(ws, chat)
   void agent.send(chat, ws, text, env, emitChat, onChatDone, images.slice(0, 10), notifyAsk, extra, opts)
+}
+
+/**
+ * Picks up turns that a restart, quit or crash cut off: each chat gets a message in its own session
+ * telling Claude to carry on. Out of usage, they join Up next instead. With the setting off they just
+ * get a note. See shared/restart.ts.
+ */
+function resumeInterrupted() {
+  const st = store.get()
+  const marked = st.chats.filter((c) => c.interrupted)
+  if (!marked.length) return
+  const resume = new Set(st.settings.resumeAfterRestart ? chatsToResume(marked, st.workspaces, existsSync).map((c) => c.id) : [])
+  for (const chat of marked) {
+    const why = chat.interrupted!
+    chat.interrupted = undefined
+    // The app quit before the stopped turn could finish its tool cards; close them out.
+    for (const it of store.chatItems(chat.id))
+      if (it.kind === 'tool' && it.result === undefined) {
+        const done: ChatItem = { ...it, result: 'Cut off by the restart', isError: true }
+        store.upsertItem(chat.id, done)
+        emitChat(chat.id, { item: done })
+      }
+    try {
+      if (!resume.has(chat.id) || agent.isRunning(chat.id)) {
+        const note: ChatItem = { id: randomUUID(), kind: 'note', text: interruptNote(why.reason), ts: Date.now() }
+        store.upsertItem(chat.id, note)
+        emitChat(chat.id, { item: note })
+      } else if (continueWork.isLimited() && chat.model !== 'codex') continueWork.add(chat.id, RESUME_PROMPT, { top: true })
+      else sendToChat(chat, RESUME_PROMPT, [], { afterRestart: true })
+    } catch (e) {
+      console.warn('[resume]', chat.id, (e as Error).message)
+    }
+  }
+  store.save()
+  send('state:changed')
 }
 
 /** With projects on, a project orchestrator's first chat routes messages and the rest are threads. */
@@ -1530,7 +1566,9 @@ function registerIpc() {
   ipcMain.on('pty:kill', (_e, id: string) => pty.kill(id))
   h('updates:status', () => updates.getStatus())
   h('updates:check', (which?: 'app' | 'claude' | 'all') => updates.checkNowFor(which))
-  h('updates:install-app', () => updates.installAppUpdate())
+  h('updates:install-app', (opts?: { now?: boolean }) => updates.installAppUpdate(opts))
+  h('updates:cancel-restart', () => updates.cancelRestart())
+  h('updates:notes', () => updates.releaseNotes())
   h('updates:update-claude', () => updates.updateClaude())
   h('shell:open', (url: string) => {
     if (/^https?:\/\//.test(url)) return shell.openExternal(url)
@@ -1843,7 +1881,9 @@ app.whenReady().then(async () => {
     }
   })
   powerMonitor.on('resume', () => continueWork.onWake())
-  updates.startUpdater(send)
+  updates.startUpdater(send, { busy: () => agent.runningCount() })
+  // Chats a restart cut off: give the app a moment to settle, then pick them up.
+  setTimeout(resumeInterrupted, 3_000)
   reviewWatch.start({
     loadInbox: loadPrInbox,
     broadcast: (inbox) => send('prs:inbox', inbox),
@@ -1885,6 +1925,8 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
+  // Turns cut off here pick up on the next launch (resumeInterrupted).
+  if (agent.runningCount()) agent.markInterrupted(updates.isRestartingForUpdate() ? 'update' : 'quit')
   agent.stopAll()
   store.flush()
   pty.killAll()

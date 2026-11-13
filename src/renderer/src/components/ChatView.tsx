@@ -200,6 +200,7 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
               {item.fromAdvisor && <div className="mb-1 text-[11px] font-medium text-advisor">From the advisor</div>}
               {stripRouted(item.text).routed && <div className="mb-1 text-[11px] text-faint">Sent here from the orchestrator chat</div>}
               {stripRunMarker(item.text).reason && <div className="mb-1 text-[11px] text-faint">Automation run · {stripRunMarker(item.text).reason}</div>}
+              {item.afterRestart && <div className="mb-1 text-[11px] font-medium text-faint">Sent automatically after Choo Choo restarted</div>}
               {item.sentWhileRunning && (
                 <div className="mb-1 text-[11px] text-faint">{item.sentWhileRunning === 'steer' ? 'Sent while Claude was working · steered in' : 'Sent while Claude was working · queued'}</div>
               )}
