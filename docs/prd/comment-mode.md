@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Shipped. Dev builds since PR #12; release builds open a workspace or an issue (decision [0011](../decisions/0011-release-comments-open-a-workspace.md)) |
+| Status | Shipped. Dev builds since PR #12; release builds open a workspace or an issue (decision [0011](../decisions/0011-release-comments-open-a-workspace.md)); the 💬 bubble shows in release builds too, with a Settings switch (2026-11-13) |
 | Requested by | Ben, 2026-11-06; release builds 2026-11-10 |
 | Last updated | 2026-11-10 |
 
@@ -29,13 +29,13 @@ Dev:
 
 1. `npm run dev`.
 2. Open Claude Code in the repo and say "watch for my comments".
-3. Press ⌘⇧K (or click the Comment pill), click an element, type, press Enter.
+3. Press ⌘⇧K (or click the 💬 Comment bubble at the bottom right), click an element, type, press Enter.
 
 Claude makes the change and moves the comment to `.feedback/done/`. Renderer edits hot-reload; main or preload edits restart the app.
 
 Release:
 
-1. Press ⌘⇧K or Help > Comment on Choo Choo… (no pill in release builds).
+1. Click the 💬 Comment bubble at the bottom right, press ⌘⇧K, or use Help > Comment on Choo Choo….
 2. Click an element and type. "Send to" defaults to **choo-choo workspace**; the other choice is **GitHub issue**.
 3. **Fix it** opens a workspace on branch `comment/<slug>`, selects it, and sends Claude the note. The toast names the workspace.
 4. **Open issue** opens a prefilled issue on Benbentwo/choo-choo in the browser and copies the element screenshot so it can be pasted in.
@@ -49,7 +49,8 @@ Release:
 5. The first message carries the note, React components, selector, on-screen rect, element text (fenced as data, escaped), the app version and build commit, and how to work (typecheck, test, PRD, PR target). Screenshots are image attachments, not files in the repo.
 6. The element screenshot is always attached. The whole window is a checkbox, on in dev and off in release, because it can show private repos and code.
 7. Not signed in to `gh`: the workspace path fails with a message pointing to `gh auth login` or the issue option.
-8. The build commit is stamped at build time (`__BUILD_COMMIT__` in `electron.vite.config.ts`).
+8. The 💬 Comment bubble sits at the bottom right in dev and release builds. Settings › General › Comment bubble (on by default, `Settings.commentBubble`) hides it; ⌘⇧K and the Help menu still work, and while comment mode is on or a result is showing the bubble stays so there is a way out (`showCommentBubble` in `src/shared/uiComment.ts`).
+9. The build commit is stamped at build time (`__BUILD_COMMIT__` in `electron.vite.config.ts`).
 
 ## Design
 
@@ -57,4 +58,4 @@ Release:
 
 ## Open questions
 
-- A Settings switch to hide comment mode in release builds, if it turns out to get in the way.
+- None open. The bubble was hidden in release builds until 2026-11-13; it now shows by default with a switch to hide it.

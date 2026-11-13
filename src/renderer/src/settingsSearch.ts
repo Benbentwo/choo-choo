@@ -48,6 +48,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { section: 'general', label: 'Anthropic API key', keywords: 'token login sign in sk-ant' },
   { section: 'general', label: 'Notifications', hint: 'Notify when an agent finishes while the app is in the background.', keywords: 'alert notify done finished macos banner' },
   { section: 'general', label: 'Orchestrator updates', hint: 'Wake the orchestrator when a workspace it started finishes.', keywords: 'orchestrator wake report' },
+  { section: 'general', label: 'Comment bubble', hint: 'The 💬 Comment button at the bottom right for asking for app changes.', keywords: 'feedback comment mode pill floating button report bug suggest cmd shift k' },
   { section: 'general', label: 'Workspaces folder', hint: 'Where new workspaces are created.', keywords: 'directory path worktree location disk' },
   { section: 'general', label: 'Import from Conductor', keywords: 'migrate conductor import move' },
   { section: 'general', label: 'Delete archived workspaces after', keywords: 'archive retention cleanup days' },
@@ -84,6 +85,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { section: 'reviews', label: 'Open reviewed PRs on "Since your review"', keywords: 'interdiff since last review' },
   { section: 'reviews', label: 'Sync "Viewed" ticks with GitHub', hint: "Each file in the diff gets GitHub's own Viewed tick.", keywords: 'viewed files checkbox' },
   { section: 'reviews', label: 'Check GitHub every', keywords: 'poll interval refresh minutes' },
+  { section: 'reviews', label: 'Notify me when someone asks for my review', hint: 'A notification when a PR newly asks for your review.', keywords: 'review request notification alert reviewer asked' },
 
   // Projects
   { section: 'projects', label: 'Projects', hint: 'Your projects and their workspaces.', keywords: 'repos repositories remove delete workspaces manage' },

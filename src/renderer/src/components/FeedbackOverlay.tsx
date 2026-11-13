@@ -1,8 +1,8 @@
-// Comment mode: press ⌘⇧K (Help > Comment on Choo Choo, or the pill in dev), click any element, type a note.
+// Comment mode: press ⌘⇧K (Help > Comment on Choo Choo, or the 💬 bubble at the bottom right), click any element, type a note.
 // In dev the note lands in .feedback/ for the agent iterating on the checkout; in a packaged build it opens a
 // workspace on choo-choo itself, or a GitHub issue (see src/main/uiComment.ts).
 import { useEffect, useRef, useState } from 'react'
-import { TARGET_LABELS, buildLabel, type CommentInfo, type CommentResult, type CommentSubmit, type CommentTarget } from '@shared/uiComment'
+import { TARGET_LABELS, buildLabel, showCommentBubble, type CommentInfo, type CommentResult, type CommentSubmit, type CommentTarget } from '@shared/uiComment'
 import { refreshState, useStore } from '../store'
 
 type Bridge = {
@@ -72,6 +72,7 @@ export function FeedbackOverlay() {
   const [sendTo, setSendTo] = useState<CommentTarget>('local')
   const [includeFull, setIncludeFull] = useState(true)
   const textRef = useRef<HTMLTextAreaElement>(null)
+  const bubbleSetting = useStore((s) => s.settings.commentBubble)
 
   useEffect(() => {
     void bridge?.info().then((i) => {
@@ -315,7 +316,7 @@ export function FeedbackOverlay() {
           </div>
         </div>
       )}
-      {(!info.packaged || active || toast) && (
+      {showCommentBubble({ setting: bubbleSetting, active, toast: !!toast }) && (
         <button
           onClick={() => {
             setActive((a) => !a)
