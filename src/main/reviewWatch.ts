@@ -3,7 +3,7 @@ import { promisify } from 'node:util'
 import * as store from './store'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
 import { activeGlobs, comparePatches, normalizeReviewSettings, type FilePatch, type ReviewSettings } from '@shared/reviewUpdates'
-import { inHours, look, markSeen, notification, prKey, prune, toUpdate, type PatchDelta, type PrDetail, type Reason } from '@shared/reviewWatch'
+import { inHours, look, markSeen, newRequests, notification, prKey, prune, requestNotification, toUpdate, type PatchDelta, type PrDetail, type Reason } from '@shared/reviewWatch'
 
 const exec = promisify(execFile)
 
@@ -178,14 +178,30 @@ async function run(d: ReviewWatchDeps): Promise<PrInbox> {
     if (e) e.lastSeen = now
   }
   prune(state, now)
+
+  // New review requests: remembered from the first look on, told about only when they appear later.
+  const all = store.get()
+  let asked: InboxPr[] = []
+  if (s.onNewRequest) {
+    const { seen, news } = newRequests(all.reviewRequests, inbox.prs, now)
+    all.reviewRequests = seen
+    asked = news
+  } else delete all.reviewRequests
   store.save()
 
   for (const p of inbox.prs) {
     const u = toUpdate(state[prKey(p)], s)
     if (u) p.update = u
   }
+  const quiet = s.quietHoursOn && !inHours(new Date(), s.from, s.to)
+  if (!quiet) {
+    for (const pr of asked) {
+      const n = requestNotification(pr)
+      d.notify(pr, n.title, n.body)
+    }
+  }
   if (updates.length) {
-    if (s.osNotify && (!s.quietHoursOn || inHours(new Date(), s.from, s.to))) {
+    if (s.osNotify && !quiet) {
       for (const u of updates) {
         const n = notification(u.pr, u.reasons)
         d.notify(u.pr, n.title, n.body)

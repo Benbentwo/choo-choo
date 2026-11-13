@@ -6,6 +6,8 @@
  */
 
 export interface ReviewSettings {
+  /** A macOS notification when a PR newly asks for my review. Off until turned on. */
+  onNewRequest: boolean
   /** Tell me when a PR I'm reviewing changes for me. */
   notify: boolean
   /** The PR's own changes moved (non-empty interdiff). */
@@ -49,6 +51,7 @@ export interface ReviewSettings {
 export const DEFAULT_IGNORE_GLOBS = ['*.lock', 'package-lock.json', 'pnpm-lock.yaml', 'go.sum', '**/generated/**', '*.snap']
 
 export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
+  onNewRequest: false,
   notify: true,
   onCode: true,
   onReply: true,

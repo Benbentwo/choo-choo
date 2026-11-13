@@ -94,8 +94,29 @@ export function ReviewSettingsSection({
     disabled?: boolean;
   }) => <CheckRow {...p} r={r} set={set} />;
 
+  // Quiet hours cover both kinds of notification.
+  const quietOff = !r.onNewRequest && (off || !r.osNotify);
+
   return (
     <div>
+      <Group
+        title="Notify me when someone asks for my review"
+        toggle={
+          <input
+            type="checkbox"
+            aria-label="New review requests"
+            checked={r.onNewRequest}
+            onChange={(e) => set({ onNewRequest: e.target.checked })}
+          />
+        }
+      >
+        <div className="text-[12px] text-faint">
+          A macOS notification when a new PR asks for your review. Clicking it
+          opens the PR on the Review tab. PRs already waiting when you turn
+          this on stay quiet.
+        </div>
+      </Group>
+
       <Group
         title="Tell me when a PR I'm reviewing changes for me"
         toggle={
@@ -220,11 +241,11 @@ export function ReviewSettingsSection({
           disabled: off,
         })}
         <label
-          className={`flex items-center gap-2.5 py-1.5 ${off || !r.osNotify ? "opacity-50" : ""}`}
+          className={`flex items-center gap-2.5 py-1.5 ${quietOff ? "opacity-50" : ""}`}
         >
           <input
             type="checkbox"
-            disabled={off || !r.osNotify}
+            disabled={quietOff}
             checked={r.quietHoursOn}
             onChange={(e) => set({ quietHoursOn: e.target.checked })}
           />
@@ -233,7 +254,7 @@ export function ReviewSettingsSection({
             type="time"
             aria-label="From"
             className={input}
-            disabled={off || !r.osNotify || !r.quietHoursOn}
+            disabled={quietOff || !r.quietHoursOn}
             value={r.from}
             onChange={(e) => set({ from: e.target.value })}
           />
@@ -242,7 +263,7 @@ export function ReviewSettingsSection({
             type="time"
             aria-label="To"
             className={input}
-            disabled={off || !r.osNotify || !r.quietHoursOn}
+            disabled={quietOff || !r.quietHoursOn}
             value={r.to}
             onChange={(e) => set({ to: e.target.value })}
           />

@@ -201,7 +201,7 @@ type SettingsTab = ReturnType<typeof useStore.getState>['settingsTab']
 const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'general', label: 'General', hint: 'Default model, effort and permissions, notifications, branches and archiving.' },
   { id: 'appearance', label: 'Appearance', hint: 'Theme, accent color, text size, density and fonts.' },
-  { id: 'reviews', label: 'Reviews', hint: 'When a PR you review changes for you, and how you catch up on it.' },
+  { id: 'reviews', label: 'Reviews', hint: 'New review requests, when a PR you review changes for you, and how you catch up on it.' },
   { id: 'projects', label: 'Projects', hint: 'Your projects and their workspaces.' },
   { id: 'continue', label: 'Continue work', hint: 'What happens when a chat hits your plan\'s usage limit, and what starts when the window resets.' },
   { id: 'usage', label: 'Usage history', hint: 'What the Usage page keeps: plan window readings and a summary of each Claude Code response. Stays on this Mac.' },

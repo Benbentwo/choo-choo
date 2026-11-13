@@ -218,3 +218,34 @@ export function notification(pr: InboxPr, news: Reason[]): { title: string; body
   const who = news.every((r) => r.kind === 'code' || r.kind === 'push') ? `${pr.author} updated` : 'Update on'
   return { title: `${who} #${pr.number}: ${pr.title}`, body: `${why[0].toUpperCase()}${why.slice(1)}. ${pr.repo}` }
 }
+
+/** PRs asking for your review at recent looks: key → last time it was on the list (ms). */
+export type RequestSeen = Record<string, number>
+
+/** A PR asking for your review that you haven't reviewed yet and didn't open. Re-requests after a review are the "asked again" update instead. */
+export const isNewRequestCandidate = (p: Pick<InboxPr, 'roles'>) => p.roles.includes('review') && !p.roles.includes('reviewed') && !p.roles.includes('mine')
+
+/** A request that drops off the list for this long is forgotten, so asking again later notifies again. One bad poll doesn't. */
+export const REQUEST_FORGET_MS = 24 * 3600_000
+
+/**
+ * Which review requests are new since the last look. With no earlier look (first launch, or the
+ * setting just turned on) nothing is new: the backlog is remembered, not announced.
+ */
+export function newRequests(prev: RequestSeen | undefined, prs: InboxPr[], now: number): { seen: RequestSeen; news: InboxPr[] } {
+  const seen: RequestSeen = {}
+  for (const [k, t] of Object.entries(prev ?? {})) if (now - t < REQUEST_FORGET_MS) seen[k] = t
+  const news: InboxPr[] = []
+  for (const p of prs) {
+    if (!isNewRequestCandidate(p)) continue
+    const k = prKey(p)
+    if (prev && !(k in seen)) news.push(p)
+    seen[k] = now
+  }
+  return { seen, news }
+}
+
+/** The notification for a PR that newly asks for your review. */
+export function requestNotification(pr: InboxPr): { title: string; body: string } {
+  return { title: `Review requested: #${pr.number} ${pr.title}`, body: `${pr.author} asked for your review${pr.isDraft ? ' (draft)' : ''}. ${pr.repo}` }
+}
