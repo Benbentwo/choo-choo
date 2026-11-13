@@ -41,7 +41,8 @@ Settings > Updates has an **Update channel** menu (Stable or Beta, Stable by def
 6. On Beta, the app checks the newest of the recent releases, prereleases included, and the updater may download prereleases. On Stable, only the release marked Latest.
 7. Never downgrade. Switching from Beta to Stable keeps the beta build until a stable release is newer than it.
 8. Every merge to main that changes more than docs publishes a signed, notarized prerelease `v<next>-beta.<run>`, where `<next>` is Release Drafter's next version. It's a draft until all files are uploaded. Only the 10 newest betas are kept.
-9. Prereleases never go to Homebrew and never trigger the Release workflow.
+9. Prereleases never go to Homebrew and never trigger the Release workflow. There's no beta cask: Homebrew users install the stable cask and switch to Beta in Settings, since signed builds update themselves.
+10. Each stable release points `Casks/choo-choo.rb` in `Benbentwo/homebrew-tap` at its dmgs (the Homebrew cask workflow, called by Release and runnable by hand). Signed releases get `auto_updates true`.
 
 ## Design
 
