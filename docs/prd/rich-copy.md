@@ -19,6 +19,7 @@ Slack can't show tables or headings at all: a pasted table runs its cells togeth
 - Paste the same reply into Slack and have it read well: tables as aligned code blocks, headings as bold lines.
 - Every link that pastes works: file links open the file on GitHub, bare URLs are links, links with nowhere to go become plain text.
 - Right-click a link to copy its URL.
+- Right-click a misspelled word in a text field to fix it or teach the dictionary, without any model.
 
 ## Non-goals
 
@@ -35,6 +36,7 @@ Notion and Docs want real tables and headings; Slack can't show either. One clip
 - Select text in a reply and press ⌘C: rich targets get clean HTML, plain-text targets the same text as before.
 - Select text and press ⌥⌘C, or right-click › Copy for Slack: tables become code blocks with padded columns, headings bold paragraphs, horizontal rules are dropped and task-list boxes become ☑/☐. The plain-text version is Slack-style (`*bold*`, `_italic_`, `` `code` ``, ``` blocks, `•` bullets, links as `text (url)`) for when Slack takes plain text.
 - Right-click a link anywhere in the app: Open Link and Copy Link. Copy Link copies the URL the link would have after pasting (a file link's GitHub URL).
+- Right-click in the composer or any text field: a red-underlined word shows up to five suggestions from the system spell checker (or "No Guesses Found") and Learn Spelling, then Undo, Redo, Cut, Copy, Paste and Select All. Picking a suggestion replaces the word; Learn Spelling adds it to the system dictionary so it stops being underlined. Added 2026-11-13.
 
 ## Requirements
 
@@ -49,6 +51,7 @@ Notion and Docs want real tables and headings; Slack can't show either. One clip
    - A URL in inline code, or bare in text, becomes a link.
 6. Copy for Slack applies 1–5, then replaces tables with `<pre>` text, headings with `<p><b>`, removes `<hr>`, and writes Slack-style plain text.
 7. The right-click menu appears only for links and non-empty selections, and not where an element already has its own menu or in text fields.
+8. In text fields, main's `context-menu` handler shows the spelling menu: suggestions (deduplicated, at most 5) replace the word via `webContents.replaceMisspelling`, Learn Spelling calls `session.addWordToSpellCheckerDictionary`, and edit items follow with their enabled state from `editFlags`. Correctly spelled fields get only the edit items.
 
 ## Design
 
@@ -56,7 +59,7 @@ Notion and Docs want real tables and headings; Slack can't show either. One clip
 
 `src/shared/linkHref.ts` `resolveHref()` decides each link's target from a `LinkContext` (GitHub slug, branch, workspace folder). The chat view's root carries `data-workspace-id` and fetches the context through `ws:link-context` when shown, so the synchronous copy handler has it.
 
-Main's `menu:context` builds the native right-click menu; Copy calls `webContents.copy()` so it goes through the same copy handler.
+`src/shared/editMenu.ts` `editMenuItems()` builds the text-field menu from Electron's context-menu params; main wires it on the main window's `context-menu` event (which only fires when the renderer didn't show its own menu). Main's `menu:context` builds the native right-click menu; Copy calls `webContents.copy()` so it goes through the same copy handler.
 
 ## Compliance, privacy and security
 
@@ -65,7 +68,7 @@ Main's `menu:context` builds the native right-click menu; Copy calls `webContent
 
 ## Testing
 
-`test/richCopy.test.ts` (jsdom): styling stripped, links and code kept, table rows re-wrapped, non-chat selections left alone, file links mapped to GitHub, bare and code URLs linked, dead anchors dropped, Slack HTML and text shape, ⌘C still keeps tables for Notion. `test/linkHref.test.ts`: link resolution rules. Manual: paste a reply with a table and a file link into Notion with ⌘C and into Slack with ⌥⌘C.
+`test/richCopy.test.ts` (jsdom): styling stripped, links and code kept, table rows re-wrapped, non-chat selections left alone, file links mapped to GitHub, bare and code URLs linked, dead anchors dropped, Slack HTML and text shape, ⌘C still keeps tables for Notion. `test/linkHref.test.ts`: link resolution rules. `test/editMenu.test.ts`: spelling suggestions, Learn Spelling, no-guesses and plain text-field menus. Manual: paste a reply with a table and a file link into Notion with ⌘C and into Slack with ⌥⌘C.
 
 ## Rollout
 

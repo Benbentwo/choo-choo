@@ -8,6 +8,7 @@ import type { SourceOption, WorkspaceSource } from '@shared/types'
 import type { Automation } from '@shared/automations'
 import type { Artifact, Chat, FeedbackOptions, FilePreview, PrInfo, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
 import { diffBase } from '@shared/stack'
+import { editMenuItems } from '@shared/editMenu'
 import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import { sessionUsage } from './usage'
@@ -1694,6 +1695,17 @@ function createWindow() {
   // window-all-closed never fires while add-ons' unseen background window is open, so quit from here.
   win.on('closed', () => {
     if (process.platform !== 'darwin') app.quit()
+  })
+  // Text fields get a native menu with spelling suggestions and Learn Spelling; chat text and links
+  // have their own menu (menu:context), which prevents this event from firing.
+  win.webContents.on('context-menu', (_e, params) => {
+    const wc = win?.webContents
+    if (!wc) return
+    const items = editMenuItems(params, {
+      replace: (w) => wc.replaceMisspelling(w),
+      learn: (w) => wc.session.addWordToSpellCheckerDictionary(w)
+    })
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win ?? undefined })
   })
   win.webContents.on('did-finish-load', () => {
     if (pendingLink) send('share:link', pendingLink)
