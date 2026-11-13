@@ -7,6 +7,7 @@ import { IconFolder, IconLock } from '../icons'
 import { useStore, openGroupOrchestrator, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
 import { EFFORT_LABEL, EFFORTS, MODELS, PERMISSIONS } from './Composer'
 import { rank } from '../autocomplete'
+import { findSettingRow, matchCounts, searchSettings, type SettingEntry } from '../settingsSearch'
 import { QuickStartModalBody } from './AddProject'
 import { ProjectsSettings, RemoveProjectBody } from './ProjectsSettings'
 import { AppearanceSettings } from './Appearance'
@@ -216,6 +217,8 @@ const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'experimental', label: 'Experimental', hint: 'Features still being tried out. Off by default.' },
 ]
 
+const SECTION_LABELS = Object.fromEntries(SETTINGS_SECTIONS.map((x) => [x.id, x.label])) as Record<SettingsTab, string>
+
 function UsageHistorySettings({ settings, save }: { settings: Settings; save: (patch: Partial<Settings>) => void }) {
   const u = usageHistorySettings(settings.usageHistory)
   const set = (patch: Partial<typeof u>) => save({ usageHistory: { ...u, ...patch } })
@@ -260,29 +263,155 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<SettingsTab>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   const current = SETTINGS_SECTIONS.find((x) => x.id === tab) ?? SETTINGS_SECTIONS[0]
+  const [query, setQuery] = useState('')
+  const [picked, setPicked] = useState(0)
+  const [target, setTarget] = useState<SettingEntry | null>(null)
+  const searchBox = useRef<HTMLInputElement>(null)
+  const body = useRef<HTMLDivElement>(null)
+  const matches = useMemo(() => searchSettings(query, SECTION_LABELS), [query])
+  const counts = useMemo(() => matchCounts(matches), [matches])
+  const searching = query.trim() !== ''
+  useEffect(() => setPicked(0), [query])
+  // ⌘F searches Settings, not a diff or file open behind it.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'f') return
+      e.preventDefault()
+      e.stopPropagation()
+      searchBox.current?.focus()
+      searchBox.current?.select()
+    }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+  }, [])
+  // After picking a result, scroll its row into view and flash it. Some sections load their
+  // rows a moment after they open, so keep looking for a second.
+  useEffect(() => {
+    if (!target || searching) return
+    let tries = 0
+    let frame = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const look = () => {
+      const box = body.current
+      const row = box ? findSettingRow(box, target.label) : null
+      if (row) {
+        row.scrollIntoView({ block: 'center' })
+        row.classList.remove('settings-flash')
+        void row.offsetWidth
+        row.classList.add('settings-flash')
+        timer = setTimeout(() => row.classList.remove('settings-flash'), 1800)
+        setTarget(null)
+      } else if (++tries < 60) frame = requestAnimationFrame(look)
+      else setTarget(null)
+    }
+    frame = requestAnimationFrame(look)
+    return () => {
+      cancelAnimationFrame(frame)
+      if (timer) clearTimeout(timer)
+    }
+  }, [target, tab, searching])
+  const open = (entry: SettingEntry) => {
+    setTab(entry.section)
+    setQuery('')
+    setTarget(entry)
+    if (body.current) body.current.scrollTop = 0
+  }
+  const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape' && query) {
+      e.stopPropagation()
+      setQuery('')
+    } else if (e.key === 'ArrowDown' && matches.length) {
+      e.preventDefault()
+      setPicked((picked + 1) % matches.length)
+    } else if (e.key === 'ArrowUp' && matches.length) {
+      e.preventDefault()
+      setPicked((picked - 1 + matches.length) % matches.length)
+    } else if (e.key === 'Enter' && matches[picked]) {
+      e.preventDefault()
+      open(matches[picked].entry)
+    }
+  }
   return (
     <Shell onClose={onClose} width="w-[1040px]">
       <div className="flex h-[76vh] max-h-[760px]">
-        <nav aria-label="Settings sections" role="tablist" aria-orientation="vertical" className="flex w-48 shrink-0 flex-col gap-0.5 overflow-y-auto rounded-l-xl border-r border-line bg-bg/40 p-2">
+        <nav aria-label="Settings sections" role="tablist" aria-orientation="vertical" className="flex w-52 shrink-0 flex-col gap-0.5 overflow-y-auto rounded-l-xl border-r border-line bg-bg/40 p-2">
           <div className="px-2.5 pt-1.5 pb-2 text-[11px] font-medium tracking-wide text-faint uppercase">Settings</div>
-          {SETTINGS_SECTIONS.map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={`rounded-md px-2.5 py-1.5 text-left ${tab === t.id ? 'bg-raised text-fg' : 'text-muted hover:bg-raised/50 hover:text-fg'}`}
-            >
-              {t.label}
-            </button>
-          ))}
+          <div className="relative mb-1.5">
+            <svg aria-hidden viewBox="0 0 16 16" className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-faint" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <circle cx="7" cy="7" r="4.5" />
+              <path d="m10.5 10.5 3 3" strokeLinecap="round" />
+            </svg>
+            <input
+              ref={searchBox}
+              type="search"
+              aria-label="Search settings"
+              placeholder="Search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onSearchKey}
+              className="w-full rounded-md border border-line bg-bg py-1 pr-9 pl-7 text-[13px] outline-none placeholder:text-faint focus:border-accent [&::-webkit-search-cancel-button]:hidden"
+            />
+            <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-[11px] text-faint">⌘F</span>
+          </div>
+          {SETTINGS_SECTIONS.map((t) => {
+            const n = counts[t.id] ?? 0
+            const active = !searching && tab === t.id
+            return (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={active}
+                onClick={() => {
+                  setQuery('')
+                  setTab(t.id)
+                }}
+                className={`flex items-center rounded-md px-2.5 py-1.5 text-left ${active ? 'bg-raised text-fg' : searching && !n ? 'text-faint/60 hover:text-muted' : 'text-muted hover:bg-raised/50 hover:text-fg'}`}
+              >
+                <span className="min-w-0 flex-1 truncate">{t.label}</span>
+                {searching && n > 0 && <span className="ml-2 rounded-full bg-accent/15 px-1.5 text-[11px] text-accent">{n}</span>}
+              </button>
+            )
+          })}
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
+          {searching ? (
+            <>
+              <div className="border-b border-line px-5 pt-4 pb-3">
+                <div className="text-[15px] font-medium">Search results</div>
+                <div className="mt-0.5 text-[12px] text-faint">
+                  {matches.length ? `${matches.length} ${matches.length === 1 ? 'setting matches' : 'settings match'} “${query.trim()}”. Enter opens the highlighted one.` : `No settings match “${query.trim()}”.`}
+                </div>
+              </div>
+              <div role="listbox" aria-label="Matching settings" className="min-h-0 flex-1 overflow-y-auto">
+                {matches.map((m, i) => (
+                  <button
+                    key={`${m.entry.section}:${m.entry.label}`}
+                    role="option"
+                    aria-selected={i === picked}
+                    ref={i === picked ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
+                    onMouseMove={() => i !== picked && setPicked(i)}
+                    onClick={() => open(m.entry)}
+                    className={`flex w-full items-start gap-4 border-b border-line px-5 py-3 text-left last:border-0 ${i === picked ? 'bg-hover' : ''}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div>
+                        <Marked text={m.entry.label} query={query} />
+                      </div>
+                      {m.entry.hint && <div className="mt-0.5 text-[12px] text-faint">{m.entry.hint}</div>}
+                      {m.entry.needs && <div className="mt-0.5 text-[12px] text-faint italic">{m.entry.needs}</div>}
+                    </div>
+                    <span className="shrink-0 rounded-md border border-line px-1.5 py-0.5 text-[11px] text-muted">{SECTION_LABELS[m.entry.section]}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
           <div className="border-b border-line px-5 pt-4 pb-3">
             <div className="text-[15px] font-medium">{current.label}</div>
             <div className="mt-0.5 text-[12px] text-faint">{current.hint}</div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={body} className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'projects' ? (
           <ProjectsSettings />
         ) : tab === 'continue' ? (
@@ -399,10 +528,29 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           </>
         )}
           </div>
+            </>
+          )}
         </div>
       </div>
     </Shell>
   )
+}
+
+/** Draws text with the words of a search query marked. */
+function Marked({ text, query }: { text: string; query: string }) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!words.length) return <>{text}</>
+  const lower = text.toLowerCase()
+  const hit = new Array<boolean>(text.length).fill(false)
+  for (const w of words) for (let i = lower.indexOf(w); i >= 0; i = lower.indexOf(w, i + w.length)) hit.fill(true, i, i + w.length)
+  const parts: React.ReactNode[] = []
+  for (let i = 0; i < text.length; ) {
+    let j = i
+    while (j < text.length && hit[j] === hit[i]) j++
+    parts.push(hit[i] ? <mark key={i} className="rounded-sm bg-accent/25 text-fg">{text.slice(i, j)}</mark> : text.slice(i, j))
+    i = j
+  }
+  return <>{parts}</>
 }
 
 const EMPTY_PROMPT: PromptCustom = { mode: 'append', text: '' }

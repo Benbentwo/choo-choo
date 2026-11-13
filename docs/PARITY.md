@@ -31,7 +31,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ File picker (⌘P) and search in files (⌘⇧F)
 - ✅ Sidebar hover: archive button and preview card (branch, diff size, status, title, latest message, Create PR, last active)
 - ✅ Archived worktrees kept in ~/choo-choo/archive with uncommitted files; deleted after a retention period (Settings, default 30 days)
-- ✅ Settings (⌘,): default model/effort, branch prefix, API key, notifications. Sections are listed down the left side (General, Appearance, Projects, Agents, Prompts, MCP, Plugins, Add-ons, Integrations, Updates, Telemetry), like the add-ons mockup, since there are too many for tabs along the top
+- ✅ Settings (⌘,): default model/effort, branch prefix, API key, notifications. Sections are listed down the left side (General, Appearance, Projects, Agents, Prompts, MCP, Plugins, Add-ons, Integrations, Updates, Telemetry), like the add-ons mockup, since there are too many for tabs along the top. A search box above the sections (⌘F) finds any setting by its label, hint or other words, and Enter opens its section with the row highlighted (choo-choo addition, [PRD](prd/settings-search.md))
 - ⬜ Onboarding, help menu, update notices
 
 ### Workspaces sidebar
