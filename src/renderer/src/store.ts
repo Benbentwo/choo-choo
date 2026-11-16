@@ -3,6 +3,7 @@ import { toggleHidden } from '@shared/sidebarHidden'
 import { readCachedAppearance } from './appearanceCache'
 import { actionTarget, type AddonAction, type AddonActionContext, type AddonActionPress, type AddonInfo, type PinStatus, type PinnedAddon } from '@shared/addons'
 import type { InboxPr, PrInbox } from '@shared/prInbox'
+import type { QuickFilter } from '@shared/prFilters'
 import type { Automation, AutomationRun } from '@shared/automations'
 import type { QueueItem, QueueTarget, ResetLog, UsageLimitState } from '@shared/continueWork'
 import { isTheirs, type CommentDest, type PrHeadSync, type PrReviewInfo } from '@shared/prReview'
@@ -86,6 +87,8 @@ interface UI {
   resetLog: ResetLog[]
   /** Last load of the PRs page's list, and its error. */
   prInbox: PrInbox | null
+  /** Temporary filters on the PRs page. In memory only: kept while switching pages, gone after Reset or a restart. */
+  prsQuick: QuickFilter[]
   prInboxError: string | null
   prInboxLoading: boolean
   activeChat: Record<string, string>
@@ -181,6 +184,7 @@ export const useStore = create<UI>((set, get) => ({
   resetLog: [],
   automationRuns: [],
   prInbox: readInboxCache(),
+  prsQuick: [],
   prInboxError: null,
   prInboxLoading: false,
   activeChat: {},

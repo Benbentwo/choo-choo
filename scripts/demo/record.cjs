@@ -352,6 +352,23 @@ const scenes = {
       await d.wait(1400)
       await d.shot?.('prs-folded')
       await d.click(d.page.getByRole('button', { name: /trailhead\/api/ }))
+      await d.wait(1200)
+      // Temporary filters: typed in plain words, kept while you look elsewhere, cleared with Reset.
+      await d.click(d.page.getByPlaceholder(/Filter for now/))
+      await d.type('only PRs by maya-chen', 70)
+      await d.wait(500)
+      await d.page.keyboard.press('Enter')
+      await d.wait(600)
+      await d.type('drafts', 90)
+      await d.page.keyboard.press('Enter')
+      await d.wait(1400)
+      await d.shot?.('prs-quick')
+      await d.click(d.side('Home'))
+      await d.wait(1000)
+      await d.click(d.side('PRs'))
+      await d.wait(1400)
+      await d.shot?.('prs-quick-back')
+      await d.click(d.page.getByRole('button', { name: 'Reset' }))
       await d.wait(2000)
     }),
 
