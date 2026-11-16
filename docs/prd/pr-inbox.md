@@ -5,7 +5,7 @@
 | Status | Shipped |
 | Owner | Choo Choo maintainers |
 | Requested by | Ben, 2026-11-09 |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-16 |
 
 ## Problem
 
@@ -33,6 +33,7 @@ Today, reviewing someone's PR means finding it on GitHub, then starting a worksp
 - Clicking it shows the PRs page in the center. Filters: **To review** (default), **Mine**, **All**, each with a count. The choice is remembered.
 - **To review** also lists open PRs you already reviewed, since GitHub drops the request once you review. Those carry review updates: bold with a dot and reasons when they changed for you, a grey line when an update didn't matter, and an **Updated for you** filter ([Review updates](review-updates.md)).
 - PRs are grouped by repo; repos are ordered by their most recently updated PR. Each row shows title, number, author, last update, lines added and removed, a checks dot (green, red, amber), Approved or Changes requested, and Draft.
+- Each repo header has a disclosure arrow. Clicking the header folds the repo so only the header and its PR count show (the count turns accent-colored when a folded PR changed for you); clicking again unfolds it. Option-click folds or unfolds every repo. Folded repos are saved in Settings (`prsCollapsed`) and stay folded after a restart; arrow keys skip their PRs.
 - Click selects a row (arrow keys move, Enter opens). The **Open →** button opens a workspace on the PR's branch and switches the right panel to **Review**, where Start review runs the reviewer. Double-click does the same. The GitHub icon opens the PR in the browser.
 - If a workspace is already on that branch, the row says "workspace open" and the button reads **Go →**.
 - If the repo isn't a project yet, its header says "not added"; Open clones it (through gh, into the usual repos folder), adds it, then opens the workspace.

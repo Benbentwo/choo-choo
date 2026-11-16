@@ -545,6 +545,8 @@ export interface Settings extends AppearanceSettings {
   chatFormat?: 'full' | 'compact'
   /** Orgs ("owner") or repos ("owner/repo") left off the PRs page on this machine. */
   prsHidden?: string[]
+  /** Repos ("owner/repo") folded on the PRs page: only the repo header and its PR count show. */
+  prsCollapsed?: string[]
   /** Sidebar rows hidden with right-click > Hide from sidebar (keys from shared/sidebarHidden.ts). */
   sidebarHidden?: string[]
   /** Projects collapsed in the sidebar (repo ids): only the project row shows. */

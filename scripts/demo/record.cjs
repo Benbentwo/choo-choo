@@ -318,7 +318,13 @@ const scenes = {
       await d.click(d.page.getByRole('button', { name: /^Mine/ }))
       await d.wait(1800)
       await d.click(d.page.getByRole('button', { name: /^All/ }))
-      await d.wait(2200)
+      await d.wait(1600)
+      // Fold a repo to hide its PRs for now, then bring them back.
+      await d.click(d.page.getByRole('button', { name: /trailhead\/api/ }))
+      await d.wait(1400)
+      await d.shot?.('prs-folded')
+      await d.click(d.page.getByRole('button', { name: /trailhead\/api/ }))
+      await d.wait(2000)
     }),
 
   // GitHub links in a reply turn into short pills with a state dot; hovering one shows a small card.
