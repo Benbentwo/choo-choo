@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { groupByRepo, isReviewing, matchesFilter, orgsAndRepos, visiblePrs, type InboxPr, type PrFilter } from '@shared/prInbox'
+import { addQuickFilter, applyQuickFilters, parseQuickFilter, quickFilterLabel, suggestQuickFilters, type QuickFilter } from '@shared/prFilters'
 import { useStore, refreshPrInbox, openPrWorkspace, reportError, setPrReposCollapsed } from '../store'
 import { IconDown, IconGithub, IconPR, IconRight, IconSidebar } from '../icons'
 
@@ -25,7 +26,10 @@ export function PrInboxPage() {
   const [opening, setOpening] = useState<string | null>(null)
   const allPrs = s.prInbox?.prs ?? []
   const hidden = s.settings.prsHidden ?? []
-  const prs = useMemo(() => visiblePrs(allPrs, hidden), [allPrs, hidden])
+  const shown = useMemo(() => visiblePrs(allPrs, hidden), [allPrs, hidden])
+  const quick = s.prsQuick
+  const prs = useMemo(() => applyQuickFilters(shown, quick), [shown, quick])
+  const setQuick = (next: QuickFilter[]) => s.set({ prsQuick: next })
   const [filterMenu, setFilterMenu] = useState(false)
   const groups = useMemo(() => groupByRepo(prs, filter), [prs, filter])
   const collapsed = s.settings.prsCollapsed ?? []
@@ -106,20 +110,12 @@ export function PrInboxPage() {
               Mark all seen
             </button>
           )}
-          <div className="relative">
-            <button
-              className={`rounded-md border px-2.5 py-1 text-[12px] hover:bg-hover hover:text-fg ${hidden.length ? 'border-accent/50 text-accent' : 'border-line text-muted'}`}
-              onClick={() => setFilterMenu(!filterMenu)}
-              title="Choose which orgs and repos show here. Saved on this computer only."
-            >
-              Filter{hidden.length ? ` · ${hidden.length} hidden` : ''}
-            </button>
-            {filterMenu && <RepoFilter prs={allPrs} hidden={hidden} onClose={() => setFilterMenu(false)} />}
-          </div>
           <button className="rounded-md border border-line px-2.5 py-1 text-[12px] text-muted hover:bg-hover hover:text-fg disabled:opacity-50" disabled={s.prInboxLoading} onClick={() => void refreshPrInbox()} title="Reload from GitHub">
             {s.prInboxLoading ? 'Loading…' : 'Refresh'}
           </button>
         </div>
+        <RepoBar prs={allPrs} hidden={hidden} menu={filterMenu} setMenu={setFilterMenu} />
+        <QuickBar prs={shown} quick={quick} setQuick={setQuick} />
         {s.prInboxError && (
           <div className="selectable mb-3 rounded-lg border border-del/40 px-3 py-2 text-[12px] text-muted">
             {s.prInboxError}
@@ -128,7 +124,15 @@ export function PrInboxPage() {
         )}
         <div className="-mx-2 min-h-0 flex-1 overflow-y-auto px-2 pb-8 outline-none" tabIndex={0} onKeyDown={onKey}>
           {!s.prInbox && s.prInboxLoading && <div className="py-10 text-center text-muted">Loading pull requests…</div>}
-          {s.prInbox && groups.length === 0 && (
+          {s.prInbox && groups.length === 0 && quick.length > 0 && (
+            <div className="py-10 text-center text-muted">
+              No pull requests match these filters.{' '}
+              <button className="text-accent hover:underline" onClick={() => setQuick([])}>
+                Reset filters
+              </button>
+            </div>
+          )}
+          {s.prInbox && groups.length === 0 && !quick.length && (
             <div className="py-10 text-center text-muted">{filter === 'review' ? 'Nothing waiting on your review.' : filter === 'updated' ? 'Nothing changed for you since you last looked.' : filter === 'mine' ? 'You have no open pull requests.' : 'No open pull requests.'}</div>
           )}
           {groups.map((g) => (
@@ -149,7 +153,7 @@ export function PrInboxPage() {
               </button>
               {!folded(g.repo) &&
                 g.prs.map((p) => (
-                  <PrRow key={key(p)} pr={p} selected={selected === key(p)} opening={opening === key(p)} onSelect={() => setSelected(key(p))} onOpen={() => void open(p)} />
+                  <PrRow key={key(p)} pr={p} selected={selected === key(p)} opening={opening === key(p)} onSelect={() => setSelected(key(p))} onOpen={() => void open(p)} onAuthor={() => setQuick(addQuickFilter(quick, { kind: 'author', value: p.author }))} />
                 ))}
             </section>
           ))}
@@ -159,7 +163,7 @@ export function PrInboxPage() {
   )
 }
 
-function PrRow({ pr, selected, opening, onSelect, onOpen }: { pr: InboxPr; selected: boolean; opening: boolean; onSelect: () => void; onOpen: () => void }) {
+function PrRow({ pr, selected, opening, onSelect, onOpen, onAuthor }: { pr: InboxPr; selected: boolean; opening: boolean; onSelect: () => void; onOpen: () => void; onAuthor: () => void }) {
   const ws = useStore((s) => (pr.workspaceId ? s.workspaces.find((w) => w.id === pr.workspaceId) : undefined))
   const openLabel = ws ? `Go to workspace ${ws.title}` : pr.repoId ? 'Open a workspace on this PR' : `Clone ${pr.repo} and open a workspace on this PR`
   const u = pr.update
@@ -184,7 +188,16 @@ function PrRow({ pr, selected, opening, onSelect, onOpen }: { pr: InboxPr; selec
         <div className="flex items-center gap-1.5 overflow-hidden text-[11px] whitespace-nowrap text-faint">
           <span>#{pr.number}</span>
           <span>·</span>
-          <span>{pr.author}</span>
+          <button
+            className="hover:text-fg hover:underline"
+            title={`Show only PRs by ${pr.author} for now`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onAuthor()
+            }}
+          >
+            {pr.author}
+          </button>
           <span>·</span>
           <span>{ago(pr.updatedAt)}</span>
           <span>·</span>
@@ -322,6 +335,146 @@ function RepoFilter({ prs, hidden, onClose }: { prs: InboxPr[]; hidden: string[]
         <button className="mt-1 w-full rounded px-1 py-1 text-left text-muted hover:bg-hover hover:text-fg" onClick={() => void save([])}>
           Show everything
         </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The saved org and repo hiding (Settings.prsHidden), shown on the page: a pill per org to hide or show
+ * it, a chip per hidden repo, and Edit for the full list.
+ */
+function RepoBar({ prs, hidden, menu, setMenu }: { prs: InboxPr[]; hidden: string[]; menu: boolean; setMenu: (on: boolean) => void }) {
+  const orgs = useMemo(() => orgsAndRepos(prs), [prs])
+  const lower = hidden.map((h) => h.toLowerCase())
+  const save = async (next: string[]) => {
+    try {
+      useStore.getState().set({ settings: await window.api.saveSettings({ prsHidden: next }) })
+    } catch (e) {
+      reportError(e)
+    }
+  }
+  const hiddenRepos = hidden.filter((h) => h.includes('/'))
+  if (!orgs.length && !hidden.length) return null
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[12px]" title="Orgs and repos to show here. Saved on this computer only.">
+      <span className="mr-0.5 text-faint">Repos</span>
+      {orgs.map((o) => {
+        const off = lower.includes(o.org.toLowerCase())
+        return (
+          <button
+            key={o.org}
+            className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 ${off ? 'border-dashed border-line text-faint line-through hover:text-muted' : 'border-line text-muted hover:bg-hover hover:text-fg'}`}
+            title={off ? `Show PRs from ${o.org} again` : `Hide PRs from ${o.org} on this computer`}
+            onClick={() => void save(off ? hidden.filter((h) => h.toLowerCase() !== o.org.toLowerCase()) : [...hidden, o.org])}
+          >
+            <img src={`https://avatars.githubusercontent.com/${o.org}?s=40`} alt="" className={`h-3.5 w-3.5 rounded-[3px] bg-raised ${off ? 'opacity-40' : ''}`} />
+            {o.org}
+            <span className="text-faint no-underline">{o.count}</span>
+          </button>
+        )
+      })}
+      {hiddenRepos.map((r) => (
+        <button key={r} className="rounded-full border border-dashed border-line px-2 py-0.5 text-faint hover:text-fg" title={`Show PRs from ${r} again`} onClick={() => void save(hidden.filter((h) => h !== r))}>
+          <span className="line-through">{r}</span> ×
+        </button>
+      ))}
+      <div className="relative">
+        <button className="rounded-full px-2 py-0.5 text-muted hover:bg-hover hover:text-fg" onClick={() => setMenu(!menu)}>
+          Edit…
+        </button>
+        {menu && <RepoFilter prs={prs} hidden={hidden} onClose={() => setMenu(false)} />}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Temporary filters: chips plus a box that takes "by alice", "repo:web", "drafts" or any words
+ * from a title. Kept in memory while you switch pages; Reset clears them.
+ */
+function QuickBar({ prs, quick, setQuick }: { prs: InboxPr[]; quick: QuickFilter[]; setQuick: (f: QuickFilter[]) => void }) {
+  const [text, setText] = useState('')
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const input = useRef<HTMLInputElement>(null)
+  const suggestions = useMemo(() => {
+    const typed = parseQuickFilter(text, prs)
+    const list = suggestQuickFilters(text, prs).filter((f) => !quick.some((q) => q.kind === f.kind && q.value === f.value))
+    if (typed && !list.some((f) => f.kind === typed.kind && f.value.toLowerCase() === typed.value.toLowerCase())) list.unshift(typed)
+    return text.trim() ? list : list.slice(0, 8)
+  }, [text, prs, quick])
+  const add = (f: QuickFilter | null | undefined) => {
+    if (!f) return
+    setQuick(addQuickFilter(quick, f))
+    setText('')
+    setActive(0)
+  }
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      setOpen(true)
+      setActive((i) => Math.max(0, Math.min(suggestions.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1))))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      add(open && suggestions[active] ? suggestions[active] : parseQuickFilter(text, prs))
+    } else if (e.key === 'Backspace' && !text && quick.length) {
+      setQuick(quick.slice(0, -1))
+    } else if (e.key === 'Escape') {
+      if (text) setText('')
+      else {
+        setOpen(false)
+        input.current?.blur()
+      }
+    }
+  }
+  const kindLabel: Record<QuickFilter['kind'], string> = { author: 'Author', repo: 'Repo', status: 'Status', text: 'Title has' }
+  return (
+    <div className="relative mb-3 flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-[12px] focus-within:border-muted" onClick={() => input.current?.focus()}>
+      {quick.map((f, i) => (
+        <span key={`${f.kind}:${f.value}`} className="flex shrink-0 items-center gap-1 rounded-full bg-accent/15 py-0.5 pr-1 pl-2 text-accent">
+          {quickFilterLabel(f)}
+          <button className="rounded-full px-1 hover:bg-accent/20" title="Remove this filter" onClick={() => setQuick(quick.filter((_, j) => j !== i))}>
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        ref={input}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value)
+          setOpen(true)
+          setActive(0)
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        onKeyDown={onKey}
+        placeholder={quick.length ? 'Add a filter…' : 'Filter for now: by a person, repo:name, drafts, failing, or words in a title'}
+        className="min-w-[10rem] flex-1 bg-transparent py-0.5 outline-none placeholder:text-faint"
+      />
+      {quick.length > 0 && (
+        <button className="shrink-0 rounded px-1.5 py-0.5 text-muted hover:bg-hover hover:text-fg" title="Clear the temporary filters" onClick={() => setQuick([])}>
+          Reset
+        </button>
+      )}
+      {open && suggestions.length > 0 && (
+        <div className="absolute top-full left-0 z-30 mt-1 w-72 rounded-lg border border-line bg-raised p-1 shadow-xl">
+          {suggestions.map((f, i) => (
+            <button
+              key={`${f.kind}:${f.value}`}
+              className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left ${i === active ? 'bg-hover text-fg' : 'text-muted'}`}
+              onMouseEnter={() => setActive(i)}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                add(f)
+              }}
+            >
+              <span className="w-16 shrink-0 text-faint">{kindLabel[f.kind]}</span>
+              <span className="truncate">{f.kind === 'status' ? quickFilterLabel(f) : f.value}</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   )

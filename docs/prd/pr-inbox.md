@@ -39,7 +39,8 @@ Today, reviewing someone's PR means finding it on GitHub, then starting a worksp
 - If the repo isn't a project yet, its header says "not added"; Open clones it (through gh, into the usual repos folder), adds it, then opens the workspace.
 - The list reloads every minute while the page is open, when the window gets focus, and with Refresh. The sidebar count reloads every five minutes in the background.
 - Errors: no gh, or gh not signed in, shows a line saying what to run (`brew install gh`, `gh auth login`).
-- **Filter** lists each org and its repos with counts and tick boxes. Unticking an org or repo hides its PRs from the page and from the sidebar count. The choice is saved in Settings on this computer only (`prsHidden`), so a work laptop can leave out personal repos. The button shows how many are hidden; Show everything clears it.
+- **Repos** (saved): a row under the title shows a pill per org with its PR count. Clicking a pill hides that org's PRs (struck through) or shows them again; each hidden repo shows as a struck chip with ×. **Edit…** opens the full list of orgs and repos with tick boxes. Hidden orgs and repos also leave the sidebar count. The choice is saved in Settings on this computer only (`prsHidden`), so a work laptop can leave out personal repos.
+- **Temporary filters**: a box under the Repos row takes plain words: a person ("by alice", "only PRs by alice", `@alice`, `author:alice`, or just a known login), a repo (`repo:web`, "in owner/repo", or a known repo name), a status (drafts, ready, approved, changes requested, failing, passing), or any words from a title. Suggestions from the loaded PRs appear as you type; Enter adds the filter as a chip. Clicking an author's name on a row adds them too. Filters of one kind widen the list (by alice or by bob); different kinds narrow it. The view counts follow the filters. They stay while you switch to other pages and back, and go away with **Reset**, ×, Backspace in the empty box, or a restart; they are never saved.
 - The last good list is saved and shown at once on start-up. When a refresh fails, the page keeps that list and says when it was loaded.
 - The two lists load as separate searches of 50 PRs each, newest first (20 if GitHub times out). One query for both, 100 each with CI status, made GitHub answer HTTP 502.
 
@@ -53,6 +54,7 @@ Today, reviewing someone's PR means finding it on GitHub, then starting a worksp
 
 ## Design
 
+- `src/shared/prFilters.ts`: temporary filters (parse typed words, apply, suggest); kept in the renderer store as `prsQuick`.
 - `src/shared/prInbox.ts`: the GraphQL query (two aliased `search` calls), `parsePrInbox`, `groupByRepo`, `prBranch`.
 - `src/main/github.ts` `prInbox()` runs `gh api graphql`. `src/main/index.ts` `loadPrInbox()` adds `repoId` and `workspaceId`; IPC `prs:inbox`, `Api.prInbox()`.
 - Renderer: `store.ts` holds `prsPage`, `prInbox`, `refreshPrInbox()` and `openPrWorkspace()`; `components/PrInbox.tsx` is the page; `Sidebar.tsx` adds the nav item; `App.tsx` routes to the page and starts the background refresh.
