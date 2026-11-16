@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #125); open-or-go-to in review |
 | Owner | Choo Choo maintainers |
 | Requested by | Ben, 2026-11-16 |
 | Last updated | 2026-11-16 |
@@ -22,12 +22,11 @@ Agents link PRs, issues, commits and files all the time. In chat these are long 
 ## Non-goals
 
 - Previews for non-GitHub sites (Linear, Notion, docs). The card is built so other kinds could be added.
-- Unfurling links in the person's own messages (they show as plain text today).
 - Live updates while a card is open; the refresh button asks again.
 
 ## User experience
 
-- **Pills.** A GitHub link whose text is just its URL (Claude's usual way of writing one) shows as a small pill: `web#488 ●` for a PR or issue, `web@abc1234` for a commit, `dates.ts:10-16` for a file, `owner/repo` for a repo. PR and issue pills carry a state dot (green open, gray draft or not planned, purple merged or completed, red closed), loaded once the pill scrolls into view. Links with their own text keep it.
+- **Pills.** A GitHub link whose text is just its URL (Claude's usual way of writing one, and any GitHub URL you paste in your own message) shows as a small pill: `web#488 ●` for a PR or issue, `web@abc1234` for a commit, `dates.ts:10-16` for a file, `owner/repo` for a repo. PR and issue pills carry a state dot (green open, gray draft or not planned, purple merged or completed, red closed), loaded once the pill scrolls into view. Links with their own text keep it.
 - **Hover card.** Hovering any GitHub link (pill or not) for 400 ms opens a 320 px card beside it, below the link when there's room and above otherwise. It floats over the chat, so nothing moves. Moving the pointer into the card keeps it open; leaving both closes it after a moment. Escape, scrolling or switching windows closes it.
 - **What the card shows.**
   - PR: repo and number, state badge, title, author and last update, checks (passed, failed or running), review (approved, changes requested, review requested), +/- lines and files, head → base branch.
@@ -35,7 +34,7 @@ Agents link PRs, issues, commits and files all the time. In chat these are long 
   - Commit: subject and body, author, date, +/- lines and files.
   - File: path and ref, and up to eight of the linked lines with line numbers (the top of the file when no lines are linked).
   - Repo: description, language, stars, open issues, last push.
-- **Actions.** Open in Choo Choo (PRs: the workspace already on the PR, else a new workspace on the Review tab, cloning the repo first if needed, the same as the PRs page; issues: a new workspace from the issue), GitHub, Copy, and refresh.
+- **Actions.** Open in Choo Choo, GitHub, Copy, and refresh. Open in Choo Choo goes to the workspace that already holds the PR or issue when there is one (an accent dot on the button and its tooltip say which), and otherwise opens one: for a PR, a workspace on the Review tab, cloning the repo first if needed, the same as the PRs page; for an issue, a workspace started from it. A workspace holds a PR when it was opened from it or adopted it (`Workspace.prNumber`), when its branch is the PR's branch, or when the PR is a layer of its stack; it holds an issue when it was started from it (`Workspace.issueNumber`). The lookup runs live against open workspaces, so it's right even while the preview itself is cached. The PRs page uses the same lookup (`src/shared/workspaceFor.ts`).
 - **Errors.** The card says why there's no preview: gh missing, signed out, not found or no access, rate limited.
 - **Setting.** Settings › General › GitHub link previews, on by default. Off, links render as plain links again.
 
@@ -72,7 +71,7 @@ On by default, with a switch in Settings › General.
 
 ## Open questions
 
-- Should pills also replace bare GitHub URLs in the person's own messages?
+- None. Ben confirmed (2026-11-16) that GitHub URLs in the person's own messages also become pills; other URLs there become plain links.
 
 ## Future work
 

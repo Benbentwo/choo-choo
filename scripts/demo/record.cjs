@@ -332,7 +332,7 @@ const scenes = {
     record('link-previews', { script: 'links.json', gh: 'links-gh.json' }, async (d) => {
       await d.wait(500)
       await d.menu('toggle-terminal')
-      await startWorkspace(d, 'Add a date range picker to trip search')
+      await startWorkspace(d, 'Add a date range picker to trip search for https://github.com/trailhead/web/issues/471')
       const pill = (label) => d.page.locator('a.gh-pill', { hasText: label }).first()
       await pill('web#488').waitFor({ timeout: 30_000 })
       await d.wait(1600)
