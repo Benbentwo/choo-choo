@@ -152,6 +152,7 @@ async function record(name, { script, gh, update, settings, opts }, scene) {
   const world = await freshWorld(name, settings)
   const video = join(WORK, `${name}-video`)
   rmSync(video, { recursive: true, force: true })
+  const t0 = Date.now()
   const { app, page } = await launch(world, script, opts?.noGif ? undefined : video, gh, update)
   await page.waitForTimeout(1500)
   await dress(page)
@@ -164,8 +165,11 @@ async function record(name, { script, gh, update, settings, opts }, scene) {
     await dress(ctx.page)
     return director(ctx.app, ctx.page)
   }
-  await scene(director(app, page), relaunch)
-  const trimStart = Number(opts?.trimStart ?? 0.8)
+  // `d.startGif()` cuts the GIF to start there (a little before), skipping setup the GIF doesn't need to show.
+  let cut
+  const d = Object.assign(director(app, page), { startGif: () => (cut = Math.max(0, (Date.now() - t0) / 1000 - 1.5)) })
+  await scene(d, relaunch)
+  const trimStart = Number(cut ?? opts?.trimStart ?? 0.8)
   await ctx.app.close()
   if (!opts?.noGif) toGif(video, name, { ...opts, trimStart })
 }
@@ -401,6 +405,53 @@ const scenes = {
       await d.wait(7000)
       await d.click(d.page.getByText('ApplePayButton.tsx').last())
       await d.wait(3000)
+    }),
+
+  // A thread resolves on its own once its work is archived (or its PRs merged or closed): it leaves the
+  // sidebar, stays under Resolved and in ⌘K, and Reopen brings it back.
+  'resolve-threads': () =>
+    record('resolve-threads', { script: 'projects.json' }, async (d) => {
+      const archiveRow = (title) => d.side(title).locator('xpath=ancestor::div[@role="button"][1]').locator('button[title="Archive workspace"]')
+      await d.wait(400)
+      await d.click(d.side('Trip checkout'))
+      await d.page.getByTestId('close-right').click()
+      await d.click(d.page.locator('textarea').first())
+      await d.type('Add Apple Pay to checkout: a button in the web app, and an endpoint in the API for the payment intent.', 4)
+      await d.page.keyboard.press('Enter')
+      await d.wait(2600)
+      await d.click(d.side('Apple Pay at checkout'))
+      await d.page.locator('aside').getByText('Payment intent endpoint', { exact: true }).first().waitFor()
+      // Both workspaces finish and the thread reports back.
+      await d.page.getByText('Want me to open the PRs?').first().waitFor({ timeout: 30_000 })
+      // The GIF starts here: projects-threads already shows a thread starting its work.
+      d.startGif()
+      await d.wait(1200)
+      await d.shot?.('1-thread-with-work')
+      await d.moveTo(d.side('Apple Pay button'))
+      await d.click(archiveRow('Apple Pay button'), 300)
+      await d.wait(1400)
+      await d.moveTo(d.side('Payment intent endpoint'))
+      await d.click(archiveRow('Payment intent endpoint'), 300)
+      await d.page.getByTestId('resolved-banner').waitFor({ timeout: 10_000 })
+      await d.wait(1400)
+      await d.shot?.('2-resolved-on-screen')
+      await d.click(d.side('Trip checkout'))
+      await d.wait(1200)
+      await d.click(d.page.getByTestId('resolved-toggle'))
+      await d.wait(1400)
+      await d.shot?.('3-sidebar-resolved')
+      await d.menu('search')
+      await d.wait(400)
+      await d.type('apple pay', 60)
+      await d.wait(1500)
+      await d.shot?.('4-palette')
+      await d.page.keyboard.press('Escape')
+      await d.wait(400)
+      const row = d.page.locator('aside').getByText('Apple Pay at checkout', { exact: true }).first()
+      await d.moveTo(row)
+      await d.click(row.locator('xpath=ancestor::div[@role="button"][1]').getByRole('button', { name: 'Reopen' }), 300)
+      await d.wait(1500)
+      await d.shot?.('5-reopened')
     }),
 
   // The title bar's pane toggles (Threads, Analytics, Details) and the x on each pane. Screenshots only.

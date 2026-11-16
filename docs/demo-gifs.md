@@ -13,7 +13,7 @@ No model is called. `scripts/demo/bin/` goes first on the app's `PATH`, and Sett
 - `bin/gh` answers the PRs page searches from a JSON file and fails everything else.
 - `CHOO_DEMO_UPDATE` (a scene's `update` option, read by `src/main/updater.ts` in source builds only) gives the app a made-up downloaded update and release list, so the update card and What's new show without GitHub. Restarting just shows "Restarting…".
 
-A scene gets a second argument, `relaunch()`, which closes the app and opens it again on the same world (the `resume-after-restart` scene uses it to cut a turn off). Scenes with `opts: { noGif: true }` only take screenshots.
+A scene can call `d.startGif()` to start the GIF at that point (a moment before), so setup another GIF already shows isn't repeated (`resolve-threads` uses it). A scene gets a second argument, `relaunch()`, which closes the app and opens it again on the same world (the `resume-after-restart` scene uses it to cut a turn off). Scenes with `opts: { noGif: true }` only take screenshots.
 
 Everything else (sidebar, worktrees, diffs, split panes) is the app's own code.
 

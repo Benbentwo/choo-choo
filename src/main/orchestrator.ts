@@ -68,6 +68,8 @@ export interface ProjectRole {
     create(title: string): Chat
     /** Sends a message into a thread as if the person wrote it there, queued if the thread is busy. */
     forward(chat: Chat, text: string): void
+    /** Resolves a thread (hidden from the sidebar, kept) or reopens it. */
+    resolve(chat: Chat, resolved: boolean): Chat
   }
 }
 
@@ -197,6 +199,7 @@ function roleLines(role?: ProjectRole): string[] {
     "- Leave other threads' workspaces to them. Read them for context if useful, but don't message, stop or archive one unless the person asks. If the person wants this thread to manage one, call take_workspace.",
     `- Messages that start with ${ROUTED_PREFIX} came from the person through the orchestrator chat.`,
     '- Updates about workspaces this thread owns come back to this thread.',
+    "- When everything this thread owns is merged, closed or archived and the person has nothing more for it, call resolve_thread. The app also does this on its own.",
     ''
   ]
 }
@@ -573,6 +576,17 @@ export function queryOptions(
     role?.kind === 'thread'
       ? [
           tool(
+            'resolve_thread',
+            "Resolve this thread: it leaves the sidebar and the Threads panel but is kept, and a new message reopens it. Call it when the person says this thread is done, or when every workspace this thread owns is merged, closed or archived and nothing is left to do. The app also resolves threads on its own once all their work is merged or closed.",
+            {},
+            async () => {
+              const me = role.threads.list().find((c) => c.id === role.chatId)
+              if (!me) throw new Error('This thread no longer exists.')
+              role.threads.resolve(me, true)
+              return text('Resolved. Say so to the person in one line.')
+            }
+          ),
+          tool(
             'take_workspace',
             'Make this thread the owner of a workspace in the project, and so of its PR: it moves under this thread in the sidebar and its updates come here. Only when the person asks, or the work clearly belongs to this thread and no other thread is working on it.',
             { workspace_id: z.string() },
@@ -617,17 +631,22 @@ export function queryOptions(
     // An automation's start_workspace is vouched for by the person who made it; the app caps it.
     // Cloning a repo the person hasn't added asks whatever the chat's permission setting, until they pick Always allow on a card.
     alwaysAskTools: projectTools.length ? ['mcp__choo__clone_repo'] : [],
-    autoAllowTools: [...addons.flatMap((set) => set.tools.filter((t) => t.readOnly).map((t) => `mcp__${set.server}__${t.name}`)), ...(run ? ['mcp__choo__start_workspace'] : [])]
+    // Resolving a thread only hides it, and a message brings it back, so it needs no OK either.
+    autoAllowTools: [
+      ...addons.flatMap((set) => set.tools.filter((t) => t.readOnly).map((t) => `mcp__${set.server}__${t.name}`)),
+      ...(run ? ['mcp__choo__start_workspace'] : []),
+      ...(role ? ['mcp__choo__resolve_thread'] : [])
+    ]
   }
 }
 
 /** The orchestrator chat's own tools: see the project's threads, and forward a message to one. */
 function routerTools(tool: typeof import('@anthropic-ai/claude-agent-sdk').tool, role: ProjectRole) {
   return [
-    tool('list_threads', "List this project's threads: id, title, whether it is running, and the last thing you said there.", {}, async () =>
+    tool('list_threads', "List this project's threads: id, title, whether it is running or resolved, and the last thing you said there. Resolved threads are done and hidden from the sidebar; sending to one reopens it.", {}, async () =>
       text(
         JSON.stringify(
-          role.threads.list().map((c) => ({ id: c.id, title: c.title, status: c.status, lastMessage: clip(lastAssistantText(c.id), 300) })),
+          role.threads.list().map((c) => ({ id: c.id, title: c.title, status: c.status, ...(c.resolved ? { resolved: true } : {}), lastMessage: clip(lastAssistantText(c.id), 300) })),
           null,
           2
         )
@@ -651,8 +670,20 @@ function routerTools(tool: typeof import('@anthropic-ai/claude-agent-sdk').tool,
           if (!title) throw new Error('Pass thread_id or new_thread_title.')
           chat = role.threads.create(title)
         }
+        const reopened = !!chat.resolved
         role.threads.forward(chat, `${ROUTED_PREFIX}\n${a.message}`)
-        return text(JSON.stringify({ thread_id: chat.id, title: chat.title, created }))
+        return text(JSON.stringify({ thread_id: chat.id, title: chat.title, created, ...(reopened ? { reopened } : {}) }))
+      }
+    ),
+    tool(
+      'resolve_thread',
+      'Resolve a thread when the person asks (hidden from the sidebar, kept, findable under Resolved), or reopen one with reopen: true.',
+      { thread_id: z.string(), reopen: z.boolean().optional() },
+      async (a) => {
+        const chat = role.threads.list().find((c) => c.id === a.thread_id)
+        if (!chat) throw new Error(`No thread ${a.thread_id}. Call list_threads for ids.`)
+        role.threads.resolve(chat, !a.reopen)
+        return text(`${a.reopen ? 'Reopened' : 'Resolved'} "${chat.title}".`)
       }
     )
   ]

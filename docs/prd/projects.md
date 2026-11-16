@@ -4,7 +4,7 @@
 |---|---|
 | Status | Shipped behind Settings › Experimental (PR #79). Automations are their own feature: [automations.md](automations.md) |
 | Requested by | Ben, 2026-11-10 |
-| Last updated | 2026-11-13 (threads without open work stay in the sidebar) |
+| Last updated | 2026-11-16 (resolving threads, by hand or on their own once their work is done) |
 
 ## Problem
 
@@ -31,7 +31,7 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 
 ![Orchestrator chat](../media/projects/orchestrator-chat.png)
 
-- **Sidebar:** a Projects section above the repos. Each project folds. Under it, every thread, newest first (`# Signup flow rework`; clicking one opens it, with a dot while it runs or has unread replies). Under each thread, the repos it has work in, and under each repo that thread's workspaces: `#418 Verify endpoint` once a PR exists, else the workspace's name with a "no PR" tag. Work no thread owns (started before threads, or its thread was deleted) comes last under *No thread*. Workspaces that belong to a project leave the plain repo list below. A thread with no open work still shows, with no fold arrow, so it can be opened from the sidebar (Ben, 2026-11-13).
+- **Sidebar:** a Projects section above the repos. Each project folds. Under it, every thread, newest first (`# Signup flow rework`; clicking one opens it, with a dot while it runs or has unread replies). Under each thread, the repos it has work in, and under each repo that thread's workspaces: `#418 Verify endpoint` once a PR exists, else the workspace's name with a "no PR" tag. Work no thread owns (started before threads, or its thread was deleted) comes last under *No thread*. Workspaces that belong to a project leave the plain repo list below. A thread with no open work still shows, with no fold arrow, so it can be opened from the sidebar (Ben, 2026-11-13), until it is resolved (below).
 - **Sorting work:** hovering a thread row with more than one piece of work shows a sort arrow. It orders the work under each of that thread's repos by Newest first (the default), Oldest first, PR number (lowest first, work without a PR last) or Title (the PR title once there is one, as the row shows). The choice applies to every project thread and is saved.
 - **Orchestrator chat:** clicking the project opens it. Each message is forwarded to a thread ("Sent to # Signup flow rework", Open thread) or starts one ("New thread # Onboarding dark mode"). Quick status questions are answered there.
 - **Threads:** the Threads button in the header opens the list on the right (its x closes it); the Analytics button beside it opens the usage graphs: the orchestrator chat first, then threads, newest first, each with its last line. New starts an empty thread; it takes its title from its first message. Clicking one opens it in place of the orchestrator chat.
@@ -51,6 +51,13 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 
 ![Icon and color picker](../media/projects/icons-picker.png)
 
+- **Resolving threads** (Ben, 2026-11-16: "it's like the archive state. It's not removed. It's just hidden from your sidebar, so you can have a bit more space"): a finished thread can be resolved. It leaves the sidebar and the Threads panel, with the work under it, and is never deleted. Hover a thread row for the check button, or right-click › Resolve thread; the Threads panel has Resolve on hover too. The project lists them behind "Resolved (N)", most recent first, each with Reopen on hover; the Threads panel has "Show resolved (N)"; ⌘K finds every thread, resolved ones marked. Opening a resolved thread shows a Resolved card under its transcript with Reopen, and sending it a message (yourself, or through the orchestrator chat) reopens it. The thread on screen stays in the sidebar, tagged Resolved, until you move away, so nothing vanishes while you read it.
+- **Resolving on their own:** once every workspace a thread started is archived or has a merged or closed PR, it isn't running, and you've read its last reply, the thread resolves itself and says so in its transcript. A thread that never started work (just a conversation) waits for you. After you reopen a thread, it resolves again only once work started after that is done. Settings › Experimental › Resolve finished threads turns this off. The orchestrator can also resolve: a thread calls `resolve_thread` when its work is done, and the orchestrator chat resolves or reopens a thread when you ask.
+
+![A resolved thread stays on screen with a Resolved card](../media/projects/resolved-thread.png)
+
+![Resolved threads listed under their project](../media/projects/resolved-list.png)
+
 - **Archiving:** project rows archive like plain workspace rows. Hover a row for the archive button, or right-click it for Open to the side, Reveal in Finder, Copy branch name and Archive workspace. Archived workspaces list under their project behind "Archived (N)", newest first, each with its repo and a Restore button on hover. They no longer show in the plain repo's archived list. Archiving keeps the branch and the transcript and follows "Delete archived workspaces after" in Settings, the same as any workspace.
 
 ![Archived list under a project](../media/projects/archived-list.png)
@@ -69,7 +76,10 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 8. The sidebar tree lists open workspaces with `orchestratorId` equal to the project, by owning thread (newest thread first, unowned last), then repo, then workspace in the order from `Settings.projectWorkSort` (`newest`, `oldest`, `pr`, `title`; `sortProjectWork` in `src/shared/sidebarOrder.ts`, tested in `test/sidebar-order.test.ts`), newest first when unset. PR numbers come from `getPr`, cached per workspace until the PR watcher reports a change.
 9. Fold state lives in `Settings.sidebarCollapsed` with keys `section:projects`, `section:repos` (the Repos list below the projects), `project:<id>`, `project:<id>:thread:<threadId>` and `project:<id>:thread:<threadId>:<repoId>` (`none` for unowned work).
 10. A project's orchestrator never clones a repo without the person's OK: `clone_repo` is in `alwaysAskTools`, which asks even when the chat allows everything, until the person picks Always allow for it on a card in that chat. Adding a repo the person already has needs no OK.
-11. `RepoGroup.icon` is a name from the renderer's icon set and `RepoGroup.color` a `PROJECT_COLORS` id; the main process accepts only short lowercase names, and unknown ones fall back to the default mark.
+11. Resolving sets `Chat.resolved`, `resolvedAt` and `resolvedBy` (`person`, `agent` for `resolve_thread`, `auto`); nothing is deleted. `projectTree` leaves resolved threads and the workspaces they own out of the sidebar, except the thread on screen (`keep`). Reopening clears them; a reopen by the person, or a message from them, sets `reopenedAt`, and an automatic update waking the thread reopens it without one.
+12. Self-resolve (`shouldAutoResolve` in `src/shared/projects.ts`, `checkThreadResolve` in `src/main/index.ts`): the thread owns at least one workspace, each is archived or its PR is MERGED or CLOSED (`gh pr view`; no PR or no answer counts as open), it isn't running or unread, it isn't resolved, and when `reopenedAt` is set some owned workspace was created after it. Checked when the PR watcher reports a change on an owned workspace, when one is archived, when a thread's turn ends, when the person reads it, and 20 seconds after launch. Off when `Settings.autoResolveThreads` is false.
+13. `resolve_thread` needs no OK (it only hides, and a message brings the thread back). `list_threads` marks resolved threads, and `send_to_thread` to one reports `reopened`.
+14. `RepoGroup.icon` is a name from the renderer's icon set and `RepoGroup.color` a `PROJECT_COLORS` id; the main process accepts only short lowercase names, and unknown ones fall back to the default mark.
 
 ## Design
 
@@ -86,7 +96,7 @@ Runs on the Agent SDK with the person's own sign-in like every chat ([decision 0
 
 ## Testing
 
-`test/projects.test.ts`, `test/orchestrator.test.ts` (project threads, thread-owned workspaces, project repos). Screenshots above are from the built app with a seeded state and a stand-in `gh`; the sidebar ones predate the thread level and need retaking.
+`test/projects.test.ts` (including resolved threads and the self-resolve rule), `test/orchestrator.test.ts` (project threads, thread-owned workspaces, `resolve_thread`, project repos). The `resolve-threads` demo scene (`scripts/demo/record.cjs`) archives a thread's two workspaces and records it resolving, the Resolved list, ⌘K and Reopen. Screenshots above are from the built app with a seeded state and a stand-in `gh`; the sidebar ones predate the thread level and need retaking.
 
 ## Future work
 

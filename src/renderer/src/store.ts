@@ -760,6 +760,15 @@ export async function openGroupOrchestrator(groupId: string, chatId?: string) {
   }
 }
 
+/** Resolve a project thread (it leaves the sidebar and Threads panel, kept and findable) or reopen it. */
+export async function resolveThread(chatId: string, resolved: boolean) {
+  try {
+    useStore.getState().upsertChat(await window.api.resolveThread(chatId, resolved))
+  } catch (e) {
+    reportError(e)
+  }
+}
+
 /** Hide or show a sidebar row (an Orchestrator or add-on row). Keys come from shared/sidebarHidden.ts. */
 export function setSidebarRowHidden(keys: string | string[], hidden: boolean) {
   saveSidebarList('sidebarHidden', keys, hidden)

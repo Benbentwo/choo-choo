@@ -172,7 +172,8 @@ describe('project threads', () => {
           threads.push(c)
           return c
         },
-        forward: (c, text) => void sent.push([c.id, text])
+        forward: (c, text) => void sent.push([c.id, text]),
+        resolve: (c, resolved) => Object.assign(c, { resolved: resolved || undefined })
       }
     }
     return { r, threads, sent }
@@ -203,6 +204,26 @@ describe('project threads', () => {
     ])
     await expect(send.handler({ message: 'x' })).rejects.toThrow(/thread_id or new_thread_title/)
     await expect(send.handler({ thread_id: 'nope', message: 'x' })).rejects.toThrow(/No thread nope/)
+  })
+  it('resolves threads: a thread itself, or any thread from the orchestrator chat', async () => {
+    const call = async (o: Server, name: string, a: unknown) => (await o.mcpServers.choo.tools.find((t) => t.name === name)!.handler(a)).content[0].text
+    const t = role('thread')
+    const own = orch.queryOptions(sdk, repo, {} as never, [], t.r) as Server & { autoAllowTools: string[] }
+    expect(await call(own, 'resolve_thread', {})).toMatch(/^Resolved/)
+    expect(t.threads[0].resolved).toBe(true)
+    expect(own.autoAllowTools).toContain('mcp__choo__resolve_thread')
+    const rt = role('router')
+    const router = orch.queryOptions(sdk, repo, {} as never, [], rt.r) as Server
+    expect(await call(router, 'resolve_thread', { thread_id: 't1' })).toBe('Resolved "Signup flow".')
+    expect(JSON.parse(await call(router, 'list_threads', {}))[0]).toMatchObject({ id: 't1', resolved: true })
+    // Sending to a resolved thread reopens it (the app does that when the message lands); the result says so.
+    expect(JSON.parse(await call(router, 'send_to_thread', { thread_id: 't1', message: 'One more thing' }))).toMatchObject({ reopened: true })
+    expect(await call(router, 'resolve_thread', { thread_id: 't1', reopen: true })).toBe('Reopened "Signup flow".')
+    expect(rt.threads[0].resolved).toBeUndefined()
+    await expect(call(router, 'resolve_thread', { thread_id: 'nope' })).rejects.toThrow(/No thread nope/)
+    const plain = orch.queryOptions(sdk, repo, {} as never, []) as Server & { autoAllowTools: string[] }
+    expect(plain.mcpServers.choo.tools.map((x) => x.name)).not.toContain('resolve_thread')
+    expect(plain.autoAllowTools).not.toContain('mcp__choo__resolve_thread')
   })
   it('tells each chat its role', () => {
     expect(orch.systemPrompt(repo, '', [], role('router').r)).toContain("This is the project's orchestrator chat")
