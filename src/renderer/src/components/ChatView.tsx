@@ -18,6 +18,7 @@ import { RouteItem } from './Projects'
 import { parseAutoUpdate, stripRouted, type AutoUpdateEntry } from '@shared/projects'
 import { stripRunMarker } from '@shared/automations'
 import { groupWork, type ChatEntry } from '../chatGroups'
+import { CHECK_IN_QUESTION, formatElapsed, liveStatus } from '@shared/liveStatus'
 
 export function ChatView({ chat }: { chat: Chat }) {
   const all = useStore((s) => s.items[chat.id])
@@ -52,7 +53,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   )
   const currentEntries = useMemo(() => (compact ? groupWork(current) : null), [compact, current])
   const running = chat.status === 'running'
-  // The last Working row shows its own spinner, so the one under the chat would repeat it.
+  // The last Working row shows its own spinner, so the line under the chat drops its own.
   const endsInLiveWork = running && currentEntries?.at(-1)?.kind === 'work'
   const renderItems = (list: ChatItem[]) => {
     const entries: ChatEntry[] | null = list === current ? currentEntries : compact ? groupWork(list) : null
@@ -107,13 +108,7 @@ export function ChatView({ chat }: { chat: Chat }) {
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-faint border-t-fg" /> Stopping…
           </div>
         ) : (
-          chat.status === 'running' &&
-          !pendingCount &&
-          !endsInLiveWork && (
-            <div className="mt-3 flex items-center gap-2 text-faint">
-              <span className="h-3 w-3 animate-spin rounded-full border-2 border-faint border-t-fg" /> Working…
-            </div>
-          )
+          chat.status === 'running' && !pendingCount && <LiveLine chat={chat} items={all ?? []} spinner={!endsInLiveWork} />
         )}
       </div>
     </div>
@@ -285,6 +280,8 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
       return <div className="my-3 rounded-lg border border-del/30 bg-del/10 px-3 py-2 text-del">{item.text}</div>
     case 'advisor':
       return <AdvisorItem item={item} chat={chat} />
+    case 'checkin':
+      return <CheckInItem item={item} chat={chat} />
   }
 }
 
@@ -540,6 +537,7 @@ function WorkGroup({
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">
           {working && !open ? `${latest.name} ${toolSummary(latest.name, latest.input)}`.trim() : ''}
         </span>
+        {working && latest.result === undefined && <Elapsed since={latest.ts} className="shrink-0 text-[11px] text-faint" />}
         {working && <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-faint border-t-fg" />}
       </button>
       {open && (
@@ -773,6 +771,90 @@ function QuestionCard({ id, input }: { id: string; input: unknown }) {
         </button>
         <span className="text-[12px] text-faint">or reply below</span>
       </div>
+    </div>
+  )
+}
+
+/** Re-renders every `ms` while mounted, for live elapsed times. */
+function useNow(ms = 1000): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms)
+    return () => clearInterval(t)
+  }, [ms])
+  return now
+}
+
+function Elapsed({ since, className }: { since: number; className?: string }) {
+  const now = useNow()
+  return <span className={className}>{formatElapsed(now - since)}</span>
+}
+
+/**
+ * The line under a running chat: what Claude is doing right now in plain words, for how long, and a
+ * way to ask what it's up to without stopping it. Replaces a bare "Working…" that read as stuck
+ * during long waits such as a CI polling loop.
+ */
+function LiveLine({ chat, items, spinner }: { chat: Chat; items: ChatItem[]; spinner: boolean }) {
+  const now = useNow()
+  const status = useMemo(() => liveStatus(items), [items])
+  const asking = items.some((x) => x.kind === 'checkin' && x.pending)
+  const step = now - status.since
+  const turn = status.turnSince !== undefined ? now - status.turnSince : undefined
+  return (
+    <div className="mt-3 flex items-center gap-2 text-[12px] text-faint" data-testid="live-line">
+      {spinner ? <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-faint border-t-fg" /> : <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${status.waiting ? 'bg-amber-400' : 'bg-faint'} animate-pulse`} />}
+      <span className={`min-w-0 truncate ${status.waiting ? 'text-amber-400/90' : 'text-muted'}`} title={status.detail}>
+        {status.label}
+      </span>
+      <span className="shrink-0" title={turn !== undefined ? `This turn has run for ${formatElapsed(turn)}` : undefined}>
+        · {formatElapsed(step)}
+        {turn !== undefined && turn - step > 60_000 ? ` · turn ${formatElapsed(turn)}` : ''}
+      </span>
+      <span className="flex-1" />
+      <button
+        className="shrink-0 rounded-md border border-line px-2 py-0.5 text-muted hover:border-faint hover:text-fg disabled:opacity-50"
+        disabled={asking}
+        title="Ask what it's doing and waiting on. Claude keeps working. You can also type /btw and a question."
+        onClick={() => void window.api.checkIn(chat.id).catch(reportError)}
+      >
+        {asking ? 'Checking…' : 'Check in'}
+      </button>
+    </div>
+  )
+}
+
+/** A side answer about what the chat is doing. Written by a separate quick query; the running turn never sees it. */
+function CheckInItem({ item, chat }: { item: Extract<ChatItem, { kind: 'checkin' }>; chat: Chat }) {
+  const asked = item.question !== CHECK_IN_QUESTION
+  return (
+    <div className="my-3 rounded-lg border border-dashed border-line px-3 py-2" data-testid="check-in">
+      <div className="mb-1 flex items-center gap-2 text-[11px] text-faint">
+        <span className="font-medium text-muted">Check-in</span>
+        {asked && <span className="min-w-0 truncate">“{item.question}”</span>}
+        <span className="flex-1" />
+        {!item.pending && !item.failed && !item.forwarded && asked && (
+          <button
+            className="shrink-0 hover:text-fg"
+            title={chat.status === 'running' ? 'Send your question into the running turn as well; Claude reads it at its next step' : 'Send your question to Claude as a message'}
+            onClick={() => void window.api.forwardCheckIn(chat.id, item.id).catch(reportError)}
+          >
+            Also ask Claude
+          </button>
+        )}
+        {item.forwarded && <span className="shrink-0">Sent to Claude too</span>}
+      </div>
+      {item.pending && !item.text ? (
+        <div className="flex items-center gap-2 text-[12px] text-faint">
+          <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-faint border-t-fg" /> Reading the chat so far… Claude keeps working.
+        </div>
+      ) : (
+        <div className={`prose-chat text-[13px] leading-relaxed ${item.failed ? 'text-del' : ''}`}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+            {tidyMarkdown(item.text)}
+          </ReactMarkdown>
+        </div>
+      )}
     </div>
   )
 }

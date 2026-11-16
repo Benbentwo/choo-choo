@@ -104,6 +104,8 @@ const api: Api = {
   forgetCloud: inv('chat:cloudForget') as Api['forgetCloud'],
   actOnAdvice: inv('advisor:act') as Api['actOnAdvice'],
   reviewPlan: inv('plan:review') as Api['reviewPlan'],
+  checkIn: inv('chat:checkIn') as Api['checkIn'],
+  forwardCheckIn: inv('chat:forwardCheckIn') as Api['forwardCheckIn'],
   respondPermission: (id, d, answers) => ipcRenderer.send('permission:respond', id, d, answers),
   pendingPermissions: inv('permission:pending') as Api['pendingPermissions'],
   addChatFolder: inv('chat:addFolder') as Api['addChatFolder'],

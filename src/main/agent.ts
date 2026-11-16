@@ -48,6 +48,12 @@ export const stopTimings = { interruptMs: 3000, closeMs: 5000, killMs: 4000 }
 /** Chats whose last turn ended because someone pressed Stop. Cleared when the next turn starts. */
 const stoppedChats = new Set<string>()
 
+/** Claude Code's background tasks still running in each chat's turn. */
+const liveTaskList = new Map<string, BackgroundTask[]>()
+export function liveTasks(chatId: string): BackgroundTask[] {
+  return liveTaskList.get(chatId) ?? []
+}
+
 /** True when the chat's last turn was stopped, so nothing should pick it up again on its own. */
 export function wasStopped(chatId: string) {
   return stoppedChats.has(chatId)
@@ -546,7 +552,10 @@ export async function send(
     let stopEnded = false
     for await (const msg of untilForced(q as AsyncIterable<any>, forced)) {
       if ((msg.type === 'assistant' || msg.type === 'user') && msg.uuid) lastUuid = msg.uuid
-      if (applyTaskEvent(tasks, msg)) emit(chat.id, { tasks: runningTasks(tasks) })
+      if (applyTaskEvent(tasks, msg)) {
+        liveTaskList.set(chat.id, runningTasks(tasks))
+        emit(chat.id, { tasks: runningTasks(tasks) })
+      }
       switch (msg.type) {
         case 'rate_limit_event':
           limitHit = limitFromEvent(msg, Date.now()) ?? limitHit
@@ -712,6 +721,7 @@ export async function send(
     endTurn()
     const stopped = r.stopping
     if (stopped) chat.status = 'idle'
+    liveTaskList.delete(chat.id)
     emit(chat.id, { tasks: [] })
     for (const [id, p] of pending) if (p.req.chatId === chat.id) respondPermission(id, 'deny')
     if (streamItem) put({ ...streamItem, streaming: false })

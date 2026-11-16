@@ -258,6 +258,30 @@ const scenes = {
       console.log(left ? `stop: test run still alive (${left})` : 'stop: test run process is gone')
     }),
 
+  // A long wait reads as what it is (the run it waits on and for how long), and Check in answers
+  // "what are you doing?" from the chat so far while the turn keeps going.
+  'check-in': () =>
+    record('check-in', { script: 'check-in.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Ship the trip notes page once CI passes')
+      await d.page.getByText('Waiting on run 48213', { exact: false }).first().waitFor({ timeout: 30_000 })
+      await d.wait(4500)
+      await d.shot?.('1-waiting')
+      await d.click(d.page.getByRole('button', { name: 'Check in' }))
+      await d.page.getByText('checks the run every 20 seconds', { exact: false }).waitFor({ timeout: 30_000 })
+      await d.wait(2200)
+      await d.shot?.('2-check-in')
+      await d.click(d.page.locator('textarea').first())
+      await d.type('How’s it going?', 45)
+      await d.page.keyboard.press('Enter')
+      await d.page.getByText('Going fine, just slow', { exact: false }).waitFor({ timeout: 30_000 })
+      await d.wait(2500)
+      await d.shot?.('3-status-question')
+      await d.page.keyboard.press('Escape')
+      await d.wait(800)
+    }),
+
   'stop-queued': () =>
     record('stop-queued', { script: 'stop.json', settings: { whileRunning: 'queue' }, opts: { noGif: true } }, async (d) => {
       await d.wait(500)

@@ -61,6 +61,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Compact chat format (Settings › Appearance): each stretch of tool calls folds into one collapsed Working row
 - ✅ Code blocks in your own messages: text between ``` fences shows as a monospace block that keeps its spacing. While the cursor is inside an open fence the composer turns monospace and Enter adds a line; closing the fence or ⌘Enter sends.
 - ✅ Stop (button or Esc). It shows Stopping… at once, ends with a "Stopped by you" marker, and if Claude Code doesn't respond within a few seconds it is force stopped with everything it started; press Stop again to force it sooner. Queued messages go back to the message box, and nothing restarts a stopped chat on its own (choo-choo addition, [PRD](prd/stop.md))
+- ✅ Live status while Claude works: the line under a running chat names the current step and how long it has run ("Waiting on run 48213 · 14m" for CI polling loops and watches), and Check in, `/btw <question>` or a mid-turn "how's it going?" gets a short answer from the chat so far without interrupting the turn (choo-choo addition, [PRD](prd/check-in.md))
 - ✅ Send while Claude works: Steer (default, folded in at the next step) or Queue (sent after), set in Settings > General
 - ✅ `/clear` folds the messages before it behind a "Context cleared" divider, with Show earlier messages
 - ✅ @mention file autocomplete, /command autocomplete (built-ins, project and user commands, skills)
