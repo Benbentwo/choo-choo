@@ -4,6 +4,7 @@ import { githubLinkLabel, isBareLink, parseGithubLink, previewDot, shortAge, typ
 import { prBranch, type InboxPr } from '@shared/prInbox'
 import { workspaceForIssue, workspaceForPr } from '@shared/workspaceFor'
 import type { LinkPreviewResult } from '@shared/types'
+import { BARE_URL } from '@shared/linkHref'
 import { openPrWorkspace, refreshState, reportError, useStore } from '../store'
 import { IconCheck, IconCopy, IconFile, IconGithub, IconMerged, IconPR, IconRefresh, IconRepo } from '../icons'
 
@@ -100,6 +101,28 @@ function KindIcon({ link, preview, className }: { link: GithubLink; preview?: Li
   if (link.kind === 'commit') return <IconCommit {...p} />
   if (link.kind === 'file') return <IconFile {...p} />
   return <IconRepo {...p} />
+}
+
+/**
+ * Plain text (the person's own messages) with its URLs made into links, so GitHub links get the same
+ * pill and hover card as in Claude's replies.
+ */
+export function LinkifiedText({ text }: { text: string }) {
+  const out: ReactNode[] = []
+  let last = 0
+  for (const m of text.matchAll(BARE_URL)) {
+    const i = m.index ?? 0
+    if (i > last) out.push(text.slice(last, i))
+    const href = /^www\./i.test(m[0]) ? `https://${m[0]}` : m[0]
+    out.push(
+      <ChatLink key={i} href={href}>
+        {m[0]}
+      </ChatLink>
+    )
+    last = i + m[0].length
+  }
+  if (last < text.length) out.push(text.slice(last))
+  return <>{out}</>
 }
 
 /** react-markdown's `a`: GitHub links get the pill and the hover card; every other link is left alone. */

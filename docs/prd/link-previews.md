@@ -22,12 +22,11 @@ Agents link PRs, issues, commits and files all the time. In chat these are long 
 ## Non-goals
 
 - Previews for non-GitHub sites (Linear, Notion, docs). The card is built so other kinds could be added.
-- Unfurling links in the person's own messages (they show as plain text today).
 - Live updates while a card is open; the refresh button asks again.
 
 ## User experience
 
-- **Pills.** A GitHub link whose text is just its URL (Claude's usual way of writing one) shows as a small pill: `web#488 ●` for a PR or issue, `web@abc1234` for a commit, `dates.ts:10-16` for a file, `owner/repo` for a repo. PR and issue pills carry a state dot (green open, gray draft or not planned, purple merged or completed, red closed), loaded once the pill scrolls into view. Links with their own text keep it.
+- **Pills.** A GitHub link whose text is just its URL (Claude's usual way of writing one, and any GitHub URL you paste in your own message) shows as a small pill: `web#488 ●` for a PR or issue, `web@abc1234` for a commit, `dates.ts:10-16` for a file, `owner/repo` for a repo. PR and issue pills carry a state dot (green open, gray draft or not planned, purple merged or completed, red closed), loaded once the pill scrolls into view. Links with their own text keep it.
 - **Hover card.** Hovering any GitHub link (pill or not) for 400 ms opens a 320 px card beside it, below the link when there's room and above otherwise. It floats over the chat, so nothing moves. Moving the pointer into the card keeps it open; leaving both closes it after a moment. Escape, scrolling or switching windows closes it.
 - **What the card shows.**
   - PR: repo and number, state badge, title, author and last update, checks (passed, failed or running), review (approved, changes requested, review requested), +/- lines and files, head → base branch.
@@ -72,7 +71,7 @@ On by default, with a switch in Settings › General.
 
 ## Open questions
 
-- Should pills also replace bare GitHub URLs in the person's own messages?
+- None. Ben confirmed (2026-11-16) that GitHub URLs in the person's own messages also become pills; other URLs there become plain links.
 
 ## Future work
 

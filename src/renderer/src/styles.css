@@ -116,7 +116,7 @@ body,
   text-decoration-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
   text-underline-offset: 2px;
 }
-.prose-chat a.gh-pill {
+a.gh-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -132,13 +132,25 @@ body,
   vertical-align: baseline;
   white-space: nowrap;
 }
-.prose-chat a.gh-pill:hover {
+a.gh-pill:hover {
   border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-line));
   background: var(--color-hover);
 }
-.prose-chat a.gh-pill > span:not([aria-label]) {
+a.gh-pill > span:not([aria-label]) {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* The person's own messages sit on a raised bubble; their links and pills need their own contrast. */
+.user-text a:not(.gh-pill) {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+.user-text a.gh-pill {
+  background: var(--color-panel);
+  vertical-align: middle;
 }
 .gh-pill-icon {
   flex-shrink: 0;
