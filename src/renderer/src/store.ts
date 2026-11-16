@@ -793,7 +793,12 @@ export function setRepoCollapsed(repoId: string, collapsed: boolean) {
   saveSidebarList('sidebarCollapsed', repoId, collapsed)
 }
 
-function saveSidebarList(field: 'sidebarHidden' | 'sidebarCollapsed', keys: string | string[], on: boolean) {
+/** Fold repos on the PRs page so only their header shows, or unfold them. Saved in settings, so it survives restarts. */
+export function setPrReposCollapsed(repos: string | string[], collapsed: boolean) {
+  saveSidebarList('prsCollapsed', repos, collapsed)
+}
+
+function saveSidebarList(field: 'sidebarHidden' | 'sidebarCollapsed' | 'prsCollapsed', keys: string | string[], on: boolean) {
   const cur = useStore.getState().settings[field] ?? []
   const next = [keys].flat().reduce((list, key) => toggleHidden(list, key, on), cur)
   if (next === cur) return

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { groupByRepo, isReviewing, matchesFilter, orgsAndRepos, visiblePrs, type InboxPr, type PrFilter } from '@shared/prInbox'
-import { useStore, refreshPrInbox, openPrWorkspace, reportError } from '../store'
-import { IconGithub, IconPR, IconRight, IconSidebar } from '../icons'
+import { useStore, refreshPrInbox, openPrWorkspace, reportError, setPrReposCollapsed } from '../store'
+import { IconDown, IconGithub, IconPR, IconRight, IconSidebar } from '../icons'
 
 const FILTER_KEY = 'prs-filter'
 const FILTERS: { id: PrFilter; label: string }[] = [
@@ -28,7 +28,9 @@ export function PrInboxPage() {
   const prs = useMemo(() => visiblePrs(allPrs, hidden), [allPrs, hidden])
   const [filterMenu, setFilterMenu] = useState(false)
   const groups = useMemo(() => groupByRepo(prs, filter), [prs, filter])
-  const flat = groups.flatMap((g) => g.prs)
+  const collapsed = s.settings.prsCollapsed ?? []
+  const flat = groups.filter((g) => !collapsed.includes(g.repo)).flatMap((g) => g.prs)
+  const folded = (repo: string) => collapsed.includes(repo)
   const key = (p: InboxPr) => `${p.repo}#${p.number}`
   const counts: Record<PrFilter, number> = { review: prs.filter(isReviewing).length, updated: prs.filter((p) => matchesFilter(p, 'updated')).length, mine: prs.filter((p) => p.roles.includes('mine')).length, all: prs.length }
   const fresh = prs.filter((p) => p.update?.fresh)
@@ -130,16 +132,25 @@ export function PrInboxPage() {
             <div className="py-10 text-center text-muted">{filter === 'review' ? 'Nothing waiting on your review.' : filter === 'updated' ? 'Nothing changed for you since you last looked.' : filter === 'mine' ? 'You have no open pull requests.' : 'No open pull requests.'}</div>
           )}
           {groups.map((g) => (
-            <section key={g.repo} className="mb-5">
-              <div className="mb-1 flex items-center gap-2 px-2 text-[12px] font-medium text-faint">
+            <section key={g.repo} className={folded(g.repo) ? 'mb-1' : 'mb-5'}>
+              <button
+                className="group/repo mb-1 flex w-full items-center gap-2 rounded-md px-2 py-0.5 text-left text-[12px] font-medium text-faint hover:bg-hover"
+                aria-expanded={!folded(g.repo)}
+                title={`${folded(g.repo) ? 'Show' : 'Hide'} this repo's PRs. Option-click to ${folded(g.repo) ? 'show' : 'hide'} every repo.`}
+                onClick={(e) => setPrReposCollapsed(e.altKey ? groups.map((x) => x.repo) : g.repo, !folded(g.repo))}
+              >
+                <IconDown width={12} height={12} className={`-ml-0.5 shrink-0 text-muted transition-transform ${folded(g.repo) ? '-rotate-90' : ''}`} />
                 <img src={`https://avatars.githubusercontent.com/${g.repo.split('/')[0]}?s=40`} alt="" className="h-4 w-4 rounded-[4px] bg-raised" />
-                <span className="text-muted">{g.repo}</span>
-                <span>{g.prs.length}</span>
+                <span className="text-muted group-hover/repo:text-fg">{g.repo}</span>
+                <span className={folded(g.repo) && g.prs.some((p) => p.update?.fresh) ? 'text-accent' : ''} title={folded(g.repo) && g.prs.some((p) => p.update?.fresh) ? 'Some of these PRs changed for you' : undefined}>
+                  {g.prs.length}
+                </span>
                 {!g.prs[0].repoId && <span className="rounded border border-line px-1 text-[10px] font-normal" title="Opening a PR clones this repo and adds it as a project">not added</span>}
-              </div>
-              {g.prs.map((p) => (
-                <PrRow key={key(p)} pr={p} selected={selected === key(p)} opening={opening === key(p)} onSelect={() => setSelected(key(p))} onOpen={() => void open(p)} />
-              ))}
+              </button>
+              {!folded(g.repo) &&
+                g.prs.map((p) => (
+                  <PrRow key={key(p)} pr={p} selected={selected === key(p)} opening={opening === key(p)} onSelect={() => setSelected(key(p))} onOpen={() => void open(p)} />
+                ))}
             </section>
           ))}
         </div>
