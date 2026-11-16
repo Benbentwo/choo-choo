@@ -12,7 +12,8 @@ export const BUILTIN_COMMANDS: SlashCommandInfo[] = [
   { name: 'security-review', description: 'Security review of pending changes' },
   { name: 'cost', description: 'Show token usage and cost' },
   { name: 'context', description: 'Show context window usage' },
-  { name: 'desktop', description: 'Continue this chat in Claude desktop' }
+  { name: 'desktop', description: 'Continue this chat in Claude desktop' },
+  { name: 'btw', description: "Ask a side question (what it's doing, what it's waiting on) without interrupting" }
 ]
 
 function description(file: string): string | undefined {
