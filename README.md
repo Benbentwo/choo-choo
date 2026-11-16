@@ -39,7 +39,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Stop that always stops.** Stop (or Esc) shows Stopping… right away and ends the turn within seconds. If Claude doesn't respond, Force stop ends it and everything it started, and queued messages go back to the message box.
 - **Check in without stopping.** A running chat says what it's doing and for how long, such as "Waiting on run 48213 · 14m". Press Check in, type `/btw` and a question, or just ask "how's it going?" to get a quick answer while Claude keeps working.
 - **Orchestrator.** Tell a repo's orchestrator what you want and it splits the work into workspaces, briefs each agent, reads their diffs and follows up.
-- **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. A thread whose work is all merged or closed resolves itself and leaves the sidebar, still a click or ⌘K away. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
+- **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. A thread whose work is all merged or closed resolves itself and leaves the sidebar, still a click or ⌘K away. Drag projects to put them in any order. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
 - **Split panels and resizable panes.** Put workspaces and chats side by side, drag either sidebar to size it, and expand the right panel with ⌘⇧E.
 
 <p align="center">
@@ -50,6 +50,11 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 <p align="center">
   <img src="docs/media/gifs/resolve-threads.gif" alt="A thread's two workspaces are archived, so the thread resolves on its own and shows a Resolved card. It leaves the sidebar for a Resolved list under the project, ⌘K still finds it, and Reopen brings it back." width="900"><br>
   <sub>Finished threads resolve themselves: out of the sidebar, never deleted, and back with Reopen.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/media/gifs/reorder-projects.gif" alt="Four projects in the sidebar. Gift cards is dragged to the top and Trip checkout to the bottom, with a line showing where each will land." width="900"><br>
+  <sub>Drag projects into the order you want; it sticks.</sub>
 </p>
 
 <p align="center">

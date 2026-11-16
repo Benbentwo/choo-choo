@@ -27,6 +27,12 @@ export function moveId(ids: string[], id: string, target: string, after: boolean
   return rest
 }
 
+/** Sorts `list` into the order of `ids` (as dragged in the sidebar). Items not in `ids` keep their place at the end. */
+export function orderByIds<T extends { id: string }>(list: T[], ids: string[]): T[] {
+  const pos = new Map(ids.map((id, i) => [id, i]))
+  return [...list].sort((a, b) => (pos.get(a.id) ?? Infinity) - (pos.get(b.id) ?? Infinity))
+}
+
 export type ProjectWorkSort = 'newest' | 'oldest' | 'pr' | 'title'
 
 /**

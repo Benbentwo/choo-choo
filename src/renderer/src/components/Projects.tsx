@@ -3,11 +3,11 @@ import { PaneClose } from './PaneToggle'
 import { prMenuItems } from '../prState'
 import type { Chat, PrInfo, RepoGroup, Workspace } from '@shared/types'
 import { foldKey, parseAutoUpdate, projectArchived, projectThreads, projectTree, resolvedThreads, routerChat, stripRouted, threadKey, type ThreadNode } from '@shared/projects'
-import { useStore, setProjectWorkSort, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, resolveThread, showView, viewFor, ago } from '../store'
+import { useStore, setProjectWorkSort, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, resolveThread, showView, viewFor, ago, reportError } from '../store'
 import { IconArchive, IconBranch, IconCheck, IconDown, IconPlus, IconSort, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
 import { ProjectIcon } from './ProjectIcon'
-import { sortProjectWork, type ProjectWorkSort } from '@shared/sidebarOrder'
+import { moveId, sortProjectWork, type ProjectWorkSort } from '@shared/sidebarOrder'
 import { askToQueue, setQueueDrag } from './ContinueWork'
 
 /**
@@ -19,6 +19,15 @@ export function ProjectsSection() {
   const s = useStore()
   const folded = (key: string) => (s.settings.sidebarCollapsed ?? []).includes(key)
   const sectionFolded = folded(foldKey.section)
+  // Drag a project row onto another to reorder. The same drag can still be dropped on Up next to queue it.
+  const [drag, setDrag] = useState<ProjectDrag | null>(null)
+  const move = (id: string, target: string, after: boolean) => {
+    const before = s.groups.map((g) => g.id)
+    const ids = moveId(before, id, target, after)
+    if (ids.join() === before.join()) return
+    useStore.getState().set({ groups: ids.map((x) => s.groups.find((g) => g.id === x)!) })
+    void window.api.reorderGroups(ids).catch(reportError)
+  }
   return (
     <div className="mb-3">
       <div className="group mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
@@ -35,12 +44,37 @@ export function ProjectsSection() {
           New project: one goal across one or more repos
         </button>
       )}
-      {!sectionFolded && s.groups.map((g) => <ProjectNode key={g.id} group={g} folded={folded} />)}
+      {!sectionFolded &&
+        s.groups.map((g) => (
+          <div
+            key={g.id}
+            data-testid="project-node"
+            className={`${drag?.over === g.id && drag.id !== g.id ? (drag.after ? 'shadow-[0_2px_0_var(--color-accent)]' : 'shadow-[0_-2px_0_var(--color-accent)]') : ''} ${drag?.id === g.id ? 'opacity-50' : ''}`}
+            onDragOver={(e) => {
+              if (!drag) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+              const r = e.currentTarget.getBoundingClientRect()
+              const after = e.clientY > r.top + Math.min(r.height, 36) / 2
+              if (drag.over !== g.id || drag.after !== after) setDrag({ ...drag, over: g.id, after })
+            }}
+            onDrop={(e) => {
+              if (!drag) return
+              e.preventDefault()
+              if (drag.over) move(drag.id, drag.over, drag.after)
+              setDrag(null)
+            }}
+          >
+            <ProjectNode group={g} folded={folded} onDragStart={() => setDrag({ id: g.id, over: null, after: false })} onDragEnd={() => setDrag(null)} />
+          </div>
+        ))}
     </div>
   )
 }
 
-function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string) => boolean }) {
+type ProjectDrag = { id: string; over: string | null; after: boolean }
+
+function ProjectNode({ group, folded, onDragStart, onDragEnd }: { group: RepoGroup; folded: (key: string) => boolean; onDragStart?: () => void; onDragEnd?: () => void }) {
   const s = useStore()
   const [showArchived, setShowArchived] = useState(false)
   const [showResolved, setShowResolved] = useState(false)
@@ -63,9 +97,13 @@ function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string
       <div
         className={`group flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-1.5 ${active ? 'bg-raised' : 'hover:bg-hover'}`}
         onClick={() => void openGroupOrchestrator(group.id)}
-        title="Open the orchestrator chat. Drag onto Up next to queue the project for the next window."
+        title="Open the orchestrator chat. Drag to reorder projects, or onto Up next to queue the project for the next window."
         draggable
-        onDragStart={(e) => setQueueDrag(e, { kind: 'project', groupId: group.id })}
+        onDragStart={(e) => {
+          setQueueDrag(e, { kind: 'project', groupId: group.id })
+          onDragStart?.()
+        }}
+        onDragEnd={() => onDragEnd?.()}
         onContextMenu={(e) => {
           e.preventDefault()
           setMenuAt({ x: e.clientX, y: e.clientY })

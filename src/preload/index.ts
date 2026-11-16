@@ -163,6 +163,7 @@ const api: Api = {
   deleteWorkspace: inv('ws:delete') as Api['deleteWorkspace'],
   deleteLeftover: inv('leftover:delete') as Api['deleteLeftover'],
   reorderRepos: inv('repo:reorder') as Api['reorderRepos'],
+  reorderGroups: inv('group:reorder') as Api['reorderGroups'],
   pickFiles: inv('files:pick') as Api['pickFiles'],
   modelDetails: inv('models:details') as Api['modelDetails'],
   previewConductorImport: inv('conductor:preview') as Api['previewConductorImport'],
