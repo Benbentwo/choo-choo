@@ -1,0 +1,26 @@
+{
+  "titles": [{ "match": "trip notes", "title": "Ship trip notes", "branch": "ship-trip-notes" }],
+  "turns": [
+    {
+      "match": "The person asks: (How|how)",
+      "steps": [
+        { "sleep": 700, "text": "Going fine, just slow: nothing has failed. It's still waiting on CI run 48213 for PR #12, and the earlier checks all passed. When the run goes green it merges PR #12, then updates the preview." }
+      ]
+    },
+    {
+      "match": "The person asks:",
+      "steps": [
+        { "sleep": 900, "text": "It's waiting on CI run 48213 for PR #12 (trip notes page). The tests and lint passed locally; this loop checks the run every 20 seconds and hasn't seen a failure. Once the run finishes green, it merges PR #12 and then deploys the preview." }
+      ]
+    },
+    {
+      "match": "trip notes",
+      "stuck": false,
+      "steps": [
+        { "text": "Opened PR #12 with the trip notes page. Tests and lint pass locally. Waiting for CI before merging." },
+        { "tool": "Bash", "input": { "command": "npm test && npm run lint", "description": "Run tests and lint" }, "result": "42 passed", "wait": 900 },
+        { "tool": "Bash", "input": { "command": "r=48213; until [ \"$(gh run view $r --json status -q .status)\" = completed ]; do sleep 20; done", "description": "Wait for the CI run on PR #12" }, "bash": "exec sleep 6021" }
+      ]
+    }
+  ]
+}

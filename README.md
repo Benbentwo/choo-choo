@@ -37,6 +37,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Agents in isolated worktrees.** Press + to start a workspace: a fresh git worktree and branch where a Claude Code agent works without touching your other checkouts.
 - **Chat built for coding agents.** Opus, Sonnet and Haiku with effort levels, plan mode, @file mentions, /slash commands and skills, image attachments, and "revert to here" checkpoints.
 - **Stop that always stops.** Stop (or Esc) shows Stopping… right away and ends the turn within seconds. If Claude doesn't respond, Force stop ends it and everything it started, and queued messages go back to the message box.
+- **Check in without stopping.** A running chat says what it's doing and for how long, such as "Waiting on run 48213 · 14m". Press Check in, type `/btw` and a question, or just ask "how's it going?" to get a quick answer while Claude keeps working.
 - **Orchestrator.** Tell a repo's orchestrator what you want and it splits the work into workspaces, briefs each agent, reads their diffs and follows up.
 - **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
 - **Split panels and resizable panes.** Put workspaces and chats side by side, drag either sidebar to size it, and expand the right panel with ⌘⇧E.
@@ -44,6 +45,10 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 <p align="center">
   <img src="docs/media/gifs/projects-threads.gif" alt="A request in a project's chat starts a thread. The thread starts a workspace in each of two repos, and each agent makes its change in its own worktree." width="900"><br>
   <sub>Ask a project for something; it opens a thread, which starts a workspace (git worktree and agent) in each repo it touches.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/media/gifs/check-in.gif" alt="Claude waits on a CI run. The line under the chat reads Waiting on run 48213 with a running timer. Check in adds a card explaining what it's waiting on and what comes next; typing How's it going? gets another quick answer while the run keeps going." width="900">
 </p>
 
 <p align="center">

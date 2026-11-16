@@ -46,6 +46,8 @@ import { onModelPicked } from '@shared/modelSwitch'
 import * as archive from './archive'
 import * as remote from './remote'
 import * as desktop from './desktop'
+import * as checkIn from './checkIn'
+import { CHECK_IN_COMMAND, isStatusQuestion } from '@shared/liveStatus'
 import * as cloud from './cloud'
 import { registerIntegrationsIpc } from './integrations'
 import * as notion from './integrations/notion'
@@ -349,6 +351,13 @@ function sendFromPerson(chat: Chat, text: string, images: string[]) {
   if (desktop.DESKTOP_COMMAND.test(text.trim()) && !images.length && chat.model !== 'codex') {
     const ws = findWs(chat.workspaceId)
     return desktop.openInDesktop(chat, ws, agentEnv(ws, chat), emitChat).then(() => undefined)
+  }
+  // `/btw <question>`, or a bare "how's it going?" sent mid-turn, gets a side answer now; the turn keeps going untouched.
+  const btw = text.trim().match(CHECK_IN_COMMAND)
+  if (!images.length && (btw || (agent.isRunning(chat.id) && isStatusQuestion(text)))) {
+    const ws = findWs(chat.workspaceId)
+    void checkIn.checkIn(chat, ws, btw ? btw[1] : text, agentEnv(ws, chat), emitChat)
+    return
   }
   // Out of usage: hold the message in Up next instead of sending it into a refused turn.
   if (!agent.isRunning(chat.id) && continueWork.isLimited() && chat.model !== 'codex') {
@@ -1463,6 +1472,19 @@ function registerIpc() {
     const key = store.get().settings.anthropicApiKey.trim()
     if (key) env.ANTHROPIC_API_KEY = key
     return agent.reviewPlan(chat, ws, planItemId, env, emitChat)
+  })
+  h('chat:checkIn', (chatId: string, question?: string) => {
+    const chat = findChat(chatId)
+    const ws = findWs(chat.workspaceId)
+    return checkIn.checkIn(chat, ws, question, agentEnv(ws, chat), emitChat)
+  })
+  h('chat:forwardCheckIn', (chatId: string, itemId: string) => {
+    const chat = findChat(chatId)
+    const question = checkIn.markForwarded(chatId, itemId)
+    emitChat(chatId, { item: store.chatItems(chatId).find((x) => x.id === itemId) })
+    if (!agent.isRunning(chat.id)) return sendToChat(chat, question)
+    if (agent.pushMessage(chat, question, [], 'steer', emitChat)) return
+    afterTurn.set(chat.id, [...(afterTurn.get(chat.id) ?? []), { text: question, images: [] }])
   })
   h('chat:stop', (id: string, opts?: { force?: boolean }) => agent.stop(id, { force: !!opts?.force }))
   h('chat:stopTask', (id: string, taskId: string) => agent.stopTask(id, taskId))

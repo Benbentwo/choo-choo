@@ -426,7 +426,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
             if (e.key === 'Escape' && running) void stopChat(chat)
           }}
           rows={3}
-          placeholder={limited && chat.model !== 'codex' ? "You're out of usage for this window. A message goes to Up next and is sent when it resets." : mode === 'review' ? "Ask about this PR, or click a line in a diff to comment" : 'Ask to make changes, @mention files, run /commands'}
+          placeholder={limited && chat.model !== 'codex' ? "You're out of usage for this window. A message goes to Up next and is sent when it resets." : mode === 'review' ? "Ask about this PR, or click a line in a diff to comment" : running ? 'Steer Claude, or /btw to ask what it’s doing without interrupting' : 'Ask to make changes, @mention files, run /commands'}
           className={`selectable block max-h-72 w-full resize-none bg-transparent px-4 pt-3 text-[13px] outline-none placeholder:text-faint ${inCode ? 'font-mono text-[12px]' : ''}`}
         />
         {inCode && <div className="px-4 pt-1 text-[11px] text-faint">Code block · Enter adds a line · close it with ``` or press ⌘Enter to send</div>}

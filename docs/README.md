@@ -55,6 +55,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Settings search](prd/settings-search.md) | In review (PR #118) |
 | [Stop that always stops](prd/stop.md) | In review |
 | [GitHub link previews](prd/link-previews.md) | Shipped (PR #125) |
+| [Live status and check-ins](prd/check-in.md) | In review |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

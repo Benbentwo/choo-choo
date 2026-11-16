@@ -494,6 +494,19 @@ export type ChatItem =
   | { id: string; kind: 'error'; text: string; ts: number }
   | {
       id: string
+      kind: 'checkin'
+      /** What the person asked, mid-turn or after it. */
+      question: string
+      /** The answer; empty while it's being written. */
+      text: string
+      pending?: boolean
+      failed?: boolean
+      /** The person also sent the question into the running turn. */
+      forwarded?: boolean
+      ts: number
+    }
+  | {
+      id: string
       kind: 'advisor'
       /** Who wrote the notes: the advisor (default), or fresh reviewers checking a plan. */
       source?: 'planReview'
@@ -1196,6 +1209,10 @@ export interface Api {
   actOnAdvice(chatId: string, itemId: string, action: 'send' | 'dismiss'): Promise<void>
   /** Has fresh reviewers, who never saw the chat, check the plan in a plan card. */
   reviewPlan(chatId: string, planItemId: string): Promise<void>
+  /** Answers a side question about the chat (what it's doing, what it's waiting on) without interrupting the turn. */
+  checkIn(chatId: string, question?: string): Promise<void>
+  /** Sends a check-in's question into the running turn after all. */
+  forwardCheckIn(chatId: string, itemId: string): Promise<void>
   onChatEvent(cb: (e: ChatEvent) => void): () => void
   getChanges(workspaceId: string): Promise<FileChange[]>
   getDiffStats(workspaceId: string): Promise<DiffStats>
