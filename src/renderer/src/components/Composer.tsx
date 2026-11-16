@@ -6,6 +6,7 @@ import { useStore, reportError, modelLabel, setCodeComments, codeCommentsMessage
 import { IconDown, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
 import { FORCE_STOP_AFTER_MS } from '@shared/stop'
+import { MarkdownInput, type MarkdownInputHandle } from './MarkdownInput'
 
 export const MODELS: { id: ModelId; label: string }[] = [
   { id: 'opus', label: 'Opus' },
@@ -112,7 +113,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const [goalText, setGoalText] = useState('')
   const [styles, setStyles] = useState<OutputStyleInfo[] | null>(null)
   const tasks = useStore((s) => s.tasks[chat.id]) ?? []
-  const ta = useRef<HTMLTextAreaElement>(null)
+  const ta = useRef<MarkdownInputHandle>(null)
   /** The cursor sits inside a ``` block that isn't closed yet. */
   const [inCode, setInCode] = useState(false)
   const running = chat.status === 'running'
@@ -129,7 +130,6 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   useEffect(() => {
     setTextState(drafts[chat.id] ?? '')
     setTrigger(null)
-    ta.current?.focus()
   }, [chat.id])
 
   useEffect(() => {
@@ -182,11 +182,11 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
 
   const complete = (value: string) => {
     if (!trigger || !ta.current) return
-    const r = applyCompletion(text, ta.current.selectionStart, trigger, value)
+    const r = applyCompletion(text, ta.current.caret(), trigger, value)
     setText(r.text)
     setTrigger(null)
     requestAnimationFrame(() => {
-      ta.current?.setSelectionRange(r.caret, r.caret)
+      ta.current?.setCaret(r.caret)
       ta.current?.focus()
     })
   }
@@ -376,58 +376,68 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
             ))}
           </div>
         )}
-        <textarea
+        <MarkdownInput
+          key={chat.id}
           ref={ta}
+          className="text-[13px]"
+          autoFocus
+          value={drafts[chat.id] ?? ''}
           onPaste={(e) => {
-            const files = Array.from(e.clipboardData.files)
-            if (files.some((f) => f.type.startsWith('image/'))) {
-              e.preventDefault()
-              addImageFiles(files)
-            }
+            const files = Array.from(e.clipboardData?.files ?? [])
+            if (!files.some((f) => f.type.startsWith('image/'))) return false
+            e.preventDefault()
+            addImageFiles(files)
+            return true
           }}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            setInCode(inOpenFence(e.target.value.slice(0, e.target.selectionStart)))
-            updateTrigger(e.target.value, e.target.selectionStart)
+          onChange={(value, caret) => {
+            setText(value)
+            setInCode(inOpenFence(value.slice(0, caret)))
+            updateTrigger(value, caret)
           }}
-          onClick={(e) => updateTrigger(text, e.currentTarget.selectionStart)}
-          onSelect={(e) => setInCode(inOpenFence(e.currentTarget.value.slice(0, e.currentTarget.selectionStart)))}
+          onCaret={(value, caret, pointer) => {
+            setInCode(inOpenFence(value.slice(0, caret)))
+            if (pointer) updateTrigger(value, caret)
+          }}
           onBlur={() => setTimeout(() => setTrigger(null), 100)}
           onKeyDown={(e) => {
             if (showPopup) {
               if (e.key === 'ArrowDown') {
                 e.preventDefault()
-                return setSel((sel + 1) % options.length)
+                setSel((sel + 1) % options.length)
+                return true
               }
               if (e.key === 'ArrowUp') {
                 e.preventDefault()
-                return setSel((sel - 1 + options.length) % options.length)
+                setSel((sel - 1 + options.length) % options.length)
+                return true
               }
               if (e.key === 'Enter' || e.key === 'Tab') {
                 e.preventDefault()
-                return complete(options[sel].value)
+                complete(options[sel].value)
+                return true
               }
               if (e.key === 'Escape') {
                 e.preventDefault()
-                return setTrigger(null)
+                setTrigger(null)
+                return true
               }
             }
             if (e.key === 'Tab' && e.shiftKey) {
               e.preventDefault()
-              return void update({ planMode: !chat.planMode })
+              void update({ planMode: !chat.planMode })
+              return true
             }
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
               // Inside an open ``` block Enter adds a line, as in an editor; ⌘Enter sends from anywhere.
-              if (!e.metaKey && inOpenFence(e.currentTarget.value.slice(0, e.currentTarget.selectionStart))) return
+              if (!e.metaKey && !e.ctrlKey && inOpenFence(text.slice(0, ta.current?.caret() ?? text.length))) return false
               e.preventDefault()
               void submit()
+              return true
             }
             if (e.key === 'Escape' && running) void stopChat(chat)
+            return false
           }}
-          rows={3}
           placeholder={limited && chat.model !== 'codex' ? "You're out of usage for this window. A message goes to Up next and is sent when it resets." : mode === 'review' ? "Ask about this PR, or click a line in a diff to comment" : running ? 'Steer Claude, or /btw to ask what it’s doing without interrupting' : 'Ask to make changes, @mention files, run /commands'}
-          className={`selectable block max-h-72 w-full resize-none bg-transparent px-4 pt-3 text-[13px] outline-none placeholder:text-faint ${inCode ? 'font-mono text-[12px]' : ''}`}
         />
         {inCode && <div className="px-4 pt-1 text-[11px] text-faint">Code block · Enter adds a line · close it with ``` or press ⌘Enter to send</div>}
         <div className="flex items-center gap-2 px-3 pb-2.5">

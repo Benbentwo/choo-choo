@@ -6,6 +6,8 @@ import { Menu, type MenuItem } from './Menu'
 import { RepoIcon } from './Sidebar'
 import { EFFORT_LABEL, EFFORTS, MODELS } from './Composer'
 import { useIntegrations } from './Integrations'
+import { MarkdownInput, type MarkdownInputHandle } from './MarkdownInput'
+import { inOpenFence } from '../markdown'
 
 const KINDS: { id: WorkspaceSource['kind']; label: string }[] = [
   { id: 'pr', label: 'PRs' },
@@ -28,6 +30,7 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
   const [menu, setMenu] = useState<'repo' | 'model' | 'source' | 'add' | null>(null)
   const [extra, setExtra] = useState<DraftContext>({ images: [], files: [], folders: [], links: [] })
   const addBtn = useRef<HTMLButtonElement>(null)
+  const input = useRef<MarkdownInputHandle>(null)
   const imageInput = useRef<HTMLInputElement>(null)
   const addImages = (files: FileList | File[]) => {
     for (const f of Array.from(files)) {
@@ -139,26 +142,32 @@ export function NewWorkspace({ repoId }: { repoId: string }) {
               <IconGithub /> <IconDown className="text-faint" />
             </button>
           </div>
-          <textarea
+          <MarkdownInput
             autoFocus
+            testId="new-workspace-input"
+            className="text-[14px]"
+            minLines={4}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(t) => setText(t)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                // Inside an open ``` block Enter adds a line; ⌘Enter creates from anywhere.
+                if (!e.metaKey && !e.ctrlKey && inOpenFence(text.slice(0, input.current?.caret() ?? text.length))) return false
                 e.preventDefault()
                 void create()
+                return true
               }
+              return false
             }}
             onPaste={(e) => {
-              const imgs = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'))
-              if (imgs.length) {
-                e.preventDefault()
-                addImages(imgs)
-              }
+              const imgs = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'))
+              if (!imgs.length) return false
+              e.preventDefault()
+              addImages(imgs)
+              return true
             }}
-            rows={4}
+            ref={input}
             placeholder={source?.source.kind === 'pr' ? 'What should the agent do with this PR? e.g. review it' : 'What do you want to work on?'}
-            className="selectable block w-full resize-none bg-transparent px-4 pt-3 text-[14px] outline-none placeholder:text-faint"
           />
           {(chips.length > 0 || extra.images.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
