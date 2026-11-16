@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { PaneClose } from './PaneToggle'
 import { prMenuItems } from '../prState'
 import type { Chat, PrInfo, RepoGroup, Workspace } from '@shared/types'
-import { foldKey, parseAutoUpdate, projectArchived, projectThreads, projectTree, routerChat, stripRouted, threadKey, type ThreadNode } from '@shared/projects'
-import { useStore, setProjectWorkSort, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, showView, viewFor } from '../store'
-import { IconArchive, IconBranch, IconDown, IconPlus, IconSort, IconX } from '../icons'
+import { foldKey, parseAutoUpdate, projectArchived, projectThreads, projectTree, resolvedThreads, routerChat, stripRouted, threadKey, type ThreadNode } from '@shared/projects'
+import { useStore, setProjectWorkSort, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, resolveThread, showView, viewFor, ago } from '../store'
+import { IconArchive, IconBranch, IconCheck, IconDown, IconPlus, IconSort, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
 import { ProjectIcon } from './ProjectIcon'
 import { sortProjectWork, type ProjectWorkSort } from '@shared/sidebarOrder'
@@ -43,14 +43,18 @@ export function ProjectsSection() {
 function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string) => boolean }) {
   const s = useStore()
   const [showArchived, setShowArchived] = useState(false)
+  const [showResolved, setShowResolved] = useState(false)
   const archived = projectArchived(group, s.workspaces)
   const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === group.id && !w.archived)
+  const resolved = orch ? resolvedThreads(s.chats, orch.id) : []
+  // The thread on screen stays in the tree even once resolved, so it doesn't vanish while you read it.
+  const onScreen = orch && s.selectedWs === orch.id ? s.activeChat[orch.id] : undefined
   const chats = orch ? s.chats.filter((c) => c.workspaceId === orch.id) : []
   const running = chats.some((c) => c.status === 'running')
   const unread = chats.some((c) => c.unread)
   const router = orch ? routerChat(s.chats, orch.id) : undefined
   const active = !!orch && s.selectedWs === orch.id && (s.activeChat[orch.id] ?? router?.id) === router?.id
-  const tree = projectTree(group, s.repos, s.workspaces, s.chats, orch?.id)
+  const tree = projectTree(group, s.repos, s.workspaces, s.chats, orch?.id, { keep: onScreen })
   const count = tree.reduce((n, t) => n + t.repos.reduce((m, r) => m + r.workspaces.length, 0), 0)
   const isFolded = folded(foldKey.project(group.id))
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
@@ -111,6 +115,36 @@ function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string
           {tree.map((node) => (
             <ThreadNodeView key={threadKey(node)} group={group} node={node} orchId={orch?.id} folded={folded} />
           ))}
+          {resolved.length > 0 && (
+            <button className="block py-0.5 pl-7 text-[11px] text-faint hover:text-fg" onClick={() => setShowResolved(!showResolved)} data-testid="resolved-toggle">
+              {showResolved ? 'Hide resolved' : `Resolved (${resolved.length})`}
+            </button>
+          )}
+          {showResolved &&
+            resolved.map((t) => (
+              <div
+                key={t.id}
+                role="button"
+                tabIndex={0}
+                className={`group flex h-8 cursor-pointer items-center gap-1.5 rounded-md pr-2 pl-7 ${t.id === onScreen ? 'bg-raised text-fg' : 'text-faint hover:bg-hover hover:text-fg'}`}
+                onClick={() => void openGroupOrchestrator(group.id, t.id)}
+                onKeyDown={(e) => e.key === 'Enter' && void openGroupOrchestrator(group.id, t.id)}
+                title={`Resolved ${t.resolvedBy === 'auto' ? 'on its own once its work was merged, closed or archived' : t.resolvedBy === 'agent' ? 'by Claude' : 'by you'}. Open it to read it; Reopen puts it back in the sidebar.`}
+              >
+                <IconCheck width={12} height={12} className="shrink-0" />
+                <span className="flex-1 truncate">{t.title}</span>
+                {t.resolvedAt && <span className="shrink-0 text-[11px] group-hover:hidden">{ago(t.resolvedAt)}</span>}
+                <button
+                  className="hidden rounded px-1.5 text-[11px] text-muted group-hover:block hover:bg-raised hover:text-fg"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void resolveThread(t.id, false)
+                  }}
+                >
+                  Reopen
+                </button>
+              </div>
+            ))}
           {archived.length > 0 && (
             <button className="block py-0.5 pl-7 text-[11px] text-faint hover:text-fg" onClick={() => setShowArchived(!showArchived)}>
               {showArchived ? 'Hide archived' : `Archived (${archived.length})`}
@@ -176,7 +210,21 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
           <IconDown width={11} height={11} className={isFolded ? '-rotate-90' : ''} />
         </button>
         <span className="w-3 shrink-0 text-center text-faint">#</span>
-        <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''} ${thread ? '' : 'italic'}`}>{thread?.title ?? 'No thread'}</span>
+        <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''} ${thread ? '' : 'italic'} ${thread?.resolved ? 'opacity-60' : ''}`}>{thread?.title ?? 'No thread'}</span>
+        {thread?.resolved && <span className="shrink-0 rounded bg-hover px-1 text-[10px] text-faint group-hover:hidden">Resolved</span>}
+        {thread && (
+          <button
+            title={thread.resolved ? 'Reopen: put it back in the sidebar' : 'Resolve: hide it from the sidebar. Find it again under Resolved or with ⌘K.'}
+            data-testid="resolve-thread"
+            className="hidden shrink-0 rounded p-0.5 text-faint group-hover:block hover:text-fg"
+            onClick={(e) => {
+              e.stopPropagation()
+              void resolveThread(thread.id, !thread.resolved)
+            }}
+          >
+            {thread.resolved ? <span className="px-0.5 text-[11px]">Reopen</span> : <IconCheck width={12} height={12} />}
+          </button>
+        )}
         {thread?.status === 'running' ? <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-add" /> : unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />}
         {isFolded ? (
           <span className="text-[11px] text-faint">{count}</span>
@@ -212,6 +260,9 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
               at={menuAt}
               items={[
                 { label: 'Open thread', onClick: () => void openGroupOrchestrator(group.id, thread.id) },
+                thread.resolved
+                  ? { label: 'Reopen thread', onClick: () => void resolveThread(thread.id, false) }
+                  : { label: 'Resolve thread', hint: count ? `${count} open` : undefined, onClick: () => void resolveThread(thread.id, true) },
                 { kind: 'sep' },
                 { label: 'Queue for next window…', hint: 'Up next', onClick: () => askToQueue({ kind: 'thread', chatId: thread.id }) }
               ]}
@@ -358,8 +409,12 @@ function ProjectWorkRow({ ws, pr }: { ws: Workspace; pr: PrInfo | null }) {
 export function ThreadsPanel({ ws, activeId, onClose }: { ws: Workspace; activeId?: string; onClose: () => void }) {
   const s = useStore()
   const router = routerChat(s.chats, ws.id)
-  const threads = projectThreads(s.chats, ws.id)
-  const list: Chat[] = [...(router ? [router] : []), ...threads]
+  const [showResolved, setShowResolved] = useState(false)
+  const threads = projectThreads(s.chats, ws.id, { open: true })
+  const resolved = resolvedThreads(s.chats, ws.id)
+  // The thread on screen stays listed even once resolved.
+  const shown = showResolved ? resolved : resolved.filter((c) => c.id === activeId)
+  const list: Chat[] = [...(router ? [router] : []), ...threads, ...shown]
   // Load each thread's transcript once, for the last-line preview.
   const ids = list.map((c) => c.id).join(',')
   useEffect(() => {
@@ -383,7 +438,12 @@ export function ThreadsPanel({ ws, activeId, onClose }: { ws: Workspace; activeI
         {list.map((c) => (
           <ThreadRow key={c.id} chat={c} group={s.groups.find((g) => g.id === ws.groupId)} router={c.id === router?.id} active={c.id === activeId} onClick={() => s.setActiveChat(ws.id, c.id)} />
         ))}
-        {threads.length === 0 && <div className="px-2.5 py-3 text-[12px] text-faint">No threads yet. Messages to the orchestrator chat start them, or press New.</div>}
+        {threads.length === 0 && !resolved.length && <div className="px-2.5 py-3 text-[12px] text-faint">No threads yet. Messages to the orchestrator chat start them, or press New.</div>}
+        {resolved.length > 0 && (
+          <button className="mt-1 block px-2.5 py-1 text-[12px] text-faint hover:text-fg" onClick={() => setShowResolved(!showResolved)} data-testid="threads-show-resolved">
+            {showResolved ? 'Hide resolved' : `Show resolved (${resolved.length})`}
+          </button>
+        )}
       </div>
     </aside>
   )
@@ -393,15 +453,53 @@ function ThreadRow({ chat, group, router, active, onClick }: { chat: Chat; group
   const items = useStore((s) => s.items[chat.id])
   const last = lastLine(items)
   return (
-    <button onClick={onClick} className={`mb-0.5 flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left ${active ? 'bg-raised' : 'hover:bg-hover'}`}>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      className={`group mb-0.5 flex w-full cursor-pointer flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left ${active ? 'bg-raised' : 'hover:bg-hover'} ${chat.resolved ? 'text-muted' : ''}`}
+    >
       <span className="flex items-center gap-1.5">
-        {router ? <ProjectIcon group={group} size={13} /> : <span className="w-3 shrink-0 text-center text-faint">#</span>}
+        {router ? <ProjectIcon group={group} size={13} /> : chat.resolved ? <IconCheck width={12} height={12} className="w-3 shrink-0 text-faint" /> : <span className="w-3 shrink-0 text-center text-faint">#</span>}
         <span className={`flex-1 truncate ${chat.unread && !active ? 'font-semibold' : 'font-medium'}`}>{router ? 'Orchestrator chat' : chat.title}</span>
         {chat.status === 'running' && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-add" />}
         {chat.status !== 'running' && chat.unread && !active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />}
+        {chat.resolved && <span className="shrink-0 text-[11px] text-faint group-hover:hidden">Resolved</span>}
+        {!router && (
+          <button
+            className="hidden shrink-0 rounded px-1.5 text-[11px] text-muted group-hover:block hover:bg-raised hover:text-fg"
+            title={chat.resolved ? 'Put it back in the sidebar and this list' : 'Hide it from the sidebar and this list. It is kept: Show resolved or ⌘K finds it.'}
+            onClick={(e) => {
+              e.stopPropagation()
+              void resolveThread(chat.id, !chat.resolved)
+            }}
+          >
+            {chat.resolved ? 'Reopen' : 'Resolve'}
+          </button>
+        )}
       </span>
       {last && <span className="truncate pl-[18px] text-[12px] text-faint">{last}</span>}
-    </button>
+    </div>
+  )
+}
+
+/** Under a resolved thread's transcript: it is hidden from the sidebar, and Reopen brings it back. Sending a message reopens it too. */
+export function ResolvedBanner({ chat }: { chat: Chat }) {
+  if (!chat.thread || !chat.resolved || chat.status === 'running') return null
+  const by = chat.resolvedBy === 'auto' ? 'All of its work is merged, closed or archived, so it' : chat.resolvedBy === 'agent' ? 'Claude resolved it. It' : 'It'
+  const when = chat.resolvedAt ? ago(chat.resolvedAt) : ''
+  return (
+    <div className="my-4 flex items-center gap-3 rounded-lg border border-line bg-raised px-3.5 py-3" data-testid="resolved-banner">
+      <IconCheck width={16} height={16} className="shrink-0 text-add" />
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold">Resolved{when === 'now' ? ' just now' : when ? ` ${when} ago` : ''}</div>
+        <div className="mt-0.5 text-[12px] text-muted">{by} is hidden from the sidebar and kept under Resolved. Sending a message reopens it.</div>
+      </div>
+      <button className="rounded-md border border-line px-2.5 py-1 text-[12px] hover:bg-hover" onClick={() => void resolveThread(chat.id, false)}>
+        Reopen
+      </button>
+    </div>
   )
 }
 

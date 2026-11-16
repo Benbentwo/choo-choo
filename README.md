@@ -38,12 +38,17 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Chat built for coding agents.** Opus, Sonnet and Haiku with effort levels, plan mode, @file mentions, /slash commands and skills, image attachments, and "revert to here" checkpoints.
 - **Stop that always stops.** Stop (or Esc) shows Stopping… right away and ends the turn within seconds. If Claude doesn't respond, Force stop ends it and everything it started, and queued messages go back to the message box.
 - **Orchestrator.** Tell a repo's orchestrator what you want and it splits the work into workspaces, briefs each agent, reads their diffs and follows up.
-- **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
+- **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. A thread whose work is all merged or closed resolves itself and leaves the sidebar, still a click or ⌘K away. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
 - **Split panels and resizable panes.** Put workspaces and chats side by side, drag either sidebar to size it, and expand the right panel with ⌘⇧E.
 
 <p align="center">
   <img src="docs/media/gifs/projects-threads.gif" alt="A request in a project's chat starts a thread. The thread starts a workspace in each of two repos, and each agent makes its change in its own worktree." width="900"><br>
   <sub>Ask a project for something; it opens a thread, which starts a workspace (git worktree and agent) in each repo it touches.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/media/gifs/resolve-threads.gif" alt="A thread's two workspaces are archived, so the thread resolves on its own and shows a Resolved card. It leaves the sidebar for a Resolved list under the project, ⌘K still finds it, and Reopen brings it back." width="900"><br>
+  <sub>Finished threads resolve themselves: out of the sidebar, never deleted, and back with Reopen.</sub>
 </p>
 
 <p align="center">

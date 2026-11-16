@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Chat, Repo, RepoGroup, Workspace } from '../src/shared/types'
-import { inProject, parseAutoUpdate, projectThreads, projectTree, routerChat, stripRouted, threadKey, threadTitle, updateTarget, workspaceThread, ROUTED_PREFIX } from '../src/shared/projects'
+import { inProject, parseAutoUpdate, resolvedThreads, shouldAutoResolve, threadWorkspaces, workDone, projectThreads, projectTree, routerChat, stripRouted, threadKey, threadTitle, updateTarget, workspaceThread, ROUTED_PREFIX } from '../src/shared/projects'
 import { autoUpdatePrompt } from '../src/main/orchestrator'
 
 const repo = (id: string): Repo => ({ id, name: id, path: `/r/${id}`, defaultBranch: 'main' })
@@ -79,5 +79,51 @@ describe('projectArchived', () => {
       w('e', { groupId: 'g1', orchestrator: true, orchestratorId: 'g1', archived: true })
     ]
     expect(projectArchived(g, list).map((x) => x.id)).toEqual(['b', 'a'])
+  })
+})
+
+describe('resolved threads', () => {
+  const repos = ['api', 'web'].map(repo)
+  it('leaves resolved threads and their work out of the sidebar, except the one on screen', () => {
+    const chats = [chat('r'), chat('t1', { thread: true, createdAt: 1 }), chat('t2', { thread: true, createdAt: 2, resolved: true, resolvedAt: 5 }), chat('t3', { thread: true, createdAt: 3, resolved: true, resolvedAt: 9 })]
+    const wss = [ws('a', 'api', { orchestratorId: 'g', threadId: 't1' }), ws('b', 'web', { orchestratorId: 'g', threadId: 't2' }), ws('n', 'api', { orchestratorId: 'g' })]
+    const ids = (tree: ReturnType<typeof projectTree>) => tree.map((n) => [n.thread?.id ?? null, n.repos.flatMap((r) => r.workspaces.map((w) => w.id))])
+    expect(ids(projectTree(group, repos, wss, chats, 'orch'))).toEqual([
+      ['t1', ['a']],
+      [null, ['n']]
+    ])
+    expect(ids(projectTree(group, repos, wss, chats, 'orch', { keep: 't2' }))).toEqual([
+      ['t2', ['b']],
+      ['t1', ['a']],
+      [null, ['n']]
+    ])
+    expect(resolvedThreads(chats, 'orch').map((c) => c.id)).toEqual(['t3', 't2'])
+    expect(projectThreads(chats, 'orch', { open: true }).map((c) => c.id)).toEqual(['t1'])
+    expect(projectThreads(chats, 'orch').map((c) => c.id)).toEqual(['t3', 't2', 't1'])
+  })
+
+  it('resolves a thread on its own only when all of its work is merged, closed or archived', () => {
+    const t = chat('t1', { thread: true })
+    const wss = [ws('a', 'api', { threadId: 't1', createdAt: 10 }), ws('b', 'web', { threadId: 't1', createdAt: 20, archived: true }), ws('o', 'api', { threadId: 't1', orchestrator: true }), ws('x', 'api', { threadId: 't2' })]
+    const owned = threadWorkspaces('t1', wss)
+    expect(owned.map((w) => w.id)).toEqual(['a', 'b'])
+    const merged = () => 'MERGED' as const
+    expect(shouldAutoResolve(t, owned, merged)).toBe(true)
+    expect(shouldAutoResolve(t, owned, (id) => (id === 'a' ? 'CLOSED' : null))).toBe(true)
+    // Open PR or no PR yet: still working.
+    expect(shouldAutoResolve(t, owned, () => 'OPEN')).toBe(false)
+    expect(shouldAutoResolve(t, owned, () => null)).toBe(false)
+    // A thread that never started work is just a conversation: the person resolves it.
+    expect(shouldAutoResolve(t, [], merged)).toBe(false)
+    // Busy, unread, already resolved, or not a thread.
+    expect(shouldAutoResolve({ ...t, status: 'running' }, owned, merged)).toBe(false)
+    expect(shouldAutoResolve({ ...t, unread: true }, owned, merged)).toBe(false)
+    expect(shouldAutoResolve({ ...t, resolved: true }, owned, merged)).toBe(false)
+    expect(shouldAutoResolve({ ...t, thread: false }, owned, merged)).toBe(false)
+    // Reopened by the person: wait for work started after that.
+    expect(shouldAutoResolve({ ...t, reopenedAt: 25 }, owned, merged)).toBe(false)
+    expect(shouldAutoResolve({ ...t, reopenedAt: 15 }, owned, merged)).toBe(true)
+    expect(workDone(ws('z', 'api', { archived: true }), 'OPEN')).toBe(true)
+    expect(workDone(ws('z', 'api'), undefined)).toBe(false)
   })
 })

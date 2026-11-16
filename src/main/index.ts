@@ -39,7 +39,7 @@ import { autoSync, registerShareIpc } from './shareIpc'
 import * as orchestrator from './orchestrator'
 import * as automations from './automations'
 import * as continueWork from './continueWork'
-import { projectThreads, routerChat, telemetryTags, threadTitle, updateTarget } from '@shared/projects'
+import { projectThreads, resolveNote, routerChat, shouldAutoResolve, telemetryTags, threadTitle, threadWorkspaces, updateTarget, type PrState } from '@shared/projects'
 import * as reflection from './reflect'
 import { isReflectTarget, type ReflectProposal } from '@shared/reflect'
 import { onModelPicked } from '@shared/modelSwitch'
@@ -345,6 +345,8 @@ const afterTurn = new Map<string, { text: string; images: string[] }[]>()
  * or queued per Settings; when the turn can't take it, it waits and is sent when the turn ends.
  */
 function sendFromPerson(chat: Chat, text: string, images: string[]) {
+  // Writing to a resolved thread (here or through the orchestrator chat) reopens it.
+  if (chat.resolved) setThreadResolved(chat, false, 'message')
   // `/desktop` (or `/app`) hands the chat to Claude desktop, as it does in Claude Code's terminal.
   if (desktop.DESKTOP_COMMAND.test(text.trim()) && !images.length && chat.model !== 'codex') {
     const ws = findWs(chat.workspaceId)
@@ -365,6 +367,8 @@ function sendFromPerson(chat: Chat, text: string, images: string[]) {
 /** Starts a turn. Fire and forget; progress arrives through chat:event. */
 function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fromAdvisor?: boolean; afterRestart?: boolean } = {}) {
   if (agent.isRunning(chat.id)) throw new Error('Agent is already running in this chat')
+  // An automatic update waking a resolved thread shows it again until it is read.
+  if (chat.resolved) setThreadResolved(chat, false, 'auto')
   const ws = findWs(chat.workspaceId)
   const repo = store.get().repos.find((r) => r.id === ws.repoId)
   if (!ws.named) void nameWorkspace(ws, text)
@@ -437,7 +441,8 @@ function projectRole(ws: Workspace, chat: Chat): orchestrator.ProjectRole | unde
       forward: (c, t) => {
         autoWakes.delete(c.id)
         sendFromPerson(c, t, [])
-      }
+      },
+      resolve: (c, resolved) => setThreadResolved(c, resolved, resolved ? 'agent' : 'message')
     }
   }
 }
@@ -453,6 +458,67 @@ function newThread(ws: Workspace, title = 'New thread'): Chat {
   store.save()
   send('state:changed')
   return chat
+}
+
+/**
+ * Resolves a project thread (hidden from the sidebar, never deleted) or reopens it, with a note in
+ * its transcript. A reopen by the person, or a message from them, records reopenedAt so the app
+ * waits for newer work before resolving it again. See docs/prd/projects.md.
+ */
+function setThreadResolved(chat: Chat, resolved: boolean, by: NonNullable<Chat['resolvedBy']> | 'message') {
+  if (!chat.thread || !!chat.resolved === resolved) return chat
+  if (resolved) {
+    chat.resolved = true
+    chat.resolvedAt = Date.now()
+    chat.resolvedBy = by === 'message' ? 'person' : by
+  } else {
+    chat.resolved = undefined
+    chat.resolvedAt = undefined
+    chat.resolvedBy = undefined
+    // An automatic update waking the thread doesn't count: the app may resolve it again once read.
+    if (by !== 'auto') chat.reopenedAt = Date.now()
+  }
+  const note: ChatItem = { id: randomUUID(), kind: 'note', text: resolveNote(resolved, by), ts: Date.now() }
+  store.upsertItem(chat.id, note)
+  emitChat(chat.id, { item: note })
+  store.save()
+  send('state:changed')
+  return chat
+}
+
+/** Threads being checked right now, so overlapping triggers don't call gh twice. */
+const resolveChecks = new Set<string>()
+
+/**
+ * Resolves a thread on its own once every workspace it owns is archived or has a merged or closed PR
+ * (Settings.autoResolveThreads, on unless turned off). Runs when a PR changes, a workspace is
+ * archived, a turn ends, or the person reads the thread's last reply.
+ */
+async function checkThreadResolve(threadId: string | undefined) {
+  const st = store.get()
+  if (!threadId || !st.settings.experimentalProjects || st.settings.autoResolveThreads === false || resolveChecks.has(threadId)) return
+  const thread = st.chats.find((c) => c.id === threadId)
+  if (!thread?.thread) return
+  const owned = threadWorkspaces(thread.id, st.workspaces)
+  // Cheap checks first, as if every PR were merged: nothing to ask GitHub about a busy or unread thread.
+  if (!shouldAutoResolve(thread, owned, () => 'MERGED')) return
+  resolveChecks.add(threadId)
+  try {
+    const states = new Map<string, PrState>()
+    for (const w of owned) {
+      if (w.archived) continue
+      // No PR, or gh couldn't say (offline, signed out): still open, try again on the next trigger.
+      const pr = await gh.prForBranch(w.path, prRef(w))
+      if (!pr || pr.state === 'OPEN') return
+      states.set(w.id, pr.state)
+    }
+    // Re-read: the thread may have started a turn or new work while gh answered.
+    const now = store.get()
+    const fresh = now.chats.find((c) => c.id === threadId)
+    if (fresh && shouldAutoResolve(fresh, threadWorkspaces(fresh.id, now.workspaces), (id) => states.get(id))) setThreadResolved(fresh, true, 'auto')
+  } finally {
+    resolveChecks.delete(threadId)
+  }
 }
 
 /** What an orchestrator directs: its repo, or every repo in its project group. */
@@ -876,6 +942,7 @@ function onChatDone(chat: Chat) {
   if (ws) autoSync(ws)
   if (ws) void catchUpBranch(ws)
   if (ws) (stopped ? stack.onTurnStopped(ws, chat) : stack.onTurnDone(ws, chat))
+  if (chat.thread) void checkThreadResolve(chat.id)
 }
 
 function notifyDone(chat: Chat) {
@@ -965,6 +1032,7 @@ async function archiveWorkspace(id: string) {
   ws.archived = true
   ws.archivedAt = Date.now()
   store.save()
+  void checkThreadResolve(ws.threadId)
 }
 
 /** Folders a workspace occupies on disk (never the main checkout, which an orchestrator uses). */
@@ -1202,8 +1270,11 @@ function registerIpc() {
     if (patch.budgetUsd !== undefined) c.budgetUsd = Math.max(0, Number(patch.budgetUsd) || 0)
     if (patch.outputStyle !== undefined) c.outputStyle = patch.outputStyle || undefined
     store.save()
+    // Reading a thread's last reply may be all that kept it from resolving.
+    if (patch.unread === false && c.thread) void checkThreadResolve(c.id)
     return c
   })
+  h('chat:resolve', (id: string, resolved: boolean) => setThreadResolved(findChat(id), !!resolved, 'person'))
   h('chat:addFolder', async (id: string) => {
     const c = findChat(id)
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'multiSelections'], message: 'Give the agent access to folders' })
@@ -1915,6 +1986,10 @@ app.whenReady().then(async () => {
   updates.startUpdater(send, { busy: () => agent.runningCount() })
   // Chats a restart cut off: give the app a moment to settle, then pick them up.
   setTimeout(resumeInterrupted, 3_000)
+  // Threads whose work finished while the app was closed.
+  setTimeout(() => {
+    for (const c of store.get().chats) if (c.thread && !c.resolved) void checkThreadResolve(c.id)
+  }, 20_000)
   reviewWatch.start({
     loadInbox: loadPrInbox,
     broadcast: (inbox) => send('prs:inbox', inbox),
@@ -1946,7 +2021,10 @@ app.whenReady().then(async () => {
         })
     },
     focused: () => !!win?.isFocused(),
-    onChange: (wsId) => send('pr:changed', wsId)
+    onChange: (wsId) => {
+      send('pr:changed', wsId)
+      void checkThreadResolve(store.get().workspaces.find((w) => w.id === wsId)?.threadId)
+    }
   })
   app.on('browser-window-focus', () => prWatch.poke())
   app.on('activate', () => {

@@ -4,7 +4,7 @@ import { addonActions } from '@shared/addons'
 import { ACTION_ICON } from './Addons'
 import { useStore, runAddonAction, ago, archiveWorkspace, goToNextUnread, newChatTab, newWorkspace, openDoc, openOrchestrator, openGroupOrchestrator, editGroup, openPalette, restoreWorkspace, reportError, type PaletteMode } from '../store'
 import { rank } from '../autocomplete'
-import { IconArchive, IconFile, IconFileDiff, IconFileSearch, IconFolder, IconGear, IconHome, IconOrchestrator, IconPlus, IconRefresh, IconRepo, IconSearch, IconTerminal } from '../icons'
+import { IconArchive, IconCheck, IconFile, IconFileDiff, IconFileSearch, IconFolder, IconGear, IconHome, IconOrchestrator, IconPlus, IconRefresh, IconRepo, IconSearch, IconTerminal } from '../icons'
 
 type Tab = 'all' | 'workspaces' | 'projects' | 'actions' | 'settings'
 const TABS: [Tab, string][] = [
@@ -108,6 +108,25 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     for (const g of s.groups) {
       out.push({ id: `group:${g.id}`, tab: 'projects', section: 'Projects', label: `Orchestrator for ${g.name}`, keywords: 'project group', icon: <IconOrchestrator />, hint: 'Project group', run: () => void openGroupOrchestrator(g.id) })
     }
+    // Project threads, resolved ones too: resolving hides a thread from the sidebar, not from search.
+    if (s.settings.experimentalProjects)
+      for (const g of s.groups) {
+        const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === g.id && !w.archived)
+        if (!orch) continue
+        for (const t of s.chats.filter((c) => c.workspaceId === orch.id && c.thread)) {
+          out.push({
+            id: `thread:${t.id}`,
+            tab: 'projects',
+            section: 'Threads',
+            label: `# ${t.title}`,
+            keywords: `${g.name} thread${t.resolved ? ' resolved done' : ''}`,
+            icon: t.resolved ? <IconCheck /> : <IconOrchestrator />,
+            hint: t.resolved ? `${g.name} · resolved` : g.name,
+            title: t.resolved ? 'Resolved: hidden from the sidebar. Opening it shows it; sending a message reopens it.' : undefined,
+            run: () => void openGroupOrchestrator(g.id, t.id)
+          })
+        }
+      }
     out.push({ id: 'new-group', tab: 'projects', section: 'Projects', label: 'New project group', keywords: 'orchestrator repos group', icon: <IconOrchestrator />, run: () => editGroup(null) })
     out.push({ id: 'add', tab: 'projects', section: 'Projects', label: 'Add project', keywords: 'repository clone open folder', icon: <IconPlus />, hint: '⌘O', run: () => useStore.getState().set({ modal: 'create' }) })
 

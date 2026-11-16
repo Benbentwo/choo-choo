@@ -153,7 +153,8 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { section: 'telemetry', label: 'Include tool output', keywords: 'privacy otel', needs: 'Shown once Include tool inputs is on.' },
 
   // Experimental
-  { section: 'experimental', label: 'Projects', hint: 'Orchestrator chats that route work to threads, plus Automations.', keywords: 'experimental orchestrator threads automations beta flag' }
+  { section: 'experimental', label: 'Projects', hint: 'Orchestrator chats that route work to threads, plus Automations.', keywords: 'experimental orchestrator threads automations beta flag' },
+  { section: 'experimental', label: 'Resolve finished threads', hint: 'Hide a project thread once all its work is merged or closed.', keywords: 'resolve resolved threads done hide archive auto merged closed' }
 ]
 
 export interface SettingMatch {

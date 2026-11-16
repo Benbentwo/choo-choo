@@ -435,12 +435,22 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         ) : tab === 'prompts' ? (
           <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
         ) : tab === 'experimental' ? (
-          <Row
-            label="Projects"
-            hint="Project groups become projects. You talk to a project's orchestrator chat, which sends each message to the right thread or starts one, and the sidebar lists the project's work by repo and PR. Also turns on Automations: checks that run on a schedule or a GitHub event and open a workspace per finding. Turning this off hides projects and pauses automations; nothing is deleted."
-          >
-            <input type="checkbox" checked={!!settings.experimentalProjects} onChange={(e) => void save({ experimentalProjects: e.target.checked })} />
-          </Row>
+          <>
+            <Row
+              label="Projects"
+              hint="Project groups become projects. You talk to a project's orchestrator chat, which sends each message to the right thread or starts one, and the sidebar lists the project's work by repo and PR. Also turns on Automations: checks that run on a schedule or a GitHub event and open a workspace per finding. Turning this off hides projects and pauses automations; nothing is deleted."
+            >
+              <input type="checkbox" checked={!!settings.experimentalProjects} onChange={(e) => void save({ experimentalProjects: e.target.checked })} />
+            </Row>
+            {settings.experimentalProjects && (
+              <Row
+                label="Resolve finished threads"
+                hint="When every workspace a thread started is merged, closed or archived, and you've read its last reply, the thread resolves on its own: it leaves the sidebar and the Threads panel but is kept under Resolved and in ⌘K. Threads that never started work stay until you resolve them."
+              >
+                <input type="checkbox" checked={settings.autoResolveThreads !== false} onChange={(e) => void save({ autoResolveThreads: e.target.checked })} />
+              </Row>
+            )}
+          </>
         ) : tab === 'telemetry' ? (
           <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (

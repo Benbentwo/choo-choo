@@ -50,9 +50,47 @@ export function routerChat(chats: Chat[], orchWsId: string): Chat | undefined {
   return chats.find((c) => c.workspaceId === orchWsId && !c.thread)
 }
 
-/** A project's threads, newest first. */
-export function projectThreads(chats: Chat[], orchWsId: string): Chat[] {
-  return chats.filter((c) => c.workspaceId === orchWsId && c.thread).sort((a, b) => b.createdAt - a.createdAt)
+/** A project's threads, newest first. Resolved ones too unless `open` is set. */
+export function projectThreads(chats: Chat[], orchWsId: string, opts: { open?: boolean } = {}): Chat[] {
+  return chats.filter((c) => c.workspaceId === orchWsId && c.thread && !(opts.open && c.resolved)).sort((a, b) => b.createdAt - a.createdAt)
+}
+
+/** A project's resolved threads, most recently resolved first, for its Resolved list. */
+export function resolvedThreads(chats: Chat[], orchWsId: string): Chat[] {
+  return chats.filter((c) => c.workspaceId === orchWsId && c.thread && c.resolved).sort((a, b) => (b.resolvedAt ?? 0) - (a.resolvedAt ?? 0))
+}
+
+export type PrState = 'OPEN' | 'MERGED' | 'CLOSED'
+
+/** The workspaces a thread owns (open or archived), never the orchestrator itself. */
+export function threadWorkspaces(threadId: string, workspaces: Workspace[]): Workspace[] {
+  return workspaces.filter((w) => w.threadId === threadId && !w.orchestrator)
+}
+
+/** Whether a workspace's work is over: archived, or its PR merged or closed. No PR yet means still open. */
+export function workDone(ws: Workspace, pr: PrState | null | undefined): boolean {
+  return !!ws.archived || pr === 'MERGED' || pr === 'CLOSED'
+}
+
+/**
+ * Whether the app should resolve a thread on its own: it owns at least one workspace, every one is
+ * archived or has a merged or closed PR, it isn't running, and the person has read its last reply.
+ * After the person reopens a thread, it resolves again only once work started since then is done.
+ * A thread that never started work (just a conversation) is left for the person to resolve.
+ */
+export function shouldAutoResolve(thread: Chat, owned: Workspace[], prState: (wsId: string) => PrState | null | undefined): boolean {
+  if (!thread.thread || thread.resolved || thread.status === 'running' || thread.unread) return false
+  if (!owned.length) return false
+  if (thread.reopenedAt && !owned.some((w) => w.createdAt > thread.reopenedAt!)) return false
+  return owned.every((w) => workDone(w, prState(w.id)))
+}
+
+/** The note a thread's transcript gets when it is resolved or reopened. */
+export function resolveNote(resolved: boolean, by: Chat['resolvedBy'] | 'message'): string {
+  if (!resolved) return by === 'message' ? 'Reopened: a new message came in.' : 'Reopened.'
+  if (by === 'auto') return 'Resolved: all of its work is merged, closed or archived. It is hidden from the sidebar; find it under Resolved or with ⌘K.'
+  if (by === 'agent') return 'Resolved by Claude. It is hidden from the sidebar; find it under Resolved or with ⌘K.'
+  return 'Resolved. It is hidden from the sidebar; find it under Resolved or with ⌘K.'
 }
 
 /** Where a finished workspace's update goes: the thread that started it, or the orchestrator chat. */
@@ -108,12 +146,15 @@ export interface ThreadNode {
 
 /**
  * The sidebar tree under a project: thread › repo › workspace. Each thread owns the workspaces
- * (and so the PRs) it started. Only threads with open work show, newest thread first; work no
- * thread owns comes last.
+ * (and so the PRs) it started. Every open thread shows, newest first, even with no open work;
+ * work no thread owns comes last. Resolved threads and their work are left out, like archived
+ * workspaces, except `keep` (the thread on screen, so it doesn't vanish while you read it).
  */
-export function projectTree(group: RepoGroup, repos: Repo[], workspaces: Workspace[], chats: Chat[], orchWsId: string | undefined): ThreadNode[] {
-  const mine = projectWorkspaces(group, workspaces)
-  const threads = orchWsId ? projectThreads(chats, orchWsId) : []
+export function projectTree(group: RepoGroup, repos: Repo[], workspaces: Workspace[], chats: Chat[], orchWsId: string | undefined, opts: { keep?: string } = {}): ThreadNode[] {
+  const all = orchWsId ? projectThreads(chats, orchWsId) : []
+  const hidden = new Set(all.filter((t) => t.resolved && t.id !== opts.keep).map((t) => t.id))
+  const threads = all.filter((t) => !hidden.has(t.id))
+  const mine = projectWorkspaces(group, workspaces).filter((w) => !w.threadId || !hidden.has(w.threadId))
   const owned = new Map<string, Workspace[]>()
   const loose: Workspace[] = []
   for (const w of mine) {

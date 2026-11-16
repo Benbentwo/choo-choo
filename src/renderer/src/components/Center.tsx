@@ -132,7 +132,7 @@ function useTitles(ws: Workspace) {
   const orchId = partOf ? s.workspaces.find((w) => w.orchestrator && w.groupId === partOf.id && !w.archived)?.id : undefined
   const ownerThread = partOf ? workspaceThread(ws, s.chats, orchId) : undefined
   const sub =project ? (isRouter ? 'Orchestrator chat' : `# ${active?.title ?? ''}`) : ws.orchestrator ? (ws.groupId ? `Orchestrator · ${ws.title}` : 'Orchestrator') : ws.branch
-  return { project, partOf, ownerThread, sub, threadCount: chats.filter((c) => c.thread).length }
+  return { project, partOf, ownerThread, sub, threadCount: chats.filter((c) => c.thread && !c.resolved).length }
 }
 
 function PartOf({ ws }: { ws: Workspace }) {
