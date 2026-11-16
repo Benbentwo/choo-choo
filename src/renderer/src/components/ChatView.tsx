@@ -10,7 +10,7 @@ import { SEVERITY_STYLE, sendFix } from './RightTabs'
 import { setDraft } from './Composer'
 import { splitFences, tidyMarkdown } from '../markdown'
 import { MARKDOWN_COMPONENTS } from './CodeBlock'
-import { LinkifiedText } from './GithubLink'
+import { FormattedUserText } from './GithubLink'
 import { primeLinkContext } from '../richCopy'
 import { API_PRICE_NOTE } from './UsageGraphs'
 import { IconDown, IconRight, IconStop, IconTool } from '../icons'
@@ -228,7 +228,7 @@ function Item({ item, chat, children }: { item: ChatItem; chat: Chat; children?:
                   </pre>
                 ) : (
                   <div key={i} className="user-text">
-                    <LinkifiedText text={part.text} />
+                    <FormattedUserText text={part.text} />
                   </div>
                 )
               )}

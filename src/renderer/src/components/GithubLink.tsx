@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { githubLinkLabel, isBareLink, parseGithubLink, previewDot, shortAge, type GithubLink, type LinkPreview } from '@shared/githubLink'
 import { prBranch, type InboxPr } from '@shared/prInbox'
 import { workspaceForIssue, workspaceForPr } from '@shared/workspaceFor'
 import type { LinkPreviewResult } from '@shared/types'
 import { BARE_URL } from '@shared/linkHref'
+import { formatMessage } from '../livePreview'
 import { openPrWorkspace, refreshState, reportError, useStore } from '../store'
 import { IconCheck, IconCopy, IconFile, IconGithub, IconMerged, IconPR, IconRefresh, IconRepo } from '../icons'
 
@@ -123,6 +124,27 @@ export function LinkifiedText({ text }: { text: string }) {
   }
   if (last < text.length) out.push(text.slice(last))
   return <>{out}</>
+}
+
+/**
+ * The person's own message, formatted as the message box showed it while they typed (inline code,
+ * bold, links…), with bare URLs linked as in LinkifiedText.
+ */
+export function FormattedUserText({ text }: { text: string }) {
+  const lines = useMemo(() => formatMessage(text), [text])
+  return (
+    <>
+      {lines.map((line, i) => (
+        <div key={i} className={line.cls || undefined}>
+          {line.parts.length === 0 ? '\n' : line.parts.map((p, j) => {
+            const cls = p.classes.join(' ') || undefined
+            if (p.href) return <ChatLink key={j} href={p.href} className={cls}>{p.text}</ChatLink>
+            return cls ? <span key={j} className={cls}><LinkifiedText text={p.text} /></span> : <LinkifiedText key={j} text={p.text} />
+          })}
+        </div>
+      ))}
+    </>
+  )
 }
 
 /** react-markdown's `a`: GitHub links get the pill and the hover card; every other link is left alone. */
