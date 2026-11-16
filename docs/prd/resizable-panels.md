@@ -5,7 +5,7 @@
 | Status | In review |
 | Owner | Claude (cloud thread "Make side panes resizable and expandable") |
 | Requested by | Ben, 2026-11-13 |
-| Last updated | 2026-11-13 |
+| Last updated | 2026-11-16 |
 
 ## Problem
 
@@ -27,6 +27,7 @@ The sidebar was always 280px and the right panel always 420px. Long workspace na
 - Hovering a panel's inner edge shows an accent line and a col-resize cursor; the tooltip says "Drag to resize · double-click to reset · drag far … to hide".
 - While dragging, a pill shows the width in pixels. Dragging more than 80px past the minimum dims the panel and the pill says "Release to hide"; letting go hides it, the same as ⌘B or ⌘⌥B. The saved width is kept for when it comes back.
 - Double-click an edge to go back to the default width.
+- The title bar's pane toggles all look the same: an outlined text button, filled while its pane is open. Threads (projects only) opens the Threads list; the right panel's toggle is named for what it holds, Analytics beside an orchestrator or project thread (the usage graphs) and Details beside a workspace (Changes, Checks, Review). Each pane has an x at the right of its header that closes it, like ⌘⌥B. When the title bar is short of room, the breadcrumb gives way and the toggles stay (Ben, 2026-11-16).
 - The right panel header (workspace and orchestrator alike) has an Expand button (⤢). Expanded, the right panel fills everything right of the sidebar and the chat panes fold into a 34px strip with the chat's title; clicking the strip, the ⤡ button, ⌘⇧E (View › Expand Right Panel) or Esc puts it back. Esc is ignored while typing in a field or terminal or while a modal is open. ⌘B still hides the sidebar for a full-window view.
 
 ## Requirements

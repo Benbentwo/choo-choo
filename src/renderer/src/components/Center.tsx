@@ -24,7 +24,7 @@ import {
   dropTab,
   type DragItem
 } from '../store'
-import { IconDots, IconPanelRight, IconPlus, IconRight, IconSidebar, IconX, IconTerminal, IconSplitRight, IconBranch, IconTool, IconEye } from '../icons'
+import { IconDots, IconPlus, IconRight, IconSidebar, IconX, IconTerminal, IconSplitRight, IconBranch, IconTool, IconEye } from '../icons'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
@@ -38,6 +38,7 @@ import { TerminalView } from './TerminalView'
 import { Stats } from './Stats'
 import { PaneGrip, RepoChip, PaneMenuItems, DropOverlay, Dividers } from './Panes'
 import { ThreadsPanel } from './Projects'
+import { PaneToggle, RightPaneToggle } from './PaneToggle'
 import { routerChat, workspaceThread } from '@shared/projects'
 import { isTheirs, prOwnerLabel } from '@shared/prReview'
 import { usePrReview, useWorkspaceMode, type WsMode } from '../prReview'
@@ -160,13 +161,9 @@ function ThreadsButton({ ws, threads }: { ws: Workspace; threads?: ThreadsToggle
   const { threadCount } = useTitles(ws)
   if (!threads) return null
   return (
-    <button
-      className={`no-drag flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2 py-0.5 text-[12px] ${threads.open ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
-      onClick={() => threads.toggle(!threads.open)}
-      title="Show this project's threads"
-    >
+    <PaneToggle testId="toggle-threads" open={threads.open} onToggle={() => threads.toggle(!threads.open)} title={`${threads.open ? 'Hide' : 'Show'} this project's threads`}>
       Threads <span className="text-faint">{threadCount}</span>
-    </button>
+    </PaneToggle>
   )
 }
 
@@ -177,31 +174,31 @@ function ClassicHeader({ ws, menu, threads }: { ws: Workspace; menu: (close: () 
   const { project, sub } = useTitles(ws)
   return (
     <header className="drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
-      {!s.sidebarOpen && (
-        <button title="Show sidebar" className="no-drag ml-[72px] rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
-          <IconSidebar width={16} height={16} />
-        </button>
-      )}
-      <PartOf ws={ws} />
-      <span className="text-muted">{project ? ws.title : repo?.name}</span>
-      <IconRight className="text-faint" />
-      {ws.stack ? (
-        <>
-          <span className="truncate">{ws.title}</span>
-          <IconRight className="text-faint" />
-          <StackSwitcher ws={ws} />
-        </>
-      ) : (
-        <span className="no-drag selectable truncate">{sub}</span>
-      )}
-      <DotsMenu menu={menu} />
-      {!ws.orchestrator && <ModeSwitch ws={ws} />}
-      <ShareBadges ws={ws} />
-      <div className="flex-1" />
+      {/* Everything left of the pane toggles gives way first, so the toggles never slide under the right panel. */}
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden whitespace-nowrap">
+        {!s.sidebarOpen && (
+          <button title="Show sidebar" className="no-drag ml-[72px] shrink-0 rounded p-1 text-muted hover:bg-hover" onClick={() => s.set({ sidebarOpen: true })}>
+            <IconSidebar width={16} height={16} />
+          </button>
+        )}
+        <PartOf ws={ws} />
+        <span className="text-muted">{project ? ws.title : repo?.name}</span>
+        <IconRight className="text-faint" />
+        {ws.stack ? (
+          <>
+            <span className="truncate">{ws.title}</span>
+            <IconRight className="text-faint" />
+            <StackSwitcher ws={ws} />
+          </>
+        ) : (
+          <span className="no-drag selectable truncate">{sub}</span>
+        )}
+        <DotsMenu menu={menu} />
+        {!ws.orchestrator && <ModeSwitch ws={ws} />}
+        <ShareBadges ws={ws} />
+      </div>
       <ThreadsButton ws={ws} threads={threads} />
-      <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ rightOpen: !s.rightOpen })} title="Toggle right panel">
-        <IconPanelRight width={16} height={16} />
-      </button>
+      <RightPaneToggle ws={ws} />
     </header>
   )
 }

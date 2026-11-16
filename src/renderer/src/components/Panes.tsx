@@ -18,7 +18,8 @@ import {
   newWorkspace,
   type DragItem
 } from '../store'
-import { IconAddon, IconFolder, IconGrip, IconMaximize, IconPanelRight, IconSearch, IconSidebar, IconSingle, IconSplitDown, IconSplitRight, IconX, IconDown, IconPlus } from '../icons'
+import { RightPaneToggle } from './PaneToggle'
+import { IconAddon, IconFolder, IconGrip, IconMaximize, IconSearch, IconSidebar, IconSingle, IconSplitDown, IconSplitRight, IconX, IconDown, IconPlus } from '../icons'
 import { Center, DotsMenu, MenuItem, StatusDot } from './Center'
 import { AddonFrame, addonViews } from './Addons'
 
@@ -121,9 +122,7 @@ function PanesTitleBar({ layout }: { layout: L.Layout }) {
       <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => splitPane('bottom')} title="Split down (⌘⇧\)">
         <IconSplitDown width={16} height={16} />
       </button>
-      <button className={`no-drag rounded p-1 hover:bg-hover hover:text-fg ${s.rightOpen ? 'bg-hover text-fg' : 'text-muted'}`} onClick={() => s.set({ rightOpen: !s.rightOpen })} title="Toggle right panel">
-        <IconPanelRight width={16} height={16} />
-      </button>
+      <RightPaneToggle ws={s.workspaces.find((w) => w.id === s.rightWs)} />
     </header>
   )
 }

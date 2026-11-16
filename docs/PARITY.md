@@ -21,7 +21,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 ✅ built · 🟡 partial · ⬜ not yet
 
 ### Window and navigation
-- ✅ Three-pane layout: sidebar, chat, right panel; collapsible sidebar (⌘B), right panel, bottom panel (⌘J)
+- ✅ Three-pane layout: sidebar, chat, right panel; collapsible sidebar (⌘B), right panel (Analytics / Details toggle in the title bar, x in its header, ⌘⌥B), bottom panel (⌘J)
 - ✅ Resizable sidebar and right panel: drag the inner edge (width shown, double-click resets, drag far past the minimum to hide), widths remembered; Expand (⤢, ⌘⇧E) lets the right panel take over the chat area, Esc puts it back (choo-choo addition, [PRD](prd/resizable-panels.md))
 - ✅ Breadcrumb header: repo › branch, workspace menu (Reveal in Finder, copy path/branch, copy the active chat's `claude --resume` command, archive)
 - ✅ Back/forward between workspaces
@@ -146,6 +146,6 @@ Features Conductor doesn't have. Each one is off until you turn it on in Setting
 - ✅ **Continue on phone**: hand a chat to Claude Code's Remote Control and steer it from the Claude app or claude.ai/code (QR code and link), then bring it back with the phone turns copied in. See [PRD](prd/remote-sessions.md).
 - ✅ **Open in Claude desktop**: `/desktop` in the composer, a button on the chat tabs or the workspace ⋯ menu hands the chat to the Claude desktop app through Claude Code's own `claude --desktop --resume`, then Bring back copies the app's turns in. See [PRD](prd/remote-sessions.md).
 - ✅ **Run in the cloud**: push a workspace to a Claude Code cloud session (`claude --cloud`) that keeps going with the Mac closed, send it follow-ups, and bring it back into the worktree with `claude --teleport`.
-- ✅ Session usage graphs: per chat, tokens per Claude response (input, cache write, cache read, output) and context-window fill, by response or by time, with compactions marked and a table view. Read from Claude Code's own transcript, so no collector is needed and past sessions work too. Works in every workspace, including project orchestrators, threads and the workspaces threads start. Open from the right panel (More › Usage, or the Usage panel beside an orchestrator or thread), the ⋯ menu, the Usage link after a turn, or ⌘K.
+- ✅ Session usage graphs: per chat, tokens per Claude response (input, cache write, cache read, output) and context-window fill, by response or by time, with compactions marked and a table view. Read from Claude Code's own transcript, so no collector is needed and past sessions work too. Works in every workspace, including project orchestrators, threads and the workspaces threads start. Open from the right panel (More › Usage, or the Analytics panel beside an orchestrator or thread), the ⋯ menu, the Usage link after a turn, or ⌘K.
 - ✅ Settings › Integrations: browser sign-in, tokens in the keychain. Notion signs in to Notion's hosted MCP with no setup; start a workspace from a Notion page or task, and agents get Notion's tools.
 - Everything runs on the official Agent SDK and an unmodified Claude Code binary, with each user's own sign-in through Claude Code's /login. Choo Choo never shows its own Claude login or handles tokens, which keeps it within Anthropic's terms. oh-my-pi's own Claude subscription login is not used: it impersonates Claude Code.
