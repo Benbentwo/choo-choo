@@ -190,6 +190,7 @@ const api: Api = {
   onPtyExit: (cb) => on<[string, number]>('pty:exit', cb),
   openExternal: inv('shell:open') as Api['openExternal'],
   linkContext: inv('ws:link-context') as Api['linkContext'],
+  linkPreview: inv('link:preview') as Api['linkPreview'],
   writeClipboard: inv('clipboard:write') as Api['writeClipboard'],
   showContextMenu: (opts) => ipcRenderer.send('menu:context', opts),
   revealInFinder: inv('shell:reveal') as Api['revealInFinder'],

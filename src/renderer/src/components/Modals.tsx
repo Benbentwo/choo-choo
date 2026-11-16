@@ -508,6 +508,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             <Row label="Orchestrator updates" hint="When a workspace the orchestrator started finishes, wake the orchestrator so it checks the work and reports back.">
               <input type="checkbox" checked={settings.orchestratorAutoUpdates} onChange={(e) => void save({ orchestratorAutoUpdates: e.target.checked })} />
             </Row>
+            <Row label="GitHub link previews" hint="GitHub links in chat show as short pills like repo#12 with a state dot. Hover any GitHub link for a card with its title, state, checks and reviews. Uses your gh sign-in.">
+              <input type="checkbox" checked={settings.githubLinkPreviews !== false} onChange={(e) => void save({ githubLinkPreviews: e.target.checked })} />
+            </Row>
             <Row label="Comment bubble" hint="Show the 💬 Comment button at the bottom right. Click it, or press ⌘⇧K, then click anything in the app to ask for a change: it opens a workspace on choo-choo or a GitHub issue.">
               <input type="checkbox" checked={settings.commentBubble !== false} onChange={(e) => void save({ commentBubble: e.target.checked })} />
             </Row>

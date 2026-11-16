@@ -48,6 +48,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { section: 'general', label: 'Anthropic API key', keywords: 'token login sign in sk-ant' },
   { section: 'general', label: 'Notifications', hint: 'Notify when an agent finishes while the app is in the background.', keywords: 'alert notify done finished macos banner' },
   { section: 'general', label: 'Orchestrator updates', hint: 'Wake the orchestrator when a workspace it started finishes.', keywords: 'orchestrator wake report' },
+  { section: 'general', label: 'GitHub link previews', hint: 'Short pills and hover cards for GitHub links in chat.', keywords: 'hover card popover preview pill url pr pull request issue commit link unfurl' },
   { section: 'general', label: 'Comment bubble', hint: 'The 💬 Comment button at the bottom right for asking for app changes.', keywords: 'feedback comment mode pill floating button report bug suggest cmd shift k' },
   { section: 'general', label: 'Workspaces folder', hint: 'Where new workspaces are created.', keywords: 'directory path worktree location disk' },
   { section: 'general', label: 'Import from Conductor', keywords: 'migrate conductor import move' },

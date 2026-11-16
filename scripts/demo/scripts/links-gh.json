@@ -1,0 +1,163 @@
+{
+  "rest": {
+    "repos/trailhead/web/pulls/488": {
+      "number": 488,
+      "title": "Add a date range picker to trip search",
+      "state": "open",
+      "draft": false,
+      "merged_at": null,
+      "user": {
+        "login": "maya-chen",
+        "avatar_url": "https://avatars.githubusercontent.com/maya-chen"
+      },
+      "updated_at": 14,
+      "additions": 214,
+      "deletions": 38,
+      "changed_files": 6,
+      "comments": 2,
+      "review_comments": 3,
+      "base": {
+        "ref": "main",
+        "repo": {
+          "full_name": "trailhead/web"
+        }
+      },
+      "head": {
+        "ref": "maya/date-range",
+        "sha": "a1b2c3d",
+        "repo": {
+          "full_name": "trailhead/web"
+        }
+      },
+      "requested_reviewers": [],
+      "html_url": "https://github.com/trailhead/web/pull/488"
+    },
+    "repos/trailhead/web/pulls/488/reviews": [
+      {
+        "user": {
+          "login": "jordan-k"
+        },
+        "state": "COMMENTED"
+      },
+      {
+        "user": {
+          "login": "jordan-k"
+        },
+        "state": "APPROVED"
+      }
+    ],
+    "repos/trailhead/web/commits/a1b2c3d/check-runs": {
+      "check_runs": [
+        {
+          "id": 1,
+          "name": "test",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 2,
+          "name": "typecheck",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 3,
+          "name": "build",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 4,
+          "name": "e2e",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "repos/trailhead/api/pulls/241": {
+      "number": 241,
+      "title": "Accept an end date on /search",
+      "state": "closed",
+      "draft": false,
+      "merged_at": 95,
+      "user": {
+        "login": "jordan-k",
+        "avatar_url": "https://avatars.githubusercontent.com/jordan-k"
+      },
+      "updated_at": 95,
+      "additions": 48,
+      "deletions": 6,
+      "changed_files": 3,
+      "comments": 1,
+      "review_comments": 0,
+      "base": {
+        "ref": "main",
+        "repo": {
+          "full_name": "trailhead/api"
+        }
+      },
+      "head": {
+        "ref": "search-end-date",
+        "sha": "d4e5f6a",
+        "repo": {
+          "full_name": "trailhead/api"
+        }
+      },
+      "requested_reviewers": [],
+      "html_url": "https://github.com/trailhead/api/pull/241"
+    },
+    "repos/trailhead/api/pulls/241/reviews": [
+      {
+        "user": {
+          "login": "sam-rivera"
+        },
+        "state": "APPROVED"
+      }
+    ],
+    "repos/trailhead/api/commits/d4e5f6a/check-runs": {
+      "check_runs": [
+        {
+          "id": 5,
+          "name": "test",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 6,
+          "name": "lint",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "repos/trailhead/web/issues/471": {
+      "number": 471,
+      "title": "Trip search ignores the end date",
+      "state": "open",
+      "state_reason": null,
+      "user": {
+        "login": "alex-p",
+        "avatar_url": "https://avatars.githubusercontent.com/alex-p"
+      },
+      "updated_at": 200,
+      "comments": 4,
+      "labels": [
+        {
+          "name": "bug",
+          "color": "d73a4a"
+        },
+        {
+          "name": "search",
+          "color": "1d76db"
+        }
+      ],
+      "assignees": [
+        {
+          "login": "maya-chen"
+        }
+      ],
+      "html_url": "https://github.com/trailhead/web/issues/471"
+    },
+    "repos/trailhead/web/contents/src/lib/dates.ts": "import { addDays, isAfter } from './time'\n\n/** A trip's dates as the search sends them: start inclusive, end inclusive. */\nexport interface DateRange {\n  start: string\n  end: string\n}\n\nexport function parseRange(q: URLSearchParams): DateRange | null {\n  const start = q.get('from')\n  const end = q.get('to') ?? start\n  if (!start || !end) return null\n  // The end date used to be dropped here, so searches ran from start to forever.\n  if (isAfter(start, end)) return { start: end, end: start }\n  return { start, end }\n}\n\nexport function nights(r: DateRange): number {\n  return Math.max(0, daysBetween(r.start, r.end))\n}\n"
+  }
+}
