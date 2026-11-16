@@ -52,6 +52,7 @@ import * as notion from './integrations/notion'
 import * as addonHost from './addonHost'
 import { originUrl, githubSlug } from './share'
 import { prBranch, type PrInbox } from '@shared/prInbox'
+import { workspaceForPr } from '@shared/workspaceFor'
 import { activeGlobs, normalizeReviewSettings } from '@shared/reviewUpdates'
 import * as interdiff from './interdiff'
 import { linkPreview } from './linkPreview'
@@ -202,7 +203,7 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
       context = notion.pageContext(await notion.fetchPage(source.id))
     }
   }
-  const workspace: Workspace = { id: randomUUID(), repoId, name, branch, ...(prNumber ? { prNumber } : {}), baseRef, path, title, named, createdAt: Date.now() }
+  const workspace: Workspace = { id: randomUUID(), repoId, name, branch, ...(prNumber ? { prNumber } : {}), ...(source?.kind === 'issue' ? { issueNumber: source.number } : {}), baseRef, path, title, named, createdAt: Date.now() }
   s.workspaces.push(workspace)
   const chat = newChat(workspace.id)
   if (folders.length) chat.additionalDirectories = [...new Set(folders)]
@@ -226,8 +227,7 @@ async function loadPrInbox(): Promise<PrInbox> {
     const repoId = bySlug.get(p.repo.toLowerCase())
     if (!repoId) continue
     p.repoId = repoId
-    const branch = prBranch(p)
-    p.workspaceId = s.workspaces.find((w) => w.repoId === repoId && !w.archived && !w.orchestrator && w.branch === branch)?.id
+    p.workspaceId = workspaceForPr(s.workspaces, repoId, { number: p.number, branch: prBranch(p) })?.id
   }
   return { prs, fetchedAt: Date.now() }
 }
@@ -1608,7 +1608,7 @@ function registerIpc() {
     }
     if (!repoId || preview.kind !== 'pr') return { preview, repoId }
     const branch = prBranch({ number: preview.number, headRefName: preview.head, isCrossRepository: preview.isCrossRepository })
-    const workspaceId = s.workspaces.find((w) => w.repoId === repoId && !w.archived && !w.orchestrator && w.branch === branch)?.id
+    const workspaceId = workspaceForPr(s.workspaces, repoId, { number: preview.number, branch })?.id
     return { preview, repoId, workspaceId }
   })
   h('clipboard:write', (c: { html?: string; text: string }) =>

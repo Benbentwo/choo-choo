@@ -112,6 +112,8 @@ export interface Workspace {
    * agent ran `gh pr checkout`. Fork PRs live on a local branch (pr-12) that GitHub can't find by name.
    */
   prNumber?: number
+  /** The GitHub issue this workspace was started from, so opening the issue again comes back here. */
+  issueNumber?: number
   baseRef: string
   path: string
   title: string

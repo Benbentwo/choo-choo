@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { githubLinkLabel, isBareLink, parseGithubLink, previewDot, shortAge, type GithubLink, type LinkPreview } from '@shared/githubLink'
-import type { InboxPr } from '@shared/prInbox'
+import { prBranch, type InboxPr } from '@shared/prInbox'
+import { workspaceForIssue, workspaceForPr } from '@shared/workspaceFor'
 import type { LinkPreviewResult } from '@shared/types'
 import { openPrWorkspace, refreshState, reportError, useStore } from '../store'
 import { IconCheck, IconCopy, IconFile, IconGithub, IconMerged, IconPR, IconRefresh, IconRepo } from '../icons'
@@ -389,24 +390,35 @@ function Actions({ link, href, result, onDone }: { link: GithubLink; href: strin
   const [busy, setBusy] = useState(false)
   const p = result?.preview
   const canOpen = p?.kind === 'pr' || p?.kind === 'issue'
-  const openLabel = p?.kind === 'pr' && result?.workspaceId ? 'Go to workspace' : 'Open in Choo Choo'
-  const openHint =
-    p?.kind === 'pr'
-      ? result?.workspaceId
-        ? 'Switch to the workspace already on this PR, on the Review tab'
-        : result?.repoId
-          ? 'Open a workspace on this PR, on the Review tab'
-          : `Clone ${p.repo} and open a workspace on this PR`
+  // Looked up live, so a workspace opened a moment ago counts even though the preview is cached.
+  const workspaces = useStore((s) => s.workspaces)
+  const existing = !result?.repoId
+    ? undefined
+    : p?.kind === 'pr'
+      ? workspaceForPr(workspaces, result.repoId, { number: p.number, branch: prBranch({ number: p.number, headRefName: p.head, isCrossRepository: p.isCrossRepository }) })
+      : p?.kind === 'issue'
+        ? workspaceForIssue(workspaces, result.repoId, p.number)
+        : undefined
+  const openHint = existing
+    ? `Go to ${existing.title}, which already has this ${p?.kind === 'pr' ? 'PR' : 'issue'}`
+    : p?.kind === 'pr'
+      ? result?.repoId
+        ? 'No workspace has this PR yet: open one on the Review tab'
+        : `Clone ${p.repo} and open a workspace on this PR`
       : p?.kind === 'issue'
         ? result?.repoId
-          ? 'Start a workspace from this issue'
+          ? 'No workspace has this issue yet: start one from it'
           : `Clone ${p.repo} and start a workspace from this issue`
         : ''
   const open = async () => {
     if (!p || busy) return
     setBusy(true)
     try {
-      if (p.kind === 'pr') await openPrWorkspace(inboxPr(p, result!))
+      if (existing) {
+        const st = useStore.getState()
+        if (p.kind === 'pr') st.set({ rightOpen: true, rightTab: 'review' })
+        st.selectWorkspace(existing.id)
+      } else if (p.kind === 'pr') await openPrWorkspace(inboxPr(p, result!))
       else if (p.kind === 'issue') await openIssueWorkspace(p.repo, p.number, result?.repoId)
       onDone()
     } catch (e) {
@@ -421,7 +433,8 @@ function Actions({ link, href, result, onDone }: { link: GithubLink; href: strin
       {canOpen && (
         <button className={`${btn} text-fg`} title={openHint} disabled={busy} onClick={() => void open()}>
           {busy ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-faint border-t-accent" /> : <KindIcon link={link} preview={p} />}
-          {openLabel}
+          Open in Choo Choo
+          {existing && <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-label="Already open in a workspace" />}
         </button>
       )}
       <button className={btn} title="Open on GitHub" onClick={() => (void window.api.openExternal(href), onDone())}>
@@ -470,10 +483,12 @@ function inboxPr(p: Extract<LinkPreview, { kind: 'pr' }>, r: LinkPreviewResult):
   }
 }
 
-/** A new workspace started from a GitHub issue, cloning its repo first when it isn't in Choo Choo yet. */
+/** The workspace started from a GitHub issue, or a new one, cloning its repo first when it isn't in Choo Choo yet. */
 async function openIssueWorkspace(repo: string, number: number, repoId?: string) {
   const st = useStore.getState()
   if (!repoId || !st.repos.some((r) => r.id === repoId)) repoId = (await window.api.cloneRepo(repo)).id
+  const held = workspaceForIssue(useStore.getState().workspaces, repoId, number)
+  if (held) return useStore.getState().selectWorkspace(held.id)
   const { workspace, chat } = await window.api.createWorkspace(repoId, { kind: 'issue', number })
   await refreshState()
   const now = useStore.getState()
