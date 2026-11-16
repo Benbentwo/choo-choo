@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PaneClose } from './PaneToggle'
 import { prMenuItems } from '../prState'
 import type { Chat, PrInfo, RepoGroup, Workspace } from '@shared/types'
 import { foldKey, parseAutoUpdate, projectArchived, projectThreads, projectTree, routerChat, stripRouted, threadKey, type ThreadNode } from '@shared/projects'
@@ -376,9 +377,7 @@ export function ThreadsPanel({ ws, activeId, onClose }: { ws: Workspace; activeI
         <button className="flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12px] hover:bg-hover" onClick={() => void newChatTab(ws.id)} title="Start a new thread">
           <IconPlus width={12} height={12} /> New
         </button>
-        <button className="rounded p-1 text-faint hover:bg-hover hover:text-fg" onClick={onClose} title="Hide threads">
-          <IconX width={12} height={12} />
-        </button>
+        <PaneClose testId="close-threads" onClose={onClose} title="Hide threads" />
       </div>
       <div className="flex-1 overflow-y-auto p-1.5">
         {list.map((c) => (

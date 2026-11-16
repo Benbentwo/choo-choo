@@ -7,6 +7,7 @@ import { isTheirs, type PrReviewInfo } from '@shared/prReview'
 import { useStore, reportError, openDoc, destOf, savePanelWidth, toggleRightExpanded, type RightTab } from '../store'
 import { CHAT_MIN, RIGHT, rightMax, rightWidth, sidebarWidth } from '@shared/panelWidths'
 import { PanelEdge } from './PanelEdge'
+import { PaneClose, closeRightPane } from './PaneToggle'
 import { useFollowPrHead, useWorkspaceMode, type WsMode } from '../prReview'
 import { IconCollapse, IconComment, IconDown, IconEye, IconExpand, IconPR, IconSearch } from '../icons'
 import { BottomPanel } from './BottomPanel'
@@ -104,6 +105,7 @@ export function RightPanel({ ws }: { ws: Workspace }) {
         <ExpandButton />
         <PrButton ws={ws} hasChanges={changes.length > 0} />
         <MergedActions ws={ws} />
+        <PaneClose testId="close-right" onClose={closeRightPane} title="Hide details (⌘⌥B)" />
       </div>
 
       <div className={`flex min-h-0 flex-col ${s.bottomOpen ? 'flex-[1_1_50%]' : 'flex-1'}`}>
@@ -597,8 +599,10 @@ export function OrchestratorPanel({ ws }: { ws: Workspace }) {
   return (
     <RightAside testId="orchestrator-panel">
       <div className="drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-[12.5px]">
-        <span className="mr-auto truncate text-muted">{group ? group.name : s.repos.find((r) => r.id === ws.repoId)?.name} / Orchestrator</span>
+        <span className="shrink-0 font-medium">Analytics</span>
+        <span className="mr-auto truncate text-faint">{group ? group.name : s.repos.find((r) => r.id === ws.repoId)?.name} / Orchestrator</span>
         <ExpandButton />
+        <PaneClose testId="close-right" onClose={closeRightPane} title="Hide analytics (⌘⌥B)" />
       </div>
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <span className="rounded-md bg-raised px-2.5 py-1 text-fg">Usage</span>

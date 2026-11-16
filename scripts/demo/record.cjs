@@ -345,6 +345,21 @@ const scenes = {
       await d.wait(3000)
     }),
 
+  // The title bar's pane toggles (Threads, Analytics, Details) and the x on each pane. Screenshots only.
+  'pane-toggles': () =>
+    record('pane-toggles', { script: 'projects.json', opts: { noGif: true } }, async (d) => {
+      await d.wait(600)
+      await d.click(d.side('Trip checkout'))
+      await d.click(d.page.locator('textarea').first())
+      await d.type('Add Apple Pay to checkout: a button in the web app, and an endpoint in the API for the payment intent.', 2)
+      await d.page.keyboard.press('Enter')
+      await d.wait(5000)
+      await d.shot?.('project')
+      await d.click(d.side('Apple Pay button'))
+      await d.wait(4000)
+      await d.shot?.('workspace')
+    }),
+
   // Two workspaces from the + on each repo, agents working in parallel, then side by side.
   'parallel-workspaces': () =>
     record('parallel-workspaces', { script: 'workspaces.json' }, async (d) => {
