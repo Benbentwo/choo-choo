@@ -321,6 +321,34 @@ const scenes = {
       await d.wait(2200)
     }),
 
+  // GitHub links in a reply turn into short pills with a state dot; hovering one shows a small card.
+  'link-previews': () =>
+    record('link-previews', { script: 'links.json', gh: 'links-gh.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Add a date range picker to trip search')
+      const pill = (label) => d.page.locator('a.gh-pill', { hasText: label }).first()
+      await pill('web#488').waitFor({ timeout: 30_000 })
+      await d.wait(1600)
+      await d.moveTo(pill('web#488'), 700)
+      await d.wait(1500)
+      await d.shot?.('1-pr-card')
+      // Into the card: it stays open while the pointer is on it.
+      await d.moveTo(d.page.getByRole('dialog', { name: 'Link preview' }).getByText('Open in Choo Choo'), 500)
+      await d.wait(1300)
+      await d.moveTo(pill('api#241'), 700)
+      await d.wait(1600)
+      await d.shot?.('2-merged-card')
+      await d.moveTo(pill('web#471'), 700)
+      await d.wait(1600)
+      await d.shot?.('3-issue-card')
+      await d.moveTo(d.page.locator('a[data-gh-link="file"]').first(), 700)
+      await d.wait(1700)
+      await d.shot?.('4-file-card')
+      await d.moveTo(d.page.locator('textarea').first(), 600)
+      await d.wait(900)
+    }),
+
   // A project chat routes a request to a new thread, the thread starts a workspace (git worktree) in
   // each repo, and the workspace agents do the work.
   'projects-threads': () =>

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // A stand-in GitHub CLI for recording README GIFs: answers the PRs page searches from
-// $CHOO_DEMO_GH (a JSON file with `review`, `reviewed` and `mine` lists) and fails everything else
-// the way a repo with no GitHub remote would. See docs/demo-gifs.md.
+// $CHOO_DEMO_GH (a JSON file with `review`, `reviewed` and `mine` lists), REST calls
+// (`gh api repos/…`, for link previews) from its `rest` map of path to answer, and fails everything
+// else the way a repo with no GitHub remote would. See docs/demo-gifs.md.
 const { readFileSync } = require('node:fs')
 const args = process.argv.slice(2)
 const data = process.env.CHOO_DEMO_GH ? JSON.parse(readFileSync(process.env.CHOO_DEMO_GH, 'utf8')) : {}
@@ -21,6 +22,19 @@ if (args[0] === 'api' && args[1] === 'graphql') {
     process.exit(0)
   }
   process.stdout.write('{"data":{}}')
+  process.exit(0)
+}
+if (args[0] === 'api' && data.rest) {
+  const path = args[args.length - 1]
+  const bare = path.replace(/\?.*$/, '')
+  const hit = data.rest[path] ?? data.rest[bare]
+  if (hit === undefined) {
+    process.stderr.write(`gh: Not Found (HTTP 404)\n`)
+    process.exit(1)
+  }
+  // Updated times are minutes ago, so the cards read naturally whenever the GIF is recorded.
+  const fresh = JSON.stringify(hit, (k, v) => (k.endsWith('_at') && typeof v === 'number' ? new Date(Date.now() - v * 60_000).toISOString() : v))
+  process.stdout.write(typeof hit === 'string' ? hit : fresh)
   process.exit(0)
 }
 process.stderr.write('no git remotes found\n')

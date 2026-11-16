@@ -11,6 +11,7 @@ import type { PrDiffTarget, PrHeadSync, PrReviewInfo, ReviewDraft, ReviewEvent }
 import type { Interdiff, ReviewSettings } from './reviewUpdates'
 import type { RequestSeen, ReviewWatchState } from './reviewWatch'
 import type { LinkContext } from './linkHref'
+import type { LinkPreview } from './githubLink'
 import type { ChatInterrupt } from './restart'
 import type { ReleaseNote } from './releaseNotes'
 export interface Repo {
@@ -589,6 +590,8 @@ export interface Settings extends AppearanceSettings {
   telemetry: Telemetry
   /** Wake an idle orchestrator when a workspace it started finishes, so it checks and reports back. */
   orchestratorAutoUpdates: boolean
+  /** GitHub links in chat show as short pills with a hover preview card. On unless turned off. */
+  githubLinkPreviews?: boolean
   /** Draw the floating comment bubble at the bottom right. ⌘⇧K and Help › Comment on Choo Choo work either way. */
   commentBubble?: boolean
   /** Experimental: project groups become projects, with threads and a repo › PR tree in the sidebar. */
@@ -729,6 +732,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notifications: true,
   orchestratorAutoUpdates: true,
   commentBubble: true,
+  githubLinkPreviews: true,
   claudeBinary: 'bundled',
   checkAppUpdates: true,
   updateChannel: 'stable',
@@ -932,6 +936,15 @@ export interface OutputStyleInfo {
   name: string
   description: string
   source: 'built-in' | 'user' | 'project'
+}
+
+/** A link's preview card data, plus where it lives in Choo Choo when the repo has been added. */
+export interface LinkPreviewResult {
+  preview: LinkPreview
+  /** The local project for the link's repo. */
+  repoId?: string
+  /** For a PR: an open workspace already on its branch. */
+  workspaceId?: string
 }
 
 export interface Api {
@@ -1194,6 +1207,8 @@ export interface Api {
   openExternal(url: string): Promise<void>
   /** GitHub slug, branch and folder of a workspace, so copied chat links can open files on GitHub. */
   linkContext(workspaceId: string): Promise<LinkContext>
+  /** The hover card for a GitHub link in chat, cached per link; with the local project and workspace it maps to. */
+  linkPreview(url: string, fresh?: boolean): Promise<LinkPreviewResult>
   /** Writes HTML and/or text to the system clipboard (for copies made outside a copy event). */
   writeClipboard(content: { html?: string; text: string }): Promise<void>
   /** Shows the app's right-click menu: Open/Copy Link for a link, Copy/Copy for Slack for a selection. */

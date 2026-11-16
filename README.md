@@ -56,9 +56,14 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **PRs page.** Every open PR waiting on your review, plus your own, grouped by repo. One click opens a workspace on the PR's branch. "Since your review" shows only what the author changed.
 - **Stacked PRs.** Keep a stack of PRs in one workspace, switch layers in one click, and let the app restack the PRs above after a change.
 - **PRs in one click.** Create a PR or draft, watch checks, re-run failures and squash-merge, all through your `gh` login.
+- **GitHub link previews.** GitHub links in chat show as short pills like `web#488` with a state dot. Hover one for a small card with its title, state, checks, review and size, and open it in a workspace from there.
 
 <p align="center">
   <img src="docs/media/gifs/prs-page.gif" alt="The PRs page lists PRs waiting on your review and your own, grouped by repo, with To review, Mine and All filters." width="900">
+</p>
+
+<p align="center">
+  <img src="docs/media/gifs/link-previews.gif" alt="An agent's reply links two PRs, an issue and a file. Each GitHub link shows as a short pill with a state dot, and hovering one opens a small card: the PR's checks and review, the issue's labels, or the linked lines of the file." width="900">
 </p>
 
 **Stay on top of usage**

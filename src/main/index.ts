@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
-import type { SourceOption, WorkspaceSource } from '@shared/types'
+import type { LinkPreviewResult, SourceOption, WorkspaceSource } from '@shared/types'
 import type { Automation } from '@shared/automations'
 import type { Artifact, Chat, ChatItem, FeedbackOptions, FilePreview, PrInfo, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
 import { diffBase } from '@shared/stack'
@@ -54,6 +54,7 @@ import { originUrl, githubSlug } from './share'
 import { prBranch, type PrInbox } from '@shared/prInbox'
 import { activeGlobs, normalizeReviewSettings } from '@shared/reviewUpdates'
 import * as interdiff from './interdiff'
+import { linkPreview } from './linkPreview'
 import * as reviewWatch from './reviewWatch'
 import { followPrBase, prRef, syncWorkspaceBranch } from './workspacePr'
 
@@ -1592,6 +1593,23 @@ function registerIpc() {
     const repo = ws && s.repos.find((r) => r.id === ws.repoId)
     if (!ws || !repo) return {}
     return { slug: await repoSlug(repo), ref: ws.branch || repo.defaultBranch, root: ws.path }
+  })
+  h('link:preview', async (url: string, fresh?: boolean): Promise<LinkPreviewResult> => {
+    const preview = await linkPreview(url, fresh)
+    const slug = (preview.repo || '').toLowerCase()
+    const s = store.get()
+    let repoId: string | undefined
+    for (const r of s.repos) {
+      if (r.githubOwner === '') continue
+      if ((await repoSlug(r))?.toLowerCase() === slug) {
+        repoId = r.id
+        break
+      }
+    }
+    if (!repoId || preview.kind !== 'pr') return { preview, repoId }
+    const branch = prBranch({ number: preview.number, headRefName: preview.head, isCrossRepository: preview.isCrossRepository })
+    const workspaceId = s.workspaces.find((w) => w.repoId === repoId && !w.archived && !w.orchestrator && w.branch === branch)?.id
+    return { preview, repoId, workspaceId }
   })
   h('clipboard:write', (c: { html?: string; text: string }) =>
     clipboard.write([new ClipboardItem({ 'text/plain': c.text ?? '', ...(c.html ? { 'text/html': `<meta charset="utf-8">${c.html}` } : {}) })])

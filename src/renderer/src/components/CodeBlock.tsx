@@ -1,6 +1,7 @@
 import { useRef, useState, type ComponentProps } from 'react'
 import type { Components } from 'react-markdown'
 import { IconCheck, IconCopy } from '../icons'
+import { ChatLink } from './GithubLink'
 
 /** A Markdown code block with a faint copy button in its top-right corner. */
 function CodeBlock(props: ComponentProps<'pre'>) {
@@ -27,5 +28,5 @@ function CodeBlock(props: ComponentProps<'pre'>) {
   )
 }
 
-/** Shared react-markdown overrides for chat text. */
-export const MARKDOWN_COMPONENTS: Components = { pre: CodeBlock }
+/** Shared react-markdown overrides for chat text: code blocks get a copy button, GitHub links a pill and hover card. */
+export const MARKDOWN_COMPONENTS: Components = { pre: CodeBlock, a: ChatLink }

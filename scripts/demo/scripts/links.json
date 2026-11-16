@@ -1,0 +1,31 @@
+{
+  "titles": [
+    {
+      "match": "date",
+      "title": "Date range picker",
+      "branch": "date-range"
+    }
+  ],
+  "turns": [
+    {
+      "match": "date",
+      "steps": [
+        {
+          "text": "Checking where the search reads its dates, then the open PR."
+        },
+        {
+          "tool": "Bash",
+          "input": {
+            "command": "gh pr view 488",
+            "description": "Look at the open PR"
+          },
+          "result": "Add a date range picker to trip search",
+          "wait": 600
+        },
+        {
+          "text": "Done. The picker is in https://github.com/trailhead/web/pull/488, and the API side already shipped in https://github.com/trailhead/api/pull/241.\n\n- Fixes https://github.com/trailhead/web/issues/471\n- The end date is now kept by [`parseRange`](https://github.com/trailhead/web/blob/main/src/lib/dates.ts#L10-L16), which used to drop it."
+        }
+      ]
+    }
+  ]
+}
