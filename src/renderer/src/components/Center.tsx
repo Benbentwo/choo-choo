@@ -16,6 +16,7 @@ import {
   focusGroup,
   setGroupActive,
   setGroupDoc,
+  closeGroupDoc,
   splitDocOut,
   addTerminalTab,
   closeTerminalTab,
@@ -371,7 +372,6 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
   const activeTerm = group.active && group.terms.includes(group.active) ? group.active : null
   const active = activeTerm ? undefined : (chats.find((c) => c.id === group.active) ?? chats[0])
   const doc = group.doc
-  const diffFile = doc && doc.kind !== 'reflect' ? doc.path : null
   const reflect = s.reflects[ws.id]
   const groups = leaf.view.kind === 'workspace' ? L.leavesOf(leaf.view.inner) : [group]
   const showReflectTab = reflect && (doc?.kind === 'reflect' || (!groups.some((g) => g.doc?.kind === 'reflect') && groups[0].id === group.id))
@@ -455,20 +455,29 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
             </button>
           </div>
         )}
-        {diffFile && (
-          <div className={`flex h-10 max-w-[260px] shrink-0 items-center gap-2 border-b-2 ${underline} px-3`}>
-            <span className="truncate font-mono text-[12px]">{diffFile.split('/').pop()}</span>
-            <span className="text-[11px] text-faint">{doc?.kind === 'file' ? 'file' : 'diff'}</span>
-            {(chats.length > 0 || group.terms.length > 0) && (
-              <button title="Open beside the chat" className="text-faint hover:text-fg" onClick={() => splitDocOut(leaf.id, group.id, 'right')}>
-                <IconSplitRight width={12} height={12} />
+        {L.docTabs(group).map((d) => {
+          const on = !!doc && L.sameDoc(doc, d)
+          return (
+            <div
+              key={`${d.kind}:${d.path}`}
+              title={d.path}
+              className={`group flex h-10 max-w-[260px] shrink-0 items-center gap-2 border-b-2 px-3 ${on ? `${underline} text-fg` : 'border-transparent text-muted hover:text-fg'}`}
+            >
+              <button className="flex min-w-0 items-center gap-2" onClick={() => setGroupDoc(leaf.id, group.id, d)}>
+                <span className="truncate font-mono text-[12px]">{d.path.split('/').pop()}</span>
+                <span className="text-[11px] text-faint">{d.kind === 'file' ? 'file' : 'diff'}</span>
               </button>
-            )}
-            <button title="Close file" className="text-faint hover:text-fg" onClick={() => setGroupDoc(leaf.id, group.id, null)}>
-              <IconX width={12} height={12} />
-            </button>
-          </div>
-        )}
+              {on && (chats.length > 0 || group.terms.length > 0) && (
+                <button title="Open beside the chat" className="text-faint hover:text-fg" onClick={() => splitDocOut(leaf.id, group.id, 'right')}>
+                  <IconSplitRight width={12} height={12} />
+                </button>
+              )}
+              <button title="Close file" className={`${on ? '' : 'invisible group-hover:visible'} text-faint hover:text-fg`} onClick={() => closeGroupDoc(leaf.id, group.id, d)}>
+                <IconX width={12} height={12} />
+              </button>
+            </div>
+          )
+        })}
         {(chats.length > 0 || groups.length === 1) && (
           <button
             className="mb-2.5 ml-1 shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg"
