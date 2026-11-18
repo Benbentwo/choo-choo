@@ -1196,6 +1196,8 @@ export interface Api {
   deleteLeftover(id: string): Promise<void>
   /** Sets the sidebar order of projects. */
   reorderRepos(ids: string[]): Promise<void>
+  /** Saves the order of projects (RepoGroups) after a drag in the sidebar's Projects section. */
+  reorderGroups(ids: string[]): Promise<void>
   pickFiles(): Promise<string[]>
   /** Current versions behind the Claude model aliases, from the Agent SDK. Empty if it couldn't be read. */
   modelDetails(): Promise<Partial<Record<ModelId, ModelDetails>>>
