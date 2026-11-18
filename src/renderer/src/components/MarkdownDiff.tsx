@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import type { Parser } from '@lezer/common'
 import { MARKDOWN_COMPONENTS } from './CodeBlock'
 import { highlightLines, parserForLang } from '../syntax'
-import type { PreviewBlock } from '../mdPreview'
+import type { MdView, PreviewBlock } from '../mdPreview'
 
 /** A fenced code block in the preview, colored like the code diff. */
 function PreviewCode(props: ComponentProps<'code'> & { node?: unknown }) {
@@ -54,7 +54,7 @@ function PreviewCode(props: ComponentProps<'code'> & { node?: unknown }) {
   )
 }
 
-const COMPONENTS: Components = { ...MARKDOWN_COMPONENTS, code: PreviewCode }
+export const COMPONENTS: Components = { ...MARKDOWN_COMPONENTS, code: PreviewCode }
 
 const BLOCK_STYLE: Record<string, string> = {
   'new:add': 'border-add bg-add/10',
@@ -122,5 +122,24 @@ export function MarkdownDiff({
         )
       })}
     </div>
+  )
+}
+
+/** The Preview | Code switch in a Markdown file's header. */
+export function MdViewSwitch({ preview, onChange, previewDisabled }: { preview: boolean; onChange: (v: MdView) => void; previewDisabled?: string }) {
+  return (
+    <span className="flex shrink-0 overflow-hidden rounded-md border border-line font-sans text-[12px]">
+      {(['preview', 'code'] as const).map((v) => (
+        <button
+          key={v}
+          disabled={v === 'preview' && !!previewDisabled}
+          title={v === 'preview' ? (previewDisabled ?? 'The file as rendered Markdown') : 'The Markdown source, line by line'}
+          className={`px-2 py-0.5 disabled:opacity-40 ${(v === 'preview') === preview ? 'bg-raised text-fg' : 'hover:bg-hover'}`}
+          onClick={() => onChange(v)}
+        >
+          {v === 'preview' ? 'Preview' : 'Code'}
+        </button>
+      ))}
+    </span>
   )
 }

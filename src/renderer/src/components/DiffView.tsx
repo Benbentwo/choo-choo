@@ -5,7 +5,8 @@ import { IconBot, IconGithub, IconX } from '../icons'
 import { useReview } from '../review'
 import { pairedSegs } from '../wordDiff'
 import { mergeRuns, useDiffHighlight } from '../syntax'
-import { clampToDiff, isMarkdownFile, previewBlocks } from '../mdPreview'
+import { clampToDiff, getMdView, isMarkdownFile, previewBlocks, saveMdView, type MdView } from '../mdPreview'
+import { MdViewSwitch } from './MarkdownDiff'
 import { MarkdownDiff } from './MarkdownDiff'
 import { FindBar } from './FindBar'
 import { SinceReviewToggle } from './SinceReview'
@@ -64,11 +65,6 @@ export function DestTag({ dest, label }: { dest: CommentDest; label?: string }) 
   )
 }
 
-type MdView = 'preview' | 'code'
-const MD_VIEW_KEY = 'choo.markdownDiffView'
-/** Markdown files open in the rendered preview unless the person last picked the code diff. */
-let mdView: MdView = (typeof localStorage !== 'undefined' && localStorage.getItem(MD_VIEW_KEY) === 'code') ? 'code' : 'preview'
-
 export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line?: number }) {
   const [diff, setDiff] = useState<string | null>(null)
   const box = useRef<HTMLDivElement>(null)
@@ -94,10 +90,9 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
 
   // Markdown preview: blocks picked for a comment (indexes into blocks), like sel for code lines.
   const [bsel, setBsel] = useState<{ a: number; b: number } | null>(null)
-  const [view, setViewState] = useState<MdView>(mdView)
+  const [view, setViewState] = useState<MdView>(getMdView)
   const setView = (v: MdView) => {
-    mdView = v
-    localStorage.setItem(MD_VIEW_KEY, v)
+    saveMdView(v)
     setViewState(v)
     setSel(null)
     setBsel(null)
@@ -461,19 +456,11 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
           </label>
         )}
         {markdown && (
-          <span className="flex shrink-0 overflow-hidden rounded-md border border-line font-sans text-[12px]">
-            {(['preview', 'code'] as const).map((v) => (
-              <button
-                key={v}
-                disabled={v === 'preview' && sinceOn}
-                title={v === 'preview' ? (sinceOn ? 'The preview shows all changes. Switch Since your review off to see it.' : 'The file as rendered Markdown, with changed blocks marked') : 'The Markdown source, line by line'}
-                className={`px-2 py-0.5 disabled:opacity-40 ${(v === 'preview') === preview ? 'bg-raised text-fg' : 'hover:bg-hover'}`}
-                onClick={() => setView(v)}
-              >
-                {v === 'preview' ? 'Preview' : 'Code'}
-              </button>
-            ))}
-          </span>
+          <MdViewSwitch
+            preview={preview}
+            onChange={setView}
+            previewDisabled={sinceOn ? 'The preview shows all changes. Switch Since your review off to see it.' : undefined}
+          />
         )}
         <FindBar box={box} watch={preview ? full : diff} />
       </div>

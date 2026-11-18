@@ -32,6 +32,7 @@ Code diffs were also drawn in a single color, so the green and red rows lost the
 - Hover a block and its gutter turns into **+ Comment**. Click it to comment on the block, shift-click another block to take in a run of blocks. The usual comment box opens under it with **Send to GitHub review | Agent**, ⌘↵ and ⌘⇧↵.
 - Queued comments, pending review comments, GitHub threads and reviewer findings show under the block that holds their line, in both views.
 - Fenced code blocks inside the preview are syntax colored.
+- A Markdown file opened as a file (All files, ⌘P, a link) also reads as the rendered document, with the same Preview | Code switch ([#135](https://github.com/Benbentwo/choo-choo/issues/135)). Opened at a line, it shows the source at that line.
 - The Code view, and every other file's diff, colors code by language (TypeScript, Python, Go, Rust, CSS, Markdown, YAML, shell, and the rest of CodeMirror's languages), on top of the green and red rows.
 
 ## Requirements
@@ -42,7 +43,8 @@ Code diffs were also drawn in a single color, so the green and red rows lost the
 4. A comment for GitHub is narrowed to the block's lines that are in the PR's diff, since GitHub takes comments only there; when none are, GitHub is disabled with the reason.
 5. Comments, threads and findings appear under their block; ones that fit no block show above the document.
 6. "Since your review" turns the preview off (the Preview button is disabled with a note) because the interdiff can't be drawn as a document.
-7. Code diffs are colored per language, loaded on demand; files with no known language stay plain. Colors come from the theme (dark and light sets).
+7. Markdown file tabs (not diffs) show the same Preview | Code switch and share the remembered choice.
+8. Code diffs are colored per language, loaded on demand; files with no known language stay plain. Colors come from the theme (dark and light sets).
 
 ## Design
 
@@ -69,4 +71,4 @@ On by default for Markdown files; Code is one click away. No settings or migrati
 
 - Word-level marks inside rendered paragraphs.
 - Load relative images from the worktree.
-- Syntax colors in the plain file view.
+- Syntax colors in the plain file view (code files).

@@ -628,6 +628,26 @@ const scenes = {
       await d.wait(1500)
     }),
 
+  // A Markdown file opened from All files reads as the rendered document. Screenshots only.
+  'markdown-file': () =>
+    record('markdown-file', { script: 'markdown-diff.json', opts: { noGif: true } }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Document Apple Pay in the checkout doc and add the button')
+      await d.page.getByText('Documented Apple Pay', { exact: false }).first().waitFor({ timeout: 40_000 })
+      await d.click(d.page.getByText('More', { exact: true }).first())
+      await d.click(d.page.getByText('All files', { exact: true }).first())
+      await d.wait(600)
+      await d.click(d.page.getByText('docs', { exact: true }).last())
+      await d.wait(400)
+      await d.click(d.page.getByText('checkout.md', { exact: true }).last())
+      await d.wait(1500)
+      await d.shot?.('6-file-preview')
+      await d.click(d.page.getByRole('button', { name: 'Code', exact: true }))
+      await d.wait(800)
+      await d.shot?.('7-file-code')
+    }),
+
   // Two workspaces from the + on each repo, agents working in parallel, then side by side.
   'parallel-workspaces': () =>
     record('parallel-workspaces', { script: 'workspaces.json' }, async (d) => {

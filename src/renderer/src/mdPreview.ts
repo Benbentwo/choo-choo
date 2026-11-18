@@ -101,3 +101,9 @@ export function clampToDiff(start: number, end: number, allowed: number[] | unde
 }
 
 export const isMarkdownFile = (file: string) => /\.(md|markdown|mdx|mdown|mkd)$/i.test(file)
+
+export type MdView = 'preview' | 'code'
+const MD_VIEW_KEY = 'choo.markdownDiffView'
+/** Markdown files (diffs and plain file tabs) open rendered unless the person last picked Code. */
+export const getMdView = (): MdView => (typeof localStorage !== 'undefined' && localStorage.getItem(MD_VIEW_KEY) === 'code' ? 'code' : 'preview')
+export const saveMdView = (v: MdView) => localStorage.setItem(MD_VIEW_KEY, v)
