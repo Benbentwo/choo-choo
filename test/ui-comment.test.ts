@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commentPrompt, commentSlug, commentTargets, defaultCommentTarget, isUpstreamRemote, issueUrl, showCommentBubble, sidebarVersion } from '../src/shared/uiComment'
+import { commentPrompt, commentSlug, commentTargets, defaultCommentTarget, isUpstreamRemote, issueUrl, publicSelector, showCommentBubble, sidebarVersion } from '../src/shared/uiComment'
 
 describe('sidebarVersion', () => {
   it('shows the version in a packaged build', () => {
@@ -70,11 +70,30 @@ describe('commentPrompt', () => {
 
 describe('issueUrl', () => {
   it('prefills title and body on the upstream repo', () => {
-    const u = new URL(issueUrl(payload, build, 'macOS 15.1'))
+    const u = new URL(issueUrl(payload, build))
     expect(u.pathname).toBe('/Benbentwo/choo-choo/issues/new')
     expect(u.searchParams.get('title')).toBe(payload.comment)
-    expect(u.searchParams.get('body')).toContain('Choo Choo v0.9.2 (4d563fb) on macOS 15.1')
-    expect(u.searchParams.get('body')).toContain('paste it here')
+    expect(u.searchParams.get('body')).toContain('Choo Choo v0.9.2 (4d563fb). Sent from comment mode')
+  })
+  it('never mentions or asks for a screenshot', () => {
+    const body = new URL(issueUrl(payload, build)).searchParams.get('body') ?? ''
+    expect(body).not.toMatch(/screenshot|clipboard|paste|data:image|\.png/i)
+  })
+  it('leaves out everything from the machine: element text, ids, OS, window position', () => {
+    const local = {
+      ...payload,
+      selector: 'aside#ws-ben-secret-repo > div.row:nth-of-type(2) > span.name',
+      text: 'acme-internal/payments ~/dev/secret-project feature/customer-x',
+      rect: { x: 529, y: 38, width: 260, height: 32 }
+    }
+    const body = new URL(issueUrl(local, build)).searchParams.get('body') ?? ''
+    expect(body).toContain(local.comment)
+    expect(body).toContain('Header < Center')
+    expect(body).toContain('`aside > div.row:nth-of-type(2) > span.name`')
+    expect(body).not.toMatch(/acme|secret|customer|~\/|Text:|macOS|x=529|260×32/)
+  })
+  it('drops ids from selectors only', () => {
+    expect(publicSelector('main.flex > div#chat-123.a:nth-of-type(2) > button.w-[260px]')).toBe('main.flex > div.a:nth-of-type(2) > button.w-[260px]')
   })
 })
 

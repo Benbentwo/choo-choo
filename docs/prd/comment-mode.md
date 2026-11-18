@@ -20,7 +20,7 @@ In a release build there is no checkout running the app, so a comment can't be f
 
 ## Non-goals
 
-- Uploading screenshots to GitHub issues (the API can't; the screenshot goes on the clipboard instead).
+- Screenshots in GitHub issues. Issues are public and a screenshot can show private repos and code, so the issue path never captures one, attaches one, or copies one to the clipboard.
 - Checking out the exact commit the build came from. Workspaces branch from current main; the build commit is in the prompt.
 
 ## User experience
@@ -38,7 +38,7 @@ Release:
 1. Click the 💬 Comment bubble at the bottom right, press ⌘⇧K, or use Help > Comment on Choo Choo….
 2. Click an element and type. "Send to" defaults to **choo-choo workspace**; the other choice is **GitHub issue**.
 3. **Fix it** opens a workspace on branch `comment/<slug>`, selects it, and sends Claude the note. The toast names the workspace.
-4. **Open issue** opens a prefilled issue on Benbentwo/choo-choo in the browser and copies the element screenshot so it can be pasted in.
+4. **Open issue** opens a prefilled issue on Benbentwo/choo-choo in the browser with the note and a text description of the element. It includes no screenshot.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ Release:
 3. The workspace path finds a choo-choo checkout in this order: an added repo whose `origin` is Benbentwo/choo-choo; an added repo whose `upstream` is (a fork); otherwise a clone into `~/choo-choo/repos/choo-choo`. Without push access (`gh api repos/Benbentwo/choo-choo` `.permissions.push`), it forks first, clones the fork, and sets `upstream` as gh's default so `gh pr create` targets it.
 4. The workspace branches from `origin/main` (or `upstream/main` for a fork).
 5. The first message carries the note, React components, selector, on-screen rect, element text (fenced as data, escaped), the app version and build commit, and how to work (typecheck, test, PRD, PR target). Screenshots are image attachments, not files in the repo.
-6. The element screenshot is always attached. The whole window is a checkbox, on in dev and off in release, because it can show private repos and code.
+6. The element screenshot is always attached to workspace comments and never to GitHub issues. The whole window is a checkbox, on in dev and off in release, because it can show private repos and code.
 7. Not signed in to `gh`: the workspace path fails with a message pointing to `gh auth login` or the issue option.
 8. The 💬 Comment bubble sits at the bottom right in dev and release builds. Settings › General › Comment bubble (on by default, `Settings.commentBubble`) hides it; ⌘⇧K and the Help menu still work, and while comment mode is on or a result is showing the bubble stays so there is a way out (`showCommentBubble` in `src/shared/uiComment.ts`).
 9. The build commit is stamped at build time (`__BUILD_COMMIT__` in `electron.vite.config.ts`).
