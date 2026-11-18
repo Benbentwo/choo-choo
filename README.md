@@ -68,10 +68,15 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 **Review and ship**
 - **Build and Review modes.** Each workspace knows whether you're building it or reviewing someone else's PR, and the top right shows the PR and one button for the next step.
 - **Review before you ship.** Diffs against the PR's target branch, an agent code review with inline Fix buttons, and line comments that go to the agent or into a GitHub review.
+- **Markdown preview diffs.** A Markdown file's diff shows the rendered document with changed blocks marked, and you can comment right on it. Code diffs keep their syntax colors on the green and red lines.
 - **PRs page.** Every open PR waiting on your review, plus your own, grouped by repo. One click opens a workspace on the PR's branch. "Since your review" shows only what the author changed.
 - **Stacked PRs.** Keep a stack of PRs in one workspace, switch layers in one click, and let the app restack the PRs above after a change.
 - **PRs in one click.** Create a PR or draft, watch checks, re-run failures and squash-merge, all through your `gh` login.
 - **GitHub link previews.** GitHub links in chat show as short pills like `web#488` with a state dot. Hover one for a small card with its title, state, checks, review and size, and open it in a workspace from there.
+
+<p align="center">
+  <img src="docs/media/gifs/markdown-diff.gif" alt="A Markdown file's diff opens as the rendered document: an edited sentence shows its old text in red above the new text in green, a removed list item is red and new sections are green. Clicking + Comment beside a list item opens the comment box, and the comment is queued for the agent under that item. Code shows the Markdown source, and a TSX file's diff keeps its syntax colors on the green and red lines." width="900">
+</p>
 
 <p align="center">
   <img src="docs/media/gifs/prs-page.gif" alt="The PRs page lists PRs waiting on your review and your own, grouped by repo, with To review, Mine and All filters." width="900">

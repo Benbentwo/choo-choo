@@ -28,6 +28,35 @@ export interface Theme {
   tokens: ThemeTokens
 }
 
+/**
+ * Syntax colors for code in diffs, one set for dark themes and one for light. They are bright
+ * (dark) or deep (light) enough to read on the green and red tints of added and removed lines.
+ */
+export const SYNTAX_DARK = {
+  keyword: '#ff7b72',
+  string: '#a5d6ff',
+  number: '#79c0ff',
+  comment: '#8b949e',
+  type: '#ffa657',
+  function: '#d2a8ff',
+  property: '#79c0ff',
+  tag: '#7ee787',
+  meta: '#ffa657',
+  link: '#a5d6ff'
+}
+export const SYNTAX_LIGHT: typeof SYNTAX_DARK = {
+  keyword: '#cf222e',
+  string: '#0a3069',
+  number: '#0550ae',
+  comment: '#6e7781',
+  type: '#953800',
+  function: '#8250df',
+  property: '#0550ae',
+  tag: '#116329',
+  meta: '#953800',
+  link: '#0a3069'
+}
+
 export const THEMES: Theme[] = [
   {
     // Brand kit: charcoal #202226, midnight #111218, cream #F4EBD8, ash #A6A7AE, slate #676B73.

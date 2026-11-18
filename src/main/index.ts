@@ -1659,9 +1659,9 @@ function registerIpc() {
       return { additions: 0, deletions: 0, files: 0 }
     }
   })
-  h('git:fileDiff', (wsId: string, file: string) => {
+  h('git:fileDiff', (wsId: string, file: string, full?: boolean) => {
     const ws = findWs(wsId)
-    return git.fileDiff(ws.path, diffBase(ws), file)
+    return git.fileDiff(ws.path, diffBase(ws), file, !!full)
   })
   h('pty:create', (id: string, wsId: string) => {
     const ws = findWs(wsId)

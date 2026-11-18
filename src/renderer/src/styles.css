@@ -189,6 +189,35 @@ a.gh-pill > span:not([aria-label]) {
   padding: 3px 8px;
 }
 
+/* The rendered Markdown diff (MarkdownDiff.tsx): each block is drawn on its own, so margins stay small. */
+.md-preview > :first-child { margin-top: 0.15em; }
+.md-preview > :last-child { margin-bottom: 0.15em; }
+.md-preview h1 { font-size: 1.6em; }
+.md-preview h2 { font-size: 1.3em; }
+.md-preview h3 { font-size: 1.12em; }
+.md-preview h1, .md-preview h2, .md-preview h3, .md-preview h4 { margin: 0.35em 0 0.15em; font-weight: 600; line-height: 1.3; }
+.md-preview ul, .md-preview ol { margin: 0.1em 0; }
+.md-preview blockquote { border-left: 3px solid var(--color-line); padding-left: 10px; color: var(--color-muted); }
+.md-preview hr { border-color: var(--color-line); margin: 0.6em 0; }
+.md-preview img { max-width: 100%; }
+
+/* Syntax colors in diffs (src/renderer/src/syntax.ts); the values come from the theme (SYNTAX_DARK/LIGHT). */
+.syn-keyword { color: var(--syn-keyword, #ff7b72); }
+.syn-string { color: var(--syn-string, #a5d6ff); }
+.syn-number { color: var(--syn-number, #79c0ff); }
+.syn-comment { color: var(--syn-comment, #8b949e); font-style: italic; }
+.syn-type { color: var(--syn-type, #ffa657); }
+.syn-function { color: var(--syn-function, #d2a8ff); }
+.syn-property { color: var(--syn-property, #79c0ff); }
+.syn-tag { color: var(--syn-tag, #7ee787); }
+.syn-meta { color: var(--syn-meta, #ffa657); }
+.syn-link { color: var(--syn-link, #a5d6ff); text-decoration: underline; }
+.syn-strong { font-weight: 700; }
+.syn-em { font-style: italic; }
+.syn-inserted { color: var(--color-add); }
+.syn-deleted { color: var(--color-del); }
+.syn-invalid { color: var(--color-del); }
+
 .xterm {
   padding: 6px 8px;
 }
