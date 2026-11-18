@@ -46,6 +46,7 @@ const api: Api = {
   cleanupArchives: inv('archive:cleanup') as Api['cleanupArchives'],
   renameWorkspace: inv('ws:rename') as Api['renameWorkspace'],
   regenerateWorkspaceName: inv('ws:regenerateName') as Api['regenerateWorkspaceName'],
+  regenerateChatName: inv('chat:regenerateName') as Api['regenerateChatName'],
   reorderWorkspaces: inv('ws:reorder') as Api['reorderWorkspaces'],
   createChat: inv('chat:create') as Api['createChat'],
   closeChat: inv('chat:close') as Api['closeChat'],

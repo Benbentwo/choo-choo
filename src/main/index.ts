@@ -1267,7 +1267,10 @@ function registerIpc() {
       c.model = patch.model
     }
     if (patch.effort) c.effort = patch.effort
-    if (patch.title) c.title = patch.title
+    if (patch.title) {
+      const t = patch.title.replace(/\s+/g, ' ').trim().slice(0, 80)
+      if (t) c.title = t
+    }
     if (patch.unread !== undefined) c.unread = patch.unread
     if (patch.planMode !== undefined) c.planMode = patch.planMode
     if (patch.review !== undefined) c.review = patch.review
@@ -1282,6 +1285,15 @@ function registerIpc() {
     // Reading a thread's last reply may be all that kept it from resolving.
     if (patch.unread === false && c.thread) void checkThreadResolve(c.id)
     return c
+  })
+  h('chat:regenerateName', async (id: string) => {
+    const c = findChat(id)
+    const title = await suggestTitleFromChats([store.chatItems(id)], c.thread ? 'thread' : 'workspace')
+    if (!title) throw new Error('Nothing to name this thread from yet. Send a message first, or rename it yourself.')
+    c.title = title
+    store.save()
+    send('state:changed')
+    return title
   })
   h('chat:resolve', (id: string, resolved: boolean) => setThreadResolved(findChat(id), !!resolved, 'person'))
   h('chat:addFolder', async (id: string) => {

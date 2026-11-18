@@ -58,8 +58,11 @@ export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.L
   // A project's orchestrator: one chat at a time, picked from the Threads panel instead of tabs.
   const project = isProject(ws)
   const [threadsOpen, setThreadsOpen] = useState(() => localStorage.getItem('threads-panel') !== 'closed')
+  // Expanded, the Threads panel takes the pane's body in place of the chat.
+  const threadsExpanded = project && threadsOpen && s.threadsExpanded
   const toggleThreads = (open: boolean) => {
     setThreadsOpen(open)
+    if (!open) s.set({ threadsExpanded: false })
     try {
       localStorage.setItem('threads-panel', open ? 'open' : 'closed')
     } catch {
@@ -88,6 +91,10 @@ export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.L
         <ClassicHeader ws={ws} menu={menu} threads={project ? { open: threadsOpen, toggle: toggleThreads } : undefined} />
       )}
       <div className="relative min-h-0 flex-1">
+        {threadsExpanded ? (
+          <ThreadsPanel ws={ws} activeId={active?.id} expanded onClose={() => toggleThreads(false)} />
+        ) : (
+          <>
         {groups.map((g) => {
           const b = boxes.get(g.id)!
           return (
@@ -102,12 +109,14 @@ export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.L
           )
         })}
         <Dividers dividers={dividers} leafId={leaf.id} inner />
+          </>
+        )}
       </div>
       {reflecting && <SessionFeedback ws={ws} archive={false} onClose={() => setReflecting(false)} />}
       {cloudDialog && active && <RunInCloudDialog chat={active} ws={ws} onClose={() => setCloudDialog(false)} />}
     </main>
   )
-  if (!project || !threadsOpen) return main
+  if (!project || !threadsOpen || threadsExpanded) return main
   return (
     <div className="flex h-full min-w-0 flex-1">
       {main}

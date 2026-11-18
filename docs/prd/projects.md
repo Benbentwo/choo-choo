@@ -56,6 +56,13 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 
 ![A resolved thread stays on screen with a Resolved card](../media/projects/resolved-thread.png)
 
+- **Naming threads** (Ben, 2026-11-18: "threads should be able to be renamed or regenerated names… something simple like Sonnet or Haiku"): double-click a thread's title, in the sidebar or the Threads panel, or right-click › Rename…, to type a name (Enter saves, Esc cancels). Right-click › Regenerate name asks Haiku (the same one-shot, no-tools call that names workspaces, `suggestTitleFromChats` in `src/main/naming.ts`) for a 2 to 5 word title from what the thread's conversation is about now; the row shows "Naming…" meanwhile, and a failure shows the reason. The orchestrator chat keeps its name.
+- **Wider Threads panel:** drag the Threads panel's left edge to widen it (220 px up to whatever leaves the chat 420 px; double-click resets, dragging far right hides it), saved as `Settings.threadsWidth`. Expand (the ⤢ button in its header) lists threads across the whole pane in place of the chat, with two lines of each thread's last reply, when it started and a Find box; picking a thread, ⤡ or Esc puts the chat back.
+
+![Rename and Regenerate name on a thread](../media/projects/thread-rename-menu.png)
+
+![The Threads panel expanded over the pane](../media/projects/threads-expanded.png)
+
 ![Resolved threads listed under their project](../media/projects/resolved-list.png)
 
 - **Archiving:** project rows archive like plain workspace rows. Hover a row for the archive button, or right-click it for Open to the side, Reveal in Finder, Copy branch name and Archive workspace. Archived workspaces list under their project behind "Archived (N)", newest first, each with its repo and a Restore button on hover. They no longer show in the plain repo's archived list. Archiving keeps the branch and the transcript and follows "Delete archived workspaces after" in Settings, the same as any workspace.

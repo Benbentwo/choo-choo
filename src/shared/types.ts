@@ -582,6 +582,8 @@ export interface Settings extends AppearanceSettings {
   sidebarWidth?: number
   /** Right panel width in pixels, dragged by its left edge (shared/panelWidths.ts). Default when unset. */
   rightWidth?: number
+  /** Threads panel width in pixels, dragged by its left edge (shared/panelWidths.ts). Default when unset. */
+  threadsWidth?: number
   /** Split panels: how the center is divided, restored on the next start (shared/layout.ts). */
   layout?: Layout | null
   /** Layouts saved by name from the layout menu. */
@@ -1033,6 +1035,8 @@ export interface Api {
   renameWorkspace(workspaceId: string, title: string): Promise<void>
   /** Asks a small model for a new title from the workspace's chats so far. Returns the new title. */
   regenerateWorkspaceName(workspaceId: string): Promise<string>
+  /** A fresh title for a chat (a project thread) from its transcript, picked by Haiku and saved. */
+  regenerateChatName(chatId: string): Promise<string>
   /** Saves a hand-sorted sidebar order: each id's position in the list. */
   reorderWorkspaces(ids: string[]): Promise<void>
   createChat(workspaceId: string): Promise<Chat>

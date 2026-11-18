@@ -80,7 +80,7 @@ async function streamText(text) {
 
 async function playTurn(prompt) {
   // The app's one-shot naming prompts get a JSON title; everything else plays the first matching turn.
-  const naming = /^(Name this coding task|Below is a coding session)/.test(prompt)
+  const naming = /^(Name this coding task|Below is a coding session|Below is a conversation about a software project)/.test(prompt)
   const turn = naming ? null : pickTurn(prompt)
   const started = Date.now()
   stuck = !!turn?.stuck
