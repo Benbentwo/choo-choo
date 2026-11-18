@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   applyPreset,
   boxes,
+  closeDoc,
   closeLeaf,
+  docTabs,
   dragDivider,
   dropView,
   focusedLeaf,
   groupOf,
+  hasDocs,
   isLayout,
   isSplit,
   layoutLabel,
@@ -20,6 +23,7 @@ import {
   openBeside,
   prune,
   show,
+  showDoc,
   splitFocused,
   syncWorkspace,
   workspaceView,
@@ -159,5 +163,57 @@ describe('split panels layout', () => {
     expect(wsIds(l)).toEqual(['a', 'empty', 'empty'])
     l = applyPreset(l, 'single')
     expect(wsIds(l)).toEqual(['a'])
+  })
+})
+
+describe('file tabs in a group', () => {
+  const diff = (path: string, line?: number) => ({ kind: 'diff' as const, path, ...(line ? { line } : {}) })
+  const group = () => leavesOf(workspaceView('w', ['c1']).inner)[0]
+
+  it('keeps diff and file tabs open when going back to the chat', () => {
+    let g = showDoc(group(), diff('a.ts'))
+    g = showDoc(g, { kind: 'file', path: 'b.ts' })
+    g = showDoc(g, null)
+    expect(g.doc).toBeNull()
+    expect(docTabs(g).map((d) => d.path)).toEqual(['a.ts', 'b.ts'])
+    g = showDoc(g, diff('a.ts'))
+    expect(g.doc).toEqual(diff('a.ts'))
+    expect(docTabs(g)).toHaveLength(2)
+  })
+
+  it('reopening a tab reuses it and takes the new line', () => {
+    let g = showDoc(group(), diff('a.ts'))
+    g = showDoc(g, diff('a.ts', 12))
+    expect(docTabs(g)).toEqual([diff('a.ts', 12)])
+  })
+
+  it('closing the shown tab shows its neighbor, then the chat', () => {
+    let g = showDoc(showDoc(showDoc(group(), diff('a')), diff('b')), diff('c'))
+    g = showDoc(g, diff('b'))
+    g = closeDoc(g, diff('b'))
+    expect(g.doc?.path).toBe('c')
+    g = closeDoc(g, diff('a'))
+    expect(g.doc?.path).toBe('c')
+    g = closeDoc(g, diff('c'))
+    expect(g.doc).toBeNull()
+    expect(hasDocs(g)).toBe(false)
+  })
+
+  it('a group with only background file tabs is not dropped, and older saves without docs still load', () => {
+    const g = showDoc(showDoc(group(), diff('a')), null)
+    expect(hasDocs({ ...g, chats: [] })).toBe(true)
+    const old = { ...group(), doc: diff('x') }
+    delete (old as { docs?: unknown }).docs
+    expect(docTabs(old)).toEqual([diff('x')])
+    expect(isLayout({ root: { kind: 'leaf', id: 'p', view: { ...workspaceView('w', ['c1']), inner: old } }, focus: 'p', maximized: null })).toBe(true)
+  })
+
+  it('merging groups keeps every open tab once', () => {
+    const v = workspaceView('w', ['c1', 'c2'])
+    const g1 = showDoc(leavesOf(v.inner)[0], diff('a'))
+    const { inner } = moveTab(g1, 'c2', g1.id, 'right')
+    const groups = leavesOf(inner)
+    const withB = { ...inner, children: (inner as any).children.map((c: any) => (c.id === groups[1].id ? showDoc(c, diff('b')) : c)) }
+    expect(docTabs(mergeGroups(withB)).map((d) => d.path)).toEqual(['a', 'b'])
   })
 })

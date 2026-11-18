@@ -64,7 +64,7 @@ How Orca does it ([docs](https://www.onorca.dev/docs/model/tabs-panes-splits)): 
 ## Requirements
 
 1. Layout is a tree: `split` nodes (row or column, child sizes as fractions) and `workspace` leaves. Each workspace leaf holds an inner tree of `split` nodes and `group` leaves; a group has ordered tabs and an active tab.
-2. A tab is a chat, a diff/file doc, Reflect, or a terminal of that workspace.
+2. A tab is a chat, a diff/file doc, Reflect, or a terminal of that workspace. Diff and file tabs (opened from Changes, Review, All files, comments or search) stay open when you switch to a chat or terminal tab and close only from their own x; opening the same diff or file again reuses its tab. Closing the shown one shows the tab beside it, or the chat when it was the last.
 3. Exactly one focused pane and one focused group at all times while any pane is open.
 4. One workspace can appear in only one pane at a time. Opening it again focuses the existing pane.
 5. Each chat appears in only one group. New chats open in the focused group.
@@ -80,7 +80,7 @@ How Orca does it ([docs](https://www.onorca.dev/docs/model/tabs-panes-splits)): 
 
 ## Design
 
-- **`src/shared/layout.ts`**: pure tree types and functions, unit tested in `test/layout.test.ts`. The outer tree holds `leaf` panes (workspace, add-on page, or empty) in `split` nodes. A workspace leaf holds an inner tree of `group`s (chats, terminal tabs, active tab, an optional diff/file/Reflect doc).
+- **`src/shared/layout.ts`**: pure tree types and functions, unit tested in `test/layout.test.ts`. The outer tree holds `leaf` panes (workspace, add-on page, or empty) in `split` nodes. A workspace leaf holds an inner tree of `group`s (chats, terminal tabs, active tab, open diff/file tabs in `docs`, and the shown diff/file/Reflect `doc`).
 - **Rendering (`Panes.tsx`, `Center.tsx`)**: panes and groups are absolutely positioned from computed boxes and keyed by id, so moving or resizing never remounts them. Add-on frames don't reload and composers keep their text.
 - **Store**: `layout`, `panesShown` (panes vs Home/PRs/new-workspace), `rightWs` (the right panel keeps the last focused workspace while a page or empty pane is focused, so it doesn't jump), and `drag`. `selectedWs`, `addonPage`, `activeChat` and `openDoc` are derived from the layout so existing readers keep working. A workspace's inner splits are remembered when its pane closes and restored when it reopens.
 - **Drag and drop**: HTML5 drag events and a `DropOverlay` that picks the zone under the pointer (outer quarter splits, middle replaces; a pane dropped in the middle swaps).
