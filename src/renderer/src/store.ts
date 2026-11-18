@@ -138,6 +138,10 @@ interface UI {
   rightOpen: boolean
   /** The right panel fills the chat area (⌘⇧E); the chat panes fold into a strip. */
   rightExpanded: boolean
+  /** The Threads panel fills a project orchestrator's pane, in place of the chat. */
+  threadsExpanded: boolean
+  /** Project threads whose title Haiku is coming up with right now. */
+  namingChats: Record<string, true>
   bottomOpen: boolean
   /** Per workspace: the person switched between building and reviewing by hand. */
   wsMode: Record<string, 'build' | 'review'>
@@ -216,6 +220,8 @@ export const useStore = create<UI>((set, get) => ({
   sidebarOpen: true,
   rightOpen: true,
   rightExpanded: false,
+  threadsExpanded: false,
+  namingChats: {},
   bottomOpen: true,
   wsMode: (() => { try { return JSON.parse(localStorage.getItem('wsMode') ?? '{}') } catch { return {} } })(),
   rightTab: 'changes',
@@ -784,6 +790,37 @@ export async function resolveThread(chatId: string, resolved: boolean) {
   }
 }
 
+/** Give a project thread the name the person typed. */
+export async function renameThread(chatId: string, title: string) {
+  const t = title.replace(/\s+/g, ' ').trim()
+  const chat = useStore.getState().chats.find((c) => c.id === chatId)
+  if (!t || !chat || t === chat.title) return
+  useStore.getState().upsertChat({ ...chat, title: t })
+  try {
+    useStore.getState().upsertChat(await window.api.updateChat(chatId, { title: t }))
+  } catch (e) {
+    reportError(e)
+  }
+}
+
+/** Ask Haiku for a fresh name for a project thread, from what its conversation is about now. */
+export async function regenerateThreadName(chatId: string) {
+  const mark = (on: boolean) => {
+    const { [chatId]: _, ...rest } = useStore.getState().namingChats
+    useStore.getState().set({ namingChats: on ? { ...rest, [chatId]: true } : rest })
+  }
+  mark(true)
+  try {
+    const title = await window.api.regenerateChatName(chatId)
+    const chat = useStore.getState().chats.find((c) => c.id === chatId)
+    if (chat) useStore.getState().upsertChat({ ...chat, title })
+  } catch (e) {
+    reportError(e)
+  } finally {
+    mark(false)
+  }
+}
+
 /** Hide or show a sidebar row (an Orchestrator or add-on row). Keys come from shared/sidebarHidden.ts. */
 export function setSidebarRowHidden(keys: string | string[], hidden: boolean) {
   saveSidebarList('sidebarHidden', keys, hidden)
@@ -799,7 +836,7 @@ export function setProjectWorkSort(sort: NonNullable<Settings['projectWorkSort']
 }
 
 /** Save a dragged sidebar or right panel width (shared/panelWidths.ts clamps it when drawn). */
-export function savePanelWidth(field: 'sidebarWidth' | 'rightWidth', width: number | undefined) {
+export function savePanelWidth(field: 'sidebarWidth' | 'rightWidth' | 'threadsWidth', width: number | undefined) {
   useStore.getState().set({ settings: { ...useStore.getState().settings, [field]: width } })
   void window.api
     .saveSettings({ [field]: width })

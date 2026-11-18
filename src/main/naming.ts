@@ -76,14 +76,18 @@ export function namingContext(chats: ChatItem[][], maxChars = 6000): string {
   return text.length > maxChars ? text.slice(text.length - maxChars) : text
 }
 
-/** A fresh title for a workspace from what its chats are about now. Null when there's nothing to go on; throws when the model can't answer. */
-export async function suggestTitleFromChats(chats: ChatItem[][]): Promise<string | null> {
+/**
+ * A fresh title for a workspace or a project thread from what its chats are about now, by Haiku.
+ * Null when there's nothing to go on; throws when the model can't answer.
+ */
+export async function suggestTitleFromChats(chats: ChatItem[][], what: 'workspace' | 'thread' = 'workspace'): Promise<string | null> {
   const context = namingContext(chats)
   if (!context.trim()) return null
   let json: Record<string, unknown> | null
   try {
     json = await askHaiku(
-      'Below is a coding session. Give it a short title that says what the work is about now; if the focus moved, name where it ended up. ' +
+      (what === 'thread' ? 'Below is a conversation about a software project. Give it' : 'Below is a coding session. Give it') +
+        ' a short title that says what the work is about now; if the focus moved, name where it ended up. ' +
         'Reply with only JSON like {"title":"Automate photo upload"}. Title: 2-5 words, sentence case.\n\n<session>\n' +
         context +
         '\n</session>'
@@ -91,7 +95,7 @@ export async function suggestTitleFromChats(chats: ChatItem[][]): Promise<string
   } catch (e) {
     // Running the model failed (no binary, signed out, network): keep the real cause, in the log and the message.
     console.error('[naming] regenerate name failed:', e)
-    throw new Error(`Couldn't reach Claude to name this workspace: ${e instanceof Error ? e.message : String(e)}`)
+    throw new Error(`Couldn't reach Claude to name this ${what}: ${e instanceof Error ? e.message : String(e)}`)
   }
   const title = typeof json?.title === 'string' ? json.title.trim().slice(0, 80) : ''
   if (!title) throw new Error("Couldn't come up with a name. Try again, or rename it yourself.")

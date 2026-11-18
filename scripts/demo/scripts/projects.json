@@ -1,6 +1,11 @@
 {
   "titles": [
     {
+      "match": "^Below is a conversation about a software project",
+      "title": "Apple Pay checkout",
+      "branch": "apple-pay-checkout"
+    },
+    {
       "match": "Apple Pay button",
       "title": "Apple Pay button",
       "branch": "apple-pay-button"

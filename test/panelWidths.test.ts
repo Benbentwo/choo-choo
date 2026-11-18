@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CHAT_MIN, RIGHT, SIDEBAR, SNAP, dragTo, rightMax, rightWidth, sidebarWidth } from '../src/shared/panelWidths'
+import { CHAT_MIN, RIGHT, SIDEBAR, SNAP, THREADS, dragTo, rightMax, rightWidth, sidebarWidth, threadsWidth } from '../src/shared/panelWidths'
 
 describe('panel widths', () => {
   it('defaults and clamps the sidebar', () => {
@@ -26,5 +26,14 @@ describe('panel widths', () => {
   it('closes a panel dragged well past its minimum', () => {
     expect(dragTo(SIDEBAR.min - 10, SIDEBAR.min)).toBe(SIDEBAR.min - 10)
     expect(dragTo(SIDEBAR.min - SNAP - 1, SIDEBAR.min)).toBe('close')
+  })
+
+  it('sizes the Threads panel and keeps room for the chat beside it', () => {
+    expect(threadsWidth(undefined, 1400)).toBe(THREADS.def)
+    expect(threadsWidth(100, 1400)).toBe(THREADS.min)
+    expect(threadsWidth(600, 1400)).toBe(600)
+    expect(threadsWidth(1200, 1400)).toBe(1400 - CHAT_MIN)
+    // A pane too narrow for both still draws the panel at its minimum.
+    expect(threadsWidth(undefined, 500)).toBe(THREADS.min)
   })
 })

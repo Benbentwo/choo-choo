@@ -601,6 +601,59 @@ const scenes = {
       await d.shot?.('5-reopened')
     }),
 
+  // Rename a thread, regenerate its name with Haiku, widen the Threads panel and expand it over the pane.
+  'thread-names': () =>
+    record('thread-names', { script: 'projects.json' }, async (d) => {
+      await d.wait(400)
+      await d.click(d.side('Trip checkout'))
+      await d.page.getByTestId('close-right').click()
+      await d.click(d.page.getByTestId('composer-input').first())
+      await d.type('Add Apple Pay to checkout: a button in the web app, and an endpoint in the API for the payment intent.', 4)
+      await d.page.keyboard.press('Enter')
+      await d.wait(2600)
+      await d.click(d.side('Apple Pay at checkout'))
+      await d.page.getByText('Want me to open the PRs?').first().waitFor({ timeout: 30_000 })
+      d.startGif()
+      await d.wait(1000)
+      // Drag the Threads panel wider by its left edge.
+      const edge = d.page.getByTestId('threads-panel').getByTestId('panel-edge-right')
+      const box = await edge.boundingBox()
+      await d.page.mouse.move(box.x + 4, box.y + 300, { steps: 8 })
+      await d.page.mouse.down()
+      await d.page.mouse.move(box.x - 180, box.y + 300, { steps: 20 })
+      await d.wait(500)
+      await d.shot?.('1-dragging')
+      await d.page.mouse.up()
+      await d.wait(800)
+      // Rename it from the Threads panel: double-click the title.
+      const row = d.page.getByTestId('threads-panel').getByTestId('thread-row').filter({ has: d.page.getByText('Apple Pay at checkout', { exact: true }) })
+      await d.moveTo(row)
+      await row.getByText('Apple Pay at checkout', { exact: true }).dblclick()
+      await d.wait(300)
+      await d.type('Wallet payments', 70)
+      await d.wait(300)
+      await d.shot?.('2-renaming')
+      await d.page.keyboard.press('Enter')
+      await d.wait(1200)
+      await d.shot?.('3-renamed')
+      // Regenerate it from the sidebar's right-click menu.
+      await d.moveTo(d.side('Wallet payments'))
+      await d.side('Wallet payments').click({ button: 'right' })
+      await d.wait(500)
+      await d.shot?.('4-menu')
+      await d.click(d.page.getByText('Regenerate name', { exact: true }), 300)
+      await d.side('Apple Pay checkout').waitFor({ timeout: 10_000 })
+      await d.wait(1200)
+      await d.shot?.('5-regenerated')
+      // Expand the Threads panel over the pane.
+      await d.click(d.page.getByTestId('expand-threads'))
+      await d.wait(1400)
+      await d.shot?.('6-expanded')
+      await d.click(d.page.getByTestId('threads-panel').getByTestId('thread-row').filter({ has: d.page.getByText('Apple Pay checkout', { exact: true }) }))
+      await d.wait(1400)
+      await d.shot?.('7-back-to-chat')
+    }),
+
   // Drag a project row up or down the Projects section to reorder; the order sticks.
   'reorder-projects': () =>
     record(
