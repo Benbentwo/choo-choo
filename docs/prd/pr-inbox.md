@@ -39,7 +39,8 @@ Today, reviewing someone's PR means finding it on GitHub, then starting a worksp
 - If the repo isn't a project yet, its header says "not added"; Open clones it (through gh, into the usual repos folder), adds it, then opens the workspace.
 - The list reloads every minute while the page is open, when the window gets focus, and with Refresh. The sidebar count reloads every five minutes in the background.
 - Errors: no gh, or gh not signed in, shows a line saying what to run (`brew install gh`, `gh auth login`).
-- **Filter** lists each org and its repos with counts and tick boxes. Unticking an org or repo hides its PRs from the page and from the sidebar count. The choice is saved in Settings on this computer only (`prsHidden`), so a work laptop can leave out personal repos. The button shows how many are hidden; Show everything clears it.
+- **Filters** (temporary): a row of small dropdowns under the title. **Repo** and **Author** list the values in the loaded PRs with counts (Author has a find box), **Review** (not approved yet, approved, changes requested, you reviewed, you haven't reviewed), **Status** (ready, draft, checks failing, running, passing) and **Updated** (last 24 hours, 3 days, week, 30 days, over a week ago). Choices in one dropdown widen the list (alice or bob); different dropdowns narrow it. A set dropdown is highlighted and names its choice. Clicking an author's name on a row adds them. The view counts follow the filters. Filters stay while you switch pages and come back; **Reset** or a restart clears them. They are never saved.
+- **Repos to watch** (saved): the cogwheel at the top right opens a list of orgs and their repos with tick boxes. Unticked ones never show on the page or in the sidebar count. Saved in Settings on this computer only (`prsHidden`), so a work laptop can leave out personal repos. The cogwheel has a dot when something is unticked.
 - The last good list is saved and shown at once on start-up. When a refresh fails, the page keeps that list and says when it was loaded.
 - The two lists load as separate searches of 50 PRs each, newest first (20 if GitHub times out). One query for both, 100 each with CI status, made GitHub answer HTTP 502.
 
@@ -53,6 +54,7 @@ Today, reviewing someone's PR means finding it on GitHub, then starting a worksp
 
 ## Design
 
+- `src/shared/prFilters.ts`: the temporary filter dropdowns' options and matching; kept in the renderer store as `prsFilters`.
 - `src/shared/prInbox.ts`: the GraphQL query (two aliased `search` calls), `parsePrInbox`, `groupByRepo`, `prBranch`.
 - `src/main/github.ts` `prInbox()` runs `gh api graphql`. `src/main/index.ts` `loadPrInbox()` adds `repoId` and `workspaceId`; IPC `prs:inbox`, `Api.prInbox()`.
 - Renderer: `store.ts` holds `prsPage`, `prInbox`, `refreshPrInbox()` and `openPrWorkspace()`; `components/PrInbox.tsx` is the page; `Sidebar.tsx` adds the nav item; `App.tsx` routes to the page and starts the background refresh.

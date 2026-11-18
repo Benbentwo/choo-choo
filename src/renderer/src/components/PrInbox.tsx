@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { groupByRepo, isReviewing, matchesFilter, orgsAndRepos, visiblePrs, type InboxPr, type PrFilter } from '@shared/prInbox'
+import { createPortal } from 'react-dom'
+import { NO_FILTERS, REVIEW, STATUS, UPDATED, activeCount, applyPrFilters, buttonLabel, toggleValue, valuesWithCounts, type Option, type PrFilters } from '@shared/prFilters'
 import { useStore, refreshPrInbox, openPrWorkspace, reportError, setPrReposCollapsed } from '../store'
-import { IconDown, IconGithub, IconPR, IconRight, IconSidebar } from '../icons'
+import { IconDown, IconGear, IconGithub, IconPR, IconRight, IconSidebar } from '../icons'
 
 const FILTER_KEY = 'prs-filter'
 const FILTERS: { id: PrFilter; label: string }[] = [
@@ -25,8 +27,11 @@ export function PrInboxPage() {
   const [opening, setOpening] = useState<string | null>(null)
   const allPrs = s.prInbox?.prs ?? []
   const hidden = s.settings.prsHidden ?? []
-  const prs = useMemo(() => visiblePrs(allPrs, hidden), [allPrs, hidden])
-  const [filterMenu, setFilterMenu] = useState(false)
+  const shown = useMemo(() => visiblePrs(allPrs, hidden), [allPrs, hidden])
+  const filters = s.prsFilters
+  const prs = useMemo(() => applyPrFilters(shown, filters), [shown, filters])
+  const setFilters = (next: Partial<PrFilters>) => s.set({ prsFilters: { ...useStore.getState().prsFilters, ...next } })
+  const filtering = activeCount(filters) > 0
   const groups = useMemo(() => groupByRepo(prs, filter), [prs, filter])
   const collapsed = s.settings.prsCollapsed ?? []
   const flat = groups.filter((g) => !collapsed.includes(g.repo)).flatMap((g) => g.prs)
@@ -106,20 +111,12 @@ export function PrInboxPage() {
               Mark all seen
             </button>
           )}
-          <div className="relative">
-            <button
-              className={`rounded-md border px-2.5 py-1 text-[12px] hover:bg-hover hover:text-fg ${hidden.length ? 'border-accent/50 text-accent' : 'border-line text-muted'}`}
-              onClick={() => setFilterMenu(!filterMenu)}
-              title="Choose which orgs and repos show here. Saved on this computer only."
-            >
-              Filter{hidden.length ? ` · ${hidden.length} hidden` : ''}
-            </button>
-            {filterMenu && <RepoFilter prs={allPrs} hidden={hidden} onClose={() => setFilterMenu(false)} />}
-          </div>
           <button className="rounded-md border border-line px-2.5 py-1 text-[12px] text-muted hover:bg-hover hover:text-fg disabled:opacity-50" disabled={s.prInboxLoading} onClick={() => void refreshPrInbox()} title="Reload from GitHub">
             {s.prInboxLoading ? 'Loading…' : 'Refresh'}
           </button>
+          <WatchSettings prs={allPrs} hidden={hidden} />
         </div>
+        <FilterRow prs={shown} filters={filters} setFilters={setFilters} />
         {s.prInboxError && (
           <div className="selectable mb-3 rounded-lg border border-del/40 px-3 py-2 text-[12px] text-muted">
             {s.prInboxError}
@@ -128,7 +125,15 @@ export function PrInboxPage() {
         )}
         <div className="-mx-2 min-h-0 flex-1 overflow-y-auto px-2 pb-8 outline-none" tabIndex={0} onKeyDown={onKey}>
           {!s.prInbox && s.prInboxLoading && <div className="py-10 text-center text-muted">Loading pull requests…</div>}
-          {s.prInbox && groups.length === 0 && (
+          {s.prInbox && groups.length === 0 && filtering && (
+            <div className="py-10 text-center text-muted">
+              No pull requests match these filters.{' '}
+              <button className="text-accent hover:underline" onClick={() => s.set({ prsFilters: NO_FILTERS })}>
+                Reset filters
+              </button>
+            </div>
+          )}
+          {s.prInbox && groups.length === 0 && !filtering && (
             <div className="py-10 text-center text-muted">{filter === 'review' ? 'Nothing waiting on your review.' : filter === 'updated' ? 'Nothing changed for you since you last looked.' : filter === 'mine' ? 'You have no open pull requests.' : 'No open pull requests.'}</div>
           )}
           {groups.map((g) => (
@@ -149,7 +154,7 @@ export function PrInboxPage() {
               </button>
               {!folded(g.repo) &&
                 g.prs.map((p) => (
-                  <PrRow key={key(p)} pr={p} selected={selected === key(p)} opening={opening === key(p)} onSelect={() => setSelected(key(p))} onOpen={() => void open(p)} />
+                  <PrRow key={key(p)} pr={p} selected={selected === key(p)} opening={opening === key(p)} onSelect={() => setSelected(key(p))} onOpen={() => void open(p)} onAuthor={() => setFilters({ authors: filters.authors.includes(p.author) ? filters.authors : [...filters.authors, p.author] })} />
                 ))}
             </section>
           ))}
@@ -159,7 +164,7 @@ export function PrInboxPage() {
   )
 }
 
-function PrRow({ pr, selected, opening, onSelect, onOpen }: { pr: InboxPr; selected: boolean; opening: boolean; onSelect: () => void; onOpen: () => void }) {
+function PrRow({ pr, selected, opening, onSelect, onOpen, onAuthor }: { pr: InboxPr; selected: boolean; opening: boolean; onSelect: () => void; onOpen: () => void; onAuthor: () => void }) {
   const ws = useStore((s) => (pr.workspaceId ? s.workspaces.find((w) => w.id === pr.workspaceId) : undefined))
   const openLabel = ws ? `Go to workspace ${ws.title}` : pr.repoId ? 'Open a workspace on this PR' : `Clone ${pr.repo} and open a workspace on this PR`
   const u = pr.update
@@ -184,7 +189,16 @@ function PrRow({ pr, selected, opening, onSelect, onOpen }: { pr: InboxPr; selec
         <div className="flex items-center gap-1.5 overflow-hidden text-[11px] whitespace-nowrap text-faint">
           <span>#{pr.number}</span>
           <span>·</span>
-          <span>{pr.author}</span>
+          <button
+            className="hover:text-fg hover:underline"
+            title={`Show only PRs by ${pr.author} for now`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onAuthor()
+            }}
+          >
+            {pr.author}
+          </button>
           <span>·</span>
           <span>{ago(pr.updatedAt)}</span>
           <span>·</span>
@@ -274,7 +288,7 @@ function ago(iso: string): string {
 }
 
 /** Tick boxes for each org and its repos. Unticking hides them from the PRs page on this computer. */
-function RepoFilter({ prs, hidden, onClose }: { prs: InboxPr[]; hidden: string[]; onClose: () => void }) {
+function RepoFilter({ prs, hidden }: { prs: InboxPr[]; hidden: string[] }) {
   const orgs = useMemo(() => orgsAndRepos(prs), [prs])
   const lower = new Set(hidden.map((h) => h.toLowerCase()))
   const save = async (next: string[]) => {
@@ -295,8 +309,9 @@ function RepoFilter({ prs, hidden, onClose }: { prs: InboxPr[]; hidden: string[]
     void save(show ? others : [...others, org])
   }
   return (
-    <div className="absolute top-8 right-0 z-30 max-h-[60vh] w-80 overflow-y-auto rounded-lg border border-line bg-raised p-2 text-[12px] shadow-xl" onMouseLeave={onClose}>
-      <div className="mb-1.5 px-1 text-faint">Show PRs from. Saved on this computer only.</div>
+    <div className="max-h-[60vh] w-80 overflow-y-auto p-2 text-[12px]">
+      <div className="px-1 font-medium text-fg">Repos to watch</div>
+      <div className="mb-2 px-1 text-faint">Unticked orgs and repos never show here or in the sidebar count. Saved on this computer only.</div>
       {orgs.length === 0 && <div className="px-1 py-2 text-faint">No pull requests loaded yet.</div>}
       {orgs.map((o) => {
         const orgShown = !lower.has(o.org.toLowerCase())
@@ -324,5 +339,136 @@ function RepoFilter({ prs, hidden, onClose }: { prs: InboxPr[]; hidden: string[]
         </button>
       )}
     </div>
+  )
+}
+
+
+/** A menu drawn on top of everything, under its button, closed by a click outside or Escape. */
+function Popover({ anchor, align = 'left', onClose, children }: { anchor: HTMLElement; align?: 'left' | 'right'; onClose: () => void; children: React.ReactNode }) {
+  const box = useRef<HTMLDivElement>(null)
+  const r = anchor.getBoundingClientRect()
+  useEffect(() => {
+    const down = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node) && !anchor.contains(e.target as Node)) onClose()
+    }
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('mousedown', down)
+    window.addEventListener('keydown', key)
+    return () => {
+      window.removeEventListener('mousedown', down)
+      window.removeEventListener('keydown', key)
+    }
+  }, [anchor, onClose])
+  return createPortal(
+    <div
+      ref={box}
+      className="no-drag fixed z-50 rounded-lg border border-line bg-raised shadow-xl"
+      style={{ top: r.bottom + 4, ...(align === 'right' ? { right: window.innerWidth - r.right } : { left: r.left }) }}
+    >
+      {children}
+    </div>,
+    document.body
+  )
+}
+
+/** The cogwheel at the top right: which orgs and repos this computer watches (Settings.prsHidden). */
+function WatchSettings({ prs, hidden }: { prs: InboxPr[]; hidden: string[] }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  return (
+    <>
+      <button
+        className={`relative rounded-md border border-line p-1.5 hover:bg-hover hover:text-fg ${anchor ? 'bg-hover text-fg' : 'text-muted'}`}
+        title={hidden.length ? `Repos to watch on this computer (${hidden.length} hidden)` : 'Repos to watch on this computer'}
+        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+      >
+        <IconGear width={14} height={14} />
+        {hidden.length > 0 && <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-accent" />}
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} align="right" onClose={() => setAnchor(null)}>
+          <RepoFilter prs={prs} hidden={hidden} />
+        </Popover>
+      )}
+    </>
+  )
+}
+
+/** The row of temporary filter dropdowns under the title, with Reset when any is set. */
+function FilterRow({ prs, filters, setFilters }: { prs: InboxPr[]; filters: PrFilters; setFilters: (f: Partial<PrFilters>) => void }) {
+  const repos = useMemo(() => valuesWithCounts(prs, (p) => p.repo), [prs])
+  const authors = useMemo(() => valuesWithCounts(prs, (p) => p.author), [prs])
+  const count = (o: Option) => prs.filter((p) => o.test(p, Date.now())).length
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[12px]">
+      <Dropdown label={buttonLabel('Repo', filters.repos)} active={filters.repos.length > 0}>
+        {repos.map((r) => (
+          <Check key={r.value} on={filters.repos.includes(r.value)} label={r.value} count={r.count} onClick={() => setFilters({ repos: toggleValue(filters.repos, r.value) })} />
+        ))}
+      </Dropdown>
+      <Dropdown label={buttonLabel('Author', filters.authors)} active={filters.authors.length > 0} search>
+        {(q: string) =>
+          authors
+            .filter((a) => a.value.toLowerCase().includes(q.toLowerCase()))
+            .map((a) => <Check key={a.value} on={filters.authors.includes(a.value)} label={a.value} count={a.count} onClick={() => setFilters({ authors: toggleValue(filters.authors, a.value) })} />)
+        }
+      </Dropdown>
+      <Dropdown label={buttonLabel('Review', filters.review, REVIEW)} active={filters.review.length > 0}>
+        {REVIEW.map((o) => (
+          <Check key={o.id} on={filters.review.includes(o.id)} label={o.label} count={count(o)} onClick={() => setFilters({ review: toggleValue(filters.review, o.id) })} />
+        ))}
+      </Dropdown>
+      <Dropdown label={buttonLabel('Status', filters.status, STATUS)} active={filters.status.length > 0}>
+        {STATUS.map((o) => (
+          <Check key={o.id} on={filters.status.includes(o.id)} label={o.label} count={count(o)} onClick={() => setFilters({ status: toggleValue(filters.status, o.id) })} />
+        ))}
+      </Dropdown>
+      <Dropdown label={buttonLabel('Updated', filters.updated ? [filters.updated] : [], UPDATED)} active={!!filters.updated}>
+        {UPDATED.map((o) => (
+          <Check key={o.id} radio on={filters.updated === o.id} label={o.label} count={count(o)} onClick={() => setFilters({ updated: filters.updated === o.id ? null : o.id })} />
+        ))}
+      </Dropdown>
+      {activeCount(filters) > 0 && (
+        <button className="rounded-md px-2 py-1 text-muted hover:bg-hover hover:text-fg" title="Clear the filters" onClick={() => setFilters(NO_FILTERS)}>
+          Reset
+        </button>
+      )}
+    </div>
+  )
+}
+
+function Dropdown({ label, active, search, children }: { label: string; active: boolean; search?: boolean; children: React.ReactNode | ((q: string) => React.ReactNode) }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const [q, setQ] = useState('')
+  return (
+    <>
+      <button
+        className={`flex items-center gap-1 rounded-md border px-2 py-1 whitespace-nowrap ${active ? 'border-accent/50 bg-accent/10 text-accent' : 'border-line text-muted hover:bg-hover hover:text-fg'} ${anchor ? 'bg-hover' : ''}`}
+        onClick={(e) => {
+          setQ('')
+          setAnchor(anchor ? null : e.currentTarget)
+        }}
+      >
+        {label}
+        <IconDown width={12} height={12} className="opacity-70" />
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={() => setAnchor(null)}>
+          <div className="max-h-[50vh] w-60 overflow-y-auto p-1 text-[12px]">
+            {search && <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a person…" className="mb-1 w-full rounded border border-line bg-transparent px-2 py-1 outline-none placeholder:text-faint focus:border-muted" />}
+            {typeof children === 'function' ? children(q) : children}
+          </div>
+        </Popover>
+      )}
+    </>
+  )
+}
+
+function Check({ on, label, count, radio, onClick }: { on: boolean; label: string; count: number; radio?: boolean; onClick: () => void }) {
+  return (
+    <button className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-hover" onClick={onClick}>
+      <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center border text-[10px] ${radio ? 'rounded-full' : 'rounded-[3px]'} ${on ? 'border-accent bg-accent text-bg' : 'border-line'}`}>{on ? (radio ? '•' : '✓') : ''}</span>
+      <span className={`flex-1 truncate ${on ? 'text-fg' : 'text-muted'}`}>{label}</span>
+      <span className="text-faint">{count}</span>
+    </button>
   )
 }
