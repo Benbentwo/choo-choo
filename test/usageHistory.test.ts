@@ -145,4 +145,22 @@ describe('usage history: store', () => {
     expect(a.chat('s1')).toEqual({ title: 'Add backoff', workspace: 'Retry requests' })
     expect(a.chat('s9', '/home/me/scratch').title).toBe('Terminal session in scratch')
   })
+  it('tells project chats, threads and the workspaces they started apart', () => {
+    const a = uh.attributor({
+      repos: [{ id: 'r1', name: 'webapp', path: '/src/webapp', defaultBranch: 'main' }],
+      workspaces: [
+        { id: 'o', repoId: 'r1', name: 'o', path: '/src/webapp', title: 'Orchestrator', orchestrator: true, groupId: 'g1' } as never,
+        { id: 'w', repoId: 'r1', name: 'w', path: '/ws/w', title: 'Fix', orchestrated: true, orchestratorId: 'g1' } as never,
+        { id: 'p', repoId: 'r1', name: 'p', path: '/ws/p', title: 'Mine' } as never
+      ],
+      chats: [
+        { id: 'c1', workspaceId: 'o', title: 'Project', sdkSessionId: 'router' } as never,
+        { id: 'c2', workspaceId: 'o', title: 'Signup', thread: true, sdkSessionId: 'thread' } as never,
+        { id: 'c3', workspaceId: 'w', title: 'Fix', sdkSessionId: 'work' } as never,
+        { id: 'c4', workspaceId: 'p', title: 'Mine', sdkSessionId: 'mine' } as never
+      ],
+      groups: [{ id: 'g1', name: 'Launch', repoIds: ['r1'], createdAt: 0 }]
+    })
+    expect(['router', 'thread', 'work', 'mine', 'gone'].map((s) => a.role!(msg(T0, s, '/x')))).toEqual(['router', 'thread', 'workspace', undefined, undefined])
+  })
 })

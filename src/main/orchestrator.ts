@@ -8,6 +8,7 @@ import * as git from './git'
 import { toolShape } from './addons'
 import { AUTO_UPDATE_PREFIX, ROUTED_PREFIX, autoUpdateLine, type AutoUpdateEntry } from '@shared/projects'
 import { diffBase } from '@shared/stack'
+import { memoryHash, memoryTurnPrefix, withHandoffReport } from '@shared/usageSavings'
 
 /**
  * The orchestrator is a chat that lives in the repo's main checkout. The person tells it what
@@ -52,6 +53,8 @@ export interface Host {
   addRepoToProject?(groupId: string, ref: string, opts: { clone: boolean }): Promise<Repo>
   /** Tells the window the state changed, after a tool edits a workspace in place. */
   changed?(): void
+  /** The model and effort a new chat in this role starts on, for a project (groupId) or a single repo. */
+  modelFor?(role: 'router' | 'thread' | 'workspace', groupId?: string): { model: Chat['model']; effort: Chat['effort'] }
 }
 
 /**
@@ -129,7 +132,11 @@ export function writeMemory(scope: Scope, content: string) {
   renameSync(`${f}.tmp`, f)
 }
 
-export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[] = [], role?: ProjectRole, run?: AutomationHooks): string {
+/**
+ * The orchestrator's prompt. With `savings` on, memory is left out (it comes with the turn when it
+ * changes, see shared/usageSavings.ts) and threads end their turn instead of waiting on workspaces.
+ */
+export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[] = [], role?: ProjectRole, run?: AutomationHooks, savings = false): string {
   const intro = scope.group
     ? [
         `You are the orchestrator for the ${scope.name} project in Choo Choo. It spans these repositories:`,
@@ -145,7 +152,9 @@ export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[
     '- Each workspace is its own git worktree and branch with its own coding agent. Start one per independent piece of work with start_workspace, and give it a complete, self-contained task: the goal, the relevant files, constraints, and what "done" means (for example tests pass and a PR is open).',
     '- To continue an existing pull request or branch (fix review comments, rebase, finish it), pass pr or branch to start_workspace rather than asking the agent to check it out, so the workspace shows that PR.',
     '- Run independent tasks in parallel. Keep dependent work in one workspace, or wait for the first to finish before starting the next.',
-    '- After starting work, call wait_for_workspaces, then check results with read_workspace. Send corrections or next steps with message_workspace. You do not have to wait: when a workspace you started finishes while you are idle, Choo Choo wakes you with an automatic update so you can check it and report back.',
+    savings
+      ? '- After starting work, end your turn instead of waiting. Choo Choo wakes you with one automatic update when the workspaces you started have finished (sooner if one fails). Then read_workspace gives each one\'s handoff report and changed files; pass last only when you need the transcript. Use wait_for_workspaces only when your next step needs a result within a few minutes. Send corrections or next steps with message_workspace.'
+      : '- After starting work, call wait_for_workspaces, then check results with read_workspace. Send corrections or next steps with message_workspace. You do not have to wait: when a workspace you started finishes while you are idle, Choo Choo wakes you with an automatic update so you can check it and report back.',
     '- Use pr_status to see a workspace\'s pull request and CI checks, and to wait for checks to finish.',
     '- start_workspace with where: "cloud" runs the agent in a Claude Code cloud session on Anthropic\'s machines instead of this Mac. Use it for long, self-contained tasks or when the person asks. You cannot read a cloud transcript or wait for it to stop; follow its progress through pr_status, and it reports on claude.ai/code.',
     `- You run in ${scope.group ? "the first repo's main checkout, with the other repos readable" : 'the main checkout'}. Never edit files there and never commit, push or switch branches in it. Read code, git log and gh output freely to plan.`,
@@ -172,11 +181,8 @@ export function systemPrompt(scope: Scope, memory: string, addons: AddonToolset[
         ]
       : []),
     'Memory:',
-    `- You have a memory file for this ${scope.group ? 'project' : 'repo'} that persists across conversations. It is shown below. Save durable facts with update_memory: the person\'s preferences, decisions, conventions, ongoing initiatives and which workspace owns what. Rewrite it whole each time, keep it under ~150 lines, and remove things that are no longer true. Do not save secrets.`,
-    '',
-    `<memory path="${memoryPath(scope)}">`,
-    memory.trim() || '(empty)',
-    '</memory>'
+    `- You have a memory file for this ${scope.group ? 'project' : 'repo'} that persists across conversations. ${savings ? 'Choo Choo attaches it in a <project-memory> block at the start of a message when this conversation is new and whenever it changes; the latest block is current.' : 'It is shown below.'} Save durable facts with update_memory: the person\'s preferences, decisions, conventions, ongoing initiatives and which workspace owns what. Rewrite it whole each time, keep it under ~150 lines, and remove things that are no longer true. Do not save secrets.`,
+    ...(savings ? [] : ['', `<memory path="${memoryPath(scope)}">`, memory.trim() || '(empty)', '</memory>'])
   ].join('\n')
 }
 
@@ -303,7 +309,9 @@ export function queryOptions(
   host: Host,
   addons: AddonToolset[] = [],
   role?: ProjectRole,
-  run?: AutomationHooks
+  run?: AutomationHooks,
+  /** Usage savings on, for this chat (shared/usageSavings.ts). */
+  savings?: { chat: Chat }
 ): Record<string, unknown> {
   const { tool, createSdkMcpServer } = sdk
   const inScope = (w: Workspace) => scope.repos.some((r) => r.id === w.repoId)
@@ -344,10 +352,13 @@ export function queryOptions(
       await host.runInCloud(chat, workspace, a.task)
       return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'in-cloud', note: 'The cloud session link shows in list_workspaces once Claude Code prints it. Follow progress with pr_status.' }))
     }
+    // A project's workspaces start on the project's workspace model unless the thread picked one.
+    const pick = scope.group ? host.modelFor?.('workspace', scope.id) : undefined
+    if (pick) Object.assign(chat, pick)
     if (a.model) chat.model = a.model
     if (a.plan_first) chat.planMode = true
     store.save()
-    host.sendToChat(chat, a.task)
+    host.sendToChat(chat, savings ? withHandoffReport(a.task) : a.task)
     return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'running' }))
   }
 
@@ -374,7 +385,7 @@ export function queryOptions(
         task: z.string().describe('Complete instructions for the agent. It cannot see this conversation.'),
         ...(scope.group ? { repo: z.string().describe(`Which repository: ${repoNames().join(', ')}, or one you added with add_repo_to_project.`) } : {}),
         where: z.enum(['local', 'cloud']).optional().describe('local (default) runs on this Mac. cloud runs in a Claude Code cloud session that keeps going with the Mac closed.'),
-        model: z.enum(['opus', 'fable', 'sonnet', 'haiku', 'codex']).optional().describe('Defaults to the person\'s default model. Ignored in the cloud.'),
+        model: z.enum(['opus', 'fable', 'sonnet', 'haiku', 'codex']).optional().describe('Leave unset to use the model the person chose for this project\'s workspaces. Ignored in the cloud.'),
         plan_first: z.boolean().optional().describe('Start in plan mode: the agent proposes a plan and waits instead of editing. Local only.'),
         pr: z.number().int().positive().optional().describe('Work on this existing pull request: the workspace checks out its branch.'),
         branch: z.string().optional().describe('Work on this existing branch on origin instead of a new one. Ignored when pr is set.'),
@@ -419,8 +430,10 @@ export function queryOptions(
     ),
     tool(
       'read_workspace',
-      "Read a workspace's recent transcript, its changed files and status.",
-      { workspace_id: z.string(), last: z.number().int().min(1).max(200).optional().describe('How many transcript entries, default 40.') },
+      savings
+        ? "Read a workspace's status, changed files and last reply (its handoff report). Pass last to also read that many transcript entries, only when the report isn't enough."
+        : "Read a workspace's recent transcript, its changed files and status.",
+      { workspace_id: z.string(), last: z.number().int().min(1).max(200).optional().describe(savings ? 'How many transcript entries to add. Default none.' : 'How many transcript entries, default 40.') },
       async (a) => {
         const ws = ownWorkspace(scope, a.workspace_id)
         const chat = mainChat(ws)
@@ -444,8 +457,9 @@ export function queryOptions(
             '## Changes vs base',
             changes || 'none',
             '',
-            '## Transcript',
-            transcript(store.chatItems(chat.id), a.last ?? 40)
+            ...(savings && !a.last
+              ? ['## Last reply', clip(lastAssistantText(chat.id), 4000) || '(none yet)', '', 'Pass last: N to read the transcript.']
+              : ['## Transcript', transcript(store.chatItems(chat.id), a.last ?? 40)])
           ].join('\n')
         )
       }
@@ -528,10 +542,15 @@ export function queryOptions(
     ),
     tool(
       'update_memory',
-      `Replace this ${scope.group ? 'project' : 'repo'}'s memory file with new content. It is shown to you at the start of every turn.`,
+      `Replace this ${scope.group ? 'project' : 'repo'}'s memory file with new content. ${savings ? 'You will be sent it again only if it changes elsewhere.' : 'It is shown to you at the start of every turn.'}`,
       { content: z.string().max(MEMORY_LIMIT) },
       async (a) => {
         writeMemory(scope, a.content)
+        // This session wrote it, so it already has this version.
+        if (savings) {
+          savings.chat.memoryHash = memoryHash(a.content)
+          store.save()
+        }
         return text(`Saved memory (${a.content.length} characters).`)
       }
     )
@@ -619,13 +638,20 @@ export function queryOptions(
     ])
   )
 
+  // Usage savings: memory rides along with the turn only when this session hasn't seen this version.
+  const memory = readMemory(scope)
+  const turn = savings ? memoryTurnPrefix({ memory, path: memoryPath(scope), lastHash: savings.chat.memoryHash, newSession: !savings.chat.sdkSessionId }) : undefined
+
   return {
+    ...(turn?.prefix ? { turnPrefix: turn.prefix } : {}),
+    // Recorded once Claude Code has started the session, so a turn that never ran sends it again.
+    ...(turn ? { onSessionStart: () => (savings!.chat.memoryHash = turn.hash) } : {}),
     mcpServers: {
       choo: createSdkMcpServer({ name: 'choo', version: '1.0.0', tools: ownTools, alwaysLoad: true, timeout: (MAX_WAIT_MIN + 2) * 60_000 }),
       ...addonServers
     },
-    // Memory can change between turns, so render the prompt fresh each time.
-    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, readMemory(scope), addons, role, run), snapshot: false },
+    // Memory can change between turns, so render the prompt fresh each time. With savings on it isn't in the prompt.
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(scope, memory, addons, role, run, !!savings), snapshot: false },
     disallowedTools: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'],
     // Add-on tools that only read need no OK from the person, like the built-in ones below.
     // An automation's start_workspace is vouched for by the person who made it; the app caps it.

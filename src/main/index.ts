@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, rmSync } 
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { LinkPreviewResult, SourceOption, WorkspaceSource } from '@shared/types'
 import type { Automation } from '@shared/automations'
-import type { Artifact, Chat, ChatItem, FeedbackOptions, FilePreview, PrInfo, PromptCustom, Repo, Settings, Workspace } from '@shared/types'
+import type { Artifact, Chat, ChatItem, FeedbackOptions, FilePreview, PrInfo, PromptCustom, Repo, RepoGroup, Settings, Workspace } from '@shared/types'
 import { diffBase } from '@shared/stack'
 import { editMenuItems } from '@shared/editMenu'
 import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
@@ -59,6 +59,8 @@ import { activeGlobs, normalizeReviewSettings } from '@shared/reviewUpdates'
 import * as interdiff from './interdiff'
 import { linkPreview } from './linkPreview'
 import * as reviewWatch from './reviewWatch'
+import { holdUpdate } from '@shared/usageSavings'
+import { pickFor, cleanRoleModels, type ModelRole } from '@shared/roleModels'
 import { followPrBase, prRef, syncWorkspaceBranch } from './workspacePr'
 
 let win: BrowserWindow | null = null
@@ -393,7 +395,14 @@ function sendToChat(chat: Chat, text: string, images: string[] = [], opts: { fro
       send('state:changed')
     }
     const run = automations.hooksFor(chat)
-    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets(), role, run)
+    const savings = store.get().settings.usageSavings !== false
+    // A project chat made before role models existed gets its role's model once; the person's pick stands after.
+    if (role?.kind === 'router' && !chat.rolePicked) {
+      Object.assign(chat, pickFor('router', store.get().settings, groupOf(ws)), { rolePicked: true })
+      store.save()
+      emitChat(chat.id, { chat })
+    }
+    extra = (sdk) => orchestrator.queryOptions(sdk, scope, orchestratorHost, addonHost.toolsets(), role, run, savings ? { chat } : undefined)
   }
   // After a new thread is titled, so its telemetry carries the title.
   const env = agentEnv(ws, chat)
@@ -461,7 +470,7 @@ function newThread(ws: Workspace, title = 'New thread'): Chat {
   const chat = newChat(ws.id)
   chat.thread = true
   chat.title = title
-  if (chat.model === 'codex') chat.model = 'opus'
+  Object.assign(chat, pickFor('thread', store.get().settings, groupOf(ws)))
   const router = routerChat(store.get().chats, ws.id)
   if (router?.additionalDirectories) chat.additionalDirectories = [...router.additionalDirectories]
   store.save()
@@ -636,8 +645,17 @@ async function addRepoToProject(groupId: string, ref: string, opts: { clone: boo
   return repo
 }
 
+/** The project an orchestrator workspace belongs to. */
+function groupOf(ws: Workspace): RepoGroup | undefined {
+  return ws.groupId ? store.get().groups?.find((g) => g.id === ws.groupId) : undefined
+}
+
+const MODEL_IDS = ['opus', 'fable', 'sonnet', 'haiku', 'codex'] as const
+const EFFORT_IDS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
 const orchestratorHost: orchestrator.Host = {
   changed: () => send('state:changed'),
+  modelFor: (role: ModelRole, groupId?: string) => pickFor(role, store.get().settings, groupId ? store.get().groups?.find((g) => g.id === groupId) : undefined),
   findRepos: (groupId, query) => findRepos(groupId, query),
   addRepoToProject,
   createWorkspace: async (repoId, source) => {
@@ -733,6 +751,8 @@ function orchestratorChat(ws: Workspace, title: string): Chat {
     chat = newChat(ws.id)
     chat.title = title
     if (chat.model === 'codex') chat.model = 'opus'
+    // A project's chat starts on its role's model.
+    if (ws.groupId) Object.assign(chat, pickFor('router', store.get().settings, groupOf(ws)), { rolePicked: true })
   }
   return chat
 }
@@ -785,7 +805,7 @@ async function openGroupOrchestrator(groupId: string) {
   return { workspace: ws, chat }
 }
 
-function saveGroup(input: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }) {
+function saveGroup(input: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string; models?: unknown }) {
   const s = store.get()
   const name = String(input?.name ?? '').trim()
   const known = new Set(s.repos.map((r) => r.id))
@@ -808,6 +828,10 @@ function saveGroup(input: { id?: string; name: string; repoIds: string[]; icon?:
   const color = typeof input.color === 'string' && /^[a-z]{1,20}$/.test(input.color) ? input.color : undefined
   if (input.icon !== undefined) group.icon = icon
   if (input.color !== undefined) group.color = color
+  if (input.models !== undefined) {
+    const models = cleanRoleModels(input.models, MODEL_IDS, EFFORT_IDS)
+    group.models = Object.keys(models).length ? models : undefined
+  }
   const orch = s.workspaces.find((w) => w.orchestrator && w.groupId === group.id)
   if (orch) orch.title = name
   store.save()
@@ -896,10 +920,37 @@ function wakeOrchestrator(orchChatId: string) {
   if (agent.isRunning(orchChat.id)) return
   // The person stopped it: leave it stopped until they write again, and just list what finished.
   const held = agent.wasStopped(orchChat.id)
-  finished.delete(orchChatId)
   // Skip what the orchestrator already looked at after it finished.
   const fresh = [...list.values()].filter((d) => orchestrator.seenAt(d.id) < d.at)
-  if (!fresh.length) return
+  if (!fresh.length) {
+    finished.delete(orchChatId)
+    return
+  }
+  // Usage savings: one update for the batch, once the rest of this chat's running workspaces finish.
+  if (store.get().settings.usageSavings !== false && !held) {
+    const pending = new Set(agent.pendingPermissions().map((p) => p.chatId))
+    const st = store.get()
+    const othersRunning = st.workspaces.filter((w) => {
+      if (w.archived || !w.orchestrated || w.orchestrator || list.has(w.id)) return false
+      const orch = orchestratorOf(w)
+      if (!orch || updateTarget(w, st.chats, orch.id)?.id !== orchChatId) return false
+      const chats = st.chats.filter((c) => c.workspaceId === w.id)
+      return chats.some((c) => c.status === 'running') && !chats.some((c) => pending.has(c.id))
+    }).length
+    const wait = holdUpdate({ finished: fresh, othersRunning, now: Date.now() })
+    if (wait.hold) {
+      clearTimeout(wakeTimers.get(orchChatId))
+      wakeTimers.set(
+        orchChatId,
+        setTimeout(() => {
+          wakeTimers.delete(orchChatId)
+          wakeOrchestrator(orchChatId)
+        }, wait.recheckInMs)
+      )
+      return
+    }
+  }
+  finished.delete(orchChatId)
   const wakes = autoWakes.get(orchChatId) ?? 0
   if (store.get().settings.orchestratorAutoUpdates && wakes < MAX_AUTO_WAKES && !orchChat.remote && !held) {
     autoWakes.set(orchChatId, wakes + 1)
@@ -1165,7 +1216,7 @@ function registerIpc() {
   h('ws:archive', (id: string) => archiveWorkspace(id))
   h('ws:orchestrator', (repoId: string) => openOrchestrator(repoId))
   h('group:orchestrator', (groupId: string) => openGroupOrchestrator(groupId))
-  h('group:save', (g: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }) => saveGroup(g))
+  h('group:save', (g: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string; models?: unknown }) => saveGroup(g))
   h('group:delete', (groupId: string) => deleteGroup(groupId))
   h('automation:save', (a: Parameters<typeof automations.save>[0]) => automations.save(a))
   h('automation:enable', (id: string, on: boolean) => automations.setEnabled(id, on))
@@ -1433,6 +1484,10 @@ function registerIpc() {
     updates.onSettingsChanged(Object.keys(patch))
     if ('reviews' in patch) reviewWatch.reschedule()
     if ('usageHistory' in patch) usageHistory.configureUsageHistory(usageHistorySettings(s.settings.usageHistory))
+    if ('roleModels' in patch) {
+      s.settings.roleModels = cleanRoleModels(patch.roleModels, MODEL_IDS, EFFORT_IDS)
+      store.save()
+    }
     return s.settings
   })
   h('folder:pick', async () => {
