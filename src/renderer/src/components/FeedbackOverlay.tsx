@@ -14,7 +14,7 @@ const bridge = (window as unknown as { uiComment?: Bridge }).uiComment
 const HINTS: Record<CommentTarget, string> = {
   local: 'Writes to .feedback/ in this checkout for the Claude Code session watching it.',
   workspace: 'Opens a new workspace on choo-choo and starts Claude on the fix. Clones the repo the first time, or your fork if you can’t push to it.',
-  issue: 'Opens a prefilled GitHub issue in your browser. The element screenshot is copied so you can paste it in.'
+  issue: 'Opens a prefilled GitHub issue in your browser. No screenshot is included, since issues are public.'
 }
 const SEND_LABEL: Record<CommentTarget, string> = {
   local: 'Send',
@@ -166,7 +166,7 @@ export function FeedbackOverlay() {
         setActive(false)
         hold = 4000
       } else if (res.target === 'issue') {
-        setToast('✓ Issue opened in your browser. Paste the screenshot (⌘V).')
+        setToast('✓ Issue opened in your browser.')
         setActive(false)
         hold = 5000
       } else setToast('Sent to Claude')
@@ -284,7 +284,7 @@ export function FeedbackOverlay() {
                 flexWrap: 'wrap'
               }}
             >
-              <span style={chip}>element screenshot</span>
+              {sendTo === 'workspace' && <span style={chip}>element screenshot</span>}
               {sendTo === 'workspace' && (
                 <label style={{ ...chip, cursor: 'pointer' }} title="The whole window can show other repos and code">
                   <input

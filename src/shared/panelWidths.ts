@@ -7,6 +7,8 @@ export const SIDEBAR = { min: 200, max: 480, def: 280 }
 export const RIGHT = { min: 320, def: 420 }
 /** What the right panel always leaves for the chat panes beside it. */
 export const CHAT_MIN = 420
+/** The Threads panel beside a project's orchestrator chat: dragged by its left edge, saved as Settings.threadsWidth. */
+export const THREADS = { min: 220, def: 288 }
 /** Dragging this far past a panel's minimum closes it, the same as ⌘B or ⌘⌥B. */
 export const SNAP = 80
 
@@ -31,4 +33,10 @@ export function rightWidth(w: number | undefined, windowWidth: number, sidebar: 
 /** Where a drag lands: a new width, or closed when it went well past the minimum. */
 export function dragTo(raw: number, min: number): number | 'close' {
   return raw < min - SNAP ? 'close' : raw
+}
+
+/** The Threads panel width to use, from a saved or dragged value, in a pane this wide (the chat keeps CHAT_MIN). */
+export function threadsWidth(w: number | undefined, paneWidth: number): number {
+  const max = Math.max(THREADS.min, paneWidth - CHAT_MIN)
+  return w == null || !Number.isFinite(w) ? Math.min(THREADS.def, max) : clamp(w, THREADS.min, max)
 }

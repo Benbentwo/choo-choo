@@ -1,8 +1,8 @@
 // Comment mode (⌘⇧K): a note about the app's own UI, sent to whatever can act on it.
 // - dev (`npm run dev`): written to .feedback/ in the running checkout, where Claude Code picks it up live.
 // - packaged: opens a workspace on choo-choo itself (cloned, or forked when the person can't push),
-//   or opens a prefilled GitHub issue.
-import { app, clipboard, ClipboardItem, ipcMain, shell, type BrowserWindow } from 'electron'
+//   or opens a prefilled GitHub issue. Issues are public, so that path never captures, copies or attaches a screenshot.
+import { app, ipcMain, shell, type BrowserWindow } from 'electron'
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -55,14 +55,14 @@ export function registerUiComment(deps: UiCommentDeps) {
     if (!win) throw new Error('no window')
     if (!p?.comment?.trim()) throw new Error('Write a comment first')
     if (!commentTargets(app.isPackaged).includes(p.target)) throw new Error(`Can't send comments to ${p.target} in this build`)
-    const shots = await capture(win, p.rect)
-    if (p.target === 'local') return { target: 'local', id: writeLocal(p, shots, win) }
     if (p.target === 'issue') {
-      await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(shots.element)], { type: 'image/png' }) })])
-      const url = issueUrl(p, buildInfo(), `macOS ${process.getSystemVersion()}`)
+      // Issues are public: no screenshot (not even on the clipboard) and nothing else from this machine. See issueUrl.
+      const url = issueUrl(p, buildInfo())
       await shell.openExternal(url)
       return { target: 'issue', url }
     }
+    const shots = await capture(win, p.rect)
+    if (p.target === 'local') return { target: 'local', id: writeLocal(p, shots, win) }
     return openWorkspace(deps, p, shots)
   })
 }

@@ -52,6 +52,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Resizable sidebar and right panel](prd/resizable-panels.md) | In review |
 | [Continue work (resume at usage reset)](prd/continue-work.md) | In review |
 | [Usage history and the Usage page](prd/usage-history.md) | In review |
+| [Save usage in project threads, and models by role](prd/usage-savings.md) | In review |
 | [Rich copy from chat](prd/rich-copy.md) | Shipped |
 | [Settings search](prd/settings-search.md) | In review (PR #118) |
 | [Stop that always stops](prd/stop.md) | In review |
@@ -83,6 +84,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0019](decisions/0019-resume-only-after-reset.md) | Stopped chats resume only after the server's reset time and once /usage shows the window open; a few at a time, never by retrying or switching accounts |
 | [0020](decisions/0020-usage-history-local-estimates.md) | Usage history stays on the Mac (window readings plus text-free response summaries), and per-workspace shares of a window are labeled estimates |
 | [0021](decisions/0021-restart-waits-then-resumes.md) | Restarting for an update waits for running chats, and turns cut off by a restart, quit or crash resume their own session on the next launch |
+| [0022](decisions/0022-orchestrator-prompt-stays-stable.md) | Orchestrator system prompts stay stable; context that changes, like project memory, is sent with a turn only when the session lacks that version |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 

@@ -40,7 +40,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Markdown as you type.** The message box formats `code`, **bold**, lists, links and code blocks in place, Slack-style, and sends plain Markdown.
 - **Check in without stopping.** A running chat says what it's doing and for how long, such as "Waiting on run 48213 · 14m". Press Check in, type `/btw` and a question, or just ask "how's it going?" to get a quick answer while Claude keeps working.
 - **Orchestrator.** Tell a repo's orchestrator what you want and it splits the work into workspaces, briefs each agent, reads their diffs and follows up.
-- **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. A thread whose work is all merged or closed resolves itself and leaves the sidebar, still a click or ⌘K away. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
+- **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. A thread whose work is all merged or closed resolves itself and leaves the sidebar, still a click or ⌘K away. Rename a thread, or let Haiku name it from the conversation. Drag projects to put them in any order. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
 - **Split panels and resizable panes.** Put workspaces and chats side by side, drag either sidebar to size it, and expand the right panel with ⌘⇧E.
 
 <p align="center">
@@ -51,6 +51,16 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 <p align="center">
   <img src="docs/media/gifs/resolve-threads.gif" alt="A thread's two workspaces are archived, so the thread resolves on its own and shows a Resolved card. It leaves the sidebar for a Resolved list under the project, ⌘K still finds it, and Reopen brings it back." width="900"><br>
   <sub>Finished threads resolve themselves: out of the sidebar, never deleted, and back with Reopen.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/media/gifs/thread-names.gif" alt="The Threads panel is dragged wider. A thread is renamed by double-clicking its title, then renamed again from the sidebar's right-click menu with Regenerate name. Expand lists the threads across the whole pane, and picking one goes back to its chat." width="900"><br>
+  <sub>Rename a thread, or let Haiku name it from the conversation. Drag the Threads panel wider, or expand it over the pane.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/media/gifs/reorder-projects.gif" alt="Four projects in the sidebar. Gift cards is dragged to the top and Trip checkout to the bottom, with a line showing where each will land." width="900"><br>
+  <sub>Drag projects into the order you want; it sticks.</sub>
 </p>
 
 <p align="center">
@@ -89,6 +99,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 **Stay on top of usage**
 - **Plan limits in the sidebar**, and a **Usage page** with a year of plan window history, every limit hit, and which repos and chats used it.
 - **Up next.** Chats that stop at the usage limit resume in order when the window resets, along with any work you queue for the next window.
+- **Lighter project threads.** Workspaces hand their thread a short report instead of a whole transcript, threads get one update per batch of finished work, and you pick the model and thinking level for project chats, threads and their workspaces, per project if you like. On by default; the Usage page shows what threads used next to the work they started.
 
 **Make it yours**
 - **Add-ons.** Claude Code plugins with a Choo Choo manifest add views, buttons and tools. Install them from any git repo, including private ones for your team. See [Writing an add-on](docs/addon-api.md).

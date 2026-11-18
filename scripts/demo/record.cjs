@@ -113,6 +113,28 @@ function director(app, page) {
       await page.mouse.up()
       await page.waitForTimeout(200)
     },
+    // Press on `from`, carry it to `to` (just below its middle when `below`) and let go: a real HTML5 drag.
+    async drag(from, to, { below = false, ms = 900 } = {}) {
+      await d.moveTo(from)
+      await page.waitForTimeout(150)
+      await page.mouse.down()
+      await page.mouse.move(pos.x, pos.y + 6, { steps: 3 })
+      const box = await to.boundingBox()
+      if (!box) throw new Error(`not visible: ${to}`)
+      const end = { x: box.x + Math.min(box.width / 2, 60), y: box.y + box.height * (below ? 0.8 : 0.2) }
+      const steps = Math.max(8, Math.round(ms / 16))
+      const start = { x: pos.x, y: pos.y + 6 }
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps
+        const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
+        await page.mouse.move(start.x + (end.x - start.x) * e, start.y + (end.y - start.y) * e)
+        await page.waitForTimeout(ms / steps)
+      }
+      await page.waitForTimeout(350)
+      await page.mouse.up()
+      pos = end
+      await page.waitForTimeout(300)
+    },
     async type(text, delay = 28) {
       await page.keyboard.type(text, { delay })
     },
@@ -123,17 +145,19 @@ function director(app, page) {
 }
 
 /** A fresh demo world with the two sample repos, as a project, and the stand-in Claude selected. */
-async function freshWorld(name, extra) {
+async function freshWorld(name, extra, groups) {
   const world = join(WORK, name)
   execFileSync(join(__dirname, 'setup.sh'), [world], { stdio: 'ignore' })
   const { app, page } = await launch(world)
   await page.waitForTimeout(1200)
-  await page.evaluate(async ([world, extraSettings]) => {
+  await page.evaluate(async ([world, extraSettings, groups]) => {
     const web = await window.api.addRepo(`${world}/home/code/trailhead-web`)
     const api = await window.api.addRepo(`${world}/home/code/trailhead-api`)
     await window.api.saveSettings({ experimentalProjects: true, claudeBinary: 'installed', notifications: false, checkAppUpdates: false, checkClaudeUpdates: false, ...extraSettings })
     await window.api.saveGroup({ name: 'Trip checkout', repoIds: [web.id, api.id], icon: 'rocket' })
-  }, [world, extra ?? {}])
+    // A scene's extra projects; `repos` names the sample repos by their folder (web, api).
+    for (const g of groups) await window.api.saveGroup({ name: g.name, repoIds: g.repos.map((r) => (r === 'web' ? web.id : api.id)), icon: g.icon, color: g.color })
+  }, [world, extra ?? {}, groups ?? []])
   await page.waitForTimeout(800)
   await app.close()
   return world
@@ -148,8 +172,8 @@ function toGif(videoDir, name, { fps = 8, width = 1000, trimStart = 0 } = {}) {
   console.log(`${gif}  ${(statSync(gif).size / 1024).toFixed(0)} KB`)
 }
 
-async function record(name, { script, gh, update, settings, opts }, scene) {
-  const world = await freshWorld(name, settings)
+async function record(name, { script, gh, update, settings, groups, opts }, scene) {
+  const world = await freshWorld(name, settings, groups)
   const video = join(WORK, `${name}-video`)
   rmSync(video, { recursive: true, force: true })
   const t0 = Date.now()
@@ -575,6 +599,112 @@ const scenes = {
       await d.click(row.locator('xpath=ancestor::div[@role="button"][1]').getByRole('button', { name: 'Reopen' }), 300)
       await d.wait(1500)
       await d.shot?.('5-reopened')
+    }),
+
+  // Rename a thread, regenerate its name with Haiku, widen the Threads panel and expand it over the pane.
+  'thread-names': () =>
+    record('thread-names', { script: 'projects.json' }, async (d) => {
+      await d.wait(400)
+      await d.click(d.side('Trip checkout'))
+      await d.page.getByTestId('close-right').click()
+      await d.click(d.page.getByTestId('composer-input').first())
+      await d.type('Add Apple Pay to checkout: a button in the web app, and an endpoint in the API for the payment intent.', 4)
+      await d.page.keyboard.press('Enter')
+      await d.wait(2600)
+      await d.click(d.side('Apple Pay at checkout'))
+      await d.page.getByText('Want me to open the PRs?').first().waitFor({ timeout: 30_000 })
+      d.startGif()
+      await d.wait(1000)
+      // Drag the Threads panel wider by its left edge.
+      const edge = d.page.getByTestId('threads-panel').getByTestId('panel-edge-right')
+      const box = await edge.boundingBox()
+      await d.page.mouse.move(box.x + 4, box.y + 300, { steps: 8 })
+      await d.page.mouse.down()
+      await d.page.mouse.move(box.x - 180, box.y + 300, { steps: 20 })
+      await d.wait(500)
+      await d.shot?.('1-dragging')
+      await d.page.mouse.up()
+      await d.wait(800)
+      // Rename it from the Threads panel: double-click the title.
+      const row = d.page.getByTestId('threads-panel').getByTestId('thread-row').filter({ has: d.page.getByText('Apple Pay at checkout', { exact: true }) })
+      await d.moveTo(row)
+      await row.getByText('Apple Pay at checkout', { exact: true }).dblclick()
+      await d.wait(300)
+      await d.type('Wallet payments', 70)
+      await d.wait(300)
+      await d.shot?.('2-renaming')
+      await d.page.keyboard.press('Enter')
+      await d.wait(1200)
+      await d.shot?.('3-renamed')
+      // Regenerate it from the sidebar's right-click menu.
+      await d.moveTo(d.side('Wallet payments'))
+      await d.side('Wallet payments').click({ button: 'right' })
+      await d.wait(500)
+      await d.shot?.('4-menu')
+      await d.click(d.page.getByText('Regenerate name', { exact: true }), 300)
+      await d.side('Apple Pay checkout').waitFor({ timeout: 10_000 })
+      await d.wait(1200)
+      await d.shot?.('5-regenerated')
+      // Expand the Threads panel over the pane.
+      await d.click(d.page.getByTestId('expand-threads'))
+      await d.wait(1400)
+      await d.shot?.('6-expanded')
+      await d.click(d.page.getByTestId('threads-panel').getByTestId('thread-row').filter({ has: d.page.getByText('Apple Pay checkout', { exact: true }) }))
+      await d.wait(1400)
+      await d.shot?.('7-back-to-chat')
+    }),
+
+  // Drag a project row up or down the Projects section to reorder; the order sticks.
+  'reorder-projects': () =>
+    record(
+      'reorder-projects',
+      {
+        groups: [
+          { name: 'Search filters', repos: ['web', 'api'], icon: 'search', color: 'blue' },
+          { name: 'Faster itineraries', repos: ['api'], icon: 'zap', color: 'amber' },
+          { name: 'Gift cards', repos: ['web'], icon: 'gem', color: 'green' }
+        ],
+        opts: { trimStart: 0.5 }
+      },
+      async (d, relaunch) => {
+        await d.wait(700)
+        await d.shot?.('1-before')
+        // Gift cards to the top, above Trip checkout.
+        await d.drag(d.side('Gift cards'), d.side('Trip checkout'), { ms: 1100 })
+        await d.wait(900)
+        await d.shot?.('2-moved-to-top')
+        // Trip checkout down to the bottom, below Faster itineraries.
+        await d.drag(d.side('Trip checkout'), d.side('Faster itineraries'), { below: true, ms: 1100 })
+        await d.moveTo(d.page.getByText('Choo Choo', { exact: true }).last(), 700)
+        await d.wait(1200)
+        await d.shot?.('3-moved-to-bottom')
+        // The order is saved: it's the same after the app opens again (past the end of the GIF).
+        if (d.shot) await (await relaunch()).shot('4-after-restart')
+      }
+    ),
+
+  // Diff tabs opened from Changes stay open after going back to the chat. Screenshots only.
+  'file-tabs': () =>
+    record('file-tabs', { script: 'workspaces.json', opts: { noGif: true } }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Add a dark mode toggle to the header')
+      await d.page.getByText('Added a ', { exact: false }).first().waitFor({ timeout: 40_000 })
+      await d.wait(1500)
+      const right = d.page.locator('button[title="src/theme.ts"]')
+      if (!(await right.count())) await d.menu('toggle-right')
+      await d.wait(800)
+      await d.click(d.page.locator('button[title="src/theme.ts"]').first())
+      await d.wait(800)
+      await d.click(d.page.locator('button[title="src/components/ModeToggle.tsx"]').first())
+      await d.wait(1000)
+      await d.shot?.('1-two-diffs')
+      await d.click(d.page.getByRole('button', { name: /^Add a dark mode toggle/ }).first())
+      await d.wait(1000)
+      await d.shot?.('2-back-to-chat')
+      await d.click(d.page.locator('div[title="src/theme.ts"] button').first())
+      await d.wait(1000)
+      await d.shot?.('3-diff-again')
     }),
 
   // The title bar's pane toggles (Threads, Analytics, Details) and the x on each pane. Screenshots only.

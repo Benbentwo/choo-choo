@@ -138,6 +138,10 @@ interface UI {
   rightOpen: boolean
   /** The right panel fills the chat area (⌘⇧E); the chat panes fold into a strip. */
   rightExpanded: boolean
+  /** The Threads panel fills a project orchestrator's pane, in place of the chat. */
+  threadsExpanded: boolean
+  /** Project threads whose title Haiku is coming up with right now. */
+  namingChats: Record<string, true>
   bottomOpen: boolean
   /** Per workspace: the person switched between building and reviewing by hand. */
   wsMode: Record<string, 'build' | 'review'>
@@ -216,6 +220,8 @@ export const useStore = create<UI>((set, get) => ({
   sidebarOpen: true,
   rightOpen: true,
   rightExpanded: false,
+  threadsExpanded: false,
+  namingChats: {},
   bottomOpen: true,
   wsMode: (() => { try { return JSON.parse(localStorage.getItem('wsMode') ?? '{}') } catch { return {} } })(),
   rightTab: 'changes',
@@ -262,7 +268,7 @@ export const useStore = create<UI>((set, get) => ({
     if (!l || !leaf || leaf.view.kind !== 'workspace') return set((s) => ({ activeChat: { ...s.activeChat, [wsId]: chatId }, openDoc: { ...s.openDoc, [wsId]: null } }))
     let view = L.syncWorkspace(leaf.view, chatsOf(get(), wsId))
     const g = L.groupOf(view.inner, chatId) ?? (L.findNode(view.inner, view.focusGroup) as L.Group)
-    view = { ...view, inner: L.mapNode(view.inner, g.id, (n) => ({ ...(n as L.Group), active: chatId, doc: null })), focusGroup: g.id }
+    view = { ...view, inner: L.mapNode(view.inner, g.id, (n) => ({ ...L.showDoc(n as L.Group, null), active: chatId })), focusGroup: g.id }
     applyLayout(L.updateLeaf(l, leaf.id, (x) => ({ ...x, view })), { show: false })
   },
   upsertChat: (c) => {
@@ -446,17 +452,27 @@ export function focusGroup(leafId: string, groupId: string) {
   focusLeaf(leafId)
 }
 
-/** Picks a tab in a group; picking a chat or terminal closes the group's diff or file, like before splits. */
+/** Picks a chat or terminal tab in a group. Open diff and file tabs stay open behind it. */
 export function setGroupActive(leafId: string, groupId: string, tabId: string) {
-  updateWorkspaceView(leafId, (v) => ({ ...v, focusGroup: groupId, inner: L.mapNode(v.inner, groupId, (g) => ({ ...(g as L.Group), active: tabId, doc: null })) }))
+  updateWorkspaceView(leafId, (v) => ({ ...v, focusGroup: groupId, inner: L.mapNode(v.inner, groupId, (g) => ({ ...L.showDoc(g as L.Group, null), active: tabId })) }))
 }
 
+/** Shows a diff, file or Reflect in a group (opening its tab), or null to go back to the chat. */
 export function setGroupDoc(leafId: string, groupId: string, doc: Doc | null) {
+  updateGroup(leafId, groupId, (g) => L.showDoc(g, doc))
+}
+
+/** Closes one diff or file tab of a group. */
+export function closeGroupDoc(leafId: string, groupId: string, doc: Doc) {
+  updateGroup(leafId, groupId, (g) => L.closeDoc(g, doc))
+}
+
+function updateGroup(leafId: string, groupId: string, fn: (g: L.Group) => L.Group) {
   updateWorkspaceView(leafId, (v) => {
-    let inner = L.mapNode(v.inner, groupId, (g) => ({ ...(g as L.Group), doc }))
+    let inner = L.mapNode(v.inner, groupId, (g) => fn(g as L.Group))
     const g = L.findNode(inner, groupId) as L.Group
-    // A group that only held a file goes away when the file closes.
-    if (!doc && !g.chats.length && !g.terms.length && L.leavesOf(inner).length > 1) inner = L.removeNode(inner, groupId) ?? inner
+    // A group that only held files goes away when its last file closes.
+    if (!L.hasDocs(g) && !g.chats.length && !g.terms.length && L.leavesOf(inner).length > 1) inner = L.removeNode(inner, groupId) ?? inner
     const focus = L.findNode(inner, v.focusGroup) ? v.focusGroup : L.leavesOf(inner)[0].id
     return { ...v, inner, focusGroup: focus }
   })
@@ -467,8 +483,9 @@ export function splitDocOut(leafId: string, groupId: string, side: L.Side) {
   updateWorkspaceView(leafId, (v) => {
     const g = L.findNode(v.inner, groupId) as L.Group | null
     if (!g?.doc) return v
-    const ng: L.Group = { ...L.newGroup(), doc: g.doc }
-    let inner = L.mapNode(v.inner, groupId, (x) => ({ ...(x as L.Group), doc: null }))
+    const ng: L.Group = L.showDoc(L.newGroup(), g.doc)
+    const doc = g.doc
+    let inner = L.mapNode(v.inner, groupId, (x) => (doc.kind === 'reflect' ? { ...(x as L.Group), doc: null } : L.closeDoc(x as L.Group, doc)))
     inner = L.insertBeside(inner, groupId, side, ng)
     return { ...v, inner, focusGroup: ng.id }
   })
@@ -487,7 +504,7 @@ export function addTerminalTab(leafId: string) {
   updateWorkspaceView(leafId, (v) => {
     const g = (L.findNode(v.inner, v.focusGroup) as L.Group | null) ?? L.leavesOf(v.inner)[0]
     const id = `${v.wsId}:pane-term-${Date.now().toString(36)}${termSeq++}`
-    return { ...v, focusGroup: g.id, inner: L.mapNode(v.inner, g.id, (x) => ({ ...(x as L.Group), terms: [...(x as L.Group).terms, id], active: id, doc: null })) }
+    return { ...v, focusGroup: g.id, inner: L.mapNode(v.inner, g.id, (x) => ({ ...L.showDoc(x as L.Group, null), terms: [...(x as L.Group).terms, id], active: id })) }
   })
 }
 
@@ -498,7 +515,7 @@ export function closeTerminalTab(leafId: string, termId: string) {
     if (!g) return v
     const terms = g.terms.filter((t) => t !== termId)
     let inner = L.mapNode(v.inner, g.id, (x) => ({ ...(x as L.Group), terms, active: g.active === termId ? (g.chats[0] ?? terms[0] ?? null) : g.active }))
-    if (!g.chats.length && !terms.length && !g.doc && L.leavesOf(inner).length > 1) inner = L.removeNode(inner, g.id) ?? inner
+    if (!g.chats.length && !terms.length && !L.hasDocs(g) && L.leavesOf(inner).length > 1) inner = L.removeNode(inner, g.id) ?? inner
     const focus = L.findNode(inner, v.focusGroup) ? v.focusGroup : L.leavesOf(inner)[0].id
     return { ...v, inner, focusGroup: focus }
   })
@@ -773,6 +790,37 @@ export async function resolveThread(chatId: string, resolved: boolean) {
   }
 }
 
+/** Give a project thread the name the person typed. */
+export async function renameThread(chatId: string, title: string) {
+  const t = title.replace(/\s+/g, ' ').trim()
+  const chat = useStore.getState().chats.find((c) => c.id === chatId)
+  if (!t || !chat || t === chat.title) return
+  useStore.getState().upsertChat({ ...chat, title: t })
+  try {
+    useStore.getState().upsertChat(await window.api.updateChat(chatId, { title: t }))
+  } catch (e) {
+    reportError(e)
+  }
+}
+
+/** Ask Haiku for a fresh name for a project thread, from what its conversation is about now. */
+export async function regenerateThreadName(chatId: string) {
+  const mark = (on: boolean) => {
+    const { [chatId]: _, ...rest } = useStore.getState().namingChats
+    useStore.getState().set({ namingChats: on ? { ...rest, [chatId]: true } : rest })
+  }
+  mark(true)
+  try {
+    const title = await window.api.regenerateChatName(chatId)
+    const chat = useStore.getState().chats.find((c) => c.id === chatId)
+    if (chat) useStore.getState().upsertChat({ ...chat, title })
+  } catch (e) {
+    reportError(e)
+  } finally {
+    mark(false)
+  }
+}
+
 /** Hide or show a sidebar row (an Orchestrator or add-on row). Keys come from shared/sidebarHidden.ts. */
 export function setSidebarRowHidden(keys: string | string[], hidden: boolean) {
   saveSidebarList('sidebarHidden', keys, hidden)
@@ -788,7 +836,7 @@ export function setProjectWorkSort(sort: NonNullable<Settings['projectWorkSort']
 }
 
 /** Save a dragged sidebar or right panel width (shared/panelWidths.ts clamps it when drawn). */
-export function savePanelWidth(field: 'sidebarWidth' | 'rightWidth', width: number | undefined) {
+export function savePanelWidth(field: 'sidebarWidth' | 'rightWidth' | 'threadsWidth', width: number | undefined) {
   useStore.getState().set({ settings: { ...useStore.getState().settings, [field]: width } })
   void window.api
     .saveSettings({ [field]: width })

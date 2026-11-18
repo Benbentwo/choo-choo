@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { moveId, sortProjectWork, sortWorkspaces } from '../src/shared/sidebarOrder'
+import { moveId, orderByIds, sortProjectWork, sortWorkspaces } from '../src/shared/sidebarOrder'
 import { namingContext, suggestTitleFromChats } from '../src/main/naming'
 
 // The model's reply, or the error running it throws, for each test.
@@ -98,5 +98,13 @@ describe('sortProjectWork', () => {
   })
   it('sorts by the title the row shows', () => {
     expect(ids(sortProjectWork(list, 'title', { b: { number: 9, title: 'Zebra' } }))).toEqual(['c', 'a', 'b'])
+  })
+})
+
+describe('orderByIds', () => {
+  it('sorts into the dragged order and keeps unknown items at the end', () => {
+    const list = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }]
+    expect(orderByIds(list, ['c', 'a', 'b']).map((x) => x.id)).toEqual(['c', 'a', 'b', 'd'])
+    expect(orderByIds(list, []).map((x) => x.id)).toEqual(['a', 'b', 'c', 'd'])
   })
 })

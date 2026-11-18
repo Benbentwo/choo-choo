@@ -47,6 +47,8 @@ export interface RepoGroup {
   icon?: string
   /** A PROJECT_COLORS id. Missing: the theme accent. */
   color?: string
+  /** Model and effort for this project's chat, threads and workspaces, over Settings.roleModels (shared/roleModels.ts). */
+  models?: import('./roleModels').RoleModels
 }
 
 /** What a new workspace starts from, besides a fresh branch off the default branch. */
@@ -294,6 +296,10 @@ export interface Chat {
   model: ModelId
   effort: Effort
   sdkSessionId?: string
+  /** Usage savings: hash of the project memory this chat's session was last given, so it is sent again only when it changes. */
+  memoryHash?: string
+  /** This project chat was given its role's model once (shared/roleModels.ts); after that the person's pick stands. */
+  rolePicked?: boolean
   status: 'idle' | 'running' | 'error'
   /** Finished a turn the user has not looked at yet. */
   unread?: boolean
@@ -582,6 +588,8 @@ export interface Settings extends AppearanceSettings {
   sidebarWidth?: number
   /** Right panel width in pixels, dragged by its left edge (shared/panelWidths.ts). Default when unset. */
   rightWidth?: number
+  /** Threads panel width in pixels, dragged by its left edge (shared/panelWidths.ts). Default when unset. */
+  threadsWidth?: number
   /** Split panels: how the center is divided, restored on the next start (shared/layout.ts). */
   layout?: Layout | null
   /** Layouts saved by name from the layout menu. */
@@ -617,6 +625,14 @@ export interface Settings extends AppearanceSettings {
   telemetry: Telemetry
   /** Wake an idle orchestrator when a workspace it started finishes, so it checks and reports back. */
   orchestratorAutoUpdates: boolean
+  /**
+   * Save usage in project threads (docs/prd/usage-savings.md): short handoff reports instead of
+   * transcripts, one update per batch of finished workspaces, project memory sent only when it
+   * changes. On unless turned off.
+   */
+  usageSavings?: boolean
+  /** Model and effort by role in projects; unset uses DEFAULT_ROLE_MODELS (shared/roleModels.ts). */
+  roleModels?: import('./roleModels').RoleModels
   /** GitHub links in chat show as short pills with a hover preview card. On unless turned off. */
   githubLinkPreviews?: boolean
   /** Draw the floating comment bubble at the bottom right. ⌘⇧K and Help › Comment on Choo Choo work either way. */
@@ -760,6 +776,7 @@ export const DEFAULT_SETTINGS: Settings = {
   anthropicApiKey: '',
   notifications: true,
   orchestratorAutoUpdates: true,
+  usageSavings: true,
   commentBubble: true,
   githubLinkPreviews: true,
   claudeBinary: 'bundled',
@@ -997,7 +1014,7 @@ export interface Api {
   /** Opens a project group's orchestrator, creating it the first time. */
   openGroupOrchestrator(groupId: string): Promise<{ workspace: Workspace; chat: Chat }>
   /** Creates or updates a project group. */
-  saveGroup(group: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string }): Promise<RepoGroup>
+  saveGroup(group: { id?: string; name: string; repoIds: string[]; icon?: string; color?: string; models?: import('./roleModels').RoleModels }): Promise<RepoGroup>
   /** Deletes the group and hides its orchestrator. Workspaces and memory stay. */
   deleteGroup(groupId: string): Promise<void>
   /** Creates or updates an automation. */
@@ -1033,6 +1050,8 @@ export interface Api {
   renameWorkspace(workspaceId: string, title: string): Promise<void>
   /** Asks a small model for a new title from the workspace's chats so far. Returns the new title. */
   regenerateWorkspaceName(workspaceId: string): Promise<string>
+  /** A fresh title for a chat (a project thread) from its transcript, picked by Haiku and saved. */
+  regenerateChatName(chatId: string): Promise<string>
   /** Saves a hand-sorted sidebar order: each id's position in the list. */
   reorderWorkspaces(ids: string[]): Promise<void>
   createChat(workspaceId: string): Promise<Chat>
@@ -1181,6 +1200,8 @@ export interface Api {
   deleteLeftover(id: string): Promise<void>
   /** Sets the sidebar order of projects. */
   reorderRepos(ids: string[]): Promise<void>
+  /** Saves the order of projects (RepoGroups) after a drag in the sidebar's Projects section. */
+  reorderGroups(ids: string[]): Promise<void>
   pickFiles(): Promise<string[]>
   /** Current versions behind the Claude model aliases, from the Agent SDK. Empty if it couldn't be read. */
   modelDetails(): Promise<Partial<Record<ModelId, ModelDetails>>>

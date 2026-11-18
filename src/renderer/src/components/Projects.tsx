@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { CHAT_MIN, THREADS, threadsWidth } from '@shared/panelWidths'
+import { PanelEdge } from './PanelEdge'
 import { PaneClose } from './PaneToggle'
 import { prMenuItems } from '../prState'
 import type { Chat, PrInfo, RepoGroup, Workspace } from '@shared/types'
 import { foldKey, parseAutoUpdate, projectArchived, projectThreads, projectTree, resolvedThreads, routerChat, stripRouted, threadKey, type ThreadNode } from '@shared/projects'
-import { useStore, setProjectWorkSort, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, resolveThread, showView, viewFor, ago } from '../store'
-import { IconArchive, IconBranch, IconCheck, IconDown, IconPlus, IconSort, IconX } from '../icons'
+import { useStore, setProjectWorkSort, openGroupOrchestrator, editGroup, setRepoCollapsed, newChatTab, archiveWorkspace, restoreWorkspace, resolveThread, renameThread, regenerateThreadName, savePanelWidth, showView, viewFor, ago, reportError } from '../store'
+import { IconArchive, IconBranch, IconCheck, IconCollapse, IconDown, IconExpand, IconPlus, IconSearch, IconSort, IconX } from '../icons'
 import { Menu, type MenuItem } from './Menu'
 import { ProjectIcon } from './ProjectIcon'
-import { sortProjectWork, type ProjectWorkSort } from '@shared/sidebarOrder'
+import { moveId, sortProjectWork, type ProjectWorkSort } from '@shared/sidebarOrder'
 import { askToQueue, setQueueDrag } from './ContinueWork'
 
 /**
@@ -19,6 +21,15 @@ export function ProjectsSection() {
   const s = useStore()
   const folded = (key: string) => (s.settings.sidebarCollapsed ?? []).includes(key)
   const sectionFolded = folded(foldKey.section)
+  // Drag a project row onto another to reorder. The same drag can still be dropped on Up next to queue it.
+  const [drag, setDrag] = useState<ProjectDrag | null>(null)
+  const move = (id: string, target: string, after: boolean) => {
+    const before = s.groups.map((g) => g.id)
+    const ids = moveId(before, id, target, after)
+    if (ids.join() === before.join()) return
+    useStore.getState().set({ groups: ids.map((x) => s.groups.find((g) => g.id === x)!) })
+    void window.api.reorderGroups(ids).catch(reportError)
+  }
   return (
     <div className="mb-3">
       <div className="group mb-1 flex items-center px-2 text-[11px] font-medium text-faint">
@@ -35,12 +46,37 @@ export function ProjectsSection() {
           New project: one goal across one or more repos
         </button>
       )}
-      {!sectionFolded && s.groups.map((g) => <ProjectNode key={g.id} group={g} folded={folded} />)}
+      {!sectionFolded &&
+        s.groups.map((g) => (
+          <div
+            key={g.id}
+            data-testid="project-node"
+            className={`${drag?.over === g.id && drag.id !== g.id ? (drag.after ? 'shadow-[0_2px_0_var(--color-accent)]' : 'shadow-[0_-2px_0_var(--color-accent)]') : ''} ${drag?.id === g.id ? 'opacity-50' : ''}`}
+            onDragOver={(e) => {
+              if (!drag) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+              const r = e.currentTarget.getBoundingClientRect()
+              const after = e.clientY > r.top + Math.min(r.height, 36) / 2
+              if (drag.over !== g.id || drag.after !== after) setDrag({ ...drag, over: g.id, after })
+            }}
+            onDrop={(e) => {
+              if (!drag) return
+              e.preventDefault()
+              if (drag.over) move(drag.id, drag.over, drag.after)
+              setDrag(null)
+            }}
+          >
+            <ProjectNode group={g} folded={folded} onDragStart={() => setDrag({ id: g.id, over: null, after: false })} onDragEnd={() => setDrag(null)} />
+          </div>
+        ))}
     </div>
   )
 }
 
-function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string) => boolean }) {
+type ProjectDrag = { id: string; over: string | null; after: boolean }
+
+function ProjectNode({ group, folded, onDragStart, onDragEnd }: { group: RepoGroup; folded: (key: string) => boolean; onDragStart?: () => void; onDragEnd?: () => void }) {
   const s = useStore()
   const [showArchived, setShowArchived] = useState(false)
   const [showResolved, setShowResolved] = useState(false)
@@ -63,9 +99,13 @@ function ProjectNode({ group, folded }: { group: RepoGroup; folded: (key: string
       <div
         className={`group flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-1.5 ${active ? 'bg-raised' : 'hover:bg-hover'}`}
         onClick={() => void openGroupOrchestrator(group.id)}
-        title="Open the orchestrator chat. Drag onto Up next to queue the project for the next window."
+        title="Open the orchestrator chat. Drag to reorder projects, or onto Up next to queue the project for the next window."
         draggable
-        onDragStart={(e) => setQueueDrag(e, { kind: 'project', groupId: group.id })}
+        onDragStart={(e) => {
+          setQueueDrag(e, { kind: 'project', groupId: group.id })
+          onDragStart?.()
+        }}
+        onDragEnd={() => onDragEnd?.()}
         onContextMenu={(e) => {
           e.preventDefault()
           setMenuAt({ x: e.clientX, y: e.clientY })
@@ -181,13 +221,15 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
   const toggle = () => setRepoCollapsed(tKey, !isFolded)
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   const [sortAt, setSortAt] = useState<{ x: number; y: number } | null>(null)
+  const [editing, setEditing] = useState(false)
+  const naming = !!thread && !!s.namingChats[thread.id]
   const sort = s.settings.projectWorkSort ?? 'newest'
   return (
     <div>
       <div
         role="button"
         tabIndex={0}
-        draggable={!!thread}
+        draggable={!!thread && !editing}
         onDragStart={(e) => thread && setQueueDrag(e, { kind: 'thread', chatId: thread.id })}
         onContextMenu={(e) => {
           if (!thread) return
@@ -195,8 +237,8 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
           setMenuAt({ x: e.clientX, y: e.clientY })
         }}
         className={`group flex h-8 cursor-pointer items-center gap-1.5 rounded-md pr-2 pl-5 ${active ? 'bg-raised text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
-        onClick={() => (thread ? void openGroupOrchestrator(group.id, thread.id) : toggle())}
-        onKeyDown={(e) => e.key === 'Enter' && (thread ? void openGroupOrchestrator(group.id, thread.id) : toggle())}
+        onClick={() => !editing && (thread ? void openGroupOrchestrator(group.id, thread.id) : toggle())}
+        onKeyDown={(e) => !editing && e.key === 'Enter' && (thread ? void openGroupOrchestrator(group.id, thread.id) : toggle())}
         title={thread ? 'Open this thread' : 'Work no thread owns: started before threads, or its thread was deleted'}
       >
         <button
@@ -210,9 +252,24 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
           <IconDown width={11} height={11} className={isFolded ? '-rotate-90' : ''} />
         </button>
         <span className="w-3 shrink-0 text-center text-faint">#</span>
-        <span className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''} ${thread ? '' : 'italic'} ${thread?.resolved ? 'opacity-60' : ''}`}>{thread?.title ?? 'No thread'}</span>
+        {thread && editing ? (
+          <ThreadTitle chat={thread} editing onDone={() => setEditing(false)}>
+            {null}
+          </ThreadTitle>
+        ) : (
+          <span
+            className={`flex-1 truncate ${unread ? 'font-semibold text-fg' : ''} ${thread ? '' : 'italic'} ${thread?.resolved ? 'opacity-60' : ''} ${naming ? 'text-faint' : ''}`}
+            onDoubleClick={(e) => {
+              if (!thread) return
+              e.stopPropagation()
+              setEditing(true)
+            }}
+          >
+            {naming ? 'Naming…' : (thread?.title ?? 'No thread')}
+          </span>
+        )}
         {thread?.resolved && <span className="shrink-0 rounded bg-hover px-1 text-[10px] text-faint group-hover:hidden">Resolved</span>}
-        {thread && (
+        {thread && !editing && (
           <button
             title={thread.resolved ? 'Reopen: put it back in the sidebar' : 'Resolve: hide it from the sidebar. Find it again under Resolved or with ⌘K.'}
             data-testid="resolve-thread"
@@ -260,6 +317,8 @@ function ThreadNodeView({ group, node, orchId, folded }: { group: RepoGroup; nod
               at={menuAt}
               items={[
                 { label: 'Open thread', onClick: () => void openGroupOrchestrator(group.id, thread.id) },
+                ...threadNameItems(thread, () => setEditing(true)),
+                { kind: 'sep' },
                 thread.resolved
                   ? { label: 'Reopen thread', onClick: () => void resolveThread(thread.id, false) }
                   : { label: 'Resolve thread', hint: count ? `${count} open` : undefined, onClick: () => void resolveThread(thread.id, true) },
@@ -405,68 +464,182 @@ function ProjectWorkRow({ ws, pr }: { ws: Workspace; pr: PrInfo | null }) {
   )
 }
 
-/** The list of a project's conversations: its orchestrator chat, then threads, newest first. */
-export function ThreadsPanel({ ws, activeId, onClose }: { ws: Workspace; activeId?: string; onClose: () => void }) {
+/**
+ * The list of a project's conversations: its orchestrator chat, then threads, newest first. Beside
+ * the chat it is dragged wider by its left edge (Settings.threadsWidth); expanded, it fills the pane
+ * in place of the chat and picking a thread puts the chat back.
+ */
+export function ThreadsPanel({ ws, activeId, expanded, onClose }: { ws: Workspace; activeId?: string; expanded?: boolean; onClose: () => void }) {
   const s = useStore()
   const router = routerChat(s.chats, ws.id)
   const [showResolved, setShowResolved] = useState(false)
+  const [filter, setFilter] = useState('')
   const threads = projectThreads(s.chats, ws.id, { open: true })
   const resolved = resolvedThreads(s.chats, ws.id)
   // The thread on screen stays listed even once resolved.
   const shown = showResolved ? resolved : resolved.filter((c) => c.id === activeId)
-  const list: Chat[] = [...(router ? [router] : []), ...threads, ...shown]
+  const q = filter.trim().toLowerCase()
+  const all: Chat[] = [...(router ? [router] : []), ...threads, ...shown]
+  const list = q ? [...all, ...(showResolved ? [] : resolved.filter((c) => c.id !== activeId))].filter((c) => (c.id === router?.id ? 'orchestrator chat' : c.title).toLowerCase().includes(q)) : all
+  const asideRef = useRef<HTMLElement>(null)
   // Load each thread's transcript once, for the last-line preview.
-  const ids = list.map((c) => c.id).join(',')
+  const ids = all.map((c) => c.id).join(',')
   useEffect(() => {
-    for (const c of list) {
+    for (const c of all) {
       if (useStore.getState().items[c.id]) continue
       void window.api.getChatItems(c.id).then((items) => useStore.getState().items[c.id] || useStore.getState().setItems(c.id, items), () => {})
     }
   }, [ids])
+  useEffect(() => {
+    if (!expanded) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !e.defaultPrevented && s.set({ threadsExpanded: false })
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expanded])
+  const open = (c: Chat) => {
+    s.setActiveChat(ws.id, c.id)
+    if (expanded) s.set({ threadsExpanded: false })
+  }
+  const group = s.groups.find((g) => g.id === ws.groupId)
+  const paneWidth = () => asideRef.current?.parentElement?.getBoundingClientRect().width ?? window.innerWidth
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-l border-line bg-panel">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
+    <aside
+      ref={asideRef}
+      data-testid="threads-panel"
+      data-expanded={expanded || undefined}
+      className={expanded ? 'flex h-full flex-col bg-bg' : 'relative flex shrink-0 flex-col border-l border-line bg-panel'}
+      style={expanded ? undefined : { width: threadsWidth(s.settings.threadsWidth, Number.POSITIVE_INFINITY), maxWidth: `max(${THREADS.min}px, calc(100% - ${CHAT_MIN}px))` }}
+    >
+      {!expanded && (
+        <PanelEdge
+          side="left"
+          min={THREADS.min}
+          max={() => Math.max(THREADS.min, paneWidth() - CHAT_MIN)}
+          hint="drag far right to hide"
+          onCommit={(w) => savePanelWidth('threadsWidth', w)}
+          onReset={() => savePanelWidth('threadsWidth', THREADS.def)}
+          onClose={onClose}
+        />
+      )}
+      <div className={`flex h-11 shrink-0 items-center gap-2 border-b border-line ${expanded ? 'px-5' : 'px-3'}`}>
         <span className="font-medium">Threads</span>
         <span className="text-[12px] text-faint">{threads.length}</span>
         <span className="flex-1" />
-        <button className="flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12px] hover:bg-hover" onClick={() => void newChatTab(ws.id)} title="Start a new thread">
+        {expanded && (
+          <label className="flex w-64 items-center gap-1.5 rounded-md border border-line bg-panel px-2 py-0.5 text-[12px] focus-within:border-accent">
+            <IconSearch width={12} height={12} className="shrink-0 text-faint" />
+            <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Find a thread" aria-label="Find a thread" className="min-w-0 flex-1 bg-transparent outline-none" data-testid="threads-filter" />
+          </label>
+        )}
+        <button className="flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[12px] hover:bg-hover" onClick={() => void newChatTab(ws.id).then(() => expanded && s.set({ threadsExpanded: false }))} title="Start a new thread">
           <IconPlus width={12} height={12} /> New
+        </button>
+        <button
+          data-testid="expand-threads"
+          className={`shrink-0 rounded p-1 hover:bg-hover hover:text-fg ${expanded ? 'text-fg' : 'text-faint'}`}
+          title={expanded ? 'Back to the chat (Esc)' : 'Expand: list threads across the whole pane'}
+          onClick={() => s.set({ threadsExpanded: !expanded })}
+        >
+          {expanded ? <IconCollapse width={12} height={12} /> : <IconExpand width={12} height={12} />}
         </button>
         <PaneClose testId="close-threads" onClose={onClose} title="Hide threads" />
       </div>
       <div className="flex-1 overflow-y-auto p-1.5">
-        {list.map((c) => (
-          <ThreadRow key={c.id} chat={c} group={s.groups.find((g) => g.id === ws.groupId)} router={c.id === router?.id} active={c.id === activeId} onClick={() => s.setActiveChat(ws.id, c.id)} />
-        ))}
-        {threads.length === 0 && !resolved.length && <div className="px-2.5 py-3 text-[12px] text-faint">No threads yet. Messages to the orchestrator chat start them, or press New.</div>}
-        {resolved.length > 0 && (
-          <button className="mt-1 block px-2.5 py-1 text-[12px] text-faint hover:text-fg" onClick={() => setShowResolved(!showResolved)} data-testid="threads-show-resolved">
-            {showResolved ? 'Hide resolved' : `Show resolved (${resolved.length})`}
-          </button>
-        )}
+        <div className={expanded ? 'mx-auto max-w-3xl py-3' : ''}>
+          {list.map((c) => (
+            <ThreadRow key={c.id} chat={c} group={group} router={c.id === router?.id} active={c.id === activeId} wide={!!expanded} onClick={() => open(c)} />
+          ))}
+          {q && list.length === 0 && <div className="px-2.5 py-3 text-[12px] text-faint">No thread matches “{filter.trim()}”.</div>}
+          {threads.length === 0 && !resolved.length && <div className="px-2.5 py-3 text-[12px] text-faint">No threads yet. Messages to the orchestrator chat start them, or press New.</div>}
+          {resolved.length > 0 && !q && (
+            <button className="mt-1 block px-2.5 py-1 text-[12px] text-faint hover:text-fg" onClick={() => setShowResolved(!showResolved)} data-testid="threads-show-resolved">
+              {showResolved ? 'Hide resolved' : `Show resolved (${resolved.length})`}
+            </button>
+          )}
+        </div>
       </div>
     </aside>
   )
 }
 
-function ThreadRow({ chat, group, router, active, onClick }: { chat: Chat; group?: RepoGroup; router: boolean; active: boolean; onClick: () => void }) {
+/** A thread's title, or a box to rename it in. Enter or leaving the box saves; Esc cancels. */
+function ThreadTitle({ chat, editing, onDone, className, children }: { chat: Chat; editing: boolean; onDone: () => void; className?: string; children: React.ReactNode }) {
+  if (!editing) return <>{children}</>
+  const save = (v: string) => {
+    onDone()
+    void renameThread(chat.id, v)
+  }
+  return (
+    <input
+      autoFocus
+      defaultValue={chat.title}
+      maxLength={80}
+      aria-label="Thread name"
+      data-testid="thread-rename"
+      onFocus={(e) => e.currentTarget.select()}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') save(e.currentTarget.value)
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          onDone()
+        }
+      }}
+      onBlur={(e) => save(e.currentTarget.value)}
+      className={`min-w-0 flex-1 rounded border border-line bg-bg px-1 text-fg outline-none focus:border-accent ${className ?? ''}`}
+    />
+  )
+}
+
+/** Rename and Regenerate name, for a thread's right-click menu. */
+function threadNameItems(chat: Chat, rename: () => void): MenuItem[] {
+  return [
+    { label: 'Rename…', hint: 'double-click', onClick: rename },
+    { label: 'Regenerate name', hint: 'Haiku', onClick: () => void regenerateThreadName(chat.id) }
+  ]
+}
+
+function ThreadRow({ chat, group, router, active, wide, onClick }: { chat: Chat; group?: RepoGroup; router: boolean; active: boolean; wide: boolean; onClick: () => void }) {
   const items = useStore((s) => s.items[chat.id])
+  const naming = useStore((s) => !!s.namingChats[chat.id])
+  const [editing, setEditing] = useState(false)
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   const last = lastLine(items)
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => e.key === 'Enter' && onClick()}
-      className={`group mb-0.5 flex w-full cursor-pointer flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left ${active ? 'bg-raised' : 'hover:bg-hover'} ${chat.resolved ? 'text-muted' : ''}`}
+      data-testid="thread-row"
+      onClick={() => !editing && onClick()}
+      onKeyDown={(e) => !editing && e.key === 'Enter' && onClick()}
+      onContextMenu={(e) => {
+        if (router) return
+        e.preventDefault()
+        setMenuAt({ x: e.clientX, y: e.clientY })
+      }}
+      className={`group mb-0.5 flex w-full cursor-pointer flex-col gap-0.5 rounded-lg text-left ${wide ? 'px-3 py-2.5' : 'px-2.5 py-2'} ${active ? 'bg-raised' : 'hover:bg-hover'} ${chat.resolved ? 'text-muted' : ''}`}
     >
       <span className="flex items-center gap-1.5">
         {router ? <ProjectIcon group={group} size={13} /> : chat.resolved ? <IconCheck width={12} height={12} className="w-3 shrink-0 text-faint" /> : <span className="w-3 shrink-0 text-center text-faint">#</span>}
-        <span className={`flex-1 truncate ${chat.unread && !active ? 'font-semibold' : 'font-medium'}`}>{router ? 'Orchestrator chat' : chat.title}</span>
+        <ThreadTitle chat={chat} editing={editing} onDone={() => setEditing(false)}>
+          <span
+            className={`flex-1 truncate ${chat.unread && !active ? 'font-semibold' : 'font-medium'} ${naming ? 'text-faint' : ''}`}
+            onDoubleClick={(e) => {
+              if (router) return
+              e.stopPropagation()
+              setEditing(true)
+            }}
+          >
+            {router ? 'Orchestrator chat' : naming ? 'Naming…' : chat.title}
+          </span>
+        </ThreadTitle>
         {chat.status === 'running' && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-add" />}
         {chat.status !== 'running' && chat.unread && !active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />}
-        {chat.resolved && <span className="shrink-0 text-[11px] text-faint group-hover:hidden">Resolved</span>}
-        {!router && (
+        {wide && !editing && <span className="shrink-0 text-[11px] text-faint group-hover:hidden">{ago(chat.createdAt)}</span>}
+        {chat.resolved && !editing && <span className="shrink-0 text-[11px] text-faint group-hover:hidden">Resolved</span>}
+        {!router && !editing && (
           <button
             className="hidden shrink-0 rounded px-1.5 text-[11px] text-muted group-hover:block hover:bg-raised hover:text-fg"
             title={chat.resolved ? 'Put it back in the sidebar and this list' : 'Hide it from the sidebar and this list. It is kept: Show resolved or ⌘K finds it.'}
@@ -479,7 +652,22 @@ function ThreadRow({ chat, group, router, active, onClick }: { chat: Chat; group
           </button>
         )}
       </span>
-      {last && <span className="truncate pl-[18px] text-[12px] text-faint">{last}</span>}
+      {last && <span className={`pl-[18px] text-[12px] text-faint ${wide ? 'line-clamp-2' : 'truncate'}`}>{last}</span>}
+      {menuAt && (
+        <span onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+          <Menu
+            anchor={null}
+            at={menuAt}
+            items={[
+              { label: 'Open thread', onClick },
+              ...threadNameItems(chat, () => setEditing(true)),
+              { kind: 'sep' },
+              chat.resolved ? { label: 'Reopen thread', onClick: () => void resolveThread(chat.id, false) } : { label: 'Resolve thread', onClick: () => void resolveThread(chat.id, true) }
+            ]}
+            onClose={() => setMenuAt(null)}
+          />
+        </span>
+      )}
     </div>
   )
 }

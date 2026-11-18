@@ -419,6 +419,8 @@ export async function send(
   const forkAt = chat.forkAt
   const resume = forkAt === null ? undefined : chat.sdkSessionId
   chat.forkAt = undefined
+  // A fresh or forked session has none of what earlier turns were given (see shared/usageSavings.ts).
+  if (!resume || forkAt) chat.memoryHash = undefined
   const tools = new Map<string, Extract<ChatItem, { kind: 'tool' }>>()
   // A chat opened from a coworker's share starts with their transcript as context.
   const prompt = chat.handoff ? `${chat.handoff}\n\n${text}` : text
@@ -462,7 +464,14 @@ export async function send(
     const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, systemAppend(extras, !!chat.planMode))
     // `autoAllowTools` is ours, not the SDK's: tools the caller vouches for as read-only.
     // `alwaysAskTools`: tools that need the person's OK even when the chat allows everything.
-    const { autoAllowTools, alwaysAskTools, ...extra } = (extraOptions?.(sdkMod) ?? {}) as Record<string, unknown> & { autoAllowTools?: string[]; alwaysAskTools?: string[] }
+    // `turnPrefix`: context for Claude sent ahead of this turn's message but not shown in the chat.
+    // `onSessionStart`: runs once Claude Code reports the session started.
+    const { autoAllowTools, alwaysAskTools, turnPrefix, onSessionStart, ...extra } = (extraOptions?.(sdkMod) ?? {}) as Record<string, unknown> & {
+      autoAllowTools?: string[]
+      alwaysAskTools?: string[]
+      turnPrefix?: string
+      onSessionStart?: () => void
+    }
     const autoAllow = new Set(autoAllowTools ?? [])
     const alwaysAsk = new Set(alwaysAskTools ?? [])
     const canUseTool = async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; suggestions?: unknown[] }) => {
@@ -503,7 +512,8 @@ export async function send(
       const server = await notion.agentServer()
       if (server) mcpServers.notion = server
     }
-    const channel = inputChannel(sdkUserMessage(expandShortcuts(prompt, extras), images), turnDone)
+    const first = expandShortcuts(prompt, extras)
+    const channel = inputChannel(sdkUserMessage(turnPrefix ? `${turnPrefix}\n\n${first}` : first, images), turnDone)
     r.push = (t, imgs, mode) => channel.push(sdkUserMessage(expandShortcuts(t, extras), imgs, mode === 'steer' ? 'next' : 'later'))
     const q = query({
       prompt: channel.input as never,
@@ -568,12 +578,17 @@ export async function send(
         case 'system':
           if (msg.subtype === 'init') {
             if (msg.session_id) chat.sdkSessionId = msg.session_id
+            onSessionStart?.()
             if (Array.isArray(msg.slash_commands)) reportedCommands.set(ws.id, msg.slash_commands)
             if (typeof msg.model === 'string' && msg.model) {
               const change = onModelReported(store.chatItems(chat.id), chat.model, msg.model, chat.reportedModel, randomUUID(), Date.now())
               if (change && 'put' in change) put(change.put)
               chat.reportedModel = msg.model
             }
+            store.save()
+          } else if (msg.subtype === 'compact_boundary') {
+            // Compaction may summarize away memory sent with an earlier turn; send it again next turn.
+            chat.memoryHash = undefined
             store.save()
           } else if (msg.subtype === 'commands_changed' && Array.isArray(msg.commands)) {
             reportedCommands.set(ws.id, msg.commands.map((c: { name: string }) => c.name))

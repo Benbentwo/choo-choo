@@ -16,6 +16,7 @@ import {
   focusGroup,
   setGroupActive,
   setGroupDoc,
+  closeGroupDoc,
   splitDocOut,
   addTerminalTab,
   closeTerminalTab,
@@ -58,8 +59,11 @@ export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.L
   // A project's orchestrator: one chat at a time, picked from the Threads panel instead of tabs.
   const project = isProject(ws)
   const [threadsOpen, setThreadsOpen] = useState(() => localStorage.getItem('threads-panel') !== 'closed')
+  // Expanded, the Threads panel takes the pane's body in place of the chat.
+  const threadsExpanded = project && threadsOpen && s.threadsExpanded
   const toggleThreads = (open: boolean) => {
     setThreadsOpen(open)
+    if (!open) s.set({ threadsExpanded: false })
     try {
       localStorage.setItem('threads-panel', open ? 'open' : 'closed')
     } catch {
@@ -88,6 +92,10 @@ export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.L
         <ClassicHeader ws={ws} menu={menu} threads={project ? { open: threadsOpen, toggle: toggleThreads } : undefined} />
       )}
       <div className="relative min-h-0 flex-1">
+        {threadsExpanded ? (
+          <ThreadsPanel ws={ws} activeId={active?.id} expanded onClose={() => toggleThreads(false)} />
+        ) : (
+          <>
         {groups.map((g) => {
           const b = boxes.get(g.id)!
           return (
@@ -102,12 +110,14 @@ export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.L
           )
         })}
         <Dividers dividers={dividers} leafId={leaf.id} inner />
+          </>
+        )}
       </div>
       {reflecting && <SessionFeedback ws={ws} archive={false} onClose={() => setReflecting(false)} />}
       {cloudDialog && active && <RunInCloudDialog chat={active} ws={ws} onClose={() => setCloudDialog(false)} />}
     </main>
   )
-  if (!project || !threadsOpen) return main
+  if (!project || !threadsOpen || threadsExpanded) return main
   return (
     <div className="flex h-full min-w-0 flex-1">
       {main}
@@ -371,7 +381,6 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
   const activeTerm = group.active && group.terms.includes(group.active) ? group.active : null
   const active = activeTerm ? undefined : (chats.find((c) => c.id === group.active) ?? chats[0])
   const doc = group.doc
-  const diffFile = doc && doc.kind !== 'reflect' ? doc.path : null
   const reflect = s.reflects[ws.id]
   const groups = leaf.view.kind === 'workspace' ? L.leavesOf(leaf.view.inner) : [group]
   const showReflectTab = reflect && (doc?.kind === 'reflect' || (!groups.some((g) => g.doc?.kind === 'reflect') && groups[0].id === group.id))
@@ -455,20 +464,29 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
             </button>
           </div>
         )}
-        {diffFile && (
-          <div className={`flex h-10 max-w-[260px] shrink-0 items-center gap-2 border-b-2 ${underline} px-3`}>
-            <span className="truncate font-mono text-[12px]">{diffFile.split('/').pop()}</span>
-            <span className="text-[11px] text-faint">{doc?.kind === 'file' ? 'file' : 'diff'}</span>
-            {(chats.length > 0 || group.terms.length > 0) && (
-              <button title="Open beside the chat" className="text-faint hover:text-fg" onClick={() => splitDocOut(leaf.id, group.id, 'right')}>
-                <IconSplitRight width={12} height={12} />
+        {L.docTabs(group).map((d) => {
+          const on = !!doc && L.sameDoc(doc, d)
+          return (
+            <div
+              key={`${d.kind}:${d.path}`}
+              title={d.path}
+              className={`group flex h-10 max-w-[260px] shrink-0 items-center gap-2 border-b-2 px-3 ${on ? `${underline} text-fg` : 'border-transparent text-muted hover:text-fg'}`}
+            >
+              <button className="flex min-w-0 items-center gap-2" onClick={() => setGroupDoc(leaf.id, group.id, d)}>
+                <span className="truncate font-mono text-[12px]">{d.path.split('/').pop()}</span>
+                <span className="text-[11px] text-faint">{d.kind === 'file' ? 'file' : 'diff'}</span>
               </button>
-            )}
-            <button title="Close file" className="text-faint hover:text-fg" onClick={() => setGroupDoc(leaf.id, group.id, null)}>
-              <IconX width={12} height={12} />
-            </button>
-          </div>
-        )}
+              {on && (chats.length > 0 || group.terms.length > 0) && (
+                <button title="Open beside the chat" className="text-faint hover:text-fg" onClick={() => splitDocOut(leaf.id, group.id, 'right')}>
+                  <IconSplitRight width={12} height={12} />
+                </button>
+              )}
+              <button title="Close file" className={`${on ? '' : 'invisible group-hover:visible'} text-faint hover:text-fg`} onClick={() => closeGroupDoc(leaf.id, group.id, d)}>
+                <IconX width={12} height={12} />
+              </button>
+            </div>
+          )
+        })}
         {(chats.length > 0 || groups.length === 1) && (
           <button
             className="mb-2.5 ml-1 shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg"
