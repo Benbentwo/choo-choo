@@ -292,3 +292,69 @@ describe('project repos', () => {
     expect(single.mcpServers.choo.tools.map((t) => t.name)).not.toContain('find_repos')
   })
 })
+
+describe('usage savings', () => {
+  const sdk = {
+    tool: (name: string, description: string, shape: object, handler: (a: unknown) => Promise<{ content: { text: string }[] }>) => ({ name, description, shape, handler }),
+    createSdkMcpServer: (o: { name: string; tools: { name: string }[] }) => o
+  } as never
+  type Out = { turnPrefix?: string; onSessionStart?: () => void; systemPrompt: { append: string }; mcpServers: { choo: { tools: { name: string; description: string; handler(a: unknown): Promise<unknown> }[] } } }
+  it('keeps memory out of the prompt and tells threads not to wait', () => {
+    const p = orch.systemPrompt(repo, 'remember this', [], undefined, undefined, true)
+    expect(p).not.toContain('remember this')
+    expect(p).toContain('<project-memory>')
+    expect(p).toContain('end your turn instead of waiting')
+  })
+  it('sends memory with the turn only until the session has this version', async () => {
+    orch.writeMemory(repo, '- squash merges\n')
+    const chat = { id: 'c', workspaceId: 'w', sdkSessionId: 's1' } as import('../src/shared/types').Chat
+    const first = orch.queryOptions(sdk, repo, {} as never, [], undefined, undefined, { chat }) as Out
+    expect(first.turnPrefix).toContain('- squash merges')
+    expect(first.systemPrompt.append).not.toContain('- squash merges')
+    first.onSessionStart!()
+    expect((orch.queryOptions(sdk, repo, {} as never, [], undefined, undefined, { chat }) as Out).turnPrefix).toBeUndefined()
+    // Saving memory from this chat doesn't send it back to the same chat.
+    await first.mcpServers.choo.tools.find((t) => t.name === 'update_memory')!.handler({ content: '- rebase merges\n' })
+    expect((orch.queryOptions(sdk, repo, {} as never, [], undefined, undefined, { chat }) as Out).turnPrefix).toBeUndefined()
+    // Another chat on the same memory gets the new version.
+    const other = { id: 'd', workspaceId: 'w', sdkSessionId: 's2', memoryHash: chat.memoryHash } as import('../src/shared/types').Chat
+    orch.writeMemory(repo, '- merge queue\n')
+    expect((orch.queryOptions(sdk, repo, {} as never, [], undefined, undefined, { chat: other }) as Out).turnPrefix).toContain('- merge queue')
+    // Off: memory stays in the prompt and nothing rides with the turn.
+    const off = orch.queryOptions(sdk, repo, {} as never) as Out
+    expect(off.turnPrefix).toBeUndefined()
+    expect(off.systemPrompt.append).toContain('- merge queue')
+  })
+  it('reads the handoff report rather than the transcript by default', () => {
+    const o = orch.queryOptions(sdk, repo, {} as never, [], undefined, undefined, { chat: { id: 'c' } as never }) as Out
+    expect(o.mcpServers.choo.tools.find((t) => t.name === 'read_workspace')!.description).toContain('handoff report')
+  })
+})
+
+describe('models for workspaces a project starts', () => {
+  it('starts them on the project workspace model unless the thread picks one', async () => {
+    const chats: { model: string; effort: string }[] = []
+    const host = {
+      createWorkspace: async () => {
+        const chat = { id: `c${chats.length}`, model: 'opus', effort: 'high' }
+        chats.push(chat)
+        return { workspace: { id: `w${chats.length}`, name: 'w', branch: 'b' }, chat }
+      },
+      sendToChat: () => {},
+      modelFor: (role: string, groupId?: string) => (role === 'workspace' && groupId === 'g9' ? { model: 'sonnet', effort: 'medium' } : { model: 'opus', effort: 'high' })
+    } as never
+    const sdk = {
+      tool: (name: string, _d: string, _s: object, handler: (a: unknown) => Promise<unknown>) => ({ name, handler }),
+      createSdkMcpServer: (o: object) => o
+    } as never
+    const scope = orch.groupScope({ id: 'g9', name: 'P', repoIds: ['r1'], createdAt: 0 }, [{ id: 'r1', name: 'api', path: '/a', defaultBranch: 'main' }])
+    const o = orch.queryOptions(sdk, scope, host) as { mcpServers: { choo: { tools: { name: string; handler(a: unknown): Promise<unknown> }[] } } }
+    const start = o.mcpServers.choo.tools.find((t) => t.name === 'start_workspace')!
+    await start.handler({ task: 'one', repo: 'api' })
+    await start.handler({ task: 'two', repo: 'api', model: 'haiku' })
+    expect(chats).toEqual([
+      { id: 'c0', model: 'sonnet', effort: 'medium' },
+      { id: 'c1', model: 'haiku', effort: 'medium' }
+    ])
+  })
+})

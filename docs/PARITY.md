@@ -76,7 +76,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 
 ### Right panel
 - ✅ Changes: committed, uncommitted and untracked vs merge base with the target branch (the branch the workspace's PR merges into, or the one below it in a stack; else the branch it started from), with diff view
-- ✅ Code comments: click, drag or shift-click line numbers in the diff to comment; comments wait as chips in the composer (which stays below an open diff or file) and go to the agent together, each with its file, lines and code
+- ✅ Code comments: click, drag or shift-click line numbers in the diff to comment; comments wait as chips in the composer (which stays below an open diff or file; diff and file tabs stay open when you go back to the chat) and go to the agent together, each with its file, lines and code
 - ✅ All files tree with file preview, filter
 - ✅ Find in a file or diff: ⌘F or the magnifier in the file's header, Enter and ⇧Enter step through matches, Esc closes
 - ✅ Artifacts: files the agent wrote
@@ -116,6 +116,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - 🧪 Automations (Settings › Experimental, choo-choo addition): checks that run on a schedule, a GitHub event (review requested, a PR I review changed for me, CI failed, PR reviewed, new issue or PR, optionally by label) or Run now, and open one workspace per finding in a project thread or a repo, capped per run and never twice for the same finding. See [PRD](prd/automations.md).
 - ✅ Continue work (choo-choo addition): a chat that stops on the plan's usage limit is paused and joins Up next, an ordered list of what starts when the window resets, a few at a time and only until the new window is partly used. Home shows it while you're out of usage; Settings › Continue work holds the rules; Automations can run "When my usage window resets". Drag a workspace, project thread or project onto Up next (or right-click › Queue for next window…) to line it up. See [PRD](prd/continue-work.md).
 - ✅ Usage page (choo-choo addition): plan window history (5-hour and weekly over 24h to a year, limit hits marked), where usage went by project, repo and folder, by model, busiest hours, and a limit-hit table. Click a hit to see what filled that window, estimated by workspace and chat. Readings are saved while Choo Choo runs; response summaries are copied from Claude Code's transcripts before its 30-day cleanup. Settings › Usage history. See [PRD](prd/usage-history.md).
+- ✅ Save usage in project threads (choo-choo addition, on by default): workspaces hand threads a short report instead of their transcript, a thread gets one update per batch of finished workspaces, and project memory is sent only when it changes. Models in projects sets the model and thinking level for project chats (Sonnet, Low out of the box), threads and their workspaces, with per-project overrides. The Usage page's Project work card shows what threads, project chats and their workspaces used. Settings › General. See [PRD](prd/usage-savings.md).
 
 ## Build sequence
 1. **Foundation**: app scaffold, layout, repos, worktree sessions, agent chat, Changes + diff, terminal.

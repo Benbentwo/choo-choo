@@ -6,6 +6,8 @@ import { usageHistorySettings } from '@shared/usageHistory'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, openGroupOrchestrator, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
 import { EFFORT_LABEL, EFFORTS, MODELS, PERMISSIONS } from './Composer'
+import { RoleModelPickers } from './RoleModels'
+import { pickFor, roleModels, type RoleModels } from '@shared/roleModels'
 import { rank } from '../autocomplete'
 import { findSettingRow, matchCounts, searchSettings, type SettingEntry } from '../settingsSearch'
 import { QuickStartModalBody } from './AddProject'
@@ -71,6 +73,9 @@ function GroupModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState(existing?.name ?? '')
   const [picked, setPicked] = useState<string[]>(existing?.repoIds ?? [])
   const [look, setLook] = useState<{ icon?: string; color?: string }>({ icon: existing?.icon, color: existing?.color })
+  const [models, setModels] = useState<RoleModels>(existing?.models ?? {})
+  const settings = useStore((s) => s.settings)
+  const modelDetails = useStore((s) => s.modelDetails)
   const [busy, setBusy] = useState(false)
   const projects = useStore((s) => !!s.settings.experimentalProjects)
   const noun = projects ? 'project' : 'project group'
@@ -78,7 +83,7 @@ function GroupModal({ onClose }: { onClose: () => void }) {
   const submit = async () => {
     setBusy(true)
     try {
-      const g = await window.api.saveGroup({ id: existing?.id, name, repoIds: picked, ...(projects ? { icon: look.icon ?? '', color: look.color ?? '' } : {}) })
+      const g = await window.api.saveGroup({ id: existing?.id, name, repoIds: picked, ...(projects ? { icon: look.icon ?? '', color: look.color ?? '', models } : {}) })
       await refreshState()
       onClose()
       if (!existing) await openGroupOrchestrator(g.id)
@@ -123,6 +128,19 @@ function GroupModal({ onClose }: { onClose: () => void }) {
           />
         </div>
         {projects && <ProjectIconPicker icon={look.icon} color={look.color} onChange={setLook} />}
+        {projects && (
+          <div>
+            <div className="mb-1.5 text-[12px] text-muted">Models for new chats in this project. Each chat's model menu can still change it.</div>
+            <RoleModelPickers
+              compact
+              value={models}
+              inherited={{ router: pickFor('router', settings), thread: pickFor('thread', settings), workspace: pickFor('workspace', settings) }}
+              inheritLabel="Settings"
+              details={modelDetails}
+              onChange={setModels}
+            />
+          </div>
+        )}
         <div className="max-h-64 overflow-y-auto rounded-md border border-line">
           {repos.length === 0 && <div className="px-3 py-2 text-faint">Add a repository first.</div>}
           {repos.map((r) => (
@@ -260,6 +278,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     useStore.getState().set({ settings: await window.api.saveSettings(patch) })
   }
   const select = 'rounded-md border border-line bg-bg px-2 py-1 outline-none'
+  const base = { model: settings.defaultModel, effort: settings.defaultEffort }
   const [tab, setTab] = useState<SettingsTab>(() => useStore.getState().settingsTab)
   useEffect(() => () => useStore.getState().set({ settingsTab: 'general' }), [])
   const current = SETTINGS_SECTIONS.find((x) => x.id === tab) ?? SETTINGS_SECTIONS[0]
@@ -475,6 +494,20 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 ))}
               </select>
             </Row>
+            {settings.experimentalProjects && (
+              <>
+                <div className="border-b border-line px-5 pt-3.5 pb-1 text-[12px] text-faint">
+                  Models in projects. New project chats, threads and workspaces start on these; change one project's under Edit project, or one chat from its model menu.
+                </div>
+                <RoleModelPickers
+                  value={roleModels(settings)}
+                  inherited={{ router: base, thread: base, workspace: base }}
+                  inheritLabel="Default"
+                  details={modelDetails}
+                  onChange={(roleModels) => void save({ roleModels })}
+                />
+              </>
+            )}
             <Row label="Default permissions" hint="Full access runs agents unattended, like Conductor. Auto lets Claude Code's classifier approve safe tool calls and block risky ones. The others ask before tools that change things.">
               <select className={select} value={settings.defaultPermission} onChange={(e) => void save({ defaultPermission: e.target.value as Settings['defaultPermission'] })}>
                 {PERMISSIONS.map((p) => (
@@ -517,6 +550,12 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             </Row>
             <Row label="Orchestrator updates" hint="When a workspace the orchestrator started finishes, wake the orchestrator so it checks the work and reports back.">
               <input type="checkbox" checked={settings.orchestratorAutoUpdates} onChange={(e) => void save({ orchestratorAutoUpdates: e.target.checked })} />
+            </Row>
+            <Row
+              label="Save usage in project threads"
+              hint="Uses less of your plan in project threads and orchestrators: workspaces hand back a short report instead of their whole transcript, a thread gets one update when its workspaces finish, and project memory is sent only when it changes. Models for project chats, threads and workspaces are set below."
+            >
+              <input type="checkbox" checked={settings.usageSavings !== false} onChange={(e) => void save({ usageSavings: e.target.checked })} />
             </Row>
             <Row label="GitHub link previews" hint="GitHub links in chat show as short pills like repo#12 with a state dot. Hover any GitHub link for a card with its title, state, checks and reviews. Uses your gh sign-in.">
               <input type="checkbox" checked={settings.githubLinkPreviews !== false} onChange={(e) => void save({ githubLinkPreviews: e.target.checked })} />

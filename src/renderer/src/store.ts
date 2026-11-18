@@ -268,7 +268,7 @@ export const useStore = create<UI>((set, get) => ({
     if (!l || !leaf || leaf.view.kind !== 'workspace') return set((s) => ({ activeChat: { ...s.activeChat, [wsId]: chatId }, openDoc: { ...s.openDoc, [wsId]: null } }))
     let view = L.syncWorkspace(leaf.view, chatsOf(get(), wsId))
     const g = L.groupOf(view.inner, chatId) ?? (L.findNode(view.inner, view.focusGroup) as L.Group)
-    view = { ...view, inner: L.mapNode(view.inner, g.id, (n) => ({ ...(n as L.Group), active: chatId, doc: null })), focusGroup: g.id }
+    view = { ...view, inner: L.mapNode(view.inner, g.id, (n) => ({ ...L.showDoc(n as L.Group, null), active: chatId })), focusGroup: g.id }
     applyLayout(L.updateLeaf(l, leaf.id, (x) => ({ ...x, view })), { show: false })
   },
   upsertChat: (c) => {
@@ -452,17 +452,27 @@ export function focusGroup(leafId: string, groupId: string) {
   focusLeaf(leafId)
 }
 
-/** Picks a tab in a group; picking a chat or terminal closes the group's diff or file, like before splits. */
+/** Picks a chat or terminal tab in a group. Open diff and file tabs stay open behind it. */
 export function setGroupActive(leafId: string, groupId: string, tabId: string) {
-  updateWorkspaceView(leafId, (v) => ({ ...v, focusGroup: groupId, inner: L.mapNode(v.inner, groupId, (g) => ({ ...(g as L.Group), active: tabId, doc: null })) }))
+  updateWorkspaceView(leafId, (v) => ({ ...v, focusGroup: groupId, inner: L.mapNode(v.inner, groupId, (g) => ({ ...L.showDoc(g as L.Group, null), active: tabId })) }))
 }
 
+/** Shows a diff, file or Reflect in a group (opening its tab), or null to go back to the chat. */
 export function setGroupDoc(leafId: string, groupId: string, doc: Doc | null) {
+  updateGroup(leafId, groupId, (g) => L.showDoc(g, doc))
+}
+
+/** Closes one diff or file tab of a group. */
+export function closeGroupDoc(leafId: string, groupId: string, doc: Doc) {
+  updateGroup(leafId, groupId, (g) => L.closeDoc(g, doc))
+}
+
+function updateGroup(leafId: string, groupId: string, fn: (g: L.Group) => L.Group) {
   updateWorkspaceView(leafId, (v) => {
-    let inner = L.mapNode(v.inner, groupId, (g) => ({ ...(g as L.Group), doc }))
+    let inner = L.mapNode(v.inner, groupId, (g) => fn(g as L.Group))
     const g = L.findNode(inner, groupId) as L.Group
-    // A group that only held a file goes away when the file closes.
-    if (!doc && !g.chats.length && !g.terms.length && L.leavesOf(inner).length > 1) inner = L.removeNode(inner, groupId) ?? inner
+    // A group that only held files goes away when its last file closes.
+    if (!L.hasDocs(g) && !g.chats.length && !g.terms.length && L.leavesOf(inner).length > 1) inner = L.removeNode(inner, groupId) ?? inner
     const focus = L.findNode(inner, v.focusGroup) ? v.focusGroup : L.leavesOf(inner)[0].id
     return { ...v, inner, focusGroup: focus }
   })
@@ -473,8 +483,9 @@ export function splitDocOut(leafId: string, groupId: string, side: L.Side) {
   updateWorkspaceView(leafId, (v) => {
     const g = L.findNode(v.inner, groupId) as L.Group | null
     if (!g?.doc) return v
-    const ng: L.Group = { ...L.newGroup(), doc: g.doc }
-    let inner = L.mapNode(v.inner, groupId, (x) => ({ ...(x as L.Group), doc: null }))
+    const ng: L.Group = L.showDoc(L.newGroup(), g.doc)
+    const doc = g.doc
+    let inner = L.mapNode(v.inner, groupId, (x) => (doc.kind === 'reflect' ? { ...(x as L.Group), doc: null } : L.closeDoc(x as L.Group, doc)))
     inner = L.insertBeside(inner, groupId, side, ng)
     return { ...v, inner, focusGroup: ng.id }
   })
@@ -493,7 +504,7 @@ export function addTerminalTab(leafId: string) {
   updateWorkspaceView(leafId, (v) => {
     const g = (L.findNode(v.inner, v.focusGroup) as L.Group | null) ?? L.leavesOf(v.inner)[0]
     const id = `${v.wsId}:pane-term-${Date.now().toString(36)}${termSeq++}`
-    return { ...v, focusGroup: g.id, inner: L.mapNode(v.inner, g.id, (x) => ({ ...(x as L.Group), terms: [...(x as L.Group).terms, id], active: id, doc: null })) }
+    return { ...v, focusGroup: g.id, inner: L.mapNode(v.inner, g.id, (x) => ({ ...L.showDoc(x as L.Group, null), terms: [...(x as L.Group).terms, id], active: id })) }
   })
 }
 
@@ -504,7 +515,7 @@ export function closeTerminalTab(leafId: string, termId: string) {
     if (!g) return v
     const terms = g.terms.filter((t) => t !== termId)
     let inner = L.mapNode(v.inner, g.id, (x) => ({ ...(x as L.Group), terms, active: g.active === termId ? (g.chats[0] ?? terms[0] ?? null) : g.active }))
-    if (!g.chats.length && !terms.length && !g.doc && L.leavesOf(inner).length > 1) inner = L.removeNode(inner, g.id) ?? inner
+    if (!g.chats.length && !terms.length && !L.hasDocs(g) && L.leavesOf(inner).length > 1) inner = L.removeNode(inner, g.id) ?? inner
     const focus = L.findNode(inner, v.focusGroup) ? v.focusGroup : L.leavesOf(inner)[0].id
     return { ...v, inner, focusGroup: focus }
   })

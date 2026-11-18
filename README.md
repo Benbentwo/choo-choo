@@ -89,6 +89,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 **Stay on top of usage**
 - **Plan limits in the sidebar**, and a **Usage page** with a year of plan window history, every limit hit, and which repos and chats used it.
 - **Up next.** Chats that stop at the usage limit resume in order when the window resets, along with any work you queue for the next window.
+- **Lighter project threads.** Workspaces hand their thread a short report instead of a whole transcript, threads get one update per batch of finished work, and you pick the model and thinking level for project chats, threads and their workspaces, per project if you like. On by default; the Usage page shows what threads used next to the work they started.
 
 **Make it yours**
 - **Add-ons.** Claude Code plugins with a Choo Choo manifest add views, buttons and tools. Install them from any git repo, including private ones for your team. See [Writing an add-on](docs/addon-api.md).
