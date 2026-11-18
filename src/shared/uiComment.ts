@@ -126,25 +126,36 @@ export function commentPrompt(p: CommentPayload, build: BuildInfo, opts: { fork:
   return lines.join('\n')
 }
 
-/** A prefilled "new issue" link. The screenshot can't go in a URL, so the body asks the person to paste it. */
-export function issueUrl(p: CommentPayload, build: BuildInfo, os: string): string {
+/**
+ * The selector as it can go in a public issue: element ids are dropped, since an id can be built
+ * from data on the person's machine (a workspace, repo or file). Tag and class names come from our own code.
+ */
+export function publicSelector(selector: string): string {
+  return selector.replace(/#[^\s>.:[]+/g, '')
+}
+
+/**
+ * A prefilled "new issue" link. Issues are public, so the body holds only the person's note and facts about
+ * the app's own code (React components, a selector without ids, the app version). Nothing from their machine
+ * goes in: no screenshot (one can show private repos and code), no element text (file, repo and branch names),
+ * no OS version, no window position.
+ */
+export function issueUrl(p: CommentPayload, build: BuildInfo): string {
   const first = p.comment.trim().split('\n')[0]
   const title = first.length > 80 ? first.slice(0, 77) + '…' : first
   const body = [
     p.comment.trim(),
     '',
-    '<!-- The screenshot of the element is on your clipboard: paste it here. -->',
-    '',
     '<details><summary>Element</summary>',
     '',
-    ...elementLines(p),
-    p.text.trim() ? `- Text: ${p.text.trim().slice(0, 200).replace(/\s+/g, ' ')}` : '',
+    p.component ? `- React components: ${p.component}` : '',
+    `- CSS selector: \`${publicSelector(p.selector)}\``,
     '',
     '</details>',
     '',
-    `Choo Choo ${buildLabel(build)} on ${os}. Sent from comment mode (⌘⇧K).`
+    `Choo Choo ${buildLabel(build)}. Sent from comment mode (⌘⇧K).`
   ]
-    .filter((l, i, a) => !(l === '' && a[i - 1] === ''))
+    .filter((l, i, a) => l !== '' || a[i - 1] !== '')
     .join('\n')
   const q = new URLSearchParams({ title, body })
   return `https://github.com/${UPSTREAM_REPO}/issues/new?${q.toString()}`

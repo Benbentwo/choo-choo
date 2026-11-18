@@ -12,7 +12,7 @@ Comment mode (⌘⇧K) started as a dev tool: the note lands in `.feedback/` and
 
 ## Decision
 
-`app.isPackaged` picks the default. Dev keeps writing to the local checkout. Release builds open a workspace on Benbentwo/choo-choo, reusing an added checkout, else cloning it, else (without push access) forking and cloning the fork. A prefilled GitHub issue is the fallback. The whole-window screenshot is opt-in in release builds.
+`app.isPackaged` picks the default. Dev keeps writing to the local checkout. Release builds open a workspace on Benbentwo/choo-choo, reusing an added checkout, else cloning it, else (without push access) forking and cloning the fork. A prefilled GitHub issue is the fallback; it never includes a screenshot, since issues are public (2026-11-18). The whole-window screenshot is opt-in in release builds.
 
 ## Consequences
 
