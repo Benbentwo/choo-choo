@@ -232,6 +232,29 @@ function WhereBars({ data, dark }: { data: UsageDashboard; dark: boolean }) {
   )
 }
 
+// ---- Project work: what threads and their handoffs cost next to the work itself
+
+function OrchestrationBars({ data, dark }: { data: NonNullable<UsageDashboard['orchestration']>; dark: boolean }) {
+  const [ref, W] = useWidth()
+  const max = Math.max(0.01, ...data.parts.map((p) => p.share))
+  const labelW = Math.min(230, W * 0.42)
+  const barMax = Math.max(40, W - labelW - 56)
+  return (
+    <div ref={ref} className="flex flex-col gap-1.5">
+      {data.parts.map((p, i) => (
+        <div key={p.role} className="flex items-center text-[12px]" title={`${p.label}: ${Math.round(p.share * 100)}% · ${money(p.cost)} API-equivalent`}>
+          <span className="truncate" style={{ width: labelW }}>{p.label}</span>
+          <span className="h-4 rounded-r-[4px]" style={{ width: Math.max(2, (p.share / max) * barMax), background: slot(i, dark) }} />
+          <span className="ml-2 tabular-nums">{Math.round(p.share * 100)}%</span>
+        </div>
+      ))}
+      <p className="mt-1.5 text-[11.5px] leading-[1.45] text-muted">
+        Orchestrated work was {Math.round(data.shareOfAll * 100)}% of your usage in this range. {Math.round(data.cacheWriteShare * 100)}% of what threads and project chats used went to rebuilding their prompt cache (new sessions, long waits, changed memory). Settings › General › Save usage in project threads keeps that down.
+      </p>
+    </div>
+  )
+}
+
 // ---- By model
 
 function ModelBars({ data, dark }: { data: UsageDashboard; dark: boolean }) {
@@ -627,6 +650,11 @@ export function UsagePage() {
                         </table>
                       )}
                     </Card>
+                    {data.orchestration && (
+                      <Card title="Project work" sub="Threads and project chats next to the workspaces they started" className="col-span-2">
+                        <OrchestrationBars data={data.orchestration} dark={dark} />
+                      </Card>
+                    )}
                   </div>
                   <p className="mt-3 text-[11.5px] leading-[1.45] text-faint">
                     Window percentages come from Claude Code’s /usage, saved while Choo Choo is open. Everything else comes from Claude Code’s own transcripts on this Mac, including sessions run in a terminal; Choo Choo keeps a summary of each response (no message text) so history outlives Claude Code’s 30-day cleanup. API-equivalent value is what the tokens would cost at API list prices. Nothing leaves this Mac.

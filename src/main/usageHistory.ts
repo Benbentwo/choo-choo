@@ -301,8 +301,8 @@ export function attributor(state: Pick<AppState, 'repos' | 'workspaces' | 'chats
   const groups = new Map((state.groups ?? []).map((g) => [g.id, g]))
   const repos = new Map(state.repos.map((r) => [r.id, r]))
   const wsById = new Map(state.workspaces.map((w) => [w.id, w]))
-  const bySession = new Map<string, { title: string; wsId: string }>()
-  for (const c of state.chats) if (c.sdkSessionId) bySession.set(c.sdkSessionId, { title: c.title, wsId: c.workspaceId })
+  const bySession = new Map<string, { title: string; wsId: string; thread?: boolean }>()
+  for (const c of state.chats) if (c.sdkSessionId) bySession.set(c.sdkSessionId, { title: c.title, wsId: c.workspaceId, thread: c.thread })
   // Longest path first, so a worktree wins over the repo that holds it.
   const paths = [
     ...state.workspaces.map((w) => ({
@@ -360,6 +360,13 @@ export function attributor(state: Pick<AppState, 'repos' | 'workspaces' | 'chats
       }
       cache.set(ck, g)
       return g
+    },
+    role(m) {
+      const c = bySession.get(m.s)
+      const w = c ? wsById.get(c.wsId) : undefined
+      if (!c || !w) return undefined
+      if (w.orchestrator) return c.thread ? 'thread' : 'router'
+      return w.orchestrated ? 'workspace' : undefined
     },
     chat(sessionId, cwd) {
       const c = bySession.get(sessionId)
