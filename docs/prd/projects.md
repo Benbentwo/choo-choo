@@ -32,6 +32,10 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 ![Orchestrator chat](../media/projects/orchestrator-chat.png)
 
 - **Sidebar:** a Projects section above the repos. Each project folds. Under it, every thread, newest first (`# Signup flow rework`; clicking one opens it, with a dot while it runs or has unread replies). Under each thread, the repos it has work in, and under each repo that thread's workspaces: `#418 Verify endpoint` once a PR exists, else the workspace's name with a "no PR" tag. Work no thread owns (started before threads, or its thread was deleted) comes last under *No thread*. Workspaces that belong to a project leave the plain repo list below. A thread with no open work still shows, with no fold arrow, so it can be opened from the sidebar (Ben, 2026-11-13), until it is resolved (below).
+- **Reordering projects** (Ben, 2026-11-16): drag a project row up or down the Projects section; a line shows where it will land. The order is saved and kept after a restart. The same drag dropped on Up next still queues the project.
+
+![Dragging projects into a new order](../media/gifs/reorder-projects.gif)
+
 - **Sorting work:** hovering a thread row with more than one piece of work shows a sort arrow. It orders the work under each of that thread's repos by Newest first (the default), Oldest first, PR number (lowest first, work without a PR last) or Title (the PR title once there is one, as the row shows). The choice applies to every project thread and is saved.
 - **Orchestrator chat:** clicking the project opens it. Each message is forwarded to a thread ("Sent to # Signup flow rework", Open thread) or starts one ("New thread # Onboarding dark mode"). Quick status questions are answered there.
 - **Threads:** the Threads button in the header opens the list on the right (its x closes it); the Analytics button beside it opens the usage graphs: the orchestrator chat first, then threads, newest first, each with its last line. New starts an empty thread; it takes its title from its first message. Clicking one opens it in place of the orchestrator chat.
@@ -87,6 +91,7 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 12. Self-resolve (`shouldAutoResolve` in `src/shared/projects.ts`, `checkThreadResolve` in `src/main/index.ts`): the thread owns at least one workspace, each is archived or its PR is MERGED or CLOSED (`gh pr view`; no PR or no answer counts as open), it isn't running or unread, it isn't resolved, and when `reopenedAt` is set some owned workspace was created after it. Checked when the PR watcher reports a change on an owned workspace, when one is archived, when a thread's turn ends, when the person reads it, and 20 seconds after launch. Off when `Settings.autoResolveThreads` is false.
 13. `resolve_thread` needs no OK (it only hides, and a message brings the thread back). `list_threads` marks resolved threads, and `send_to_thread` to one reports `reopened`.
 14. `RepoGroup.icon` is a name from the renderer's icon set and `RepoGroup.color` a `PROJECT_COLORS` id; the main process accepts only short lowercase names, and unknown ones fall back to the default mark.
+15. Projects are listed in the order of the stored `groups` array. Dropping a project row before or after another calls `reorderGroups(ids)` (`group:reorder`), which sorts the stored groups with `orderByIds` (`src/shared/sidebarOrder.ts`, as `repo:reorder` does for repos); new projects are added at the end.
 
 ## Design
 
@@ -103,7 +108,7 @@ Runs on the Agent SDK with the person's own sign-in like every chat ([decision 0
 
 ## Testing
 
-`test/projects.test.ts` (including resolved threads and the self-resolve rule), `test/orchestrator.test.ts` (project threads, thread-owned workspaces, `resolve_thread`, project repos). The `resolve-threads` demo scene (`scripts/demo/record.cjs`) archives a thread's two workspaces and records it resolving, the Resolved list, ⌘K and Reopen. Screenshots above are from the built app with a seeded state and a stand-in `gh`; the sidebar ones predate the thread level and need retaking.
+`test/projects.test.ts` (including resolved threads and the self-resolve rule), `test/orchestrator.test.ts` (project threads, thread-owned workspaces, `resolve_thread`, project repos). The `reorder-projects` demo scene drags two projects into a new order and, with screenshots on, checks the order after a restart. The `resolve-threads` demo scene (`scripts/demo/record.cjs`) archives a thread's two workspaces and records it resolving, the Resolved list, ⌘K and Reopen. Screenshots above are from the built app with a seeded state and a stand-in `gh`; the sidebar ones predate the thread level and need retaking.
 
 ## Future work
 

@@ -8,6 +8,7 @@ import type { LinkPreviewResult, SourceOption, WorkspaceSource } from '@shared/t
 import type { Automation } from '@shared/automations'
 import type { Artifact, Chat, ChatItem, FeedbackOptions, FilePreview, PrInfo, PromptCustom, Repo, RepoGroup, Settings, Workspace } from '@shared/types'
 import { diffBase } from '@shared/stack'
+import { orderByIds } from '@shared/sidebarOrder'
 import { editMenuItems } from '@shared/editMenu'
 import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
@@ -1187,9 +1188,14 @@ function registerIpc() {
   })
   h('repo:reorder', (ids: string[]) => {
     const s = store.get()
-    const pos = new Map(ids.map((id, i) => [id, i]))
-    s.repos = [...s.repos].sort((a, b) => (pos.get(a.id) ?? Infinity) - (pos.get(b.id) ?? Infinity))
+    s.repos = orderByIds(s.repos, ids)
     store.save()
+  })
+  h('group:reorder', (ids: string[]) => {
+    const s = store.get()
+    s.groups = orderByIds(s.groups ?? [], Array.isArray(ids) ? ids.filter((x) => typeof x === 'string') : [])
+    store.save()
+    send('state:changed')
   })
   h('repo:hidden', (id: string, hidden: boolean) => {
     const r = store.get().repos.find((x) => x.id === id)
