@@ -39,6 +39,11 @@ export interface Group {
   active: string | null
   /** A diff, file or Reflect shown instead of the active tab. */
   doc: Doc | null
+  /**
+   * Diff and file tabs open in this group, in tab order. They stay open while you look at a chat or
+   * terminal and only close from their own x. Missing in layouts saved before file tabs stayed open.
+   */
+  docs?: Doc[]
 }
 export type GNode = Group | Split<Group>
 
@@ -241,6 +246,40 @@ export function newGroup(chats: string[] = [], active: string | null = chats[0] 
   return { kind: 'group', id: newId('g'), chats, terms: [], active, doc: null }
 }
 
+/** Same diff or file tab: a diff and a file view of one path are separate tabs. */
+export const sameDoc = (a: Doc, b: Doc) => a.kind === b.kind && a.path === b.path
+
+/** The group's open diff and file tabs, including the shown one if an older save left it off the list. */
+export function docTabs(g: Group): Doc[] {
+  const list = (g.docs ?? []).filter((d) => d.kind !== 'reflect')
+  return g.doc && g.doc.kind !== 'reflect' && !list.some((d) => sameDoc(d, g.doc!)) ? [...list, g.doc] : list
+}
+
+/** Whether a group still has something to show besides chats and terminals. */
+export const hasDocs = (g: Group) => !!g.doc || docTabs(g).length > 0
+
+/**
+ * Shows a diff, file or Reflect in a group. A diff or file joins the group's tabs (or takes over
+ * its existing tab, e.g. to scroll to a new line); null goes back to the chat or terminal and keeps
+ * the tabs open.
+ */
+export function showDoc(g: Group, doc: Doc | null): Group {
+  if (!doc || doc.kind === 'reflect') return { ...g, doc, docs: docTabs(g) }
+  const tabs = docTabs(g)
+  const i = tabs.findIndex((d) => sameDoc(d, doc))
+  return { ...g, doc, docs: i >= 0 ? tabs.map((d, j) => (j === i ? doc : d)) : [...tabs, doc] }
+}
+
+/** Closes one diff or file tab. If it was showing, the tab beside it shows, or the chat when it was the last. */
+export function closeDoc(g: Group, doc: Doc): Group {
+  const tabs = docTabs(g)
+  const i = tabs.findIndex((d) => sameDoc(d, doc))
+  if (i < 0) return g
+  const docs = tabs.filter((_, j) => j !== i)
+  const showing = !!g.doc && sameDoc(g.doc, doc)
+  return { ...g, docs, doc: showing ? (docs[Math.min(i, docs.length - 1)] ?? null) : g.doc }
+}
+
 export function groupOf(inner: GNode, tabId: string): Group | null {
   return leavesOf(inner).find((g) => g.chats.includes(tabId) || g.terms.includes(tabId)) ?? null
 }
@@ -275,7 +314,7 @@ export function syncWorkspace(view: Extract<PaneView, { kind: 'workspace' }>, ch
   }
   // A group with nothing left to show goes away, unless it's the only one.
   for (const g of leavesOf(inner!)) {
-    if (g.chats.length || g.terms.length || g.doc) continue
+    if (g.chats.length || g.terms.length || hasDocs(g)) continue
     if (leavesOf(inner!).length <= 1) break
     changed = true
     inner = removeNode(inner!, g.id) ?? inner
@@ -293,7 +332,7 @@ export function moveTab(inner: GNode, tabId: string, targetGroup: string, side?:
   const isTerm = from.terms.includes(tabId)
   if (!side && from.id === targetGroup) return { inner, group: targetGroup }
   // Splitting the only tab of a group beside itself changes nothing.
-  if (side && from.id === targetGroup && from.chats.length + from.terms.length === 1 && !from.doc) return { inner, group: targetGroup }
+  if (side && from.id === targetGroup && from.chats.length + from.terms.length === 1 && !hasDocs(from)) return { inner, group: targetGroup }
   const take = (g: Group): Group => {
     const chats = g.chats.filter((c) => c !== tabId)
     const terms = g.terms.filter((t) => t !== tabId)
@@ -308,13 +347,13 @@ export function moveTab(inner: GNode, tabId: string, targetGroup: string, side?:
   } else {
     next = mapNode(next, targetGroup, (g) => {
       const gg = g as Group
-      return { ...gg, chats: isTerm ? gg.chats : [...gg.chats, tabId], terms: isTerm ? [...gg.terms, tabId] : gg.terms, active: tabId, doc: null }
+      return { ...showDoc(gg, null), chats: isTerm ? gg.chats : [...gg.chats, tabId], terms: isTerm ? [...gg.terms, tabId] : gg.terms, active: tabId }
     })
     dest = targetGroup
   }
   // The group the tab left may now be empty.
   const left = findNode(next, from.id) as Group | null
-  if (left && !left.chats.length && !left.terms.length && !left.doc) next = removeNode(next, from.id) ?? next
+  if (left && !left.chats.length && !left.terms.length && !hasDocs(left)) next = removeNode(next, from.id) ?? next
   return { inner: next, group: dest }
 }
 
@@ -322,7 +361,9 @@ export function moveTab(inner: GNode, tabId: string, targetGroup: string, side?:
 export function mergeGroups(inner: GNode): Group {
   const groups = leavesOf(inner)
   const first = groups[0]
-  return { ...first, chats: groups.flatMap((g) => g.chats), terms: groups.flatMap((g) => g.terms), doc: groups.find((g) => g.doc)?.doc ?? null }
+  const docs: Doc[] = []
+  for (const d of groups.flatMap(docTabs)) if (!docs.some((x) => sameDoc(x, d))) docs.push(d)
+  return { ...first, chats: groups.flatMap((g) => g.chats), terms: groups.flatMap((g) => g.terms), doc: groups.find((g) => g.doc)?.doc ?? null, docs }
 }
 
 // ---------- panes ----------
@@ -529,7 +570,7 @@ export function isLayout(v: unknown): v is Layout {
   const ok = (n: any, inner: boolean): boolean => {
     if (!n || typeof n !== 'object' || typeof n.id !== 'string') return false
     if (n.kind === 'split') return (n.dir === 'row' || n.dir === 'col') && Array.isArray(n.children) && Array.isArray(n.sizes) && n.children.length === n.sizes.length && n.children.length > 0 && n.children.every((c: any) => ok(c, inner))
-    if (inner) return n.kind === 'group' && Array.isArray(n.chats) && Array.isArray(n.terms)
+    if (inner) return n.kind === 'group' && Array.isArray(n.chats) && Array.isArray(n.terms) && (n.docs === undefined || Array.isArray(n.docs))
     if (n.kind !== 'leaf' || !n.view) return false
     if (n.view.kind === 'workspace') return typeof n.view.wsId === 'string' && ok(n.view.inner, true) && typeof n.view.focusGroup === 'string'
     if (n.view.kind === 'addon') return typeof n.view.key === 'string' && typeof n.view.viewId === 'string'

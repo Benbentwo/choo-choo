@@ -171,13 +171,62 @@ export interface UsageGroup {
 /** Maps a response to the workspace, repo or project it came from, and to a chat title. Built in main from app state. */
 export interface Attributor {
   group(m: UsageMsg): UsageGroup
+  /** For orchestrator work: the project chat (or a repo's orchestrator), a thread, or a workspace one of them started. */
+  role?(m: UsageMsg): OrchestrationRole | undefined
   chat(sessionId: string, cwd?: string): { title: string; workspace?: string }
 }
 
 /** Usage that a reading counted but no response on this Mac explains: claude.ai, another computer, the phone. */
 export const ELSEWHERE: UsageGroup = { id: 'elsewhere', label: 'Not on this Mac (claude.ai, other devices)', kind: 'elsewhere' }
 
+export type OrchestrationRole = 'router' | 'thread' | 'workspace'
+
+export const ROLE_LABELS: Record<OrchestrationRole, string> = {
+  router: 'Project and orchestrator chats',
+  thread: 'Threads',
+  workspace: 'Workspaces they started'
+}
+
+/** Where orchestrated work spent its usage, to see what the handoffs cost (docs/prd/usage-savings.md). */
+export interface OrchestrationSplit {
+  parts: { role: OrchestrationRole; label: string; cost: number; share: number }[]
+  /** API-equivalent cost of all orchestrated work. */
+  cost: number
+  /** That cost as a share of all usage in range. */
+  shareOfAll: number
+  /** Share of the threads' and chats' cost spent writing the prompt cache: new sessions, and rebuilds after the cache expired or the prompt changed. */
+  cacheWriteShare: number
+}
+
+export function orchestrationSplit(msgs: UsageMsg[], role: (m: UsageMsg) => OrchestrationRole | undefined, totalCost: number): OrchestrationSplit | undefined {
+  const by: Record<OrchestrationRole, number> = { router: 0, thread: 0, workspace: 0 }
+  let cost = 0
+  let chatCost = 0
+  let chatWrites = 0
+  for (const m of msgs) {
+    const r = role(m)
+    if (!r) continue
+    const c = msgCost(m)
+    by[r] += c
+    cost += c
+    if (r !== 'workspace') {
+      chatCost += c
+      chatWrites += msgCost({ ...m, i: 0, cr: 0, o: 0 })
+    }
+  }
+  if (!cost) return undefined
+  const order: OrchestrationRole[] = ['router', 'thread', 'workspace']
+  return {
+    parts: order.map((r) => ({ role: r, label: ROLE_LABELS[r], cost: by[r], share: by[r] / cost })),
+    cost,
+    shareOfAll: totalCost ? cost / totalCost : 0,
+    cacheWriteShare: chatCost ? chatWrites / chatCost : 0
+  }
+}
+
 export interface UsageDashboard {
+  /** Orchestrated work split by project chat, threads and workspaces; unset when there was none. */
+  orchestration?: OrchestrationSplit
   from: number
   to: number
   /** Window readings in range, by key, oldest first. */
@@ -316,6 +365,7 @@ export function buildDashboard(o: {
     responses: msgs.length,
     sessions: sessions.size,
     limitMs,
+    ...(o.attribute.role ? { orchestration: orchestrationSplit(msgs, o.attribute.role, total) } : {}),
     firstReading: o.firstReading,
     firstResponse: o.firstResponse
   }

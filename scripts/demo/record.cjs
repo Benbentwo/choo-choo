@@ -630,6 +630,30 @@ const scenes = {
       }
     ),
 
+  // Diff tabs opened from Changes stay open after going back to the chat. Screenshots only.
+  'file-tabs': () =>
+    record('file-tabs', { script: 'workspaces.json', opts: { noGif: true } }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Add a dark mode toggle to the header')
+      await d.page.getByText('Added a ', { exact: false }).first().waitFor({ timeout: 40_000 })
+      await d.wait(1500)
+      const right = d.page.locator('button[title="src/theme.ts"]')
+      if (!(await right.count())) await d.menu('toggle-right')
+      await d.wait(800)
+      await d.click(d.page.locator('button[title="src/theme.ts"]').first())
+      await d.wait(800)
+      await d.click(d.page.locator('button[title="src/components/ModeToggle.tsx"]').first())
+      await d.wait(1000)
+      await d.shot?.('1-two-diffs')
+      await d.click(d.page.getByRole('button', { name: /^Add a dark mode toggle/ }).first())
+      await d.wait(1000)
+      await d.shot?.('2-back-to-chat')
+      await d.click(d.page.locator('div[title="src/theme.ts"] button').first())
+      await d.wait(1000)
+      await d.shot?.('3-diff-again')
+    }),
+
   // The title bar's pane toggles (Threads, Analytics, Details) and the x on each pane. Screenshots only.
   'pane-toggles': () =>
     record('pane-toggles', { script: 'projects.json', opts: { noGif: true } }, async (d) => {
