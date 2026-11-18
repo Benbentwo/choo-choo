@@ -1251,7 +1251,8 @@ export interface Api {
   onChatEvent(cb: (e: ChatEvent) => void): () => void
   getChanges(workspaceId: string): Promise<FileChange[]>
   getDiffStats(workspaceId: string): Promise<DiffStats>
-  getFileDiff(workspaceId: string, file: string): Promise<string>
+  /** `full` includes the whole file as context. */
+  getFileDiff(workspaceId: string, file: string, full?: boolean): Promise<string>
   ptyCreate(id: string, workspaceId: string): Promise<string>
   ptyAttach(id: string): Promise<string>
   onScriptStarted(cb: (workspaceId: string, kind: ScriptKind) => void): () => void

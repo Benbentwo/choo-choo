@@ -722,6 +722,62 @@ const scenes = {
       await d.shot?.('workspace')
     }),
 
+  // A Markdown file's diff opens as the rendered document: changed blocks in green, removed ones in red.
+  // A comment goes on a rendered block; Code shows the source, and code diffs keep their syntax colors.
+  'markdown-diff': () =>
+    record('markdown-diff', { script: 'markdown-diff.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Document Apple Pay in the checkout doc and add the button')
+      await d.page.getByText('Documented Apple Pay', { exact: false }).first().waitFor({ timeout: 40_000 })
+      await d.wait(1200)
+      d.startGif()
+      await d.click(d.page.getByText('checkout.md').last())
+      await d.page.getByText('Loading preview…').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
+      await d.wait(1800)
+      await d.shot?.('1-preview')
+      const block = d.page.locator('[data-find]').filter({ hasText: 'Apple Pay, on Safari' }).first()
+      await d.moveTo(block)
+      await d.wait(500)
+      await d.click(block.locator('xpath=preceding-sibling::button[1]'))
+      await d.wait(500)
+      await d.type('Say which iOS version Apple Pay needs here.', 30)
+      await d.wait(500)
+      await d.shot?.('2-commenting')
+      await d.page.keyboard.press('ControlOrMeta+Enter')
+      await d.wait(1500)
+      await d.shot?.('3-queued')
+      await d.click(d.page.getByRole('button', { name: 'Code', exact: true }))
+      await d.wait(1800)
+      await d.shot?.('4-code')
+      await d.click(d.page.getByText('CartSummary.tsx').last())
+      await d.wait(2200)
+      await d.shot?.('5-tsx-diff')
+      await d.click(d.page.getByText('checkout.md').last())
+      await d.click(d.page.getByRole('button', { name: 'Preview', exact: true }))
+      await d.wait(1500)
+    }),
+
+  // A Markdown file opened from All files reads as the rendered document. Screenshots only.
+  'markdown-file': () =>
+    record('markdown-file', { script: 'markdown-diff.json', opts: { noGif: true } }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Document Apple Pay in the checkout doc and add the button')
+      await d.page.getByText('Documented Apple Pay', { exact: false }).first().waitFor({ timeout: 40_000 })
+      await d.click(d.page.getByText('More', { exact: true }).first())
+      await d.click(d.page.getByText('All files', { exact: true }).first())
+      await d.wait(600)
+      await d.click(d.page.getByText('docs', { exact: true }).last())
+      await d.wait(400)
+      await d.click(d.page.getByText('checkout.md', { exact: true }).last())
+      await d.wait(1500)
+      await d.shot?.('6-file-preview')
+      await d.click(d.page.getByRole('button', { name: 'Code', exact: true }))
+      await d.wait(800)
+      await d.shot?.('7-file-code')
+    }),
+
   // Two workspaces from the + on each repo, agents working in parallel, then side by side.
   'parallel-workspaces': () =>
     record('parallel-workspaces', { script: 'workspaces.json' }, async (d) => {

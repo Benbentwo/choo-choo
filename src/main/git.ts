@@ -119,18 +119,20 @@ export function summarize(files: FileChange[]): DiffStats {
   )
 }
 
-export async function fileDiff(cwd: string, baseRef: string, file: string): Promise<string> {
+/** One file's diff against the base. `full` puts the whole file in as context (for the Markdown preview). */
+export async function fileDiff(cwd: string, baseRef: string, file: string, full = false): Promise<string> {
+  const ctx = full ? ['-U1000000'] : []
   const tracked = await tryGit(cwd, ['ls-files', '--error-unmatch', '--', file])
   if (tracked === null) {
     // Untracked: diff against nothing. --no-index exits 1 when files differ.
     try {
-      return await git(cwd, ['diff', '--no-index', '--', '/dev/null', file])
+      return await git(cwd, ['diff', ...ctx, '--no-index', '--', '/dev/null', file])
     } catch (e) {
       return (e as { stdout?: string }).stdout ?? ''
     }
   }
   const base = await mergeBase(cwd, baseRef)
-  return git(cwd, ['diff', '-M', base, '--', file])
+  return git(cwd, ['diff', '-M', ...ctx, base, '--', file])
 }
 
 /** Tracked plus untracked (not ignored) files, for @mentions. */

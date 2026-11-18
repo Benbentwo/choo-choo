@@ -4,6 +4,10 @@ import { useStore, setCodeComments, destOf, reportError, type CodeComment } from
 import { IconBot, IconGithub, IconX } from '../icons'
 import { useReview } from '../review'
 import { pairedSegs } from '../wordDiff'
+import { mergeRuns, useDiffHighlight } from '../syntax'
+import { clampToDiff, getMdView, isMarkdownFile, previewBlocks, saveMdView, type MdView } from '../mdPreview'
+import { MdViewSwitch } from './MarkdownDiff'
+import { MarkdownDiff } from './MarkdownDiff'
 import { FindBar } from './FindBar'
 import { SinceReviewToggle } from './SinceReview'
 import { useSinceReview, useViewed } from '../sinceReview'
@@ -84,12 +88,28 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   const [dragging, setDragging] = useState(false)
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
 
+  // Markdown preview: blocks picked for a comment (indexes into blocks), like sel for code lines.
+  const [bsel, setBsel] = useState<{ a: number; b: number } | null>(null)
+  const [view, setViewState] = useState<MdView>(getMdView)
+  const setView = (v: MdView) => {
+    saveMdView(v)
+    setViewState(v)
+    setSel(null)
+    setBsel(null)
+  }
+  const clearSel = () => {
+    setSel(null)
+    setBsel(null)
+    setDraft('')
+  }
+
   useEffect(() => {
     setSel(null)
+    setBsel(null)
     setDraft('')
   }, [ws.id, file])
   // A new selection starts on the default for this PR: GitHub on someone else's, the agent on yours.
-  useEffect(() => setDest(fallback), [sel?.a, fallback])
+  useEffect(() => setDest(fallback), [sel?.a, bsel?.a, fallback])
   useEffect(() => {
     const up = () => setDragging(false)
     window.addEventListener('mouseup', up)
@@ -127,6 +147,28 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   const lines = useMemo(() => (diff === null ? [] : parseDiff(diff)), [diff])
   // The words that changed within an edited line, as GitHub shades them.
   const words = useMemo(() => pairedSegs(lines), [lines])
+  // Syntax colors, drawn over the green and red rows once the file's language has loaded.
+  const syn = useDiffHighlight(file, lines)
+
+  // The rendered Markdown diff needs the whole file, so it loads its own diff with the file as context.
+  // "Since your review" compares two PR commits, which this can't draw, so it shows the code diff.
+  const markdown = isMarkdownFile(file)
+  const preview = markdown && view === 'preview' && !sinceOn
+  const [full, setFull] = useState<string | null>(null)
+  useEffect(() => setFull(null), [ws.id, file])
+  useEffect(() => {
+    if (!preview) return
+    let live = true
+    void window.api.getFileDiff(ws.id, file, true).then(
+      (d) => live && setFull(d),
+      () => live && setFull('')
+    )
+    return () => {
+      live = false
+    }
+  }, [ws.id, file, stats, preview])
+  const fullRows = useMemo(() => (full === null ? [] : parseDiff(full)), [full])
+  const blocks = useMemo(() => previewBlocks(fullRows), [fullRows])
   const sinceBar = <SinceReviewToggle ws={ws} className="sticky left-0 border-b border-line bg-panel px-4 py-2" />
   if (diff === null)
     return (
@@ -156,12 +198,27 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   const placedThreads = new Set(lines.flatMap((l) => threadAt(l)))
   const unplacedThreads = threads.filter((t) => !placedThreads.has(t) && !t.outdated)
   const outdatedThreads = threads.filter((t) => t.outdated)
+  // Where comments, threads and findings go in the Markdown preview: under the block holding their last line.
+  const blockAt = (side: 'new' | 'old', n: number | undefined) => (n == null ? -1 : blocks.findIndex((b) => b.side === side && n >= b.start && n <= b.end))
+  const blockFindings = (i: number) => mine.filter((f) => blockAt('new', f.line) === i)
+  const blockThreads = (i: number) => placeable.filter((t) => blockAt(t.side === 'old' ? 'old' : 'new', t.line) === i)
+  const blockQueued = (i: number) => queuedHere.filter((c) => blockAt(c.side, c.end) === i)
+  const previewUnplaced = mine.filter((f) => blockAt('new', f.line) < 0)
+  const previewUnplacedThreads = threads.filter((t) => !t.outdated && (!placeable.includes(t) || blockAt(t.side === 'old' ? 'old' : 'new', t.line) < 0))
+  const previewUnplacedQueued = queuedHere.filter((c) => blockAt(c.side, c.end) < 0)
+  const pickBlock = (i: number, e: React.MouseEvent) => {
+    e.preventDefault()
+    setSel(null)
+    if (e.shiftKey && bsel && blocks[bsel.a]?.side === blocks[i]?.side) setBsel({ a: bsel.a, b: i })
+    else setBsel({ a: i, b: i })
+  }
   const numbered = (i: number) => lines[i] && (lines[i].kind === 'add' || lines[i].kind === 'del' || lines[i].kind === 'ctx')
   const lo = sel ? Math.min(sel.a, sel.b) : -1
   const hi = sel ? Math.max(sel.a, sel.b) : -1
   const pick = (i: number, e: React.MouseEvent) => {
     if (!numbered(i)) return
     e.preventDefault()
+    setBsel(null)
     if (e.shiftKey && sel) setSel({ a: sel.a, b: i })
     else setSel({ a: i, b: i })
     setDragging(true)
@@ -171,6 +228,18 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   }
   /** The comment the selection would make, without its text. */
   const selection = (): Omit<CodeComment, 'id' | 'text'> | null => {
+    if (preview) {
+      if (!bsel) return null
+      const first = blocks[Math.min(bsel.a, bsel.b)]
+      const picked = blocks.slice(Math.min(bsel.a, bsel.b), Math.max(bsel.a, bsel.b) + 1).filter((b) => b && b.side === first?.side)
+      if (!picked.length) return null
+      const code = picked
+        .flatMap((b) => b.rows)
+        .map((i) => fullRows[i])
+        .map((l) => `${l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '} ${l.text}`)
+        .join('\n')
+      return { file, start: Math.min(...picked.map((b) => b.start)), end: Math.max(...picked.map((b) => b.end)), side: first.side, code }
+    }
     if (!sel) return null
     const picked = lines.slice(lo, hi + 1).filter((l) => l.kind !== 'hunk' && l.kind !== 'meta')
     const side: CodeComment['side'] = picked.every((l) => l.kind === 'del') ? 'old' : 'new'
@@ -180,11 +249,13 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     return { file, start: Math.min(...nums), end: Math.max(...nums), side, code }
   }
   const pending = selection()
+  // A Markdown block can be longer than the part of it in the PR's diff; GitHub only takes the lines that are.
+  const ghPending = pending && preview ? { ...pending, ...clampToDiff(pending.start, pending.end, target?.lines[file]?.[pending.side]) } : pending
   const githubProblem =
     pending && sinceOn && pending.side === 'old'
       ? 'Removed lines here are against your last review, not the PR. Switch to All changes to comment on them.'
-      : pending && open
-        ? draftProblem({ ...pending, text: '' }, target)
+      : ghPending && open
+        ? draftProblem({ ...ghPending, text: '' }, target)
         : open
           ? null
           : 'This workspace has no open PR.'
@@ -192,9 +263,8 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     const text = draft.trim()
     if (!pending || !text) return
     if (to === 'github' && githubProblem) return
-    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), ...pending, text, dest: to, commit: target?.head }])
-    setSel(null)
-    setDraft('')
+    setCodeComments(ws.id, (list) => [...list, { id: crypto.randomUUID(), ...(to === 'github' && ghPending ? ghPending : pending), text, dest: to, commit: target?.head }])
+    clearSel()
   }
   const addFinding = (f: ReviewFinding) => {
     if (!f.line) return
@@ -313,11 +383,12 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
       <td colSpan={4}>{child}</td>
     </tr>
   )
+  const shownPending = dest === 'github' ? ghPending : pending
   const composer = (
     <div className="sticky left-0 my-1 mr-4 ml-[6.5rem] w-[calc(100cqw-7.5rem)] max-w-3xl rounded-md border border-accent bg-panel font-sans">
       <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[12px] text-muted">
         <span>
-          Comment on {pending ? (pending.start === pending.end ? `line ${pending.start}` : `lines ${pending.start}–${pending.end}`) : 'these lines'}
+          Comment on {shownPending ? (shownPending.start === shownPending.end ? `line ${shownPending.start}` : `lines ${shownPending.start}–${shownPending.end}`) : 'these lines'}
         </span>
         <span className="flex-1" />
         <span className="text-faint">Send to</span>
@@ -348,10 +419,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault()
               addComment(e.shiftKey ? other(dest) : dest)
-            } else if (e.key === 'Escape') {
-              setSel(null)
-              setDraft('')
-            }
+            } else if (e.key === 'Escape') clearSel()
           }}
         />
         <div className="mt-1 flex items-center gap-2 text-[12px]">
@@ -366,7 +434,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
               {d === 'github' ? 'Add to review' : 'Queue for agent'} <span className="opacity-60">{i === 0 ? '⌘↵' : '⌘⇧↵'}</span>
             </button>
           ))}
-          <button className="text-muted hover:text-fg" onClick={() => (setSel(null), setDraft(''))}>
+          <button className="text-muted hover:text-fg" onClick={clearSel}>
             Cancel
           </button>
           <span className="flex-1" />
@@ -378,7 +446,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
     </div>
   )
   return (
-    <div ref={box} className="selectable flex-1 overflow-auto font-mono text-[12px] leading-[20px] [container-type:inline-size]">
+    <div ref={box} className={`selectable flex-1 font-mono text-[12px] leading-[20px] [container-type:inline-size] ${preview ? 'overflow-x-hidden overflow-y-auto' : 'overflow-auto'}`}>
       <div className="sticky top-0 left-0 z-10 flex h-[34px] w-[100cqw] items-center gap-3 border-b border-line bg-panel px-4 text-muted">
         <span className="min-w-0 flex-1 truncate">{file}</span>
         {viewed && (
@@ -387,14 +455,22 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
             Viewed
           </label>
         )}
-        <FindBar box={box} watch={diff} />
+        {markdown && (
+          <MdViewSwitch
+            preview={preview}
+            onChange={setView}
+            previewDisabled={sinceOn ? 'The preview shows all changes. Switch Since your review off to see it.' : undefined}
+          />
+        )}
+        <FindBar box={box} watch={preview ? full : diff} />
       </div>
       <SinceReviewToggle ws={ws} className="sticky left-0 w-[100cqw] border-b border-line bg-panel px-4 py-2" />
-      {lines.length === 0 && <div className="p-6 font-sans text-faint">No textual changes (binary or empty file).</div>}
-      {unplaced.map((f, i) => (
+      {!preview && lines.length === 0 && <div className="p-6 font-sans text-faint">No textual changes (binary or empty file).</div>}
+      {(preview ? previewUnplaced : unplaced).map((f, i) => (
         <Comment key={`u${i}`} f={f} />
       ))}
-      {review && unplacedThreads.map((t) => <Thread key={t.id} ws={ws} c={t} pr={review.pr} theirs={theirs} />)}
+      {review && (preview ? previewUnplacedThreads : unplacedThreads).map((t) => <Thread key={t.id} ws={ws} c={t} pr={review.pr} theirs={theirs} />)}
+      {preview && previewUnplacedQueued.map((c) => <div key={c.id}>{queuedBox(c)}</div>)}
       {review && outdatedThreads.length > 0 && (
         <details className="mx-4 my-1 font-sans">
           <summary className="cursor-pointer text-[12px] text-faint hover:text-fg">
@@ -405,7 +481,28 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
           ))}
         </details>
       )}
-      <table className="w-full border-collapse">
+      {preview && full === null && <div className="p-6 font-sans text-faint">Loading preview…</div>}
+      {preview && full !== null && (
+        <MarkdownDiff
+          blocks={blocks}
+          lo={bsel ? Math.min(bsel.a, bsel.b) : -1}
+          hi={bsel ? Math.max(bsel.a, bsel.b) : -1}
+          onPick={pickBlock}
+          below={(i) => (
+            <>
+              {blockFindings(i).map((f, j) => (
+                <Comment key={`c${j}`} f={f} />
+              ))}
+              {review && blockThreads(i).map((t) => <Thread key={t.id} ws={ws} c={t} pr={review.pr} theirs={theirs} />)}
+              {blockQueued(i).map((c) => (
+                <div key={c.id}>{queuedBox(c)}</div>
+              ))}
+              {bsel && i === Math.max(bsel.a, bsel.b) && composer}
+            </>
+          )}
+        />
+      )}
+      {!preview && <table className="w-full border-collapse">
         <tbody>
           {lines.flatMap((l, i) => [
             <tr
@@ -428,15 +525,17 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
                 {l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ''}
               </td>
               <td data-find className="pr-4 whitespace-pre">
-                {words.get(i)?.map((w, k) =>
-                  w.changed ? (
-                    <span key={k} className={`rounded-[3px] ${l.kind === 'add' ? 'bg-add/35' : 'bg-del/35'}`}>
-                      {w.text}
-                    </span>
-                  ) : (
-                    w.text
-                  )
-                ) ?? l.text}
+                {syn?.has(i) || words.has(i)
+                  ? mergeRuns(l.text, syn?.get(i), words.get(i)).map((r, k) =>
+                      r.cls || r.changed ? (
+                        <span key={k} className={`${r.cls ?? ''} ${r.changed ? `rounded-[3px] ${l.kind === 'add' ? 'bg-add/35' : 'bg-del/35'}` : ''}`}>
+                          {r.text}
+                        </span>
+                      ) : (
+                        r.text
+                      )
+                    )
+                  : l.text}
               </td>
             </tr>,
             ...(l.newNo != null && l.kind !== 'del' ? mine.filter((f) => f.line === l.newNo).map((f, j) => row(`c${i}-${j}`, <Comment f={f} />)) : []),
@@ -445,7 +544,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
             ...(sel && i === hi && !dragging ? [row('new-comment', composer)] : [])
           ])}
         </tbody>
-      </table>
+      </table>}
     </div>
   )
 }

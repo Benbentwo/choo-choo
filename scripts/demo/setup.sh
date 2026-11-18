@@ -44,6 +44,32 @@ export function CartSummary({ items = [] }: { items?: { name: string; price: num
 }
 J
   printf 'export const theme = { accent: "#3b82f6" }\n' > src/theme.ts
+  mkdir -p docs
+  cat > docs/checkout.md <<'J'
+# Checkout
+
+How a trip gets paid for, from cart to confirmation.
+
+## Steps
+
+1. The cart shows each booking and the total.
+2. The traveler enters card details.
+3. We create an order in the API and show the confirmation page.
+
+## Payment methods
+
+- Visa and Mastercard
+- American Express
+
+## Totals
+
+Totals are rounded to cents on the server. The client only shows them.
+
+| Fee | Amount |
+| --- | --- |
+| Booking fee | $4.00 |
+| Card fee | 2.9% |
+J
 }
 api() {
   mkdir -p src/routes

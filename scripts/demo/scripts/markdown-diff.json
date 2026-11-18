@@ -1,0 +1,49 @@
+{
+  "titles": [
+    {
+      "match": "Apple Pay",
+      "title": "Apple Pay checkout docs",
+      "branch": "apple-pay-docs"
+    }
+  ],
+  "turns": [
+    {
+      "match": "Apple Pay",
+      "steps": [
+        {
+          "sleep": 1500
+        },
+        {
+          "text": "I'll update the checkout doc and add the button to the cart summary."
+        },
+        {
+          "tool": "Edit",
+          "input": {
+            "file_path": "docs/checkout.md"
+          },
+          "writeFile": {
+            "path": "docs/checkout.md",
+            "content": "# Checkout\n\nHow a trip gets paid for, from cart to confirmation, including **Apple Pay**.\n\n## Steps\n\n1. The cart shows each booking and the total.\n2. The traveler picks Apple Pay or enters card details.\n3. We create an order in the API and show the confirmation page.\n\n## Payment methods\n\n- Visa and Mastercard\n- Apple Pay, on Safari and iOS\n\n## Apple Pay\n\nThe button only shows when `ApplePaySession.canMakePayments()` is true:\n\n```ts\nexport function showApplePay(): boolean {\n  return 'ApplePaySession' in window && ApplePaySession.canMakePayments()\n}\n```\n\n## Totals\n\nTotals are rounded to cents on the server. The client only shows them.\n\n| Fee | Amount |\n| --- | --- |\n| Booking fee | $4.00 |\n| Card fee | 2.9% |\n"
+          },
+          "result": "Edited.",
+          "wait": 900
+        },
+        {
+          "tool": "Edit",
+          "input": {
+            "file_path": "src/components/CartSummary.tsx"
+          },
+          "writeFile": {
+            "path": "src/components/CartSummary.tsx",
+            "content": "import { showApplePay } from '../payments'\n\n/** The cart total, with Apple Pay when the browser offers it. */\nexport function CartSummary({ items = [] }: { items?: { name: string; price: number }[] }) {\n  const total = items.reduce((sum, item) => sum + item.price, 0)\n  return (\n    <aside>\n      Total: ${total.toFixed(2)}\n      {showApplePay() && <button className=\"apple-pay\">Pay with Apple Pay</button>}\n    </aside>\n  )\n}\n"
+          },
+          "result": "Edited.",
+          "wait": 900
+        },
+        {
+          "text": "Documented Apple Pay in `docs/checkout.md` and added the button to `CartSummary`."
+        }
+      ]
+    }
+  ]
+}

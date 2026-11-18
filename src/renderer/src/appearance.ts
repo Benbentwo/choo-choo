@@ -5,6 +5,8 @@ import {
   monoFontStack,
   resolveAccent,
   resolveTheme,
+  SYNTAX_DARK,
+  SYNTAX_LIGHT,
   uiFontStack,
   type AppearanceSettings
 } from '@shared/themes'
@@ -42,6 +44,7 @@ export function applyAppearance(a: AppearanceSettings, animate = true) {
   const vars: Record<string, string> = {
     ...Object.fromEntries(Object.entries(theme.tokens).map(([k, v]) => [`--color-${k}`, v])),
     '--color-accent': accent,
+    ...Object.fromEntries(Object.entries(theme.dark ? SYNTAX_DARK : SYNTAX_LIGHT).map(([k, v]) => [`--syn-${k}`, v])),
     '--font-sans': uiFontStack(a.uiFont),
     '--font-mono': mono,
     '--spacing': DENSITY_SPACING[a.density] ?? DENSITY_SPACING.comfortable
