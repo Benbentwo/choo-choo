@@ -135,6 +135,30 @@ export async function fileDiff(cwd: string, baseRef: string, file: string, full 
   return git(cwd, ['diff', '-M', ...ctx, base, '--', file])
 }
 
+/**
+ * Both versions of a file as bytes, for drawing image diffs: `before` at the merge base (null when the
+ * file is new there), `after` in the worktree (null when deleted). A renamed file's before is read
+ * from its old path.
+ */
+export async function fileVersions(cwd: string, baseRef: string, file: string): Promise<{ before: Buffer | null; after: Buffer | null }> {
+  const base = await mergeBase(cwd, baseRef)
+  const after = await readFile(join(cwd, file)).catch(() => null)
+  // No pathspec: limiting the diff to the new path would hide the old one and the rename with it.
+  const renamed = (await tryGit(cwd, ['diff', '--name-status', '-M', base]))
+    ?.split('\n')
+    .map((l) => l.split('\t'))
+    .find((p) => p[0].startsWith('R') && p[2] === file)
+  const oldPath = renamed ? renamed[1] : file
+  let before: Buffer | null = null
+  try {
+    const { stdout } = await exec('git', ['show', `${base}:${oldPath}`], { cwd, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 })
+    before = stdout
+  } catch {
+    before = null
+  }
+  return { before, after }
+}
+
 /** Tracked plus untracked (not ignored) files, for @mentions. */
 export async function listFiles(cwd: string): Promise<string[]> {
   const out = await git(cwd, ['ls-files', '--cached', '--others', '--exclude-standard'])

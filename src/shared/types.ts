@@ -1253,6 +1253,8 @@ export interface Api {
   getDiffStats(workspaceId: string): Promise<DiffStats>
   /** `full` includes the whole file as context. */
   getFileDiff(workspaceId: string, file: string, full?: boolean): Promise<string>
+  /** A PNG or SVG at the merge base and in the worktree, as data URLs. */
+  getImageDiff(workspaceId: string, file: string): Promise<import('./images').ImageDiff>
   ptyCreate(id: string, workspaceId: string): Promise<string>
   ptyAttach(id: string): Promise<string>
   onScriptStarted(cb: (workspaceId: string, kind: ScriptKind) => void): () => void

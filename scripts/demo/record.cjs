@@ -30,7 +30,8 @@ async function launch(world, script, video, ghData, update) {
   delete env.ANTHROPIC_API_KEY
   delete env.CLAUDE_CODE_OAUTH_TOKEN
   const app = await _electron.launch({
-    executablePath: join(REPO, 'node_modules/electron/dist/electron'),
+    // dist/electron on Linux, dist/Electron.app/Contents/MacOS/Electron on a Mac (electron's own path.txt).
+    executablePath: join(REPO, 'node_modules/electron/dist', require('node:fs').readFileSync(join(REPO, 'node_modules/electron/path.txt'), 'utf8').trim()),
     args: [REPO, '--no-sandbox'],
     env,
     cwd: REPO,
@@ -756,6 +757,39 @@ const scenes = {
       await d.click(d.page.getByText('checkout.md').last())
       await d.click(d.page.getByRole('button', { name: 'Preview', exact: true }))
       await d.wait(1500)
+    }),
+
+  // A changed PNG and SVG show before and after; click one to open it full size, flip with the arrow keys.
+  'image-diff': () =>
+    record('image-diff', { script: 'image-diff.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Swap the hero for the sunset version and recolor the logo')
+      await d.page.getByText('Swapped', { exact: false }).first().waitFor({ timeout: 40_000 })
+      await d.wait(1200)
+      d.startGif()
+      await d.click(d.page.getByText('hero.png').last())
+      await d.page.getByText('Loading image…').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
+      await d.wait(1800)
+      await d.shot?.('1-png-diff')
+      await d.click(d.page.locator('button[title="Open full size"]').last())
+      await d.wait(1500)
+      await d.shot?.('2-lightbox-after')
+      await d.page.keyboard.press('ArrowLeft')
+      await d.wait(1200)
+      await d.shot?.('3-lightbox-before')
+      await d.page.keyboard.press('ArrowRight')
+      await d.wait(900)
+      await d.page.keyboard.press('Escape')
+      await d.wait(600)
+      await d.click(d.page.getByText('logo.svg').last())
+      await d.wait(1800)
+      await d.shot?.('4-svg-diff')
+      await d.click(d.page.getByRole('button', { name: 'Code', exact: true }))
+      await d.wait(1800)
+      await d.shot?.('5-svg-code')
+      await d.click(d.page.getByRole('button', { name: 'Preview', exact: true }))
+      await d.wait(1200)
     }),
 
   // A Markdown file opened from All files reads as the rendered document. Screenshots only.

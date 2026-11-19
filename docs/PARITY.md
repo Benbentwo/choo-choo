@@ -88,6 +88,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Word-level highlights in the diff: within an edited line, the words that changed are shaded more strongly, as on GitHub
 - ✅ Syntax colors in diffs, kept on the green and red rows together with the word-level highlights (choo-choo addition, [PRD](prd/markdown-diff.md))
 - ✅ Markdown preview diffs: Markdown files' diffs open as the rendered document with added, removed and changed blocks marked, and you can comment on a rendered block to the agent or your GitHub review; Markdown file tabs read rendered too, with a Preview | Code switch (choo-choo addition, [PRD](prd/markdown-diff.md))
+- ✅ Image diffs: a changed PNG or SVG shows before and after side by side (or the added or deleted image), click one to open it full size and flip between the two; SVGs keep a Code view (choo-choo addition, [PRD](prd/image-diff.md))
 - ✅ Review findings inline in the diff, with Fix buttons
 - ✅ Review findings in the chat as tiles (severity, file and line, what is wrong, the fix) instead of the raw JSON block; a tile opens the diff at that line, and each has Ask the agent to fix this
 - ✅ Add all PR comments to chat: unresolved review threads, change requests and comments, with file/line context; comment count on the PR chip
