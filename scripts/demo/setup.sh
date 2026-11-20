@@ -69,6 +69,13 @@ Totals are rounded to cents on the server. The client only shows them.
 | --- | --- |
 | Booking fee | $4.00 |
 | Card fee | 2.9% |
+
+## Flow
+
+```mermaid
+flowchart LR
+  Cart --> Card[Card details] --> Order --> Confirmation
+```
 J
 }
 api() {

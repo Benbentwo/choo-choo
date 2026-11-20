@@ -78,7 +78,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 **Review and ship**
 - **Build and Review modes.** Each workspace knows whether you're building it or reviewing someone else's PR, and the top right shows the PR and one button for the next step.
 - **Review before you ship.** Diffs against the PR's target branch, an agent code review with inline Fix buttons, and line comments that go to the agent or into a GitHub review.
-- **Markdown preview diffs.** A Markdown file's diff shows the rendered document with changed blocks marked, and you can comment right on it. Code diffs keep their syntax colors on the green and red lines.
+- **Markdown preview diffs.** A Markdown file's diff shows the rendered document with changed blocks marked, and you can comment right on it. Mermaid diagrams draw as diagrams. Code diffs keep their syntax colors on the green and red lines.
 - **PRs page.** Every open PR waiting on your review, plus your own, grouped by repo. One click opens a workspace on the PR's branch. "Since your review" shows only what the author changed.
 - **Stacked PRs.** Keep a stack of PRs in one workspace, switch layers in one click, and let the app restack the PRs above after a change.
 - **PRs in one click.** Create a PR or draft, watch checks, re-run failures and squash-merge, all through your `gh` login.
