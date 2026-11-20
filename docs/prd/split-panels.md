@@ -5,7 +5,7 @@
 | Status | In review |
 | Owner | Claude |
 | Requested by | Ben, 2026-11-10 |
-| Last updated | 2026-11-10 |
+| Last updated | 2026-11-19 |
 
 Mockups (project files `split-panels/`): `1-side-by-side.png`, `2-nested-splits.png`, `3-drag-to-split.png`, `4-pane-menu-and-picker.png`, `5-plan-board-pane.png` (source `mockup.html`, open with `#s1` … `#s5`).
 
@@ -47,6 +47,9 @@ How Orca does it ([docs](https://www.onorca.dev/docs/model/tabs-panes-splits)): 
 - ⌘-click, or "Open to the side" in the row's right-click menu: opens it in a new pane to the right.
 - Drag a sidebar workspace onto the view (scene 3): edges split left/right/top/bottom, the middle replaces.
 - Drag a chat tab to an edge of its own workspace frame: splits that chat out. Drop it in the middle of another group: moves it there.
+- Drag a diff or file tab the same way: an edge splits it out, the middle of another group moves it there. Like chats, it stays inside its workspace's frame.
+- Click a file anywhere (Changes, All files, a chat, search, a review comment): it opens in the group you last looked at a file in, not the one you last clicked. With a chat on the left and files on the right, files keep opening on the right even after you click into the chat. With several file groups, the one you clicked last gets it. With no file group yet, it opens in the focused group.
+- Right-click a diff or file tab: Close, Close others, Close tabs to the right, Close all tabs, Split right, Split down, Move to the other pane (when there are two groups) and Copy path. Closing applies to the diff and file tabs of that group only; its chats and terminals stay, and other groups aren't touched.
 - ⌘\ split right, ⌘⇧\ split down: the new pane is empty and shows a picker of workspaces and add-on pages (scene 4).
 
 **Add-on pages as panes (scene 5).** App and project add-on pages (like the Plan board) open as panes instead of taking over the whole center. Their header shows the repo chip, the page name and a purple add-on chip. The Plan board's "Open workspace" opens that workspace beside the board, stacking up to three panes on the right and then reusing the last one. Add-on workspace views stay in the right panel and can also be dragged into that workspace's frame as a tab.
@@ -67,8 +70,8 @@ How Orca does it ([docs](https://www.onorca.dev/docs/model/tabs-panes-splits)): 
 2. A tab is a chat, a diff/file doc, Reflect, or a terminal of that workspace. Diff and file tabs (opened from Changes, Review, All files, comments or search) stay open when you switch to a chat or terminal tab and close only from their own x; opening the same diff or file again reuses its tab. Closing the shown one shows the tab beside it, or the chat when it was the last.
 3. Exactly one focused pane and one focused group at all times while any pane is open.
 4. One workspace can appear in only one pane at a time. Opening it again focuses the existing pane.
-5. Each chat appears in only one group. New chats open in the focused group.
-6. Drag and drop: sidebar workspace → view, chat tab → its own workspace frame, pane header grip → view (moves the whole workspace pane). Drop targets highlight; invalid drops (chat into another workspace) show no target.
+5. Each chat appears in only one group. New chats open in the focused group. A newly opened diff or file goes to the workspace's file group: the group a diff or file was last shown or clicked in (`docGroup`), else a group showing one, else the focused group. Opening it focuses that group. Reflect opens in the focused group.
+6. Drag and drop: sidebar workspace → view, chat, terminal, diff or file tab → its own workspace frame, pane header grip → view (moves the whole workspace pane). Drop targets highlight; invalid drops (chat into another workspace) show no target.
 7. Dividers resize with the mouse; double-click resets to equal sizes.
 8. Layout, sizes, focus and saved layouts persist in settings and survive restart. Missing or archived workspaces are dropped on load.
 9. Single-pane view looks and behaves exactly like today. The pane frame and outline only appear once there are two or more panes.
@@ -94,7 +97,7 @@ UI-only. No Claude access change, no new data leaving the machine, no secrets.
 
 ## Testing
 
-- Unit tests for the layout reducer (split, close, move across levels, normalize, load with missing workspaces).
+- Unit tests for the layout reducer (split, close, move across levels, normalize, load with missing workspaces, where files open, moving file tabs, closing others/to the right/all).
 - Playwright screenshots in dev for each mockup scene, attached to the PR.
 - Manual: two agents running side by side, permission prompt in an unfocused pane, restart restores the layout, archive a workspace that's open in a pane.
 
@@ -106,6 +109,9 @@ The Plan board change ("Open workspace" opens beside the board) is a one-line PR
 
 ## Open questions
 
+- Should a file that's already open in another group be shown there instead of opening a second tab in the file group? Today it opens in the file group, so the same file can be open in two groups.
+- Should the tab right-click menu also cover chat and terminal tabs? Closing a chat ends it, so today the menu is on diff and file tabs only.
+- Dragging a file from Changes or All files straight onto a group (not built; click opens it in the file group).
 - Should saved layouts be per project or global? Plan: global, since a layout can mix repos.
 - Should the right panel be able to pin to one workspace instead of following focus? v1 follows focus.
 - Collapsing panes to a header strip on very small windows (not built; dividers stop at a minimum size instead).
