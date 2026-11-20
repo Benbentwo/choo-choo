@@ -4,7 +4,8 @@ import remarkGfm from 'remark-gfm'
 import type { Parser } from '@lezer/common'
 import { MARKDOWN_COMPONENTS } from './CodeBlock'
 import { highlightLines, parserForLang } from '../syntax'
-import type { MdView, PreviewBlock } from '../mdPreview'
+import { mermaidSource, type MdView, type PreviewBlock } from '../mdPreview'
+import { MermaidDiagram } from './MermaidDiagram'
 
 /** A fenced code block in the preview, colored like the code diff. */
 function PreviewCode(props: ComponentProps<'code'> & { node?: unknown }) {
@@ -54,7 +55,16 @@ function PreviewCode(props: ComponentProps<'code'> & { node?: unknown }) {
   )
 }
 
-export const COMPONENTS: Components = { ...MARKDOWN_COMPONENTS, code: PreviewCode }
+const CodeBlockPre = MARKDOWN_COMPONENTS.pre as (props: ComponentProps<'pre'>) => ReactNode
+
+/** A fenced block in the preview: ```mermaid draws as its diagram, anything else as code with a copy button. */
+function PreviewPre(props: ComponentProps<'pre'> & { node?: unknown }) {
+  const source = mermaidSource(props.node)
+  if (source !== null) return <MermaidDiagram source={source} />
+  return <CodeBlockPre {...props} />
+}
+
+export const COMPONENTS: Components = { ...MARKDOWN_COMPONENTS, pre: PreviewPre, code: PreviewCode }
 
 const BLOCK_STYLE: Record<string, string> = {
   'new:add': 'border-add bg-add/10',

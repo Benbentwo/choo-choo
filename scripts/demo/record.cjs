@@ -799,6 +799,34 @@ const scenes = {
       await d.wait(1500)
     }),
 
+  // A ```mermaid block in a Markdown diff draws as its diagram: the old one in red, the new one in green.
+  'mermaid-diff': () =>
+    record('mermaid-diff', { script: 'markdown-diff.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Document Apple Pay in the checkout doc and add the button')
+      await d.page.getByText('Documented Apple Pay', { exact: false }).first().waitFor({ timeout: 40_000 })
+      await d.click(d.page.getByText('checkout.md').last())
+      await d.page.locator('.mermaid-diagram svg').nth(1).waitFor({ timeout: 15_000 })
+      await d.wait(600)
+      d.startGif()
+      const diagram = d.page.locator('.mermaid-diagram').nth(1)
+      await diagram.scrollIntoViewIfNeeded()
+      await d.wait(1800)
+      await d.shot?.('1-mermaid-diff')
+      // `has` is matched inside each block, so pick the second diagram block, not the second diagram.
+      const block = d.page.locator('[data-find]').filter({ has: d.page.locator('.mermaid-diagram') }).nth(1)
+      await d.moveTo(block)
+      await d.wait(500)
+      await d.click(block.locator('xpath=preceding-sibling::button[1]'))
+      await d.wait(400)
+      await d.type('Show what happens when the order fails.', 30)
+      await d.wait(500)
+      await d.page.keyboard.press('ControlOrMeta+Enter')
+      await d.wait(1500)
+      await d.shot?.('2-mermaid-comment')
+    }),
+
   // A changed PNG and SVG show before and after; click one to open it full size, flip with the arrow keys.
   'image-diff': () =>
     record('image-diff', { script: 'image-diff.json' }, async (d) => {

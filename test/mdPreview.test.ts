@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampToDiff, markdownBlocks, previewBlocks, type PreviewRow } from '../src/renderer/src/mdPreview'
+import { clampToDiff, markdownBlocks, mermaidSource, previewBlocks, type PreviewRow } from '../src/renderer/src/mdPreview'
 import { highlightDiff, highlightLines, mergeRuns } from '../src/renderer/src/syntax'
 import { parser as jsParser } from '@lezer/javascript'
 
@@ -106,5 +106,23 @@ describe('syntax colors', () => {
       { text: ' a = ' },
       { text: '2', cls: 'syn-number', changed: true }
     ])
+  })
+})
+
+describe('mermaidSource', () => {
+  const pre = (cls: unknown, text: string) => ({
+    type: 'element',
+    tagName: 'pre',
+    children: [{ type: 'element', tagName: 'code', properties: { className: cls }, children: [{ type: 'text', value: text }] }]
+  })
+  it('returns the source of a mermaid fence', () => {
+    expect(mermaidSource(pre(['language-mermaid'], 'graph TD\nA-->B\n'))).toBe('graph TD\nA-->B\n')
+    expect(mermaidSource(pre(['language-Mermaid'], 'graph TD'))).toBe('graph TD')
+  })
+  it('ignores other languages, empty fences and missing nodes', () => {
+    expect(mermaidSource(pre(['language-ts'], 'const a = 1'))).toBeNull()
+    expect(mermaidSource(pre(undefined, 'graph TD'))).toBeNull()
+    expect(mermaidSource(pre(['language-mermaid'], '  \n'))).toBeNull()
+    expect(mermaidSource(undefined)).toBeNull()
   })
 })

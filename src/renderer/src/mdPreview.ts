@@ -100,7 +100,26 @@ export function clampToDiff(start: number, end: number, allowed: number[] | unde
   return { start: Math.min(...inside), end: Math.max(...inside) }
 }
 
-export const isMarkdownFile = (file: string) => /\.(md|markdown|mdx|mdown|mkd)$/i.test(file)
+/** A hast node as react-markdown hands it to component overrides. */
+interface HastNode {
+  type: string
+  tagName?: string
+  value?: string
+  properties?: { className?: unknown }
+  children?: HastNode[]
+}
+
+/** The diagram source when a `<pre>` node is a ```mermaid fenced block, else null. */
+export function mermaidSource(pre: unknown): string | null {
+  const code = (pre as HastNode | undefined)?.children?.find((c) => c.type === 'element')
+  if (code?.tagName !== 'code') return null
+  const cls = code.properties?.className
+  if (!(Array.isArray(cls) ? cls : [cls]).some((c) => String(c).toLowerCase() === 'language-mermaid')) return null
+  const text = (code.children ?? []).map((c) => c.value ?? '').join('')
+  return text.trim() ? text : null
+}
+
+export const isMarkdownFile =(file: string) => /\.(md|markdown|mdx|mdown|mkd)$/i.test(file)
 
 export type MdView = 'preview' | 'code'
 const MD_VIEW_KEY = 'choo.markdownDiffView'

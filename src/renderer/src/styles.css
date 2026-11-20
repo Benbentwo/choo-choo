@@ -377,3 +377,4 @@ a,
     box-shadow: inset 3px 0 0 var(--color-accent);
   }
 }
+.mermaid-diagram svg { max-width: 100%; height: auto; }
