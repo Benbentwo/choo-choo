@@ -185,6 +185,7 @@ const api: Api = {
   getChanges: inv('git:changes') as Api['getChanges'],
   getDiffStats: inv('git:stats') as Api['getDiffStats'],
   getFileDiff: inv('git:fileDiff') as Api['getFileDiff'],
+  getImageDiff: inv('git:imageDiff') as Api['getImageDiff'],
   ptyCreate: inv('pty:create') as Api['ptyCreate'],
   ptyAttach: inv('pty:attach') as Api['ptyAttach'],
   onScriptStarted: (cb) => on<[string, 'setup' | 'run']>('script:started', cb),

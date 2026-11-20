@@ -4,6 +4,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FindBar } from "./FindBar";
 import { COMPONENTS, MdViewSwitch } from "./MarkdownDiff";
+import { ImageFile } from "./ImageDiff";
+import { isImageFile, isSvgFile } from "@shared/images";
 import {
   getMdView,
   isMarkdownFile,
@@ -25,6 +27,10 @@ export function FileView({
   const box = useRef<HTMLDivElement>(null);
   // Markdown files read as the rendered document; opened at a line (a finding, a link) they show the source there.
   const markdown = isMarkdownFile(file);
+  // PNGs and SVGs show as the picture; an SVG's source is one click away (Code).
+  const svg = isSvgFile(file);
+  const [svgView, setSvgView] = useState<MdView>(line ? "code" : "preview");
+  const image = isImageFile(file) && (!svg || svgView === "preview");
   const [view, setViewState] = useState<MdView>(() =>
     line ? "code" : getMdView(),
   );
@@ -46,6 +52,16 @@ export function FileView({
       );
   }, [ws.id, file]);
 
+  if (image)
+    return (
+      <div className="selectable flex-1 overflow-auto font-mono text-[12px] leading-[20px] [container-type:inline-size]">
+        <div className="sticky top-0 left-0 z-10 flex h-[34px] w-[100cqw] items-center gap-3 border-b border-line bg-panel px-4 text-muted">
+          <span className="min-w-0 flex-1 truncate">{file}</span>
+          {svg && <SvgSwitch image onChange={setSvgView} />}
+        </div>
+        <ImageFile ws={ws} file={file} />
+      </div>
+    );
   if (!f) return <div className="flex-1 p-6 text-faint">Loading…</div>;
   if (f.content === null)
     return <div className="flex-1 p-6 text-faint">{f.reason}</div>;
@@ -59,6 +75,7 @@ export function FileView({
       <div className="sticky top-0 left-0 z-10 flex h-[34px] w-[100cqw] items-center gap-3 border-b border-line bg-panel px-4 text-muted">
         <span className="min-w-0 flex-1 truncate">{file}</span>
         {markdown && <MdViewSwitch preview={preview} onChange={setView} />}
+        {svg && <SvgSwitch image={false} onChange={setSvgView} />}
         <FindBar box={box} watch={f} />
       </div>
       {preview ? (
@@ -91,5 +108,24 @@ export function FileView({
         </table>
       )}
     </div>
+  );
+}
+
+function SvgSwitch({
+  image,
+  onChange,
+}: {
+  image: boolean;
+  onChange: (v: MdView) => void;
+}) {
+  return (
+    <MdViewSwitch
+      preview={image}
+      onChange={onChange}
+      titles={{
+        preview: "The image. Click it to open it full size.",
+        code: "The SVG source, line by line",
+      }}
+    />
   );
 }
