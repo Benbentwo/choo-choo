@@ -48,7 +48,14 @@ export interface Group {
 export type GNode = Group | Split<Group>
 
 export type PaneView =
-  | { kind: 'workspace'; wsId: string; inner: GNode; focusGroup: string }
+  | {
+      kind: 'workspace'
+      wsId: string
+      inner: GNode
+      focusGroup: string
+      /** The group the person last looked at a diff or file in. Files opened from elsewhere (the right panel, a chat, search) go there. */
+      docGroup?: string
+    }
   | { kind: 'addon'; key: string; viewId: string; repoId?: string }
   | { kind: 'empty' }
 
@@ -278,6 +285,77 @@ export function closeDoc(g: Group, doc: Doc): Group {
   const docs = tabs.filter((_, j) => j !== i)
   const showing = !!g.doc && sameDoc(g.doc, doc)
   return { ...g, docs, doc: showing ? (docs[Math.min(i, docs.length - 1)] ?? null) : g.doc }
+}
+
+/** Closes several diff or file tabs of a group at once (close others, to the right, all). */
+export function closeDocs(g: Group, docs: Doc[]): Group {
+  return docs.reduce(closeDoc, g)
+}
+
+/** The group's diff and file tabs after `doc` in tab order. */
+export function docsRightOf(g: Group, doc: Doc): Doc[] {
+  const tabs = docTabs(g)
+  const i = tabs.findIndex((d) => sameDoc(d, doc))
+  return i < 0 ? [] : tabs.slice(i + 1)
+}
+
+type WsView = Extract<PaneView, { kind: 'workspace' }>
+const isFileDoc = (d: Doc | null | undefined): d is Doc => !!d && d.kind !== 'reflect'
+
+/**
+ * The group a newly opened diff or file goes to: the one the person last looked at a file in, so
+ * with a chat on one side and files on the other, files keep opening on the file side whatever was
+ * clicked. Falls back to a group showing a file, then to the focused group.
+ */
+export function docTarget(view: WsView): string {
+  const groups = leavesOf(view.inner)
+  const last = groups.find((g) => g.id === view.docGroup)
+  if (last && docTabs(last).length) return last.id
+  const focused = groups.find((g) => g.id === view.focusGroup) ?? groups[0]
+  if (isFileDoc(focused.doc)) return focused.id
+  return (groups.find((g) => isFileDoc(g.doc)) ?? focused).id
+}
+
+/** Opens a diff or file in the workspace's file group (see docTarget) and focuses it. Reflect, or null to go back to the chat, applies to the focused group. */
+export function openDoc(view: WsView, doc: Doc | null): WsView {
+  if (!isFileDoc(doc)) {
+    const id = (findNode(view.inner, view.focusGroup) ?? leavesOf(view.inner)[0]).id
+    return { ...view, inner: mapNode(view.inner, id, (g) => showDoc(g as Group, doc)) }
+  }
+  const id = docTarget(view)
+  return { ...view, inner: mapNode(view.inner, id, (g) => showDoc(g as Group, doc)), focusGroup: id, docGroup: id }
+}
+
+/** Focuses a group. One showing a diff or file becomes where files open next. */
+export function focusGroupIn(view: WsView, groupId: string): WsView {
+  const g = findNode(view.inner, groupId) as Group | null
+  if (!g || isSplit(g)) return view
+  const docGroup = isFileDoc(g.doc) ? groupId : view.docGroup
+  return view.focusGroup === groupId && docGroup === view.docGroup ? view : { ...view, focusGroup: groupId, docGroup }
+}
+
+/** Moves a diff or file tab into another group of the same workspace, or splits it out beside one. */
+export function moveDoc(inner: GNode, fromGroup: string, doc: Doc, targetGroup: string, side?: Side): { inner: GNode; group: string } {
+  const from = findNode(inner, fromGroup) as Group | null
+  const tab = from && !isSplit(from) ? docTabs(from).find((d) => sameDoc(d, doc)) : undefined
+  if (!from || !tab || !findNode(inner, targetGroup)) return { inner, group: targetGroup }
+  if (from.id === targetGroup) {
+    if (!side) return { inner, group: targetGroup }
+    // Splitting a group's only tab beside itself changes nothing.
+    if (!from.chats.length && !from.terms.length && docTabs(from).length === 1) return { inner, group: targetGroup }
+  }
+  let next = mapNode(inner, from.id, (g) => closeDoc(g as Group, tab))
+  let dest = targetGroup
+  if (side) {
+    const g = showDoc(newGroup(), tab)
+    next = insertBeside(next, targetGroup, side, g)
+    dest = g.id
+  } else {
+    next = mapNode(next, targetGroup, (g) => showDoc(g as Group, tab))
+  }
+  const left = findNode(next, from.id) as Group | null
+  if (left && !left.chats.length && !left.terms.length && !hasDocs(left)) next = removeNode(next, from.id) ?? next
+  return { inner: next, group: dest }
 }
 
 export function groupOf(inner: GNode, tabId: string): Group | null {

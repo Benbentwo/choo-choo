@@ -17,6 +17,8 @@ import {
   setGroupActive,
   setGroupDoc,
   closeGroupDoc,
+  closeGroupDocs,
+  moveDocTab,
   splitDocOut,
   addTerminalTab,
   closeTerminalTab,
@@ -25,7 +27,8 @@ import {
   dropTab,
   type DragItem
 } from '../store'
-import { IconDots, IconPlus, IconRight, IconSidebar, IconX, IconTerminal, IconSplitRight, IconBranch, IconTool, IconEye } from '../icons'
+import { IconDots, IconPlus, IconRight, IconSidebar, IconX, IconTerminal, IconSplitRight, IconSplitDown, IconBranch, IconTool, IconEye } from '../icons'
+import { Menu } from './Menu'
 import { ChatView } from './ChatView'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
@@ -101,6 +104,7 @@ export function Center({ ws, leaf, framed, focused }: { ws: Workspace; leaf: L.L
           return (
             <div
               key={g.id}
+              data-group={g.id}
               className={`absolute flex flex-col ${b.x > 0 ? 'border-l border-line' : ''} ${b.y > 0 ? 'border-t border-line' : ''}`}
               style={{ left: `${b.x * 100}%`, top: `${b.y * 100}%`, width: `${b.w * 100}%`, height: `${b.h * 100}%` }}
               onMouseDownCapture={() => focusGroup(leaf.id, g.id)}
@@ -385,7 +389,9 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
   const groups = leaf.view.kind === 'workspace' ? L.leavesOf(leaf.view.inner) : [group]
   const showReflectTab = reflect && (doc?.kind === 'reflect' || (!groups.some((g) => g.doc?.kind === 'reflect') && groups[0].id === group.id))
   const drag = s.drag
-  const tabDrag = drag?.kind === 'tab' && drag.leafId === leaf.id ? drag : null
+  const tabDrag = (drag?.kind === 'tab' || drag?.kind === 'doc') && drag.leafId === leaf.id ? drag : null
+  // Right-click menu of a diff or file tab.
+  const [docMenu, setDocMenu] = useState<{ doc: L.Doc; x: number; y: number } | null>(null)
   const project = isProject(ws)
 
   useEffect(() => {
@@ -470,6 +476,18 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
             <div
               key={`${d.kind}:${d.path}`}
               title={d.path}
+              data-doc-tab={d.path}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', d.path)
+                s.set({ drag: { kind: 'doc', leafId: leaf.id, groupId: group.id, doc: d } satisfies DragItem })
+              }}
+              onDragEnd={endDrag}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setDocMenu({ doc: d, x: e.clientX, y: e.clientY })
+              }}
               className={`group flex h-10 max-w-[260px] shrink-0 items-center gap-2 border-b-2 px-3 ${on ? `${underline} text-fg` : 'border-transparent text-muted hover:text-fg'}`}
             >
               <button className="flex min-w-0 items-center gap-2" onClick={() => setGroupDoc(leaf.id, group.id, d)}>
@@ -538,8 +556,48 @@ function GroupView({ ws, leaf, group, focused, accent }: { ws: Workspace; leaf: 
           )}
         </>
       ) : null}
-      {tabDrag && <DropOverlay inner onDrop={(side) => dropTab(leaf.id, tabDrag.tabId, group.id, side)} canDrop={(side) => side !== undefined || L.groupOf(leaf.view.kind === 'workspace' ? leaf.view.inner : group, tabDrag.tabId)?.id !== group.id} />}
+      {tabDrag?.kind === 'tab' && <DropOverlay inner onDrop={(side) => dropTab(leaf.id, tabDrag.tabId, group.id, side)} canDrop={(side) => side !== undefined || L.groupOf(leaf.view.kind === 'workspace' ? leaf.view.inner : group, tabDrag.tabId)?.id !== group.id} />}
+      {tabDrag?.kind === 'doc' && (
+        <DropOverlay
+          inner
+          onDrop={(side) => moveDocTab(leaf.id, tabDrag.groupId, tabDrag.doc, group.id, side)}
+          canDrop={(side) => tabDrag.groupId !== group.id || (side !== undefined && chats.length + group.terms.length + L.docTabs(group).length > 1)}
+        />
+      )}
+      {docMenu && <DocTabMenu leafId={leaf.id} group={group} groups={groups} doc={docMenu.doc} at={docMenu} onClose={() => setDocMenu(null)} />}
     </div>
+  )
+}
+
+/** Right-click menu of a diff or file tab. Closing applies to the file tabs of that group only; chats and terminals stay. */
+function DocTabMenu({ leafId, group, groups, doc, at, onClose }: { leafId: string; group: L.Group; groups: L.Group[]; doc: L.Doc; at: { x: number; y: number }; onClose: () => void }) {
+  const tabs = L.docTabs(group)
+  const others = tabs.filter((d) => !L.sameDoc(d, doc))
+  const right = L.docsRightOf(group, doc)
+  const alone = tabs.length === 1 && !group.chats.length && !group.terms.length
+  const elsewhere = groups.filter((g) => g.id !== group.id)
+  return (
+    <Menu
+      anchor={null}
+      at={at}
+      onClose={onClose}
+      items={[
+        { label: 'Close', onClick: () => closeGroupDoc(leafId, group.id, doc) },
+        ...(others.length ? [{ label: 'Close others', onClick: () => closeGroupDocs(leafId, group.id, others) }] : []),
+        ...(right.length ? [{ label: 'Close tabs to the right', onClick: () => closeGroupDocs(leafId, group.id, right) }] : []),
+        { label: 'Close all tabs', onClick: () => closeGroupDocs(leafId, group.id, tabs) },
+        ...(alone
+          ? []
+          : [
+              { kind: 'sep' as const },
+              { label: 'Split right', icon: <IconSplitRight />, onClick: () => moveDocTab(leafId, group.id, doc, group.id, 'right') },
+              { label: 'Split down', icon: <IconSplitDown />, onClick: () => moveDocTab(leafId, group.id, doc, group.id, 'bottom') }
+            ]),
+        ...(elsewhere.length === 1 ? [{ label: 'Move to the other pane', onClick: () => moveDocTab(leafId, group.id, doc, elsewhere[0].id) }] : []),
+        { kind: 'sep' },
+        { label: 'Copy path', onClick: () => void navigator.clipboard.writeText(doc.path) }
+      ]}
+    />
   )
 }
 

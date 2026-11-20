@@ -36,7 +36,7 @@ export function Panes() {
   const multi = all.length > 1
   const max = multi ? layout.maximized : null
   const { leaves: boxes, dividers } = L.boxes(layout.root)
-  const outer = s.drag && s.drag.kind !== 'tab' ? s.drag : null
+  const outer = s.drag && s.drag.kind !== 'tab' && s.drag.kind !== 'doc' ? s.drag : null
 
   return (
     <div className="flex min-w-0 flex-1 flex-col bg-bg">

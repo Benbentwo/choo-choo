@@ -26,7 +26,7 @@ NODE_PATH=$(npm root -g) xvfb-run -a -s "-screen 0 1600x1000x24" node scripts/de
 NODE_PATH=$(npm root -g) xvfb-run -a -s "-screen 0 1600x1000x24" node scripts/demo/record.cjs prs-page   # one scene
 ```
 
-On a Mac, drop `xvfb-run …` and run `node scripts/demo/record.cjs` (a window will open). `CHOO_DEMO_SHOTS=<dir>` also saves the screenshots a scene asks for with `d.shot('name')`, which is the quickest way to check a scene while writing it. Recording works in a Linux cloud container too; there the terminal panel is closed because `node-pty` isn't built for Electron.
+Don't record on a Mac: macOS ignores the fake `HOME` for the app's data folder, so the app would open your real `~/Library/Application Support/Choo Choo` and add the sample repos and demo settings to it. The recorder refuses to start there. `CHOO_DEMO_SHOTS=<dir>` also saves the screenshots a scene asks for with `d.shot('name')`, which is the quickest way to check a scene while writing it. `CHOO_DEMO_NO_GIF=1` runs a scene without video, screenshots only, and a scene that gets stuck saves `<scene>-failed.png` there. Record in a Linux container; there the terminal panel is closed because `node-pty` isn't built for Electron.
 
 ## Adding a scene
 
