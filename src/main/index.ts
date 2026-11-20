@@ -8,6 +8,7 @@ import type { LinkPreviewResult, SourceOption, WorkspaceSource } from '@shared/t
 import type { Automation } from '@shared/automations'
 import type { Artifact, Chat, ChatItem, FeedbackOptions, FilePreview, PrInfo, PromptCustom, Repo, RepoGroup, Settings, Workspace } from '@shared/types'
 import { diffBase } from '@shared/stack'
+import { MAX_IMAGE_BYTES, imageMime, isImageFile, type ImageDiff, type ImageSide } from '@shared/images'
 import { orderByIds } from '@shared/sidebarOrder'
 import { editMenuItems } from '@shared/editMenu'
 import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
@@ -1051,6 +1052,12 @@ function readPreview(ws: Workspace, rel: string): FilePreview {
   return { path: rel, content: buf.toString('utf8') }
 }
 
+function imageSide(file: string, buf: Buffer | null): ImageSide | null {
+  if (!buf) return null
+  if (buf.length > MAX_IMAGE_BYTES) return { bytes: buf.length, reason: `Larger than ${MAX_IMAGE_BYTES / 1024 / 1024} MB` }
+  return { url: `data:${imageMime(file)};base64,${buf.toString('base64')}`, bytes: buf.length }
+}
+
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 
 function artifacts(ws: Workspace): Artifact[] {
@@ -1735,6 +1742,13 @@ function registerIpc() {
   h('git:fileDiff', (wsId: string, file: string, full?: boolean) => {
     const ws = findWs(wsId)
     return git.fileDiff(ws.path, diffBase(ws), file, !!full)
+  })
+  h('git:imageDiff', async (wsId: string, file: string): Promise<ImageDiff> => {
+    const ws = findWs(wsId)
+    insideWorkspace(ws, file)
+    if (!isImageFile(file)) throw new Error('Not an image file')
+    const v = await git.fileVersions(ws.path, diffBase(ws), file)
+    return { before: imageSide(file, v.before), after: imageSide(file, v.after) }
   })
   h('pty:create', (id: string, wsId: string) => {
     const ws = findWs(wsId)

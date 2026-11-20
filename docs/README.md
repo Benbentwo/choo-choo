@@ -35,6 +35,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Add PR comments to chat](prd/pr-comments.md) | In review |
 | [Line comments to the agent or a GitHub review](prd/review-comments.md) | In review |
 | [Markdown preview diffs and syntax-colored diffs](prd/markdown-diff.md) | Shipped (PR #137, Mermaid #145) |
+| [Image diffs (PNG and SVG)](prd/image-diff.md) | Shipped (PR #141) |
 | [Remote sessions (phone, cloud and Claude desktop)](prd/remote-sessions.md) | Phone and cloud shipped; Claude desktop in review |
 | [Update checks](prd/update-checks.md) | Shipped |
 | [Claude Code session controls](prd/claude-code-controls.md) | Shipped (PR #49) |
@@ -47,7 +48,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Arranging and renaming workspaces](prd/sidebar-workspaces.md) | In review |
 | [Stacked PRs](prd/stacked-prs.md) | In review |
 | [Subscription limits in the sidebar](prd/subscription-limits.md) | In review |
-| [Split panels](prd/split-panels.md) | In review |
+| [Split panels](prd/split-panels.md) | Shipped (PR #73, #144) |
 | [Build and Review workspace modes](prd/workspace-modes.md) | Shipped |
 | [Resizable sidebar and right panel](prd/resizable-panels.md) | In review |
 | [Continue work (resume at usage reset)](prd/continue-work.md) | In review |

@@ -111,7 +111,8 @@ async function playTurn(prompt) {
         if (step.writeFile) {
           const f = resolve(process.cwd(), step.writeFile.path)
           mkdirSync(dirname(f), { recursive: true })
-          writeFileSync(f, step.writeFile.content)
+          // copyFrom: a binary file (an image) from scripts/demo/assets.
+          writeFileSync(f, step.writeFile.copyFrom ? readFileSync(resolve(__dirname, '..', 'assets', step.writeFile.copyFrom)) : step.writeFile.content)
         }
         const r = step.mcp ? await callMcp(step.mcp, step.tool, step.input ?? {}) : { text: step.result ?? '', isError: false }
         out({ type: 'user', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: r.text, is_error: r.isError }] } })

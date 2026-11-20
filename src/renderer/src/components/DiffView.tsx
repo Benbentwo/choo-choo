@@ -9,6 +9,8 @@ import { clampToDiff, getMdView, isMarkdownFile, previewBlocks, saveMdView, type
 import { MdViewSwitch } from './MarkdownDiff'
 import { MarkdownDiff } from './MarkdownDiff'
 import { FindBar } from './FindBar'
+import { ImageDiff } from './ImageDiff'
+import { isImageFile, isSvgFile } from '@shared/images'
 import { SinceReviewToggle } from './SinceReview'
 import { useSinceReview, useViewed } from '../sinceReview'
 import { usePrDiffTarget, usePrReview, sendToAgent, useWorkspaceMode } from '../prReview'
@@ -169,6 +171,10 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
   }, [ws.id, file, stats, preview])
   const fullRows = useMemo(() => (full === null ? [] : parseDiff(full)), [full])
   const blocks = useMemo(() => previewBlocks(fullRows), [fullRows])
+  // PNGs and SVGs show as pictures, before and after. An SVG's source is one click away (Code).
+  const svg = isSvgFile(file)
+  const [svgView, setSvgView] = useState<MdView>('preview')
+  const image = isImageFile(file) && (!svg || svgView === 'preview')
   const sinceBar = <SinceReviewToggle ws={ws} className="sticky left-0 border-b border-line bg-panel px-4 py-2" />
   if (diff === null)
     return (
@@ -462,10 +468,18 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
             previewDisabled={sinceOn ? 'The preview shows all changes. Switch Since your review off to see it.' : undefined}
           />
         )}
-        <FindBar box={box} watch={preview ? full : diff} />
+        {svg && (
+          <MdViewSwitch
+            preview={image}
+            onChange={setSvgView}
+            titles={{ preview: 'The image before and after. Click one to open it full size.', code: 'The SVG source, line by line' }}
+          />
+        )}
+        {!image && <FindBar box={box} watch={preview ? full : diff} />}
       </div>
       <SinceReviewToggle ws={ws} className="sticky left-0 w-[100cqw] border-b border-line bg-panel px-4 py-2" />
-      {!preview && lines.length === 0 && <div className="p-6 font-sans text-faint">No textual changes (binary or empty file).</div>}
+      {image && <ImageDiff ws={ws} file={file} stats={stats} />}
+      {!image && !preview && lines.length === 0 && <div className="p-6 font-sans text-faint">No textual changes (binary or empty file).</div>}
       {(preview ? previewUnplaced : unplaced).map((f, i) => (
         <Comment key={`u${i}`} f={f} />
       ))}
@@ -502,7 +516,7 @@ export function DiffView({ ws, file, line }: { ws: Workspace; file: string; line
           )}
         />
       )}
-      {!preview && <table className="w-full border-collapse">
+      {!image && !preview && <table className="w-full border-collapse">
         <tbody>
           {lines.flatMap((l, i) => [
             <tr

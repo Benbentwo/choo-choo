@@ -2,6 +2,7 @@
 # Builds a throwaway demo world for recording README GIFs: a fake HOME with two small sample repos
 # (each with a local bare "origin"), and nothing else. Usage: scripts/demo/setup.sh <dir>
 set -euo pipefail
+assets="$(cd "$(dirname "$0")" && pwd)/assets"
 root=${1:?usage: setup.sh <dir>}
 rm -rf "$root"
 mkdir -p "$root/home/code" "$root/origins"
@@ -44,6 +45,14 @@ export function CartSummary({ items = [] }: { items?: { name: string; price: num
 }
 J
   printf 'export const theme = { accent: "#3b82f6" }\n' > src/theme.ts
+  mkdir -p public
+  cp "$assets/hero-before.png" public/hero.png
+  cat > public/logo.svg <<'J'
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+  <rect width="96" height="96" rx="20" fill="#3b82f6"/>
+  <path d="M14 74 L40 34 L54 54 L62 44 L82 74 Z" fill="#ffffff"/>
+</svg>
+J
   mkdir -p docs
   cat > docs/checkout.md <<'J'
 # Checkout

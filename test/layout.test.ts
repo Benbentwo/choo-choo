@@ -3,6 +3,12 @@ import {
   applyPreset,
   boxes,
   closeDoc,
+  closeDocs,
+  docTarget,
+  docsRightOf,
+  focusGroupIn,
+  moveDoc,
+  openDoc,
   closeLeaf,
   docTabs,
   dragDivider,
@@ -215,5 +221,93 @@ describe('file tabs in a group', () => {
     const groups = leavesOf(inner)
     const withB = { ...inner, children: (inner as any).children.map((c: any) => (c.id === groups[1].id ? showDoc(c, diff('b')) : c)) }
     expect(docTabs(mergeGroups(withB)).map((d) => d.path)).toEqual(['a', 'b'])
+  })
+})
+
+describe('where files open, and moving and closing their tabs', () => {
+  const diff = (path: string) => ({ kind: 'diff' as const, path })
+  const wsView = (v: ReturnType<typeof workspaceView>) => v
+  /** A chat group on the left and a group showing `a` on the right, with the chat focused. */
+  const sideBySide = () => {
+    const v = workspaceView('w', ['c1'])
+    const chat = leavesOf(v.inner)[0]
+    const opened = openDoc(v, diff('a'))
+    const { inner, group } = moveDoc(opened.inner, chat.id, diff('a'), chat.id, 'right')
+    return { view: wsView({ ...opened, inner, focusGroup: chat.id, docGroup: group }), chat: chat.id, files: group }
+  }
+  const groupIn = (v: ReturnType<typeof workspaceView>, id: string) => leavesOf(v.inner).find((g) => g.id === id)!
+
+  it('opens in the only group when nothing is split', () => {
+    const v = openDoc(workspaceView('w', ['c1']), diff('a'))
+    expect(leavesOf(v.inner)).toHaveLength(1)
+    expect(leavesOf(v.inner)[0].doc).toEqual(diff('a'))
+  })
+
+  it('opens on the file side even when the chat side was clicked last', () => {
+    const { view, chat, files } = sideBySide()
+    expect(view.focusGroup).toBe(chat)
+    const v = openDoc(view, diff('b'))
+    expect(groupIn(v, files).doc).toEqual(diff('b'))
+    expect(docTabs(groupIn(v, files)).map((d) => d.path)).toEqual(['a', 'b'])
+    expect(groupIn(v, chat).doc).toBeNull()
+    expect(v.focusGroup).toBe(files)
+  })
+
+  it('follows the file group clicked last when there are several', () => {
+    const { view, files } = sideBySide()
+    const two = moveDoc(openDoc(view, diff('b')).inner, files, diff('b'), files, 'bottom')
+    let v = wsView({ ...view, inner: two.inner, docGroup: two.group })
+    expect(groupIn(openDoc(v, diff('c')), two.group).doc).toEqual(diff('c'))
+    v = focusGroupIn(v, files)
+    expect(groupIn(openDoc(v, diff('c')), files).doc).toEqual(diff('c'))
+  })
+
+  it('clicking a group that shows a chat does not change where files open', () => {
+    const { view, chat, files } = sideBySide()
+    const v = focusGroupIn(view, chat)
+    expect(v.docGroup).toBe(files)
+    expect(docTarget(v)).toBe(files)
+  })
+
+  it('falls back to the focused group when the file group is gone', () => {
+    const v = workspaceView('w', ['c1'])
+    expect(docTarget({ ...v, docGroup: 'gone' })).toBe(v.focusGroup)
+  })
+
+  it('Reflect and going back to the chat stay in the focused group', () => {
+    const { view, chat, files } = sideBySide()
+    const v = openDoc(view, { kind: 'reflect', path: 'Reflect' })
+    expect(groupIn(v, chat).doc?.kind).toBe('reflect')
+    expect(groupIn(v, files).doc).toEqual(diff('a'))
+  })
+
+  it('moves a file tab into another group and drops the group it emptied', () => {
+    const { view, chat, files } = sideBySide()
+    const { inner, group } = moveDoc(view.inner, files, diff('a'), chat)
+    expect(group).toBe(chat)
+    expect(leavesOf(inner)).toHaveLength(1)
+    expect(leavesOf(inner)[0].doc).toEqual(diff('a'))
+    expect(leavesOf(inner)[0].chats).toEqual(['c1'])
+  })
+
+  it("doesn't split a group's only tab beside itself, or move a tab onto its own group", () => {
+    const { view, files } = sideBySide()
+    expect(moveDoc(view.inner, files, diff('a'), files, 'right').inner).toBe(view.inner)
+    expect(moveDoc(view.inner, files, diff('a'), files).inner).toBe(view.inner)
+    expect(moveDoc(view.inner, files, diff('nope'), files, 'right').inner).toBe(view.inner)
+  })
+
+  it('closes others, to the right, and all', () => {
+    const g = ['a', 'b', 'c', 'd'].reduce((x, p) => showDoc(x, diff(p)), leavesOf(workspaceView('w', ['c1']).inner)[0])
+    expect(docsRightOf(g, diff('b')).map((d) => d.path)).toEqual(['c', 'd'])
+    const right = closeDocs(g, docsRightOf(g, diff('b')))
+    expect(docTabs(right).map((d) => d.path)).toEqual(['a', 'b'])
+    expect(right.doc?.path).toBe('b')
+    const others = closeDocs(g, docTabs(g).filter((d) => d.path !== 'c'))
+    expect(docTabs(others).map((d) => d.path)).toEqual(['c'])
+    expect(others.doc?.path).toBe('c')
+    const none = closeDocs(g, docTabs(g))
+    expect(hasDocs(none)).toBe(false)
+    expect(none.chats).toEqual(['c1'])
   })
 })

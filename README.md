@@ -41,7 +41,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Check in without stopping.** A running chat says what it's doing and for how long, such as "Waiting on run 48213 · 14m". Press Check in, type `/btw` and a question, or just ask "how's it going?" to get a quick answer while Claude keeps working.
 - **Orchestrator.** Tell a repo's orchestrator what you want and it splits the work into workspaces, briefs each agent, reads their diffs and follows up.
 - **Projects** (Settings > Experimental). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. A thread whose work is all merged or closed resolves itself and leaves the sidebar, still a click or ⌘K away. Rename a thread, or let Haiku name it from the conversation. Drag projects to put them in any order. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
-- **Split panels and resizable panes.** Put workspaces and chats side by side, drag either sidebar to size it, and expand the right panel with ⌘⇧E.
+- **Split panels and resizable panes.** Put workspaces and chats side by side, drag either sidebar to size it, and expand the right panel with ⌘⇧E. With a chat beside your files, the next file you click opens on the file side; drag file tabs between panes, and right-click one to close the others, the ones to its right, or all of them.
 
 <p align="center">
   <img src="docs/media/gifs/projects-threads.gif" alt="A request in a project's chat starts a thread. The thread starts a workspace in each of two repos, and each agent makes its change in its own worktree." width="900"><br>
@@ -64,6 +64,11 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 </p>
 
 <p align="center">
+  <img src="docs/media/gifs/file-tabs.gif" alt="A diff tab is right-clicked and split to the right of the chat. With the chat focused, the next file clicked in Changes still opens on the file side. A file tab is dragged into the chat's group, and Close all tabs from the right-click menu clears the file side." width="900"><br>
+  <sub>Files open beside the chat, not over it. Drag file tabs between panes, and right-click one to close several at once.</sub>
+</p>
+
+<p align="center">
   <img src="docs/media/gifs/composer-markdown.gif" alt="Typing in the message box: backtick-wrapped names turn into inline code as soon as the closing backtick is typed, double asterisks turn bold, a list and a code block format as they're typed. Clicking into inline code shows its backticks again. Sent, the message looks the same in the chat." width="900">
 </p>
 
@@ -79,6 +84,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Build and Review modes.** Each workspace knows whether you're building it or reviewing someone else's PR, and the top right shows the PR and one button for the next step.
 - **Review before you ship.** Diffs against the PR's target branch, an agent code review with inline Fix buttons, and line comments that go to the agent or into a GitHub review.
 - **Markdown preview diffs.** A Markdown file's diff shows the rendered document with changed blocks marked, and you can comment right on it. Mermaid diagrams draw as diagrams. Code diffs keep their syntax colors on the green and red lines.
+- **Image diffs.** A changed PNG or SVG shows before and after side by side. Click one to open it full size and flip between the two.
 - **PRs page.** Every open PR waiting on your review, plus your own, grouped by repo. One click opens a workspace on the PR's branch. "Since your review" shows only what the author changed.
 - **Stacked PRs.** Keep a stack of PRs in one workspace, switch layers in one click, and let the app restack the PRs above after a change.
 - **PRs in one click.** Create a PR or draft, watch checks, re-run failures and squash-merge, all through your `gh` login.
@@ -90,6 +96,10 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 
 <p align="center">
   <img src="docs/media/gifs/mermaid-diff.gif" alt="A Markdown file's diff with a Mermaid flowchart: the old diagram is drawn in red above the new one in green, which adds an Apple Pay branch. Clicking + Comment beside the new diagram queues a comment for the agent under it." width="900">
+</p>
+
+<p align="center">
+  <img src="docs/media/gifs/image-diff.gif" alt="A changed PNG opens as Before and After side by side. Clicking After opens it full size, and the arrow keys flip between the two. A changed SVG shows the same preview, and its Code switch shows the line diff." width="900">
 </p>
 
 <p align="center">

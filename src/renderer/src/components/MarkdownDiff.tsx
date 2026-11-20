@@ -136,14 +136,14 @@ export function MarkdownDiff({
 }
 
 /** The Preview | Code switch in a Markdown file's header. */
-export function MdViewSwitch({ preview, onChange, previewDisabled }: { preview: boolean; onChange: (v: MdView) => void; previewDisabled?: string }) {
+export function MdViewSwitch({ preview, onChange, previewDisabled, titles }: { preview: boolean; onChange: (v: MdView) => void; previewDisabled?: string; titles?: { preview: string; code: string } }) {
   return (
     <span className="flex shrink-0 overflow-hidden rounded-md border border-line font-sans text-[12px]">
       {(['preview', 'code'] as const).map((v) => (
         <button
           key={v}
           disabled={v === 'preview' && !!previewDisabled}
-          title={v === 'preview' ? (previewDisabled ?? 'The file as rendered Markdown') : 'The Markdown source, line by line'}
+          title={v === 'preview' ? (previewDisabled ?? titles?.preview ?? 'The file as rendered Markdown') : (titles?.code ?? 'The Markdown source, line by line')}
           className={`px-2 py-0.5 disabled:opacity-40 ${(v === 'preview') === preview ? 'bg-raised text-fg' : 'hover:bg-hover'}`}
           onClick={() => onChange(v)}
         >

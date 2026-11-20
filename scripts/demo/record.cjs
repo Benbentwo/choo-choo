@@ -12,6 +12,13 @@ const { join, resolve } = require('node:path')
 const REPO = resolve(__dirname, '../..')
 const OUT = join(REPO, 'docs/media/gifs')
 const WORK = process.env.CHOO_DEMO_DIR || '/tmp/choo-demo'
+
+// macOS ignores the fake HOME for the app's data folder (~/Library/Application Support/Choo Choo), so
+// a recording there would add the sample repos to, and change the settings of, the real installed app.
+if (process.platform === 'darwin') {
+  console.error('Recording is not safe on macOS: the app would use your real Choo Choo data. Record in a Linux container (docs/demo-gifs.md).')
+  process.exit(1)
+}
 const W = 1280
 const H = 800
 
@@ -30,7 +37,8 @@ async function launch(world, script, video, ghData, update) {
   delete env.ANTHROPIC_API_KEY
   delete env.CLAUDE_CODE_OAUTH_TOKEN
   const app = await _electron.launch({
-    executablePath: join(REPO, 'node_modules/electron/dist/electron'),
+    // dist/electron on Linux, dist/Electron.app/Contents/MacOS/Electron on a Mac (electron's own path.txt).
+    executablePath: join(REPO, 'node_modules/electron/dist', require('node:fs').readFileSync(join(REPO, 'node_modules/electron/path.txt'), 'utf8').trim()),
     args: [REPO, '--no-sandbox'],
     env,
     cwd: REPO,
@@ -113,15 +121,15 @@ function director(app, page) {
       await page.mouse.up()
       await page.waitForTimeout(200)
     },
-    // Press on `from`, carry it to `to` (just below its middle when `below`) and let go: a real HTML5 drag.
-    async drag(from, to, { below = false, ms = 900 } = {}) {
+    // Press on `from`, carry it to `to` (just below its middle when `below`, dead center when `middle`) and let go: a real HTML5 drag.
+    async drag(from, to, { below = false, middle = false, ms = 900 } = {}) {
       await d.moveTo(from)
       await page.waitForTimeout(150)
       await page.mouse.down()
       await page.mouse.move(pos.x, pos.y + 6, { steps: 3 })
       const box = await to.boundingBox()
       if (!box) throw new Error(`not visible: ${to}`)
-      const end = { x: box.x + Math.min(box.width / 2, 60), y: box.y + box.height * (below ? 0.8 : 0.2) }
+      const end = middle ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : { x: box.x + Math.min(box.width / 2, 60), y: box.y + box.height * (below ? 0.8 : 0.2) }
       const steps = Math.max(8, Math.round(ms / 16))
       const start = { x: pos.x, y: pos.y + 6 }
       for (let i = 1; i <= steps; i++) {
@@ -173,6 +181,8 @@ function toGif(videoDir, name, { fps = 8, width = 1000, trimStart = 0 } = {}) {
 }
 
 async function record(name, { script, gh, update, settings, groups, opts }, scene) {
+  // CHOO_DEMO_NO_GIF=1 runs any scene without video, for checking it with CHOO_DEMO_SHOTS.
+  if (process.env.CHOO_DEMO_NO_GIF) opts = { ...opts, noGif: true }
   const world = await freshWorld(name, settings, groups)
   const video = join(WORK, `${name}-video`)
   rmSync(video, { recursive: true, force: true })
@@ -192,10 +202,24 @@ async function record(name, { script, gh, update, settings, groups, opts }, scen
   // `d.startGif()` cuts the GIF to start there (a little before), skipping setup the GIF doesn't need to show.
   let cut
   const d = Object.assign(director(app, page), { startGif: () => (cut = Math.max(0, (Date.now() - t0) / 1000 - 1.5)) })
-  await scene(d, relaunch)
+  try {
+    await scene(d, relaunch)
+  } catch (e) {
+    // What the window showed when the scene got stuck.
+    if (process.env.CHOO_DEMO_SHOTS) await ctx.page.screenshot({ path: `${process.env.CHOO_DEMO_SHOTS}/${name}-failed.png` }).catch(() => {})
+    await ctx.app.close().catch(() => {})
+    throw e
+  }
   const trimStart = Number(cut ?? opts?.trimStart ?? 0.8)
   await ctx.app.close()
   if (!opts?.noGif) toGif(video, name, { ...opts, trimStart })
+}
+
+/** Where the director's pointer rests on a target, for clicks the director has no helper for (a right-click). */
+async function center(target) {
+  const box = await target.boundingBox()
+  if (!box) throw new Error(`not visible: ${target}`)
+  return { x: box.x + Math.min(box.width / 2, 60), y: box.y + box.height / 2 }
 }
 
 /** Starts a workspace on trailhead-web from the sidebar + and sends it a message. */
@@ -683,9 +707,12 @@ const scenes = {
       }
     ),
 
-  // Diff tabs opened from Changes stay open after going back to the chat. Screenshots only.
+  // File tabs: a diff split out beside the chat, the next file opening on that side whatever was
+  // clicked last, a tab dragged back across, and the right-click menu closing a pane's tabs.
   'file-tabs': () =>
-    record('file-tabs', { script: 'workspaces.json', opts: { noGif: true } }, async (d) => {
+    record('file-tabs', { script: 'workspaces.json' }, async (d) => {
+      const tab = (path) => d.page.locator(`[data-doc-tab="${path}"]`).first()
+      const item = (name) => d.page.getByRole('button', { name, exact: true }).last()
       await d.wait(500)
       await d.menu('toggle-terminal')
       await startWorkspace(d, 'Add a dark mode toggle to the header')
@@ -694,17 +721,31 @@ const scenes = {
       const right = d.page.locator('button[title="src/theme.ts"]')
       if (!(await right.count())) await d.menu('toggle-right')
       await d.wait(800)
+      d.startGif()
       await d.click(d.page.locator('button[title="src/theme.ts"]').first())
-      await d.wait(800)
+      await d.wait(1000)
+      await d.shot?.('1-diff-over-chat')
+      await d.moveTo(tab('src/theme.ts'))
+      await d.page.mouse.click(...Object.values(await center(tab('src/theme.ts'))), { button: 'right' })
+      await d.wait(900)
+      await d.shot?.('2-tab-menu')
+      await d.click(item('Split right'))
+      await d.wait(1200)
+      // Click into the chat, then open another file: it still opens on the file side.
+      await d.click(d.page.getByTestId('composer-input').first())
+      await d.wait(500)
       await d.click(d.page.locator('button[title="src/components/ModeToggle.tsx"]').first())
-      await d.wait(1000)
-      await d.shot?.('1-two-diffs')
-      await d.click(d.page.getByRole('button', { name: /^Add a dark mode toggle/ }).first())
-      await d.wait(1000)
-      await d.shot?.('2-back-to-chat')
-      await d.click(d.page.locator('div[title="src/theme.ts"] button').first())
-      await d.wait(1000)
-      await d.shot?.('3-diff-again')
+      await d.wait(1500)
+      await d.shot?.('3-opens-on-file-side')
+      await d.drag(tab('src/components/ModeToggle.tsx'), d.page.locator('[data-group]').first(), { middle: true })
+      await d.wait(1500)
+      await d.shot?.('4-dragged-across')
+      await d.moveTo(tab('src/theme.ts'))
+      await d.page.mouse.click(...Object.values(await center(tab('src/theme.ts'))), { button: 'right' })
+      await d.wait(900)
+      await d.click(item('Close all tabs'))
+      await d.wait(1500)
+      await d.shot?.('5-closed-all')
     }),
 
   // The title bar's pane toggles (Threads, Analytics, Details) and the x on each pane. Screenshots only.
@@ -784,6 +825,39 @@ const scenes = {
       await d.page.keyboard.press('ControlOrMeta+Enter')
       await d.wait(1500)
       await d.shot?.('2-mermaid-comment')
+    }),
+
+  // A changed PNG and SVG show before and after; click one to open it full size, flip with the arrow keys.
+  'image-diff': () =>
+    record('image-diff', { script: 'image-diff.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Swap the hero for the sunset version and recolor the logo')
+      await d.page.getByText('Swapped', { exact: false }).first().waitFor({ timeout: 40_000 })
+      await d.wait(1200)
+      d.startGif()
+      await d.click(d.page.getByText('hero.png').last())
+      await d.page.getByText('Loading image…').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
+      await d.wait(1800)
+      await d.shot?.('1-png-diff')
+      await d.click(d.page.locator('button[title="Open full size"]').last())
+      await d.wait(1500)
+      await d.shot?.('2-lightbox-after')
+      await d.page.keyboard.press('ArrowLeft')
+      await d.wait(1200)
+      await d.shot?.('3-lightbox-before')
+      await d.page.keyboard.press('ArrowRight')
+      await d.wait(900)
+      await d.page.keyboard.press('Escape')
+      await d.wait(600)
+      await d.click(d.page.getByText('logo.svg').last())
+      await d.wait(1800)
+      await d.shot?.('4-svg-diff')
+      await d.click(d.page.getByRole('button', { name: 'Code', exact: true }))
+      await d.wait(1800)
+      await d.shot?.('5-svg-code')
+      await d.click(d.page.getByRole('button', { name: 'Preview', exact: true }))
+      await d.wait(1200)
     }),
 
   // A Markdown file opened from All files reads as the rendered document. Screenshots only.

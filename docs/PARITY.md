@@ -25,7 +25,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Resizable sidebar and right panel: drag the inner edge (width shown, double-click resets, drag far past the minimum to hide), widths remembered; Expand (⤢, ⌘⇧E) lets the right panel take over the chat area, Esc puts it back (choo-choo addition, [PRD](prd/resizable-panels.md))
 - ✅ Breadcrumb header: repo › branch, workspace menu (Reveal in Finder, copy path/branch, copy the active chat's `claude --resume` command, archive)
 - ✅ Back/forward between workspaces
-- ✅ Split panels (beyond Conductor): workspaces and add-on pages side by side, chats/diffs/files/terminals split inside a workspace pane, drag to split, saved layouts ([PRD](prd/split-panels.md))
+- ✅ Split panels (beyond Conductor): workspaces and add-on pages side by side, chats/diffs/files/terminals split inside a workspace pane, drag to split, saved layouts; files open on the file side, file tabs drag between groups and have a right-click menu (close others, to the right, all) ([PRD](prd/split-panels.md))
 - ✅ Home view with recent workspaces
 - ✅ Command palette (⌘K) with All / Workspaces / Projects / Actions / Settings tabs; recent workspaces include archived ones (dimmed, accent bar, opening restores)
 - ✅ File picker (⌘P) and search in files (⌘⇧F)
@@ -88,6 +88,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Word-level highlights in the diff: within an edited line, the words that changed are shaded more strongly, as on GitHub
 - ✅ Syntax colors in diffs, kept on the green and red rows together with the word-level highlights (choo-choo addition, [PRD](prd/markdown-diff.md))
 - ✅ Markdown preview diffs: Markdown files' diffs open as the rendered document with added, removed and changed blocks marked, and you can comment on a rendered block to the agent or your GitHub review; Markdown file tabs read rendered too, with a Preview | Code switch; ```mermaid blocks draw as diagrams (choo-choo addition, [PRD](prd/markdown-diff.md))
+- ✅ Image diffs: a changed PNG or SVG shows before and after side by side (or the added or deleted image), click one to open it full size and flip between the two; SVGs keep a Code view (choo-choo addition, [PRD](prd/image-diff.md))
 - ✅ Review findings inline in the diff, with Fix buttons
 - ✅ Review findings in the chat as tiles (severity, file and line, what is wrong, the fix) instead of the raw JSON block; a tile opens the diff at that line, and each has Ask the agent to fix this
 - ✅ Add all PR comments to chat: unresolved review threads, change requests and comments, with file/line context; comment count on the PR chip
