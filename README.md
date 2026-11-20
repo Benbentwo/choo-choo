@@ -64,6 +64,11 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 </p>
 
 <p align="center">
+  <img src="docs/media/gifs/file-tabs.gif" alt="A diff tab is right-clicked and split to the right of the chat. With the chat focused, the next file clicked in Changes still opens on the file side. A file tab is dragged into the chat's group, and Close all tabs from the right-click menu clears the file side." width="900"><br>
+  <sub>Files open beside the chat, not over it. Drag file tabs between panes, and right-click one to close several at once.</sub>
+</p>
+
+<p align="center">
   <img src="docs/media/gifs/composer-markdown.gif" alt="Typing in the message box: backtick-wrapped names turn into inline code as soon as the closing backtick is typed, double asterisks turn bold, a list and a code block format as they're typed. Clicking into inline code shows its backticks again. Sent, the message looks the same in the chat." width="900">
 </p>
 

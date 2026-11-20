@@ -2,14 +2,16 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #73); files on the file side, file tab drag and menu (PR #144) |
 | Owner | Claude |
 | Requested by | Ben, 2026-11-10 |
-| Last updated | 2026-11-19 |
+| Last updated | 2026-11-20 |
 
 Mockups (project files `split-panels/`): `1-side-by-side.png`, `2-nested-splits.png`, `3-drag-to-split.png`, `4-pane-menu-and-picker.png`, `5-plan-board-pane.png` (source `mockup.html`, open with `#s1` … `#s5`).
 
 Live app: ![Side by side](../media/split-panels-side-by-side.png)
+
+README GIF: `docs/media/gifs/file-tabs.gif` (demo scene `file-tabs`).
 
 ![Nested splits](../media/split-panels-nested-splits.png)
 
