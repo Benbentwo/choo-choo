@@ -222,6 +222,11 @@ a.gh-pill > span:not([aria-label]) {
   padding: 6px 8px;
 }
 
+/* xterm paints its viewport #000 and it spans the padding above, framing the terminal in black. */
+.xterm .xterm-viewport {
+  background-color: transparent;
+}
+
 /* ---------- Appearance polish ---------- */
 
 ::selection {
