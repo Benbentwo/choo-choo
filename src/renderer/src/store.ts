@@ -14,8 +14,9 @@ import { DEFAULT_SETTINGS, type BackgroundTask, type Effort, type ModelId, type 
 
 export type Doc = L.Doc
 
-/** Something being dragged onto the panes: a workspace or add-on page from the sidebar, a pane by its header, or a chat or terminal tab. */
+/** Something being dragged onto the panes: a workspace or add-on page from the sidebar, a pane by its header, or a chat, terminal, diff or file tab. */
 export type DragItem = { kind: 'ws'; wsId: string } | { kind: 'addon'; key: string; viewId: string; repoId?: string } | { kind: 'leaf'; leafId: string } | { kind: 'tab'; leafId: string; tabId: string }
+  | { kind: 'doc'; leafId: string; groupId: string; doc: L.Doc }
 
 /** Which list the ⌘K palette opens on. */
 export type PaletteMode = 'all' | 'files' | 'grep'
@@ -302,7 +303,7 @@ export const useStore = create<UI>((set, get) => ({
 
 let layoutLoaded = false
 /** The last inner split of each workspace that left the screen, so showing it again restores its groups. */
-const innerCache: Record<string, { inner: L.GNode; focusGroup: string }> = {}
+const innerCache: Record<string, { inner: L.GNode; focusGroup: string; docGroup?: string }> = {}
 
 type St = ReturnType<typeof useStore.getState>
 const chatsOf = (st: St, wsId: string) => st.chats.filter((c) => c.workspaceId === wsId).map((c) => c.id)
@@ -338,7 +339,7 @@ export function applyLayout(next: L.Layout | null, opts: { show?: boolean; save?
   if (prev) {
     // Remember the splits of workspaces leaving the screen.
     const still = new Set(next ? L.leaves(next).flatMap((l) => (l.view.kind === 'workspace' ? [l.view.wsId] : [])) : [])
-    for (const l of L.leaves(prev)) if (l.view.kind === 'workspace' && !still.has(l.view.wsId)) innerCache[l.view.wsId] = { inner: l.view.inner, focusGroup: l.view.focusGroup }
+    for (const l of L.leaves(prev)) if (l.view.kind === 'workspace' && !still.has(l.view.wsId)) innerCache[l.view.wsId] = { inner: l.view.inner, focusGroup: l.view.focusGroup, docGroup: l.view.docGroup }
   }
   const patch: Partial<St> = { layout: next }
   if (!next) Object.assign(patch, { selectedWs: null, rightWs: null, addonPage: null, panesShown: false })
@@ -448,7 +449,7 @@ export function focusGroup(leafId: string, groupId: string) {
   const l = cur()
   const leaf = l && (L.findNode(l.root, leafId) as L.Leaf | null)
   if (!l || !leaf) return
-  if (leaf.view.kind === 'workspace' && leaf.view.focusGroup !== groupId) updateWorkspaceView(leafId, (v) => ({ ...v, focusGroup: groupId }), { save: false })
+  if (leaf.view.kind === 'workspace') updateWorkspaceView(leafId, (v) => L.focusGroupIn(v, groupId), { save: false })
   focusLeaf(leafId)
 }
 
@@ -460,6 +461,22 @@ export function setGroupActive(leafId: string, groupId: string, tabId: string) {
 /** Shows a diff, file or Reflect in a group (opening its tab), or null to go back to the chat. */
 export function setGroupDoc(leafId: string, groupId: string, doc: Doc | null) {
   updateGroup(leafId, groupId, (g) => L.showDoc(g, doc))
+  // A group showing a file is where files open next.
+  if (doc && doc.kind !== 'reflect') updateWorkspaceView(leafId, (v) => (L.findNode(v.inner, groupId) && v.docGroup !== groupId ? { ...v, docGroup: groupId } : v))
+}
+
+/** Closes several diff or file tabs of a group: the others, the ones to the right, or all of them. */
+export function closeGroupDocs(leafId: string, groupId: string, docs: Doc[]) {
+  if (docs.length) updateGroup(leafId, groupId, (g) => L.closeDocs(g, docs))
+}
+
+/** A diff or file tab dropped on a group of its own workspace: in the middle moves it there, on an edge splits it out. */
+export function moveDocTab(leafId: string, fromGroup: string, doc: Doc, groupId: string, side?: L.Side) {
+  updateWorkspaceView(leafId, (v) => {
+    const r = L.moveDoc(v.inner, fromGroup, doc, groupId, side)
+    return r.inner === v.inner ? v : { ...v, inner: r.inner, focusGroup: r.group, docGroup: r.group }
+  })
+  focusLeaf(leafId)
 }
 
 /** Closes one diff or file tab of a group. */
@@ -487,7 +504,7 @@ export function splitDocOut(leafId: string, groupId: string, side: L.Side) {
     const doc = g.doc
     let inner = L.mapNode(v.inner, groupId, (x) => (doc.kind === 'reflect' ? { ...(x as L.Group), doc: null } : L.closeDoc(x as L.Group, doc)))
     inner = L.insertBeside(inner, groupId, side, ng)
-    return { ...v, inner, focusGroup: ng.id }
+    return { ...v, inner, focusGroup: ng.id, docGroup: ng.id }
   })
 }
 
@@ -1016,11 +1033,15 @@ export function closeReflect(wsId: string) {
   s.set({ openDoc: { ...s.openDoc, [wsId]: open?.kind === 'reflect' ? null : (open ?? null) } })
 }
 
-/** Shows a diff, file or Reflect in the workspace's focused group, in place of its chat. */
+/**
+ * Shows a diff or file in the workspace's file group: the one a file was last looked at in, so
+ * files keep opening beside the chat rather than over it. Reflect, or null to go back to the chat,
+ * applies to the focused group.
+ */
 export function openDoc(wsId: string, doc: Doc | null) {
   const s = useStore.getState()
   const leaf = s.layout && L.leafOfWorkspace(s.layout, wsId)
-  if (leaf?.view.kind === 'workspace') return setGroupDoc(leaf.id, leaf.view.focusGroup, doc)
+  if (leaf?.view.kind === 'workspace') return updateWorkspaceView(leaf.id, (v) => L.openDoc(v, doc))
   s.set({ openDoc: { ...s.openDoc, [wsId]: doc } })
 }
 
