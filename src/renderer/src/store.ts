@@ -126,7 +126,7 @@ interface UI {
   usageChat: string | null
   paletteMode: PaletteMode
   /** Settings tab to open on. */
-  settingsTab: 'general' | 'reviews' | 'projects' | 'continue' | 'usage' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance' | 'experimental'
+  settingsTab: 'general' | 'reviews' | 'projects' | 'continue' | 'usage' | 'agents' | 'prompts' | 'mcp' | 'plugins' | 'addons' | 'integrations' | 'updates' | 'telemetry' | 'appearance'
   recentPaths: string[]
   modelDetails: Partial<Record<ModelId, ModelDetails>>
   /** Repo whose new-workspace composer is open in the center, if any. */

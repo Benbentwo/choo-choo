@@ -637,7 +637,8 @@ export interface Settings extends AppearanceSettings {
   githubLinkPreviews?: boolean
   /** Draw the floating comment bubble at the bottom right. ⌘⇧K and Help › Comment on Choo Choo work either way. */
   commentBubble?: boolean
-  /** Experimental: project groups become projects, with threads and a repo › PR tree in the sidebar. */
+  /** Projects: project groups become projects, with threads and a repo › PR tree in the sidebar. On unless turned off
+   *  (DEFAULT_SETTINGS); the name is kept from its Experimental days so earlier opt-outs still count. */
   experimentalProjects?: boolean
   /** Projects: resolve a thread on its own once every workspace it owns is merged, closed or archived. On unless turned off. */
   autoResolveThreads?: boolean
@@ -779,6 +780,7 @@ export const DEFAULT_SETTINGS: Settings = {
   usageSavings: true,
   commentBubble: true,
   githubLinkPreviews: true,
+  experimentalProjects: true,
   claudeBinary: 'bundled',
   checkAppUpdates: true,
   updateChannel: 'stable',

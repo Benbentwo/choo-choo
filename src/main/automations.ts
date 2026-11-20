@@ -251,7 +251,7 @@ export function onTurnDone(chat: Chat) {
 }
 
 async function tick() {
-  // Automations sit behind Settings › Experimental › Projects for now.
+  // Automations run while projects are on (Settings › Projects › Project threads).
   if (!store.get().settings.experimentalProjects) return
   const now = Date.now()
   for (const a of list()) {

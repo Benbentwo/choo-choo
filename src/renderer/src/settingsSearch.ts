@@ -20,7 +20,6 @@ export type SettingsSectionId =
   | 'integrations'
   | 'updates'
   | 'telemetry'
-  | 'experimental'
 
 export interface SettingEntry {
   section: SettingsSectionId
@@ -154,9 +153,8 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { section: 'telemetry', label: 'Include tool inputs', keywords: 'privacy otel', needs: TELEMETRY_ON },
   { section: 'telemetry', label: 'Include tool output', keywords: 'privacy otel', needs: 'Shown once Include tool inputs is on.' },
 
-  // Experimental
-  { section: 'experimental', label: 'Projects', hint: 'Orchestrator chats that route work to threads, plus Automations.', keywords: 'experimental orchestrator threads automations beta flag' },
-  { section: 'experimental', label: 'Resolve finished threads', hint: 'Hide a project thread once all its work is merged or closed.', keywords: 'resolve resolved threads done hide archive auto merged closed' }
+  { section: 'projects', label: 'Project threads', hint: 'Orchestrator chats that route work to threads, plus Automations. On by default.', keywords: 'experimental orchestrator threads automations beta flag projects' },
+  { section: 'projects', label: 'Resolve finished threads', hint: 'Hide a project thread once all its work is merged or closed.', keywords: 'resolve resolved threads done hide archive auto merged closed' }
 ]
 
 export interface SettingMatch {

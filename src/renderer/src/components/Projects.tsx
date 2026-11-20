@@ -13,7 +13,7 @@ import { moveId, sortProjectWork, type ProjectWorkSort } from '@shared/sidebarOr
 import { askToQueue, setQueueDrag } from './ContinueWork'
 
 /**
- * Projects (Settings › Experimental): the sidebar tree project › thread › repo › workspace, each
+ * Projects (on by default; Settings › Projects): the sidebar tree project › thread › repo › workspace, each
  * workspace shown by its PR once one exists, and the Threads panel beside a project's orchestrator. See docs/prd/projects.md.
  */
 
