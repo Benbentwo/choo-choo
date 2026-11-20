@@ -773,7 +773,8 @@ const scenes = {
       await diagram.scrollIntoViewIfNeeded()
       await d.wait(1800)
       await d.shot?.('1-mermaid-diff')
-      const block = d.page.locator('[data-find]').filter({ has: diagram }).first()
+      // `has` is matched inside each block, so pick the second diagram block, not the second diagram.
+      const block = d.page.locator('[data-find]').filter({ has: d.page.locator('.mermaid-diagram') }).nth(1)
       await d.moveTo(block)
       await d.wait(500)
       await d.click(block.locator('xpath=preceding-sibling::button[1]'))

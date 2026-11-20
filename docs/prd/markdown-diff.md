@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #137); Mermaid diagrams (PR #145) |
 | Owner | Choo Choo maintainers |
 | Requested by | Ben, 2026-11-18 |
-| Last updated | 2026-11-19 |
+| Last updated | 2026-11-20 |
 
 ## Problem
 
@@ -63,7 +63,7 @@ Code diffs were also drawn in a single color, so the green and red rows lost the
 ## Testing
 
 - `test/mdPreview.test.ts`: Mermaid fence detection, block splitting, statuses and ordering, list items, clamping, syntax tokens across lines and per hunk side, merging with word diff.
-- Demo scene `markdown-diff` in `scripts/demo/record.cjs` drives the real app: preview, a comment on a block, Code view, a colored TSX diff. Scene `mermaid-diff` shows a changed diagram and a comment on it.
+- Demo scene `markdown-diff` in `scripts/demo/record.cjs` drives the real app: preview, a comment on a block, Code view, a colored TSX diff. Scene `mermaid-diff` shows a changed diagram and a comment on it (README GIF `docs/media/gifs/mermaid-diff.gif`).
 
 ## Rollout
 

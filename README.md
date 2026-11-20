@@ -89,6 +89,10 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 </p>
 
 <p align="center">
+  <img src="docs/media/gifs/mermaid-diff.gif" alt="A Markdown file's diff with a Mermaid flowchart: the old diagram is drawn in red above the new one in green, which adds an Apple Pay branch. Clicking + Comment beside the new diagram queues a comment for the agent under it." width="900">
+</p>
+
+<p align="center">
   <img src="docs/media/gifs/prs-page.gif" alt="The PRs page lists PRs waiting on your review and your own, grouped by repo, with To review, Mine and All filters." width="900">
 </p>
 
