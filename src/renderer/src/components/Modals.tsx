@@ -221,7 +221,7 @@ const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'general', label: 'General', hint: 'Default model, effort and permissions, notifications, branches and archiving.' },
   { id: 'appearance', label: 'Appearance', hint: 'Theme, accent color, text size, density and fonts.' },
   { id: 'reviews', label: 'Reviews', hint: 'New review requests, when a PR you review changes for you, and how you catch up on it.' },
-  { id: 'projects', label: 'Projects', hint: 'Your projects and their workspaces.' },
+  { id: 'projects', label: 'Projects', hint: 'Project threads, and your projects and their workspaces.' },
   { id: 'continue', label: 'Continue work', hint: 'What happens when a chat hits your plan\'s usage limit, and what starts when the window resets.' },
   { id: 'usage', label: 'Usage history', hint: 'What the Usage page keeps: plan window readings and a summary of each Claude Code response. Stays on this Mac.' },
   { id: 'agents', label: 'Agents', hint: 'Extra agents and the advisor.' },
@@ -232,7 +232,6 @@ const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'integrations', label: 'Integrations', hint: 'Sign in to Linear, Notion and other services.' },
   { id: 'updates', label: 'Updates', hint: 'Choo Choo and Claude Code versions and update checks.' },
   { id: 'telemetry', label: 'Telemetry', hint: 'Export traces and metrics with OpenTelemetry.' },
-  { id: 'experimental', label: 'Experimental', hint: 'Features still being tried out. Off by default.' },
 ]
 
 const SECTION_LABELS = Object.fromEntries(SETTINGS_SECTIONS.map((x) => [x.id, x.label])) as Record<SettingsTab, string>
@@ -432,7 +431,23 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           </div>
           <div ref={body} className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'projects' ? (
-          <ProjectsSettings />
+          <>
+            <Row
+              label="Project threads"
+              hint="Project groups become projects. You talk to a project's orchestrator chat, which sends each message to the right thread or starts one, and the sidebar lists the project's work by repo and PR. Also turns on Automations: checks that run on a schedule or a GitHub event and open a workspace per finding. On unless you turn it off. Turning it off hides projects and pauses automations; nothing is deleted."
+            >
+              <input type="checkbox" checked={settings.experimentalProjects !== false} onChange={(e) => void save({ experimentalProjects: e.target.checked })} />
+            </Row>
+            {settings.experimentalProjects !== false && (
+              <Row
+                label="Resolve finished threads"
+                hint="When every workspace a thread started is merged, closed or archived, and you've read its last reply, the thread resolves on its own: it leaves the sidebar and the Threads panel but is kept under Resolved and in ⌘K. Threads that never started work stay until you resolve them."
+              >
+                <input type="checkbox" checked={settings.autoResolveThreads !== false} onChange={(e) => void save({ autoResolveThreads: e.target.checked })} />
+              </Row>
+            )}
+            <ProjectsSettings />
+          </>
         ) : tab === 'continue' ? (
           <ContinueSettingsSection />
         ) : tab === 'usage' ? (
@@ -453,23 +468,6 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           <AddonSettings />
         ) : tab === 'prompts' ? (
           <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
-        ) : tab === 'experimental' ? (
-          <>
-            <Row
-              label="Projects"
-              hint="Project groups become projects. You talk to a project's orchestrator chat, which sends each message to the right thread or starts one, and the sidebar lists the project's work by repo and PR. Also turns on Automations: checks that run on a schedule or a GitHub event and open a workspace per finding. Turning this off hides projects and pauses automations; nothing is deleted."
-            >
-              <input type="checkbox" checked={!!settings.experimentalProjects} onChange={(e) => void save({ experimentalProjects: e.target.checked })} />
-            </Row>
-            {settings.experimentalProjects && (
-              <Row
-                label="Resolve finished threads"
-                hint="When every workspace a thread started is merged, closed or archived, and you've read its last reply, the thread resolves on its own: it leaves the sidebar and the Threads panel but is kept under Resolved and in ⌘K. Threads that never started work stay until you resolve them."
-              >
-                <input type="checkbox" checked={settings.autoResolveThreads !== false} onChange={(e) => void save({ autoResolveThreads: e.target.checked })} />
-              </Row>
-            )}
-          </>
         ) : tab === 'telemetry' ? (
           <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (

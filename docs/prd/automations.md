@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Shipped behind Settings › Experimental › Projects (PR #80); new issue and new PR triggers in review |
+| Status | Shipped (PR #80), on whenever projects are (on by default); new issue and new PR triggers in review |
 | Requested by | Ben, 2026-11-10 |
 | Last updated | 2026-11-10 |
 
@@ -27,7 +27,7 @@ Some work starts the same way every time: a new bug lands in the tracker, CI goe
 
 ![Automations page](../media/automations/page.png)
 
-- **Automations** sits in the top nav under PRs while Settings › Experimental › Projects is on. The count is how many are on.
+- **Automations** sits in the top nav under PRs while projects are on (the default). The count is how many are on.
 - The page lists each automation with an on/off switch, when it runs, where results go, and its last run. ▶ runs it now; Chat opens the conversation its runs post in.
 - **New automation** opens an editor on the page: a name, what to check, when, where results go, and the most workspaces per run (default 5).
 
@@ -74,7 +74,7 @@ Some work starts the same way every time: a new bug lands in the tracker, CI goe
 
 ## Rollout
 
-Behind Settings › Experimental › Projects. With it off, the page is hidden and nothing runs.
+On whenever projects are (Settings › Projects › Project threads, on by default). With projects off, the page is hidden and nothing runs.
 
 ## Open questions
 

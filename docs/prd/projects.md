@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Status | Shipped behind Settings › Experimental (PR #79). Automations are their own feature: [automations.md](automations.md) |
+| Status | Shipped (PR #79), on by default since 2026-11-20 ([0023](../decisions/0023-projects-on-by-default.md)). Automations are their own feature: [automations.md](automations.md) |
 | Requested by | Ben, 2026-11-10 |
-| Last updated | 2026-11-16 (resolving threads, by hand or on their own once their work is done) |
+| Last updated | 2026-11-20 (on by default; switch moved to Settings › Projects) |
 
 ## Problem
 
@@ -27,7 +27,7 @@ Big pieces of work, such as a milestone or a change across several repos, need m
 
 ## User experience
 
-Settings › Experimental › Projects turns it on. Project groups become projects; nothing is migrated or deleted, and turning it off brings back the old Project groups list.
+Projects are on by default. Settings › Projects › Project threads turns them off. Project groups become projects; nothing is migrated or deleted, and turning it off brings back the old Project groups list.
 
 ![Orchestrator chat](../media/projects/orchestrator-chat.png)
 
@@ -56,7 +56,7 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 ![Icon and color picker](../media/projects/icons-picker.png)
 
 - **Resolving threads** (Ben, 2026-11-16: "it's like the archive state. It's not removed. It's just hidden from your sidebar, so you can have a bit more space"): a finished thread can be resolved. It leaves the sidebar and the Threads panel, with the work under it, and is never deleted. Hover a thread row for the check button, or right-click › Resolve thread; the Threads panel has Resolve on hover too. The project lists them behind "Resolved (N)", most recent first, each with Reopen on hover; the Threads panel has "Show resolved (N)"; ⌘K finds every thread, resolved ones marked. Opening a resolved thread shows a Resolved card under its transcript with Reopen, and sending it a message (yourself, or through the orchestrator chat) reopens it. The thread on screen stays in the sidebar, tagged Resolved, until you move away, so nothing vanishes while you read it.
-- **Resolving on their own:** once every workspace a thread started is archived or has a merged or closed PR, it isn't running, and you've read its last reply, the thread resolves itself and says so in its transcript. A thread that never started work (just a conversation) waits for you. After you reopen a thread, it resolves again only once work started after that is done. Settings › Experimental › Resolve finished threads turns this off. The orchestrator can also resolve: a thread calls `resolve_thread` when its work is done, and the orchestrator chat resolves or reopens a thread when you ask.
+- **Resolving on their own:** once every workspace a thread started is archived or has a merged or closed PR, it isn't running, and you've read its last reply, the thread resolves itself and says so in its transcript. A thread that never started work (just a conversation) waits for you. After you reopen a thread, it resolves again only once work started after that is done. Settings › Projects › Resolve finished threads turns this off. The orchestrator can also resolve: a thread calls `resolve_thread` when its work is done, and the orchestrator chat resolves or reopens a thread when you ask.
 
 ![A resolved thread stays on screen with a Resolved card](../media/projects/resolved-thread.png)
 
@@ -77,7 +77,7 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 
 ## Requirements
 
-1. Off by default (`Settings.experimentalProjects`). Off, everything behaves as before.
+1. On by default (`Settings.experimentalProjects`, `true` in `DEFAULT_SETTINGS`; the key keeps its old name so earlier opt-outs still count). Off, everything behaves as before.
 2. A project is a `RepoGroup`. Its orchestrator workspace's first non-thread chat is the orchestrator chat; every chat with `thread: true` is a thread.
 3. The orchestrator chat has `list_threads` and `send_to_thread` and no `start_workspace`. It forwards the person's message in full, marked with `[Sent here from the orchestrator chat]`, then replies in one line.
 4. A forwarded message is sent like a message the person typed: steered or queued if the thread is busy.
@@ -100,7 +100,7 @@ Settings › Experimental › Projects turns it on. Project groups become projec
 - Repos: `Host.findRepos` and `Host.addRepoToProject` (`src/main/index.ts`, cloning through the same `cloneAndAdd` as Open GitHub project). Added repos join `group.repoIds`, and the orchestrator's chats get them as extra readable folders from the next turn. `alwaysAskTools` is a new `queryOptions` field `agent.ts` honors.
 - Icons: `components/ProjectIcon.tsx` (`lucide-react`, ISC; see THIRD_PARTY_NOTICES.md).
 - `src/main/index.ts`: `projectRole()` picks the role per chat, `newThread()` makes threads (also from `chat:create`), `noteForOrchestrator` uses `updateTarget`.
-- Renderer: `components/Projects.tsx` (sidebar section, thread nodes, PR rows, Threads panel, route chip), `Center.tsx` (Threads button, one chat at a time, project › thread breadcrumb), `ChatView.tsx` (route chip, forwarded-message label), Settings › Experimental.
+- Renderer: `components/Projects.tsx` (sidebar section, thread nodes, PR rows, Threads panel, route chip), `Center.tsx` (Threads button, one chat at a time, project › thread breadcrumb), `ChatView.tsx` (route chip, forwarded-message label), Settings › Projects.
 
 ## Compliance, privacy and security
 

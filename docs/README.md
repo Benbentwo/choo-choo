@@ -21,8 +21,8 @@ Start here when you join the project, human or agent. These docs hold what the c
 |---|---|
 | [Import from Conductor](prd/conductor-import.md) | Shipped |
 | [Orchestrator](prd/orchestrator.md) | Shipped |
-| [Projects](prd/projects.md) | Experimental: threads own their PRs; thread › repo › PR sidebar in review |
-| [Automations](prd/automations.md) | Experimental: shipped (PR #80); new issue and PR triggers in review |
+| [Projects](prd/projects.md) | Shipped, on by default |
+| [Automations](prd/automations.md) | Shipped, on with projects |
 | [Shared sessions](prd/shared-sessions.md) | Shipped |
 | [Archive and reflect](prd/archive-and-reflect.md) | Shipped |
 | [Extra agents and advisor](prd/extra-agents.md) | Shipped |
@@ -86,6 +86,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0020](decisions/0020-usage-history-local-estimates.md) | Usage history stays on the Mac (window readings plus text-free response summaries), and per-workspace shares of a window are labeled estimates |
 | [0021](decisions/0021-restart-waits-then-resumes.md) | Restarting for an update waits for running chats, and turns cut off by a restart, quit or crash resume their own session on the next launch |
 | [0022](decisions/0022-orchestrator-prompt-stays-stable.md) | Orchestrator system prompts stay stable; context that changes, like project memory, is sent with a turn only when the session lacks that version |
+| [0023](decisions/0023-projects-on-by-default.md) | Projects are on by default; the switch lives in Settings › Projects and earlier opt-outs still count |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 
