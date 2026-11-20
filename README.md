@@ -90,6 +90,10 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 </p>
 
 <p align="center">
+  <img src="docs/media/gifs/image-diff.gif" alt="A changed PNG opens as Before and After side by side. Clicking After opens it full size, and the arrow keys flip between the two. A changed SVG shows the same preview, and its Code switch shows the line diff." width="900">
+</p>
+
+<p align="center">
   <img src="docs/media/gifs/prs-page.gif" alt="The PRs page lists PRs waiting on your review and your own, grouped by repo, with To review, Mine and All filters." width="900">
 </p>
 

@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #141) |
 | Owner | Choo Choo maintainers |
 | Requested by | Ben, 2026-11-19 |
-| Last updated | 2026-11-19 |
+| Last updated | 2026-11-20 |
 
 ## Problem
 
@@ -55,7 +55,7 @@ A PR that adds or changes an image can't be reviewed in Choo Choo: a PNG's diff 
 ## Testing
 
 - `test/images.test.ts`: extension detection; before and after bytes for a changed, added, deleted and renamed image.
-- Demo scene `image-diff` in `scripts/demo/record.cjs`: a changed PNG side by side, the full-size view flipping before and after, an SVG's Preview and Code.
+- README GIF `docs/media/gifs/image-diff.gif`, recorded by the demo scene `image-diff` in `scripts/demo/record.cjs`: a changed PNG side by side, the full-size view flipping before and after, an SVG's Preview and Code.
 
 ## Rollout
 
