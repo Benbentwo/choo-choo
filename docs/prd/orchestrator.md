@@ -4,7 +4,7 @@
 |---|---|
 | Status | Shipped (PR #19); project groups, automatic updates, cloud workspaces and PR status added later |
 | Requested by | Ben, 2026-11-06 |
-| Last updated | 2026-11-10 |
+| Last updated | 2026-11-21 |
 
 ## Problem
 
@@ -36,7 +36,7 @@ Project groups: "New project group…" in the sidebar's view menu (or ⌘K) asks
 2. It cannot edit files: `Edit`, `MultiEdit`, `Write` and `NotebookEdit` are disallowed.
 3. Tools: list, start, message, read, wait on (up to 30 minutes), stop and archive workspaces, and update memory.
 4. Messaging a workspace whose agent is still running fails; the orchestrator waits first. Waiting returns when agents stop or need the person to approve a tool call.
-5. Memory lives at `~/choo-choo/memory/<repo>.md` (max ~20 KB), rendered into the system prompt every turn. The person can edit the file directly. A project group's memory lives at `~/choo-choo/memory/groups/<group>.md`.
+5. Memory lives at `~/choo-choo/memory/<repo>.md` (max ~20 KB), rendered into the system prompt every turn. The person can edit the file directly. A save is refused when the file changed since the chat's turn started, and the error carries the current version so the chat can merge and save again; nothing another chat or the person wrote is lost. A project group's memory lives at `~/choo-choo/memory/groups/<group>.md`.
 6. `start_workspace` takes `where: "cloud"` to run the agent in a Claude Code cloud session (the same path as Run in cloud). Cloud workspaces report `in-cloud` and their link; `message_workspace` queues follow-ups into the session. Their transcript isn't visible locally, so the orchestrator follows them with `pr_status`.
 7. `start_workspace` takes `pr` or `branch` to start on an existing pull request or branch, the same as New workspace from a PR or branch, so the workspace shows that PR from the start. If a workspace is already on it, the tool says so and points to `message_workspace`.
 8. `pr_status` shows the PR for a workspace's branch and its checks, failures first, and can wait (up to 30 minutes) until no check is pending. It never asks for approval.

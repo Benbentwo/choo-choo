@@ -458,9 +458,9 @@ function projectRole(ws: Workspace, chat: Chat): orchestrator.ProjectRole | unde
     threads: {
       list: () => projectThreads(store.get().chats, ws.id),
       create: (title) => newThread(ws, title),
-      forward: (c, t) => {
+      forward: (c, t, images = []) => {
         autoWakes.delete(c.id)
-        sendFromPerson(c, t, [])
+        sendFromPerson(c, t, images)
       },
       resolve: (c, resolved) => setThreadResolved(c, resolved, resolved ? 'agent' : 'message')
     }
