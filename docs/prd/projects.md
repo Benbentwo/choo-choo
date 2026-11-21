@@ -4,7 +4,7 @@
 |---|---|
 | Status | Shipped (PR #79), on by default since 2026-11-20 ([0023](../decisions/0023-projects-on-by-default.md)). Automations are their own feature: [automations.md](automations.md) |
 | Requested by | Ben, 2026-11-10 |
-| Last updated | 2026-11-20 (on by default; switch moved to Settings › Projects) |
+| Last updated | 2026-11-21 (forwarded messages carry the person's own words; memory saves can't overwrite another thread's) |
 
 ## Problem
 
@@ -79,10 +79,10 @@ Projects are on by default. Settings › Projects › Project threads turns them
 
 1. On by default (`Settings.experimentalProjects`, `true` in `DEFAULT_SETTINGS`; the key keeps its old name so earlier opt-outs still count). Off, everything behaves as before.
 2. A project is a `RepoGroup`. Its orchestrator workspace's first non-thread chat is the orchestrator chat; every chat with `thread: true` is a thread.
-3. The orchestrator chat has `list_threads` and `send_to_thread` and no `start_workspace`. It forwards the person's message in full, marked with `[Sent here from the orchestrator chat]`, then replies in one line.
+3. The orchestrator chat has `list_threads` and `send_to_thread` and no `start_workspace`. The app, not Claude, copies what the person wrote that turn (steered messages and images included) into the forwarded message, marked with `[Sent here from the orchestrator chat]`; the orchestrator chat can only add a separate note, which follows as `Note from the orchestrator chat:`. With nothing from the person that turn (an automatic update), the note is required. It then replies in one line.
 4. A forwarded message is sent like a message the person typed: steered or queued if the thread is busy.
 5. Threads have the full orchestrator tool set plus `take_workspace`. A workspace started in a thread records `threadId`: that thread owns it and its PR, and its updates go there. In a thread, `list_workspaces` returns the thread's own workspaces unless `all` is set, and each entry names its owning thread.
-6. Every thread shares the project's memory and can see every workspace in the project. Its prompt tells it to leave other threads' workspaces alone unless the person asks ([decision 0017](../decisions/0017-threads-own-their-prs.md)).
+6. Every thread shares the project's memory and can see every workspace in the project. `update_memory` rewrites the whole file, so it refuses a save when the file changed since the chat's turn started (another thread saved, or the person edited it) and returns the current version to merge into. Its prompt tells it to leave other threads' workspaces alone unless the person asks ([decision 0017](../decisions/0017-threads-own-their-prs.md)).
 7. New chat on a project orchestrator makes a thread. A thread named "New thread" takes its title from its first message.
 8. The sidebar tree lists open workspaces with `orchestratorId` equal to the project, by owning thread (newest thread first, unowned last), then repo, then workspace in the order from `Settings.projectWorkSort` (`newest`, `oldest`, `pr`, `title`; `sortProjectWork` in `src/shared/sidebarOrder.ts`, tested in `test/sidebar-order.test.ts`), newest first when unset. PR numbers come from `getPr`, cached per workspace until the PR watcher reports a change.
 9. Fold state lives in `Settings.sidebarCollapsed` with keys `section:projects`, `section:repos` (the Repos list below the projects), `project:<id>`, `project:<id>:thread:<threadId>` and `project:<id>:thread:<threadId>:<repoId>` (`none` for unowned work).

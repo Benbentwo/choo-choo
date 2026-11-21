@@ -193,17 +193,40 @@ describe('project threads', () => {
     const { r, threads, sent } = role('router')
     const o = orch.queryOptions(sdk, repo, {} as never, [], r) as Server
     const send = o.mcpServers.choo.tools.find((t) => t.name === 'send_to_thread')!
-    const a = JSON.parse((await send.handler({ thread_id: 't1', message: 'Skip invites for solo accounts' })).content[0].text)
+    const a = JSON.parse((await send.handler({ thread_id: 't1', note: 'Skip invites for solo accounts' })).content[0].text)
     expect(a).toEqual({ thread_id: 't1', title: 'Signup flow', created: false })
-    const b = JSON.parse((await send.handler({ new_thread_title: 'Dark mode', message: 'Start dark mode' })).content[0].text)
+    const b = JSON.parse((await send.handler({ new_thread_title: 'Dark mode', note: 'Start dark mode' })).content[0].text)
     expect(b).toMatchObject({ title: 'Dark mode', created: true })
     expect(threads).toHaveLength(2)
     expect(sent.map(([id, t]) => [id, t.split('\n')[0]])).toEqual([
       ['t1', '[Sent here from the orchestrator chat]'],
       [b.thread_id, '[Sent here from the orchestrator chat]']
     ])
-    await expect(send.handler({ message: 'x' })).rejects.toThrow(/thread_id or new_thread_title/)
-    await expect(send.handler({ thread_id: 'nope', message: 'x' })).rejects.toThrow(/No thread nope/)
+    await expect(send.handler({ note: 'x' })).rejects.toThrow(/thread_id or new_thread_title/)
+    await expect(send.handler({ thread_id: 'nope', note: 'x' })).rejects.toThrow(/No thread nope/)
+    await expect(send.handler({ thread_id: 't1' })).rejects.toThrow(/wrote nothing this turn/)
+  })
+  it("forwards the person's own words and images, not Claude's retelling", async () => {
+    const { r, sent } = role('router')
+    const fwd: string[][] = []
+    r.threads.forward = (c, text, images = []) => void (sent.push([c.id, text]), fwd.push(images))
+    const store = await import('../src/main/store')
+    store.replaceItems('r', [
+      { id: '1', kind: 'user', text: 'Old message', ts: 1 },
+      { id: '2', kind: 'result', ts: 2 } as never,
+      { id: '3', kind: 'user', text: 'Make the signup button *blue*,\nnot green.', images: ['data:image/png;base64,AA'], ts: 3 },
+      { id: '4', kind: 'user', text: 'Also round the corners', sentWhileRunning: 'steer', ts: 4 }
+    ])
+    const o = orch.queryOptions(sdk, repo, {} as never, [], r) as Server
+    const send = o.mcpServers.choo.tools.find((t) => t.name === 'send_to_thread')!
+    await send.handler({ thread_id: 't1', note: 'They mean the button on the second step.' })
+    expect(sent[0][1]).toBe(
+      '[Sent here from the orchestrator chat]\nMake the signup button *blue*,\nnot green.\n\nAlso round the corners\n\nNote from the orchestrator chat:\nThey mean the button on the second step.'
+    )
+    expect(fwd[0]).toEqual(['data:image/png;base64,AA'])
+    await send.handler({ thread_id: 't1' })
+    expect(sent[1][1]).not.toContain('Note from')
+    store.replaceItems('r', [])
   })
   it('resolves threads: a thread itself, or any thread from the orchestrator chat', async () => {
     const call = async (o: Server, name: string, a: unknown) => (await o.mcpServers.choo.tools.find((t) => t.name === name)!.handler(a)).content[0].text
@@ -217,7 +240,7 @@ describe('project threads', () => {
     expect(await call(router, 'resolve_thread', { thread_id: 't1' })).toBe('Resolved "Signup flow".')
     expect(JSON.parse(await call(router, 'list_threads', {}))[0]).toMatchObject({ id: 't1', resolved: true })
     // Sending to a resolved thread reopens it (the app does that when the message lands); the result says so.
-    expect(JSON.parse(await call(router, 'send_to_thread', { thread_id: 't1', message: 'One more thing' }))).toMatchObject({ reopened: true })
+    expect(JSON.parse(await call(router, 'send_to_thread', { thread_id: 't1', note: 'One more thing' }))).toMatchObject({ reopened: true })
     expect(await call(router, 'resolve_thread', { thread_id: 't1', reopen: true })).toBe('Reopened "Signup flow".')
     expect(rt.threads[0].resolved).toBeUndefined()
     await expect(call(router, 'resolve_thread', { thread_id: 'nope' })).rejects.toThrow(/No thread nope/)
@@ -324,6 +347,27 @@ describe('usage savings', () => {
     const off = orch.queryOptions(sdk, repo, {} as never) as Out
     expect(off.turnPrefix).toBeUndefined()
     expect(off.systemPrompt.append).toContain('- merge queue')
+  })
+  it("refuses a memory save that would drop another thread's change, and hands back the current file", async () => {
+    orch.writeMemory(repo, '- squash merges\n')
+    const a = { id: 'a', workspaceId: 'w', sdkSessionId: 's1' } as import('../src/shared/types').Chat
+    const b = { id: 'b', workspaceId: 'w', sdkSessionId: 's2' } as import('../src/shared/types').Chat
+    const save = (o: Out) => o.mcpServers.choo.tools.find((t) => t.name === 'update_memory')!.handler
+    const ta = orch.queryOptions(sdk, repo, {} as never, [], undefined, undefined, { chat: a }) as Out
+    const tb = orch.queryOptions(sdk, repo, {} as never, [], undefined, undefined, { chat: b }) as Out
+    await save(ta)({ content: '- squash merges\n- Ben owns releases\n' })
+    // b started its turn before a saved: its whole-file write would lose a's line.
+    await expect(save(tb)({ content: '- squash merges\n- dark mode ships Friday\n' })).rejects.toThrow(/changed since you last saw it[\s\S]*Ben owns releases/)
+    expect(orch.readMemory(repo)).toContain('Ben owns releases')
+    // Having been shown the current version, b can save its merge.
+    await save(tb)({ content: '- squash merges\n- Ben owns releases\n- dark mode ships Friday\n' })
+    expect(orch.readMemory(repo)).toContain('dark mode ships Friday')
+    // a's own earlier save doesn't block a's next one, but b's does.
+    await expect(save(ta)({ content: '- x\n' })).rejects.toThrow(/changed since/)
+    // Without usage savings the same check applies.
+    const off = orch.queryOptions(sdk, repo, {} as never) as Out
+    orch.writeMemory(repo, '- edited by hand\n')
+    await expect(save(off)({ content: '- y\n' })).rejects.toThrow(/edited by hand/)
   })
   it('reads the handoff report rather than the transcript by default', () => {
     const o = orch.queryOptions(sdk, repo, {} as never, [], undefined, undefined, { chat: { id: 'c' } as never }) as Out

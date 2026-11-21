@@ -1,4 +1,4 @@
-import type { Chat, Repo, RepoGroup, Workspace } from './types'
+import type { Chat, ChatItem, Repo, RepoGroup, Workspace } from './types'
 
 /**
  * Projects: a project group seen as one big piece of work. The person mostly talks to the
@@ -14,6 +14,37 @@ export const ROUTED_PREFIX = '[Sent here from the orchestrator chat]'
 export function stripRouted(text: string): { routed: boolean; text: string } {
   if (!text.startsWith(ROUTED_PREFIX)) return { routed: false, text }
   return { routed: true, text: text.slice(ROUTED_PREFIX.length).replace(/^\s*\n/, '') }
+}
+
+/**
+ * What the person wrote in the orchestrator chat's current turn (everything after the last finished
+ * turn), word for word, with any images. Automatic updates and messages the app sent are left out.
+ */
+export function personTurn(items: ChatItem[]): { text: string; images: string[] } {
+  const texts: string[] = []
+  const images: string[] = []
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.kind === 'result') break
+    if (it.kind !== 'user' || it.fromAdvisor || it.afterRestart || it.unsent || it.text.startsWith(AUTO_UPDATE_PREFIX)) continue
+    texts.unshift(it.text)
+    images.unshift(...(it.images ?? []))
+  }
+  return { text: texts.join('\n\n').trim(), images }
+}
+
+/** Starts the orchestrator chat's own words in a forwarded message, after the person's. */
+export const ROUTED_NOTE = 'Note from the orchestrator chat:'
+
+/**
+ * A message forwarded into a thread: the person's words exactly as they wrote them, then the
+ * orchestrator chat's note, so the thread can tell the two apart. Like a claude.ai project, the app
+ * copies the person's message instead of letting Claude retype it.
+ */
+export function routedMessage(person: string, note?: string): string {
+  const n = note?.trim()
+  if (!person.trim()) return `${ROUTED_PREFIX}\n${ROUTED_NOTE} (no new message from the person)\n${n ?? ''}`.trimEnd()
+  return [ROUTED_PREFIX, person.trim(), ...(n ? ['', ROUTED_NOTE, n] : [])].join('\n')
 }
 
 /** First line of the message that wakes an orchestrator when workspaces it started finish. */

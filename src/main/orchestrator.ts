@@ -6,7 +6,7 @@ import type { Chat, ChatItem, CheckRun, PrInfo, Repo, RepoGroup, Workspace, Work
 import * as store from './store'
 import * as git from './git'
 import { toolShape } from './addons'
-import { AUTO_UPDATE_PREFIX, ROUTED_PREFIX, autoUpdateLine, type AutoUpdateEntry } from '@shared/projects'
+import { AUTO_UPDATE_PREFIX, ROUTED_NOTE, ROUTED_PREFIX, autoUpdateLine, personTurn, routedMessage, type AutoUpdateEntry } from '@shared/projects'
 import { diffBase } from '@shared/stack'
 import { memoryHash, memoryTurnPrefix, withHandoffReport } from '@shared/usageSavings'
 
@@ -70,7 +70,7 @@ export interface ProjectRole {
     /** Makes a new thread chat with this title. */
     create(title: string): Chat
     /** Sends a message into a thread as if the person wrote it there, queued if the thread is busy. */
-    forward(chat: Chat, text: string): void
+    forward(chat: Chat, text: string, images?: string[]): void
     /** Resolves a thread (hidden from the sidebar, kept) or reopens it. */
     resolve(chat: Chat, resolved: boolean): Chat
   }
@@ -192,7 +192,7 @@ function roleLines(role?: ProjectRole): string[] {
     return [
       'This chat:',
       "- This is the project's orchestrator chat, the front door. The project's work is split into threads: separate conversations with you, one per topic. Threads start the workspaces; you route.",
-      "- For each message from the person, call list_threads, then send_to_thread: pass thread_id when it fits an existing thread's topic, or new_thread_title (two to four words) when it is new work that fits none. Forward the person's message in full, adding any context from this chat the thread needs.",
+      "- For each message from the person, call list_threads, then send_to_thread: pass thread_id when it fits an existing thread's topic, or new_thread_title (two to four words) when it is new work that fits none. Choo Choo forwards the person's message word for word; add a note only with context from this chat the thread needs.",
       '- Then reply with one short line saying where it went. Do not do the work here and do not wait for the thread.',
       "- Each thread owns the workspaces and pull requests it started; list_workspaces shows which thread owns each. Send work on an existing PR to the thread that owns it.",
       '- Answer quick questions about status yourself with list_threads, list_workspaces, read_workspace or pr_status, without forwarding.',
@@ -203,7 +203,7 @@ function roleLines(role?: ProjectRole): string[] {
     `- You are in the thread "${role.title}" of this project. Other threads cover other topics and share your memory.`,
     '- This thread owns the workspaces it starts, and their pull requests: you see them through to merge, answer their reviews and fix their CI. The sidebar lists them under this thread. list_workspaces shows yours; pass all to see the other threads\' work too.',
     "- Leave other threads' workspaces to them. Read them for context if useful, but don't message, stop or archive one unless the person asks. If the person wants this thread to manage one, call take_workspace.",
-    `- Messages that start with ${ROUTED_PREFIX} came from the person through the orchestrator chat.`,
+    `- Messages that start with ${ROUTED_PREFIX} came from the person through the orchestrator chat: the person's own words, exactly as written, then any "${ROUTED_NOTE}" from the orchestrator chat. The person's words win where the two differ.`,
     '- Updates about workspaces this thread owns come back to this thread.',
     "- When everything this thread owns is merged, closed or archived and the person has nothing more for it, call resolve_thread. The app also does this on its own.",
     ''
@@ -361,6 +361,11 @@ export function queryOptions(
     host.sendToChat(chat, savings ? withHandoffReport(a.task) : a.task)
     return text(JSON.stringify({ id: workspace.id, name: workspace.name, repo: repo.name, branch: workspace.branch, status: 'running' }))
   }
+
+  // The memory this chat has at the start of the turn (in its prompt, or sent with the turn), so
+  // update_memory can tell whether another thread saved since.
+  const memory = readMemory(scope)
+  let seenMemory = memoryHash(memory)
 
   const tools = [
     role?.kind === 'thread'
@@ -545,7 +550,21 @@ export function queryOptions(
       `Replace this ${scope.group ? 'project' : 'repo'}'s memory file with new content. ${savings ? 'You will be sent it again only if it changes elsewhere.' : 'It is shown to you at the start of every turn.'}`,
       { content: z.string().max(MEMORY_LIMIT) },
       async (a) => {
+        // Another thread may have saved since this chat last saw the memory. Writing the whole file
+        // would quietly drop that change, so refuse and hand back the current version to merge.
+        const current = readMemory(scope)
+        if (memoryHash(current) !== seenMemory) {
+          seenMemory = memoryHash(current)
+          if (savings) {
+            savings.chat.memoryHash = seenMemory
+            store.save()
+          }
+          throw new Error(
+            `Not saved: the memory changed since you last saw it (another thread saved). Merge your change into this current version and call update_memory again with the whole file.\n\n<memory path="${memoryPath(scope)}">\n${current.trim() || '(empty)'}\n</memory>`
+          )
+        }
         writeMemory(scope, a.content)
+        seenMemory = memoryHash(a.content)
         // This session wrote it, so it already has this version.
         if (savings) {
           savings.chat.memoryHash = memoryHash(a.content)
@@ -639,7 +658,6 @@ export function queryOptions(
   )
 
   // Usage savings: memory rides along with the turn only when this session hasn't seen this version.
-  const memory = readMemory(scope)
   const turn = savings ? memoryTurnPrefix({ memory, path: memoryPath(scope), lastHash: savings.chat.memoryHash, newSession: !savings.chat.sdkSessionId }) : undefined
 
   return {
@@ -680,13 +698,15 @@ function routerTools(tool: typeof import('@anthropic-ai/claude-agent-sdk').tool,
     ),
     tool(
       'send_to_thread',
-      "Forward the person's message to a thread, which then works on it. Pass thread_id for an existing thread, or new_thread_title to start a new one. Returns right away.",
+      "Forward the person's message to a thread, which then works on it. Choo Choo attaches what the person wrote this turn word for word, with any images; do not retype it. Pass thread_id for an existing thread, or new_thread_title to start a new one. Returns right away.",
       {
-        message: z.string().describe("The person's message, in full, plus any context from this chat the thread needs."),
+        note: z.string().optional().describe("Only what the thread needs from this chat beyond the person's own words: earlier context, which part of the message is for this thread. Leave it out when the message speaks for itself. Required when the person wrote nothing this turn."),
         thread_id: z.string().optional(),
         new_thread_title: z.string().max(60).optional().describe('Two to four words naming the topic, for a new thread.')
       },
       async (a) => {
+        const person = personTurn(store.chatItems(role.chatId))
+        if (!person.text && !person.images.length && !a.note?.trim()) throw new Error('The person wrote nothing this turn. Pass a note saying what the thread should do.')
         const threads = role.threads.list()
         let chat = a.thread_id ? threads.find((c) => c.id === a.thread_id) : undefined
         if (a.thread_id && !chat) throw new Error(`No thread ${a.thread_id}. Call list_threads for ids, or pass new_thread_title.`)
@@ -697,7 +717,7 @@ function routerTools(tool: typeof import('@anthropic-ai/claude-agent-sdk').tool,
           chat = role.threads.create(title)
         }
         const reopened = !!chat.resolved
-        role.threads.forward(chat, `${ROUTED_PREFIX}\n${a.message}`)
+        role.threads.forward(chat, routedMessage(person.text, a.note), person.images)
         return text(JSON.stringify({ thread_id: chat.id, title: chat.title, created, ...(reopened ? { reopened } : {}) }))
       }
     ),

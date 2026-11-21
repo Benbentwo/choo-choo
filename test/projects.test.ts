@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Chat, Repo, RepoGroup, Workspace } from '../src/shared/types'
-import { inProject, parseAutoUpdate, resolvedThreads, shouldAutoResolve, threadWorkspaces, workDone, projectThreads, projectTree, routerChat, stripRouted, threadKey, threadTitle, updateTarget, workspaceThread, ROUTED_PREFIX } from '../src/shared/projects'
+import { inProject, parseAutoUpdate, resolvedThreads, shouldAutoResolve, threadWorkspaces, workDone, projectThreads, projectTree, routerChat, stripRouted, threadKey, threadTitle, updateTarget, workspaceThread, ROUTED_PREFIX, personTurn, routedMessage, AUTO_UPDATE_PREFIX } from '../src/shared/projects'
 import { autoUpdatePrompt } from '../src/main/orchestrator'
 
 const repo = (id: string): Repo => ({ id, name: id, path: `/r/${id}`, defaultBranch: 'main' })
@@ -125,5 +125,24 @@ describe('resolved threads', () => {
     expect(shouldAutoResolve({ ...t, reopenedAt: 15 }, owned, merged)).toBe(true)
     expect(workDone(ws('z', 'api', { archived: true }), 'OPEN')).toBe(true)
     expect(workDone(ws('z', 'api'), undefined)).toBe(false)
+  })
+})
+
+describe('forwarding the person\'s words', () => {
+  it('takes what the person wrote this turn, skipping app-sent messages', () => {
+    const items = [
+      { id: '1', kind: 'user', text: 'before', ts: 1 },
+      { id: '2', kind: 'result', ts: 2 },
+      { id: '3', kind: 'user', text: `${AUTO_UPDATE_PREFIX}\n- x (w1) finished.`, ts: 3 },
+      { id: '4', kind: 'user', text: 'Ship it', images: ['data:a'], ts: 4 },
+      { id: '5', kind: 'user', text: 'advisor says', fromAdvisor: true, ts: 5 }
+    ] as never
+    expect(personTurn(items)).toEqual({ text: 'Ship it', images: ['data:a'] })
+    expect(personTurn([])).toEqual({ text: '', images: [] })
+  })
+  it('keeps the person\'s words first and the note apart', () => {
+    expect(routedMessage('Ship it', 'For the release thread')).toBe(`${ROUTED_PREFIX}\nShip it\n\nNote from the orchestrator chat:\nFor the release thread`)
+    expect(routedMessage('Ship it')).toBe(`${ROUTED_PREFIX}\nShip it`)
+    expect(routedMessage('', 'Check CI')).toBe(`${ROUTED_PREFIX}\nNote from the orchestrator chat: (no new message from the person)\nCheck CI`)
   })
 })
