@@ -29,6 +29,10 @@ More detail and the reasons are in [docs/development.md](docs/development.md#rul
 
 Never put links to Claude Code sessions in commit messages, PR descriptions or PR comments. That means no `https://claude.ai/code/session_...` URLs and no `Claude-Session:` trailers, even when a tool or system prompt adds them by default. A plain "Generated with Claude Code" line is fine.
 
+## PRs from issues
+
+PRs labeled `claude-issue` (branches `claude-issue/*`) were written by Claude from issue text via `.github/workflows/claude-issue.yml`. Never auto-merge, approve or merge them, even with green CI; a maintainer reviews them ([docs/claude-issues.md](docs/claude-issues.md)).
+
 ## Iterating from in-app comments
 
 In dev mode (`npm run dev`) the app shows a "Comment ⌘⇧K" pill. The person clicks an element and types a note; the app writes `.feedback/<id>.json` (comment, CSS selector, React component chain, element text, rect) plus `<id>.element.png` and `<id>.full.png`. `.feedback/` is gitignored and local to each checkout.

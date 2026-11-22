@@ -1,6 +1,8 @@
 name: CI
 on:
   pull_request:
+  # Started by claude-issue.yml for its PRs, since pushes made with the job token start no workflows.
+  workflow_dispatch:
   push:
     branches: [main]
 jobs:
