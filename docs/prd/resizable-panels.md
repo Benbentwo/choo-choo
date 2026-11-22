@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #112); pane toggles (PR #124) |
 | Owner | Claude (cloud thread "Make side panes resizable and expandable") |
 | Requested by | Ben, 2026-11-13 |
 | Last updated | 2026-11-16 |

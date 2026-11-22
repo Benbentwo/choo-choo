@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Shipped (PR #75); graph in review |
+| Status | Shipped (PR #75); graph (PR #76) |
 | Owner | Claude |
 | Requested by | Ben, in-app comment, 2026-11-10 |
 | Last updated | 2026-11-10 |

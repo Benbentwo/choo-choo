@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #62); hide rows and collapse projects (PR #68) |
 | Owner | Claude |
 | Requested by | Ben, 2026-11-09 |
 | Last updated | 2026-11-10 |

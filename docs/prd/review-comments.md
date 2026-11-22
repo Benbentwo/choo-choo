@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #84) |
 | Owner | Claude |
 | Requested by | Ben, 2026-11-10 |
 | Last updated | 2026-11-12 |

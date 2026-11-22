@@ -10,7 +10,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [PRDs](prd/) | One per feature area: problem, requirements, design, open questions |
 | [Decision records](decisions/) | Choices we don't want to relitigate, with the reasons |
 | [Writing an add-on](addon-api.md) | The add-on manifest, the sandbox and the host API |
-| [Developing](development.md) | Building from source, comment mode, and where things live |
+| [Developing](development.md) | Building from source, rules of thumb for changing the code, comment mode |
 | [README GIFs](demo-gifs.md) | Recording the feature GIFs from the real app with scripted agents |
 | [Releasing](releasing.md) | Stable releases, betas, signing secrets and the Homebrew cask |
 | [Brand](brand/) | Logo, palette and guidelines |
@@ -28,38 +28,38 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Extra agents and advisor](prd/extra-agents.md) | Shipped |
 | [Appearance](prd/appearance.md) | Shipped |
 | [Comment mode](prd/comment-mode.md) | Shipped |
-| [Custom system prompts](prd/system-prompts.md) | In review |
-| [Telemetry](prd/telemetry.md) | In review |
+| [Custom system prompts](prd/system-prompts.md) | Shipped (PR #32) |
+| [Telemetry](prd/telemetry.md) | Shipped (PR #33, #37) |
 | [Review plan](prd/plan-review.md) | Shipped |
-| [Integrations](prd/integrations.md) | Planned |
-| [Add PR comments to chat](prd/pr-comments.md) | In review |
-| [Line comments to the agent or a GitHub review](prd/review-comments.md) | In review |
+| [Integrations](prd/integrations.md) | Notion shipped; Linear not merged |
+| [Add PR comments to chat](prd/pr-comments.md) | Shipped (PR #48) |
+| [Line comments to the agent or a GitHub review](prd/review-comments.md) | Shipped (PR #84) |
 | [Markdown preview diffs and syntax-colored diffs](prd/markdown-diff.md) | Shipped (PR #137, Mermaid #145) |
 | [Image diffs (PNG and SVG)](prd/image-diff.md) | Shipped (PR #141) |
-| [Remote sessions (phone, cloud and Claude desktop)](prd/remote-sessions.md) | Phone and cloud shipped; Claude desktop in review |
+| [Remote sessions (phone, cloud and Claude desktop)](prd/remote-sessions.md) | Shipped |
 | [Update checks](prd/update-checks.md) | Shipped |
 | [Claude Code session controls](prd/claude-code-controls.md) | Shipped (PR #49) |
 | [MCP servers](prd/mcp-servers.md) | Shipped (PR #50) |
-| [Plugins and skills](prd/plugins.md) | In review |
-| [Managing projects, and PR status](prd/projects-and-pr-status.md) | In review |
+| [Plugins and skills](prd/plugins.md) | Shipped (PR #51) |
+| [Managing projects, and PR status](prd/projects-and-pr-status.md) | Shipped (PR #53) |
 | [PRs page](prd/pr-inbox.md) | Shipped |
 | [Review updates: notify on meaningful PR changes, Since your review](prd/review-updates.md) | Shipped |
-| [Add-ons](prd/add-ons.md) | Shipped: views, background pages, orchestrator tools, project pins; Plan board next |
-| [Arranging and renaming workspaces](prd/sidebar-workspaces.md) | In review |
-| [Stacked PRs](prd/stacked-prs.md) | In review |
-| [Subscription limits in the sidebar](prd/subscription-limits.md) | In review |
+| [Add-ons](prd/add-ons.md) | Shipped: views, background pages, orchestrator tools, project pins, buttons, dev mode |
+| [Arranging and renaming workspaces](prd/sidebar-workspaces.md) | Shipped (PR #62, #68) |
+| [Stacked PRs](prd/stacked-prs.md) | Shipped (PR #65, #72) |
+| [Subscription limits in the sidebar](prd/subscription-limits.md) | Shipped (PR #75, #76) |
 | [Split panels](prd/split-panels.md) | Shipped (PR #73, #144) |
 | [Build and Review workspace modes](prd/workspace-modes.md) | Shipped |
-| [Resizable sidebar and right panel](prd/resizable-panels.md) | In review |
-| [Continue work (resume at usage reset)](prd/continue-work.md) | In review |
-| [Usage history and the Usage page](prd/usage-history.md) | In review |
-| [Save usage in project threads, and models by role](prd/usage-savings.md) | In review |
+| [Resizable sidebar and right panel](prd/resizable-panels.md) | Shipped (PR #112, #124) |
+| [Continue work (resume at usage reset)](prd/continue-work.md) | Shipped (PR #103, #105) |
+| [Usage history and the Usage page](prd/usage-history.md) | Shipped (PR #107) |
+| [Save usage in project threads, and models by role](prd/usage-savings.md) | Shipped (PR #139) |
 | [Rich copy from chat](prd/rich-copy.md) | Shipped |
-| [Settings search](prd/settings-search.md) | In review (PR #118) |
-| [Stop that always stops](prd/stop.md) | In review |
-| [GitHub link previews](prd/link-previews.md) | Shipped (PR #125) |
-| [Live status and check-ins](prd/check-in.md) | In review |
-| [Live Markdown in the message box](prd/live-markdown.md) | In review |
+| [Settings search](prd/settings-search.md) | Shipped (PR #118) |
+| [Stop that always stops](prd/stop.md) | Shipped (PR #122) |
+| [GitHub link previews](prd/link-previews.md) | Shipped (PR #125, #126) |
+| [Live status and check-ins](prd/check-in.md) | Shipped (PR #128) |
+| [Live Markdown in the message box](prd/live-markdown.md) | Shipped (PR #132) |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

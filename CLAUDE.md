@@ -13,6 +13,18 @@ Read [docs/README.md](docs/README.md) before starting a feature. It links the [p
 - The README is for people discovering the app; developer and maintainer notes go in `docs/` (`docs/development.md`, `docs/releasing.md`).
 - New or changed user-facing feature: add or update its README GIF in the same PR, recorded from the real app with `scripts/demo/record.cjs` ([docs/demo-gifs.md](docs/demo-gifs.md)).
 
+## Repo rules
+
+More detail and the reasons are in [docs/development.md](docs/development.md#rules-of-thumb).
+
+- Re-skin in `src/shared/themes.ts` (all theme colors and fonts), never in `styles.css`.
+- A modal or popover opened from a title-bar or header button renders through `createPortal(..., document.body)` with `no-drag` on its backdrop. Inside a `.drag` region Electron swallows its clicks, and browser screenshots won't show the bug.
+- A new Settings section goes in `SETTINGS_SECTIONS` (`src/renderer/src/components/Modals.tsx`). Every new labelled setting goes in `SETTINGS_INDEX` (`src/renderer/src/settingsSearch.ts`), or the coverage test fails.
+- The repo is public. Use generic examples ("Launch v2 onboarding", "a generic issue tracker") in plans, mockups, screenshots, code, docs, PR titles and bodies, never an example from someone's job (employer, vendors, internal tasks), even when the request used one.
+- Record README GIFs in a Linux container (cloud session), not on a Mac: `scripts/demo/record.cjs` refuses to run on macOS ([docs/demo-gifs.md](docs/demo-gifs.md)).
+- GitHub GraphQL is blocked in cloud sessions, so test the PRs page and other `gh api graphql` features with a stand-in `gh` on `PATH` (see `scripts/demo/bin/gh`).
+- Tests that need a DOM put `// @vitest-environment jsdom` at the top of the file.
+
 ## Commits and PRs
 
 Never put links to Claude Code sessions in commit messages, PR descriptions or PR comments. That means no `https://claude.ai/code/session_...` URLs and no `Claude-Session:` trailers, even when a tool or system prompt adds them by default. A plain "Generated with Claude Code" line is fine.
