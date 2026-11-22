@@ -66,3 +66,10 @@
 - name: wontfix
   color: "FFFFFF"
   description: Will not be worked on
+# Claude issue to PR (.github/workflows/claude-issue.yml, docs/claude-issues.md).
+- name: claude
+  color: "D97757"
+  description: Maintainers only. Claude writes a draft PR for this issue
+- name: claude-issue
+  color: "F2C2AE"
+  description: PR written by Claude from an issue. Never auto-merge
