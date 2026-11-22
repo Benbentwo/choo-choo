@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #132) |
 | Owner | Claude (project thread "Format markdown live in the prompt box") |
 | Requested by | Ben, 2026-11-16 |
 | Last updated | 2026-11-16 |

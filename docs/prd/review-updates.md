@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Shipped (PRs #100, #101, #102; new review requests in a follow-up) |
+| Status | Shipped (PRs #100, #101, #102); new review request notifications (PR #117) |
 | Owner | Choo Choo maintainers |
 | Requested by | Ben, 2026-11-12 |
 | Last updated | 2026-11-13 |

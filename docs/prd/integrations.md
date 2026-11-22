@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Notion shipped; Linear in progress |
+| Status | Notion shipped (PR #35); Linear not merged (PR #34 closed) |
 | Requested by | Ben, 2026-11-06 |
 | Last updated | 2026-11-06 |
 

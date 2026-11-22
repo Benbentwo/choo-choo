@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Shipped: Continue on phone (PR #41), Run in cloud (PR #42). In review: Open in Claude desktop |
+| Status | Shipped: Continue on phone (PR #41), Run in cloud (PR #42), Open in Claude desktop (PR #88) |
 | Owner | Claude (project thread "Continue workspaces from phone and cloud") |
 | Requested by | Ben, 2026-11-06 ("How can we use Claude Code remote sessions?") |
 | Last updated | 2026-11-12 |

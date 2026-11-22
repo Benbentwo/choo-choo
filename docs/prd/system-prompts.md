@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review (PR #32) |
+| Status | Shipped (PR #32) |
 | Requested by | Ben, 2026-11-06 |
 | Last updated | 2026-11-06 |
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #65); GitHub stack linking and merge through (PR #72) |
 | Owner | Claude |
 | Requested by | Ben, 2026-11-10 |
 | Last updated | 2026-11-10 (link on GitHub, merge through) |

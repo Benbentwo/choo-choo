@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review |
+| Status | Shipped (PR #139) |
 | Owner | Ben |
 | Requested by | Ben, 2026-11-18 |
 | Last updated | 2026-11-18 |
