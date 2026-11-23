@@ -164,7 +164,9 @@ brew install --cask benbentwo/tap/choo-choo
 
 Or download the `.dmg` from the [latest release](https://github.com/Benbentwo/choo-choo/releases/latest) (`arm64` for Apple silicon, `x64` for Intel) and drag Choo Choo to Applications.
 
-Builds are signed and notarized, and the app updates itself (Settings > Updates). To try new features early, pick Settings > Updates > Update channel > **Beta**: you'll get a signed build from every merge to `main`.
+On Linux (x64), download the `.AppImage` or the `.deb` from the same page. Linux builds are unsigned; the AppImage updates itself, and the `.deb` shows a link to the release page.
+
+Mac builds are signed and notarized, and the app updates itself (Settings > Updates). To try new features early, pick Settings > Updates > Update channel > **Beta**: you'll get a signed build from every merge to `main`.
 
 You'll also want the [`gh` CLI](https://cli.github.com/) (`brew install gh`, then `gh auth login`) for PR features.
 

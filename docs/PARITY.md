@@ -110,6 +110,7 @@ Worktrees live at `~/choo-choo/workspaces/<repo>/<city-name>`, like Conductor's 
 - ✅ Claude Code version and update check (Settings > Updates; runs `claude update` for an installed copy)
 - ✅ What's new: the update card and Settings > Updates show the release notes of every version between yours and the update, in plain words (choo-choo addition, [PRD](prd/update-checks.md))
 - ✅ Restart when idle: installing an update waits for running chats, and turns cut off by a restart, quit or crash pick up in the same session on the next launch (choo-choo addition, [decision 0021](decisions/0021-restart-waits-then-resumes.md))
+- 🚧 Linux (x64 AppImage and deb, unsigned): a deviation, since Conductor is Mac only. Packaging is in; workflows and Mac-only app code are still to do ([PRD](prd/linux.md), [decision 0025](decisions/0025-linux-appimage-deb-unsigned.md))
 
 ### Beyond Conductor
 - ✅ Shared sessions: share a workspace (branch, uncommitted files, chats) with coworkers through the repo's own remote; they continue with their own Claude login

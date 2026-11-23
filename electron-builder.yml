@@ -20,6 +20,20 @@ mac:
       arch: [arm64, x64]
     - target: zip
       arch: [arm64, x64]
+linux:
+  category: Development
+  icon: resources/icon.png
+  # x64 only to start. The Claude binary is installed first (scripts/install-claude-binaries.cjs linux).
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  mimeTypes: [x-scheme-handler/choo-choo]
+appImage:
+  artifactName: ChooChoo-${version}-x86_64.AppImage
+deb:
+  artifactName: choo-choo_${version}_amd64.deb
 afterPack: build/afterPack.cjs
 # choo-choo://share links open a coworker's shared session.
 protocols:
