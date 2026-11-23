@@ -16,6 +16,11 @@ export interface Pace {
   status: 'on-track' | 'ahead' | 'over'
 }
 
+/** A window whose reset time has passed is back to zero with an empty graph, until a fresh reading says otherwise. */
+export function expireWindow(w: LimitWindow, now = Date.now()): LimitWindow {
+  return w.resetsAt && w.resetsAt <= now ? { ...w, percent: 0, resetsAt: undefined, history: [] } : w
+}
+
 /** Compares usage to an even spread across the window, and projects it to reset at the recent rate. */
 export function pace(w: LimitWindow, now = Date.now()): Pace | null {
   if (!w.resetsAt || !w.windowMs) return null
