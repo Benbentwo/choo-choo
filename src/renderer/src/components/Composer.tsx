@@ -3,9 +3,10 @@ import { useWorkspaceMode } from '../prReview'
 import { inOpenFence } from '../markdown'
 import type { Chat, Effort, ExtraAgentId, ModelId, OutputStyleInfo, Permission, SlashCommandInfo, Workspace } from '@shared/types'
 import { useStore, reportError, modelLabel, setCodeComments, codeCommentsMessage, destOf, reviewTarget, openDoc } from '../store'
-import { IconDown, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
+import { IconDown, IconFile, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
 import { FORCE_STOP_AFTER_MS } from '@shared/stop'
+import { INLINE_IMAGE, addAttachedFiles, fileName, withAttachedFiles } from '@shared/attachments'
 import { MarkdownInput, type MarkdownInputHandle } from './MarkdownInput'
 
 export const MODELS: { id: ModelId; label: string }[] = [
@@ -107,7 +108,9 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   // GitHub review drafts wait in the Review tab; only agent comments go with a chat message.
   const codeComments = allComments.filter((c) => destOf(c) === 'agent')
   const prReview = useStore((s) => s.prReview[ws.id])
-  const hasContent = !!text.trim() || images.length > 0 || codeComments.length > 0
+  /** Paths of attached files that aren't pictures; the message lists them for the agent to read. */
+  const [attached, setAttached] = useState<string[]>([])
+  const hasContent = !!text.trim() || images.length > 0 || attached.length > 0 || codeComments.length > 0
   const [dragging, setDragging] = useState(false)
   const [goalOpen, setGoalOpen] = useState(false)
   const [goalText, setGoalText] = useState('')
@@ -191,9 +194,14 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
     })
   }
 
-  const addImageFiles = (files: FileList | File[]) => {
+  /** Pictures go to the model as images; any other file is attached by its path. */
+  const addFiles = (files: FileList | File[]) => {
     for (const f of Array.from(files)) {
-      if (!/^image\/(png|jpeg|gif|webp)$/.test(f.type)) continue
+      if (!INLINE_IMAGE.test(f.type)) {
+        const path = window.api.pathForFile(f)
+        if (path) setAttached((list) => addAttachedFiles(list, [path]))
+        continue
+      }
       if (f.size > 5 * 1024 * 1024) {
         reportError(new Error(`${f.name || 'Image'} is larger than 5 MB`))
         continue
@@ -205,12 +213,13 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   }
 
   const submit = async () => {
-    const typed = text.trim() || (images.length && !codeComments.length ? 'See the attached image.' : '')
-    const t = codeComments.length ? codeCommentsMessage(codeComments, typed, reviewTarget(prReview, mode)) : typed
+    const typed = text.trim() || (images.length && !attached.length && !codeComments.length ? 'See the attached image.' : '')
+    const t = withAttachedFiles(codeComments.length ? codeCommentsMessage(codeComments, typed, reviewTarget(prReview, mode)) : typed, attached)
     if (!t) return
     const imgs = images
     setText('')
     setImages([])
+    setAttached([])
     setTrigger(null)
     if (codeComments.length) setCodeComments(ws.id, (list) => list.filter((c) => destOf(c) !== 'agent'))
     try {
@@ -263,7 +272,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
         onDrop={(e) => {
           e.preventDefault()
           setDragging(false)
-          addImageFiles(e.dataTransfer.files)
+          addFiles(e.dataTransfer.files)
         }}
       >
         {showPopup && (
@@ -376,6 +385,19 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
             ))}
           </div>
         )}
+        {attached.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+            {attached.map((p) => (
+              <span key={p} className="flex max-w-[260px] items-center gap-1.5 rounded-md bg-raised px-2 py-0.5 font-mono text-[11px] text-muted" title={p}>
+                <IconFile width={11} height={11} className="shrink-0" />
+                <span className="truncate">{fileName(p)}</span>
+                <button title="Remove file" className="shrink-0 hover:text-fg" onClick={() => setAttached(attached.filter((x) => x !== p))}>
+                  <IconX width={10} height={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <MarkdownInput
           key={chat.id}
           ref={ta}
@@ -384,9 +406,9 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
           value={drafts[chat.id] ?? ''}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData?.files ?? [])
-            if (!files.some((f) => f.type.startsWith('image/'))) return false
+            if (!files.length) return false
             e.preventDefault()
-            addImageFiles(files)
+            addFiles(files)
             return true
           }}
           onChange={(value, caret) => {
@@ -539,9 +561,17 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
             </button>
           )}
           <div className="flex-1" />
-          <label className="cursor-pointer rounded p-1.5 text-muted hover:bg-hover hover:text-fg" title="Attach images">
+          <label className="cursor-pointer rounded p-1.5 text-muted hover:bg-hover hover:text-fg" title="Attach images or files">
             <IconImage />
-            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple className="hidden" onChange={(e) => e.target.files && addImageFiles(e.target.files)} />
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) addFiles(e.target.files)
+                e.target.value = ''
+              }}
+            />
           </label>
           <button className="rounded p-1.5 text-muted hover:bg-hover hover:text-fg" title="Add folder" onClick={() => void addFolder()}>
             <IconPlus />

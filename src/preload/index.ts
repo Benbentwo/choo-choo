@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webFrame } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 import type { Api, ChatEvent } from '@shared/types'
 import type { UpdateStatus } from '@shared/updates'
 import type { AddonAppEvent, AddonReloaded, AddonToolCall } from '@shared/addons'
@@ -55,6 +55,7 @@ const api: Api = {
   updateChat: inv('chat:update') as Api['updateChat'],
   resolveThread: inv('chat:resolve') as Api['resolveThread'],
   sendMessage: inv('chat:send') as Api['sendMessage'],
+  pathForFile: (f) => webUtils.getPathForFile(f),
   stopChat: inv('chat:stop') as Api['stopChat'],
   stopTask: inv('chat:stopTask') as Api['stopTask'],
   listOutputStyles: inv('chat:outputStyles') as Api['listOutputStyles'],

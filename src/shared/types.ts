@@ -1224,6 +1224,8 @@ export interface Api {
   /** `beside`: an add-on page asked to show the workspace next to itself (choo.ui.openWorkspace with beside). */
   onNavigate(cb: (workspaceId: string, chatId: string, beside?: { key: string; viewId: string; repoId?: string }) => void): () => void
   sendMessage(chatId: string, text: string, images?: string[]): Promise<void>
+  /** The path on disk of a dropped, pasted or picked file ('' when it has none, such as a pasted screenshot). */
+  pathForFile(file: File): string
   /** Stops the chat's turn. `force` kills it right away (Stop pressed again while stopping). */
   stopChat(chatId: string, opts?: { force?: boolean }): Promise<void>
   /** Hands the chat's session to Remote Control, to steer from claude.ai/code or the Claude app. */
