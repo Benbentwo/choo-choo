@@ -53,6 +53,8 @@ jobs:
     needs: gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      error: ${{ steps.report.outputs.error }}
     permissions:
       contents: read
     steps:
@@ -86,6 +88,7 @@ jobs:
             }
           claude_args: >-
             --max-turns 40
+            --model claude-sonnet-5-5
             --disallowedTools Bash,WebFetch,WebSearch,NotebookEdit,Task
           prompt: |
             You are working on issue #${{ github.event.issue.number }} in ${{ github.repository }}.
@@ -117,6 +120,23 @@ jobs:
             ${{ github.event.issue.body }}
             </body>
             </issue>
+
+      # Without this, an API error (bad key, no credits) only shows as "is_error: true".
+      - name: Report why Claude stopped
+        id: report
+        if: always() && steps.claude.outcome == 'failure'
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          f="${EXECUTION_FILE:-$RUNNER_TEMP/claude-execution-output.json}"
+          msg=""
+          if [ -f "$f" ]; then
+            msg=$(jq -r '[.[] | select(.type == "result") | (.result // .errors // empty) | tostring] | last // empty' "$f" | tr '\n' ' ' | cut -c1-300)
+          fi
+          # Never echo anything token-shaped into a public log or comment.
+          if printf '%s' "$msg" | grep -qE 'sk-ant-|gh[pousr]_|github_pat_'; then msg="(message hidden: it contained a token-shaped string)"; fi
+          echo "::error::Claude stopped: ${msg:-no message in the execution log}"
+          echo "error=${msg:-no message in the execution log}" >> "$GITHUB_OUTPUT"
 
       - name: Collect the change as a patch
         env:
@@ -283,6 +303,7 @@ jobs:
       NUMBER: ${{ github.event.issue.number }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       CLAUDE_RESULT: ${{ needs.claude.result }}
+      CLAUDE_ERROR: ${{ needs.claude.outputs.error }}
       PUBLISH_RESULT: ${{ needs.publish.result }}
       REASON: ${{ needs.publish.outputs.reason }}
     steps:
@@ -292,5 +313,6 @@ jobs:
           gh issue edit "$NUMBER" --remove-label claude || true
           if [ "$CLAUDE_RESULT" != success ] || [ "$PUBLISH_RESULT" != success ]; then
             why=${REASON:+ because $REASON}
+            [ -n "$CLAUDE_ERROR" ] && why=" because Claude stopped with: \`$CLAUDE_ERROR\`"
             gh issue comment "$NUMBER" --body "Claude couldn't open a PR for this issue$why (claude: $CLAUDE_RESULT, publish: $PUBLISH_RESULT). See the [run log]($RUN_URL). Add the \`claude\` label again to retry."
           fi

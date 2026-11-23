@@ -47,8 +47,8 @@ Pushes and PRs made with a workflow's own token don't start other workflows. So 
 
 The Claude GitHub App is not needed: the workflow uses its own job token so that Claude never holds a token that can push.
 
-A small change costs cents (the first run on #152 cost about $0.05). A run is capped at 40 turns and 30 minutes. To stop runs, delete the secret or revoke the key in the Console.
+A small change costs cents (the first run on #152 cost about $0.05). Runs use Sonnet to stretch the credits (`--model` in the workflow) and are capped at 40 turns and 30 minutes. To stop runs, delete the secret or revoke the key in the Console.
 
 ## When a run does nothing
 
-The issue comment shows Claude's description, or its last message if it wrote none. The `claude` job's "Collect the change as a patch" step lists every tool call the permission rules refused. The first run (#152) changed nothing because a `Read(~/**)` deny rule also covered the checkout, which lives under the runner's home folder; that rule is now narrowed.
+The issue comment shows Claude's description, or its last message if it wrote none. If the API call itself fails (an invalid key, no credit balance, a spend limit reached), the failure comment quotes the API's error. The `claude` job's "Collect the change as a patch" step lists every tool call the permission rules refused. The first run (#152) changed nothing because a `Read(~/**)` deny rule also covered the checkout, which lives under the runner's home folder; that rule is now narrowed.
