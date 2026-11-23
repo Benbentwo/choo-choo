@@ -63,6 +63,15 @@ could not do. Write or update that file early and keep it current, because the r
 cut off at a turn or cost limit, and whatever you have changed by then is still published as a
 draft. If the issue is unclear, is not a code or docs change, or should not be
 done, change no files and explain why in .claude-pr-body.md instead.
+
+Also keep a status in .claude-status.md at the repository root. Its first line is exactly
+one of these words, and the lines after it say why:
+  done               the change resolves the issue; nothing is left for another run
+  needs-another-run  more work remains that you could do in another run; list what is left
+  blocked            you need something from a maintainer (a decision, a change under
+                     .github/, a secret, access); say exactly what
+Write it early as needs-another-run with what is left, and update it as you go, so a run
+cut off at a limit still says what remains. Set done only when nothing is left.
 ${earlier}
 <issue number="${ISSUE_NUMBER}">
 <title>${ISSUE_TITLE}</title>
