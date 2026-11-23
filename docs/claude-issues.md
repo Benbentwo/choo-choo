@@ -1,15 +1,20 @@
 # Claude issue to PR
 
-A maintainer adds the `claude` label to an issue, and Claude writes a draft pull request for it. The workflow is [.github/workflows/claude-issue.yml](../.github/workflows/claude-issue.yml). It runs on Ben's Anthropic API credits through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) (`.github/scripts/claude-issue-agent.mjs`).
+A maintainer adds a `claude` label to an issue, and Claude writes a draft pull request for it. The workflow is [.github/workflows/claude-issue.yml](../.github/workflows/claude-issue.yml). It runs on Ben's Anthropic API credits through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) (`.github/scripts/claude-issue-agent.mjs`).
 
 ## Using it
 
 1. Read the issue. Its text goes to Claude, so only label issues whose text you'd hand to a coworker as-is. Edit out anything odd first.
-2. Add the `claude` label. Only people with write access can start a run. Anyone else's label is ignored.
-3. Within about 30 minutes, Claude opens a draft PR from `claude-issue/<number>` with the `claude-issue` label, or comments on the issue to say why it made no change. The run removes the `claude` label when it ends.
+2. Add a label. Only people with write access can start a run. Anyone else's label is ignored.
+
+   | Label | Model |
+   |---|---|
+   | `claude` or `claude/sonnet` | Sonnet |
+   | `claude/opus` | Opus, for harder issues. It costs about 5x as much per run. |
+3. Within about 30 minutes, Claude opens a draft PR from `claude-issue/<number>` with the `claude-issue` label, or comments on the issue to say why it made no change. The run removes the label when it ends.
 4. Review the PR like a stranger's. Then mark it ready and merge it yourself.
 
-To retry or to try again after editing the issue, add the label again. The new run replaces the branch and updates the open PR.
+To retry or to try again after editing the issue, add a label again. Switching from `claude` to `claude/opus` reruns the issue on Opus. The new run replaces the branch and updates the open PR.
 
 ## Never auto-merged
 
@@ -21,7 +26,7 @@ The repo is public, so anyone can file an issue, and an issue can carry instruct
 
 | Restraint | How |
 |---|---|
-| Only maintainers start it | Runs only on the `claude` label. The `gate` job checks that whoever added it has write, maintain or admin access, and that they are a person, not a bot. |
+| Only maintainers start it | Runs only on the `claude`, `claude/sonnet` and `claude/opus` labels. The `gate` job checks that whoever added it has write, maintain or admin access, and that they are a person, not a bot. |
 | Claude can't write to the repo | The `claude` job's token can only read, and Claude's process gets no GitHub token at all (only `PATH`, `HOME` and the API key). The checkout keeps no credentials. Claude's work leaves the job as a patch file. |
 | Claude can only edit files | No shell, web or GitHub tools, and no subagents. It can't run commands or reach the network, so it can't run repo code or send anything out. Reads of `/proc`, `/sys`, `/etc`, `~/.claude`, `~/.config`, `~/.ssh`, the runner temp folder and `.git` are denied. (Not the whole home folder: the checkout lives under it.) |
 | No other secrets | Only `ANTHROPIC_API_KEY` is referenced, and only by the `claude` job. Signing, notarization and Homebrew secrets are never available to this workflow. |
@@ -47,7 +52,7 @@ Pushes and PRs made with a workflow's own token don't start other workflows. So 
 
 The Claude GitHub App is not needed: the workflow uses its own job token so that Claude never holds a token that can push.
 
-A small change costs cents (the first run on #152 cost about $0.05). Runs use Sonnet to stretch the credits (`--model` in the workflow) and are capped at 40 turns and 30 minutes. To stop runs, delete the secret or revoke the key in the Console.
+A small change costs cents (the first run on #152 cost about $0.05). Runs use Sonnet unless the label is `claude/opus` (`CLAUDE_MODEL` in the workflow) and are capped at 40 turns and 30 minutes. To stop runs, delete the secret or revoke the key in the Console.
 
 ## Why the Agent SDK, not claude-code-action
 

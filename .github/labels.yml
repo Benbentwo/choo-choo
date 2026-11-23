@@ -69,7 +69,13 @@
 # Claude issue to PR (.github/workflows/claude-issue.yml, docs/claude-issues.md).
 - name: claude
   color: "D97757"
-  description: Maintainers only. Claude writes a draft PR for this issue
+  description: Maintainers only. Claude (Sonnet) writes a draft PR for this issue
+- name: claude/sonnet
+  color: "D97757"
+  description: Maintainers only. Claude (Sonnet) writes a draft PR for this issue
+- name: claude/opus
+  color: "B85C3E"
+  description: Maintainers only. Claude (Opus, about 5x the cost) writes a draft PR for this issue
 - name: claude-issue
   color: "F2C2AE"
   description: PR written by Claude from an issue. Never auto-merge

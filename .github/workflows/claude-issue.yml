@@ -1,4 +1,5 @@
-# Turns an issue into a draft PR when a maintainer adds the `claude` label.
+# Turns an issue into a draft PR when a maintainer adds a `claude` label:
+# `claude` or `claude/sonnet` runs Sonnet, `claude/opus` runs Opus.
 # See docs/claude-issues.md for the setup and the reasons behind each restraint.
 #
 # The repo is public, so anyone can write an issue and an issue can carry text aimed at Claude.
@@ -27,7 +28,7 @@ concurrency:
 jobs:
   gate:
     if: >-
-      github.event.label.name == 'claude' &&
+      contains(fromJSON('["claude", "claude/sonnet", "claude/opus"]'), github.event.label.name) &&
       github.event.sender.type == 'User' &&
       github.event.issue.pull_request == null &&
       github.event.issue.state == 'open'
@@ -82,7 +83,8 @@ jobs:
           # Billed to the API key's org. Promotional API credits cover the Agent SDK, not Claude
           # Code, which is why this runs the SDK directly (docs/claude-issues.md).
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          CLAUDE_MODEL: claude-sonnet-5-5
+          # The label picks the model: claude/opus runs Opus, claude and claude/sonnet run Sonnet.
+          CLAUDE_MODEL: ${{ github.event.label.name == 'claude/opus' && 'claude-opus-5-5' || 'claude-sonnet-5-5' }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
@@ -151,6 +153,8 @@ jobs:
       NUMBER: ${{ github.event.issue.number }}
       TITLE: ${{ github.event.issue.title }}
       ACTOR: ${{ github.event.sender.login }}
+      LABEL: ${{ github.event.label.name }}
+      MODEL: ${{ github.event.label.name == 'claude/opus' && 'Opus' || 'Sonnet' }}
       BRANCH: claude-issue/${{ github.event.issue.number }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
@@ -218,8 +222,8 @@ jobs:
           out="$RUNNER_TEMP/claude-out"
           git config user.name "github-actions[bot]"
           git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
-          printf 'Resolve #%s: %s\n\nWritten by Claude from issue #%s after %s added the claude label.\n' \
-            "$NUMBER" "$TITLE" "$NUMBER" "$ACTOR" > "$out/commit.txt"
+          printf 'Resolve #%s: %s\n\nWritten by Claude from issue #%s after %s added the %s label.\n' \
+            "$NUMBER" "$TITLE" "$NUMBER" "$ACTOR" "$LABEL" > "$out/commit.txt"
           git commit -q -F "$out/commit.txt"
           # A later run for the same issue replaces the branch.
           git push --force origin "HEAD:refs/heads/$BRANCH"
@@ -228,7 +232,7 @@ jobs:
             echo "Closes #$NUMBER"
             echo
             echo "> [!IMPORTANT]"
-            echo "> Written by Claude from issue #$NUMBER after \`$ACTOR\` added the \`claude\` label. The issue text is untrusted input."
+            echo "> Written by Claude from issue #$NUMBER after \`$ACTOR\` added the \`$LABEL\` label (model: $MODEL). The issue text is untrusted input."
             echo "> **Never auto-merge.** A maintainer reviews every line before merging. See docs/claude-issues.md."
             if [ -n "$SENSITIVE" ]; then
               echo
@@ -270,6 +274,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       NUMBER: ${{ github.event.issue.number }}
+      LABEL: ${{ github.event.label.name }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       CLAUDE_RESULT: ${{ needs.claude.result }}
       CLAUDE_ERROR: ${{ needs.claude.outputs.error }}
@@ -279,9 +284,9 @@ jobs:
       - name: Remove the label and report failures
         run: |
           # One label, one run. Add the label again to retry.
-          gh issue edit "$NUMBER" --remove-label claude || true
+          gh issue edit "$NUMBER" --remove-label "$LABEL" || true
           if [ "$CLAUDE_RESULT" != success ] || [ "$PUBLISH_RESULT" != success ]; then
             why=${REASON:+ because $REASON}
             [ -n "$CLAUDE_ERROR" ] && why=" because Claude stopped with: \`$CLAUDE_ERROR\`"
-            gh issue comment "$NUMBER" --body "Claude couldn't open a PR for this issue$why (claude: $CLAUDE_RESULT, publish: $PUBLISH_RESULT). See the [run log]($RUN_URL). Add the \`claude\` label again to retry."
+            gh issue comment "$NUMBER" --body "Claude couldn't open a PR for this issue$why (claude: $CLAUDE_RESULT, publish: $PUBLISH_RESULT). See the [run log]($RUN_URL). Add the \`$LABEL\` label again to retry."
           fi
