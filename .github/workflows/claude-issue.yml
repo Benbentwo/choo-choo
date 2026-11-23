@@ -151,6 +151,7 @@ jobs:
           out="$RUNNER_TEMP/claude-out"
           mkdir -p "$out"
           if [ -f .claude-pr-body.md ]; then mv .claude-pr-body.md "$out/body.md"; else : > "$out/body.md"; fi
+          if [ -f .claude-status.md ]; then mv .claude-status.md "$out/status.md"; else : > "$out/status.md"; fi
           if [ -f "$EXECUTION_FILE" ]; then
             # Which tool calls the permission rules refused, so a run that did nothing can be explained.
             echo "Refused tool calls:"
@@ -209,6 +210,45 @@ jobs:
         id: check
         run: |
           out="$RUNNER_TEMP/claude-out"
+
+          # Claude's status: first line done, needs-another-run or blocked; the rest says what's left
+          # or what it needs. A run cut off by a limit always needs another run.
+          state=$(head -n1 "$out/status.md" | tr -d '[:space:]`*' | tr '[:upper:]' '[:lower:]')
+          case "$state" in done|needs-another-run|blocked) ;; *) state=unreported ;; esac
+          [ "$PARTIAL" = true ] && state=needs-another-run
+          tail -n +2 "$out/status.md" | sed '/./,$!d' > "$out/status-details.md"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          {
+            case "$state" in
+              done)
+                echo "**Status: Done.** Claude thinks this resolves the issue. Review it, then mark it ready and merge it." ;;
+              needs-another-run)
+                if [ "$PARTIAL" = true ]; then
+                  echo "**Status: Needs another run.** Claude hit the per-run turn or cost limit before it was done. Add the \`$LABEL\` label again to continue."
+                else
+                  echo "**Status: Needs another run.** Add the \`$LABEL\` label again to continue."
+                fi ;;
+              blocked)
+                echo "**Status: Blocked.** Claude needs something from a maintainer before it can go on:" ;;
+              *)
+                echo "**Status: Not reported.** Claude didn't say whether it finished. Check the description below." ;;
+            esac
+            if [ -s "$out/status-details.md" ]; then
+              [ "$state" = needs-another-run ] && { echo; echo "What's left:"; }
+              echo
+              cat "$out/status-details.md"
+            fi
+          } > "$out/status-block.md"
+
+          # Never print the matching lines: Actions logs on a public repo are public.
+          # The description and status here; the patch's added lines after it is applied.
+          cat "$out/body.md" "$out/status.md" > "$out/added.txt"
+          if grep -qE 'sk-ant-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' "$out/added.txt"; then
+            echo "::error::The change or its description contains something shaped like a token or key. Not publishing."
+            echo "reason=its output contained something shaped like a token or key" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
           if [ ! -s "$out/changes.patch" ]; then
             echo "empty=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -217,19 +257,19 @@ jobs:
           git apply --index --whitespace=nowarn "$out/changes.patch"
           git diff --cached --name-only --no-renames > "$out/files.txt"
 
+          # The patch itself, binary files included, gets the same token check.
+          git diff --cached -U0 --text | grep '^+' > "$out/added-lines.txt" || true
+          if grep -qE 'sk-ant-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' "$out/added-lines.txt"; then
+            echo "::error::The change contains something shaped like a token or key. Not publishing."
+            echo "reason=its output contained something shaped like a token or key" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
           blocked=$(grep -E '^(\.github/|\.claude/|\.husky/|\.mcp\.json$|\.npmrc$|CLAUDE\.md$|package-lock\.json$)' "$out/files.txt" || true)
           if [ -n "$blocked" ]; then
             echo "::error::Claude's change touches files this workflow never publishes:"
             echo "$blocked"
             echo "reason=it changed files this workflow never publishes (workflows, agent settings, CLAUDE.md or the lockfile)" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          # Never print the matching lines: Actions logs on a public repo are public.
-          { git diff --cached -U0 --text | grep '^+' || true; cat "$out/body.md"; } > "$out/added.txt"
-          if grep -qE 'sk-ant-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' "$out/added.txt"; then
-            echo "::error::The change or its description contains something shaped like a token or key. Not publishing."
-            echo "reason=its output contained something shaped like a token or key" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
@@ -249,6 +289,8 @@ jobs:
             echo
             cat "$out/body.md"
             echo
+            cat "$out/status-block.md"
+            echo
             echo "[Run log]($RUN_URL)"
           } > "$out/comment.md"
           gh issue comment "$NUMBER" --body-file "$out/comment.md"
@@ -257,6 +299,7 @@ jobs:
         if: steps.check.outputs.empty != 'true'
         env:
           SENSITIVE: ${{ steps.check.outputs.sensitive }}
+          STATE: ${{ steps.check.outputs.state }}
         run: |
           out="$RUNNER_TEMP/claude-out"
           git config user.name "github-actions[bot]"
@@ -279,11 +322,12 @@ jobs:
             echo "> [!IMPORTANT]"
             echo "> Written by Claude from issue #$NUMBER after \`$ACTOR\` added the \`$LABEL\` label (model: $MODEL). The issue text is untrusted input."
             echo "> **Never auto-merge.** A maintainer reviews every line before merging. See docs/claude-issues.md."
-            if [ "$PARTIAL" = true ]; then
-              echo
-              echo "> [!CAUTION]"
-              echo "> **Unfinished.** Claude hit the per-run turn or cost limit before it was done. This is the work so far."
-            fi
+            case "$STATE" in
+              needs-another-run|blocked)
+                echo
+                echo "> [!CAUTION]"
+                echo "> **Not finished** ($STATE). See the status at the end." ;;
+            esac
             if [ -n "$SENSITIVE" ]; then
               echo
               echo "> [!WARNING]"
@@ -292,6 +336,10 @@ jobs:
             fi
             echo
             cat "$out/body.md"
+            echo
+            echo "## Status"
+            echo
+            cat "$out/status-block.md"
             echo
             echo "---"
             echo "[Run log]($RUN_URL)"
@@ -313,13 +361,14 @@ jobs:
           gh workflow run ci.yml --ref "$BRANCH" || echo "::warning::Could not start CI"
           gh workflow run codeql.yml --ref "$BRANCH" || echo "::warning::Could not start CodeQL"
 
-          note=""
-          [ "$PARTIAL" = true ] && note=" It's unfinished: Claude hit the per-run turn or cost limit."
-          if [ -n "$CONTINUED" ]; then
-            gh issue comment "$NUMBER" --body "Claude continued the draft PR for this: #$pr.$note It waits for a maintainer's review and is never auto-merged."
-          else
-            gh issue comment "$NUMBER" --body "Claude opened a draft PR for this: #$pr.$note It waits for a maintainer's review and is never auto-merged."
-          fi
+          verb=opened
+          [ -n "$CONTINUED" ] && verb=continued
+          {
+            echo "Claude $verb the draft PR for this: #$pr. It waits for a maintainer's review and is never auto-merged."
+            echo
+            cat "$out/status-block.md"
+          } > "$out/comment.md"
+          gh issue comment "$NUMBER" --body-file "$out/comment.md"
 
   finish:
     needs: [gate, claude, publish]

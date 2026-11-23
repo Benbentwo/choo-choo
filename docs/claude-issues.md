@@ -12,7 +12,11 @@ A maintainer adds a `claude` label to an issue, and Claude writes a draft pull r
    | `claude` or `claude/sonnet` | Sonnet |
    | `claude/opus` | Opus, for harder issues. It costs about 5x as much per run. |
 3. Within about 30 minutes, Claude opens a draft PR from `claude-issue/<number>` with the `claude-issue` label, or comments on the issue to say why it made no change. The run removes the label when it ends.
-4. Review the PR like a stranger's. Then mark it ready and merge it yourself.
+4. Read the status at the end of the issue comment and the PR description:
+   - **Done**: Claude thinks the issue is resolved.
+   - **Needs another run**: work is left (listed), or the run hit a turn or cost limit. Add the label again to continue.
+   - **Blocked**: Claude needs something from you, such as a decision or a change under `.github/` it isn't allowed to make.
+5. Review the PR like a stranger's. Then mark it ready and merge it yourself.
 
 To keep going, add a label again. If the issue has an open `claude-issue` PR, the new run checks out that PR's branch and continues from it: it sees the files changed so far and the PR description, keeps your own commits on the branch, adds one commit and rewrites the description to cover the whole PR. Use this after a run stops at a limit, after you push fixes, or after editing the issue. Switching from `claude` to `claude/opus` continues on Opus. To start over instead, close the PR first; a run with no open PR replaces the old branch.
 
