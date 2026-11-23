@@ -53,9 +53,10 @@ jobs:
   claude:
     needs: gate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     outputs:
       error: ${{ steps.report.outputs.error }}
+      partial: ${{ steps.claude.outputs.partial }}
     permissions:
       contents: read
     steps:
@@ -85,6 +86,9 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # The label picks the model: claude/opus runs Opus, claude and claude/sonnet run Sonnet.
           CLAUDE_MODEL: ${{ github.event.label.name == 'claude/opus' && 'claude-opus-5-5' || 'claude-sonnet-5-5' }}
+          # Per-run caps. Hitting one still publishes the work so far as a draft PR, marked unfinished.
+          CLAUDE_MAX_TURNS: 100
+          CLAUDE_MAX_BUDGET_USD: ${{ github.event.label.name == 'claude/opus' && '8' || '3' }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
@@ -155,6 +159,7 @@ jobs:
       ACTOR: ${{ github.event.sender.login }}
       LABEL: ${{ github.event.label.name }}
       MODEL: ${{ github.event.label.name == 'claude/opus' && 'Opus' || 'Sonnet' }}
+      PARTIAL: ${{ needs.claude.outputs.partial }}
       BRANCH: claude-issue/${{ github.event.issue.number }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
@@ -234,6 +239,11 @@ jobs:
             echo "> [!IMPORTANT]"
             echo "> Written by Claude from issue #$NUMBER after \`$ACTOR\` added the \`$LABEL\` label (model: $MODEL). The issue text is untrusted input."
             echo "> **Never auto-merge.** A maintainer reviews every line before merging. See docs/claude-issues.md."
+            if [ "$PARTIAL" = true ]; then
+              echo
+              echo "> [!CAUTION]"
+              echo "> **Unfinished.** Claude hit the per-run turn or cost limit before it was done. This is the work so far."
+            fi
             if [ -n "$SENSITIVE" ]; then
               echo
               echo "> [!WARNING]"
@@ -261,7 +271,9 @@ jobs:
           gh workflow run ci.yml --ref "$BRANCH" || echo "::warning::Could not start CI"
           gh workflow run codeql.yml --ref "$BRANCH" || echo "::warning::Could not start CodeQL"
 
-          gh issue comment "$NUMBER" --body "Claude opened a draft PR for this: #$pr. It waits for a maintainer's review and is never auto-merged."
+          note=""
+          [ "$PARTIAL" = true ] && note=" It's unfinished: Claude hit the per-run turn or cost limit."
+          gh issue comment "$NUMBER" --body "Claude opened a draft PR for this: #$pr.$note It waits for a maintainer's review and is never auto-merged."
 
   finish:
     needs: [gate, claude, publish]

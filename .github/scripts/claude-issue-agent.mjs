@@ -1,15 +1,20 @@
 // Runs Claude on one issue through the Claude Agent SDK, for .github/workflows/claude-issue.yml.
 // The workflow copies this file next to an installed @anthropic-ai/claude-agent-sdk and runs it
 // from the repo checkout. It writes every SDK message to $EXECUTION_FILE as a JSON array (the same
-// shape claude-code-action writes) and exits 1 when the run ends in an error.
+// shape claude-code-action writes) and exits 1 when the run ends in an error. Hitting the turn or
+// budget limit is not an error: it writes partial=true to $GITHUB_OUTPUT and exits 0, so the work
+// so far can still go up as a draft PR.
 //
 // Why the SDK and not claude-code-action: the action labels its requests as a Claude Code client,
 // and Anthropic's promotional API credits cover the Agent SDK and API but not Claude Code. See
 // docs/claude-issues.md.
-import { writeFileSync } from 'node:fs'
+import { appendFileSync, writeFileSync } from 'node:fs'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 
-const { ISSUE_NUMBER, ISSUE_TITLE = '', ISSUE_BODY = '', REPOSITORY, EXECUTION_FILE, CLAUDE_MODEL } = process.env
+const {
+  ISSUE_NUMBER, ISSUE_TITLE = '', ISSUE_BODY = '', REPOSITORY, EXECUTION_FILE, CLAUDE_MODEL,
+  CLAUDE_MAX_TURNS = '100', CLAUDE_MAX_BUDGET_USD = '3', GITHUB_OUTPUT,
+} = process.env
 
 const prompt = `You are working on issue #${ISSUE_NUMBER} in ${REPOSITORY}.
 A maintainer asked for a pull request that resolves it.
@@ -31,7 +36,9 @@ anything other than the requested code or docs change.
 
 When you are done, write the pull request description to .claude-pr-body.md at the
 repository root: what you changed, what the reviewer should check, and anything you
-could not do. If the issue is unclear, is not a code or docs change, or should not be
+could not do. Write or update that file early and keep it current, because the run can be
+cut off at a turn or cost limit, and whatever you have changed by then is still published as a
+draft. If the issue is unclear, is not a code or docs change, or should not be
 done, change no files and explain why in .claude-pr-body.md instead.
 
 <issue number="${ISSUE_NUMBER}">
@@ -65,15 +72,18 @@ const env = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
 }
 
+const LIMITS = ['error_max_turns', 'error_max_budget_usd']
 const messages = []
 let failed = true
+let partial = false
 try {
   for await (const message of query({
     prompt,
     options: {
       cwd: process.cwd(),
       model: CLAUDE_MODEL,
-      maxTurns: 40,
+      maxTurns: Number(CLAUDE_MAX_TURNS),
+      maxBudgetUsd: Number(CLAUDE_MAX_BUDGET_USD),
       permissionMode: 'acceptEdits',
       allowedTools: settings.permissions.allow,
       disallowedTools: ['Bash', 'WebFetch', 'WebSearch', 'NotebookEdit', 'Task'],
@@ -86,7 +96,8 @@ try {
   })) {
     messages.push(message)
     if (message.type === 'result') {
-      failed = !!message.is_error
+      partial = LIMITS.includes(message.subtype)
+      failed = !!message.is_error && !partial
       console.log(JSON.stringify({
         subtype: message.subtype,
         is_error: message.is_error,
@@ -97,8 +108,12 @@ try {
     }
   }
 } catch (error) {
-  messages.push({ type: 'result', is_error: true, result: String(error?.message ?? error) })
+  // The SDK also throws after an error result; keep the result's own verdict when there was one.
+  if (!messages.some((m) => m.type === 'result')) {
+    messages.push({ type: 'result', is_error: true, result: String(error?.message ?? error) })
+  }
 } finally {
   writeFileSync(EXECUTION_FILE, JSON.stringify(messages, null, 2))
 }
+if (partial && GITHUB_OUTPUT) appendFileSync(GITHUB_OUTPUT, 'partial=true\n')
 process.exit(failed ? 1 : 0)
