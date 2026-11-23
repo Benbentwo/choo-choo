@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In progress |
+| Status | In review (PR #162) |
 | Requested by | Ben, 2026-11-23 (in-app comment on the message box) |
 | Last updated | 2026-11-23 |
 
