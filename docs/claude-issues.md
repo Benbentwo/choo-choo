@@ -1,6 +1,6 @@
 # Claude issue to PR
 
-A maintainer adds the `claude` label to an issue, and Claude writes a draft pull request for it. The workflow is [.github/workflows/claude-issue.yml](../.github/workflows/claude-issue.yml). It runs on Ben's Anthropic API credits through the official [Claude Code GitHub Action](https://code.claude.com/docs/en/github-actions).
+A maintainer adds the `claude` label to an issue, and Claude writes a draft pull request for it. The workflow is [.github/workflows/claude-issue.yml](../.github/workflows/claude-issue.yml). It runs on Ben's Anthropic API credits through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) (`.github/scripts/claude-issue-agent.mjs`).
 
 ## Using it
 
@@ -21,8 +21,8 @@ The repo is public, so anyone can file an issue, and an issue can carry instruct
 
 | Restraint | How |
 |---|---|
-| Only maintainers start it | Runs only on the `claude` label. The `gate` job checks that whoever added it has write, maintain or admin access. The action checks again. |
-| Claude can't write to the repo | The `claude` job's token can only read. The checkout keeps no credentials. Claude's work leaves the job as a patch file. |
+| Only maintainers start it | Runs only on the `claude` label. The `gate` job checks that whoever added it has write, maintain or admin access, and that they are a person, not a bot. |
+| Claude can't write to the repo | The `claude` job's token can only read, and Claude's process gets no GitHub token at all (only `PATH`, `HOME` and the API key). The checkout keeps no credentials. Claude's work leaves the job as a patch file. |
 | Claude can only edit files | No shell, web or GitHub tools, and no subagents. It can't run commands or reach the network, so it can't run repo code or send anything out. Reads of `/proc`, `/sys`, `/etc`, `~/.claude`, `~/.config`, `~/.ssh`, the runner temp folder and `.git` are denied. (Not the whole home folder: the checkout lives under it.) |
 | No other secrets | Only `ANTHROPIC_API_KEY` is referenced, and only by the `claude` job. Signing, notarization and Homebrew secrets are never available to this workflow. |
 | Risky files are refused | The `publish` job (plain shell, no Claude) refuses a patch that touches `.github/`, `.claude/`, `.husky/`, `.mcp.json`, `.npmrc`, `CLAUDE.md` or `package-lock.json`. A changed workflow could otherwise reach secrets once merged, or a changed agent config could steer later agents. |
@@ -48,6 +48,10 @@ Pushes and PRs made with a workflow's own token don't start other workflows. So 
 The Claude GitHub App is not needed: the workflow uses its own job token so that Claude never holds a token that can push.
 
 A small change costs cents (the first run on #152 cost about $0.05). Runs use Sonnet to stretch the credits (`--model` in the workflow) and are capped at 40 turns and 30 minutes. To stop runs, delete the secret or revoke the key in the Console.
+
+## Why the Agent SDK, not claude-code-action
+
+The org's API credits are promotional grants that apply to the Agent SDK, API, Batch API, Playground and Managed Agents, but not to Claude Code. Purchased credits ($0, and no payment method on file) are the only thing Claude Code requests can use. `claude-code-action` labels its requests as a Claude Code client, so every run failed with "Credit balance is too low". The workflow now calls the Agent SDK itself with the same tool limits. With no purchased credits and no payment method, a request the grants don't cover fails instead of being charged.
 
 ## When a run does nothing
 
