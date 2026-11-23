@@ -167,6 +167,7 @@ const api: Api = {
   reorderGroups: inv('group:reorder') as Api['reorderGroups'],
   pickFiles: inv('files:pick') as Api['pickFiles'],
   modelDetails: inv('models:details') as Api['modelDetails'],
+  platform: process.platform,
   previewConductorImport: inv('conductor:preview') as Api['previewConductorImport'],
   importFromConductor: inv('conductor:import') as Api['importFromConductor'],
   listGithubRepos: inv('gh:repos') as Api['listGithubRepos'],

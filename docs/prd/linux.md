@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In progress: packaging only |
+| Status | In progress: packaging and some app fixes |
 | Decision | [0025](../decisions/0025-linux-appimage-deb-unsigned.md) |
 
 ## Problem
@@ -22,14 +22,17 @@ Choo Choo ships only for macOS. Linux is the smallest step to a second platform:
 - `linux` section in `electron-builder.yml` (AppImage and deb, x64, category Development, `choo-choo://` mime type).
 - `scripts/install-claude-binaries.cjs <mac|linux>` replaces the Mac-only script (the old name still works); `build/afterPack.cjs` keeps the matching Claude binary on Linux.
 - `npm run dist:linux`.
+- Share links: packaged Linux builds take a single-instance lock. A `choo-choo://` link in the first launch's argv opens once the window loads; a second launch hands its argv to the running app (`second-instance`) and quits.
+- PATH: packaged Linux builds pick up the login shell's PATH, as on macOS. Dev runs keep the PATH they started with.
+- Preload exposes `window.api.platform`. Import from Conductor (Home and Settings › General) shows only on macOS.
+- The mono font stacks fall back to `DejaVu Sans Mono` and `Ubuntu Mono`.
 
 ## Future work (not done yet)
 
 - Workflows: a `linux` job in `ci.yml`, `release.yml` (publish job moves to a final job needing both), `beta.yml`, and an unsigned `choo-choo-linux` artifact in `preview.yml`. Workflow files need a maintainer.
-- Title bar: `titleBarStyle: 'hidden'` with `titleBarOverlay` from the theme; expose the platform through preload and move the sidebar padding.
+- Title bar: `titleBarStyle: 'hidden'` with `titleBarOverlay` from the theme; use `window.api.platform` to move the sidebar padding to the right.
 - Keyboard: a shared `mod(e)` and `keyLabel()` so Linux shows `Ctrl+…`.
-- Share links: `requestSingleInstanceLock` and a `second-instance` handler reading argv.
-- Run the login-shell PATH fix on Linux; MCP sign-in without AppleScript; hide Conductor import off Mac; add `DejaVu Sans Mono` and `Ubuntu Mono` to the mono stacks.
+- MCP sign-in without AppleScript.
 
 ## Out of scope
 

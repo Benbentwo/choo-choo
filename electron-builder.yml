@@ -30,6 +30,8 @@ linux:
     - target: deb
       arch: [x64]
   mimeTypes: [x-scheme-handler/choo-choo]
+  # The deb needs a maintainer, and package.json has no author email to fall back on.
+  maintainer: Benbentwo <Benbentwo@users.noreply.github.com>
 appImage:
   artifactName: ChooChoo-${version}-x86_64.AppImage
 deb:
