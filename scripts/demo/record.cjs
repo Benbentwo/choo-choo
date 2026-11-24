@@ -6,7 +6,7 @@
 // Needs `npm run build` first, Playwright (`npm i -g playwright` or on NODE_PATH) and ffmpeg.
 const { _electron } = require('playwright')
 const { execFileSync } = require('node:child_process')
-const { mkdirSync, readdirSync, rmSync, statSync } = require('node:fs')
+const { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } = require('node:fs')
 const { join, resolve } = require('node:path')
 
 const REPO = resolve(__dirname, '../..')
@@ -274,6 +274,40 @@ const scenes = {
       await d.wait(900)
       // Sent, it reads the same in the chat; Claude gets the plain Markdown.
       await d.page.keyboard.press('Enter')
+      await d.wait(2500)
+      await d.shot?.('3-sent')
+    }),
+
+  // Any file attaches to a message: non-image files show as chips with their name and go to the agent as paths it reads.
+  'file-attachments': () =>
+    record('file-attachments', { script: 'file-attachments.json' }, async (d) => {
+      const desk = join(WORK, 'file-attachments', 'home', 'Desktop')
+      mkdirSync(desk, { recursive: true })
+      writeFileSync(join(desk, 'checkout-spec.md'), '# Checkout price table\n\nShow each fare with taxes and a total row.\n')
+      writeFileSync(join(desk, 'fares.csv'), 'route,fare,taxes\nDenver-Moab,129,18\nMoab-Boise,214,31\n')
+      writeFileSync(join(desk, 'old-notes.txt'), 'Superseded by the spec.\n')
+      writeFileSync(join(desk, 'price-table.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80"><rect width="200" height="80" fill="#eee"/></svg>\n')
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Add a price table to checkout')
+      await d.page.getByText('Send me the spec', { exact: false }).first().waitFor({ timeout: 40_000 })
+      await d.wait(1200)
+      d.startGif()
+      const attach = d.page.locator('label[title="Attach images or files"]').first()
+      await d.click(attach)
+      await attach.locator('input[type=file]').setInputFiles(['checkout-spec.md', 'fares.csv', 'old-notes.txt', 'price-table.svg'].map((f) => join(desk, f)))
+      await d.wait(1400)
+      await d.shot?.('1-chips')
+      // The × on a chip takes a file back off.
+      await d.click(d.page.locator('span[title$="old-notes.txt"] button[title="Remove file"]').first())
+      await d.wait(900)
+      const box = d.page.getByTestId('composer-input').first()
+      await d.click(box)
+      await d.type('Build this from the spec and the sample fares', 40)
+      await d.wait(800)
+      await d.shot?.('2-typed')
+      await d.page.keyboard.press('Enter')
+      await d.page.getByText('has the two sample', { exact: false }).first().waitFor({ timeout: 30_000 })
       await d.wait(2500)
       await d.shot?.('3-sent')
     }),

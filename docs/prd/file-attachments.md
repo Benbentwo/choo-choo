@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In review (PR #162) |
+| Status | Shipped (PR #162) |
 | Requested by | Ben, 2026-11-23 (in-app comment on the message box) |
 | Last updated | 2026-11-23 |
 
@@ -47,7 +47,7 @@ Drop a file on the message box, paste one copied from Finder, or pick one with t
 
 ## Testing
 
-`test/attachments.test.ts` covers the message text, de-duplication, the cap and file names. Manual: `npm run dev`, drop a non-image file on the message box, check the chip, send, and check the agent reads it.
+`test/attachments.test.ts` covers the message text, de-duplication, the cap and file names. Manual: `npm run dev`, drop a non-image file on the message box, check the chip, send, and check the agent reads it. The README GIF comes from the `file-attachments` scene in `scripts/demo/record.cjs`, which picks files with the attach button, removes one and sends the rest. Drag and drop from Finder can't be driven there, so check it by hand.
 
 ## Rollout
 

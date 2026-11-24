@@ -61,7 +61,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [GitHub link previews](prd/link-previews.md) | Shipped (PR #125, #126) |
 | [Live status and check-ins](prd/check-in.md) | Shipped (PR #128) |
 | [Live Markdown in the message box](prd/live-markdown.md) | Shipped (PR #132) |
-| [Attach files to a message](prd/file-attachments.md) | In review (PR #162) |
+| [Attach files to a message](prd/file-attachments.md) | Shipped (PR #162) |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

@@ -1,0 +1,25 @@
+{
+  "titles": [
+    { "match": "checkout", "title": "Checkout price table", "branch": "checkout-price-table" }
+  ],
+  "turns": [
+    {
+      "match": "Attached files",
+      "steps": [
+        { "sleep": 1200 },
+        { "text": "I'll read the three files you attached." },
+        { "tool": "Read", "input": { "file_path": "~/Desktop/checkout-spec.md" }, "result": "# Checkout price table\n\nShow each fare with taxes and a total row.", "wait": 1100 },
+        { "tool": "Read", "input": { "file_path": "~/Desktop/fares.csv" }, "result": "route,fare,taxes\nDenver-Moab,129,18\nMoab-Boise,214,31", "wait": 1100 },
+        { "tool": "Read", "input": { "file_path": "~/Desktop/price-table.svg" }, "result": "<svg ...>", "wait": 1100 },
+        { "text": "The spec wants each fare with its taxes and a total row, `fares.csv` has the two sample routes, and the wireframe puts the table under the cart summary. I'll build `PriceTable` from those." }
+      ]
+    },
+    {
+      "match": "checkout",
+      "steps": [
+        { "sleep": 2500 },
+        { "text": "Ready. Send me the spec and sample data when you have them." }
+      ]
+    }
+  ]
+}
