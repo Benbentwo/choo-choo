@@ -6,7 +6,7 @@
 // Needs `npm run build` first, Playwright (`npm i -g playwright` or on NODE_PATH) and ffmpeg.
 const { _electron } = require('playwright')
 const { execFileSync } = require('node:child_process')
-const { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } = require('node:fs')
+const { mkdirSync, readdirSync, rmSync, statSync } = require('node:fs')
 const { join, resolve } = require('node:path')
 
 const REPO = resolve(__dirname, '../..')
@@ -281,12 +281,8 @@ const scenes = {
   // Any file attaches to a message: non-image files show as chips with their name and go to the agent as paths it reads.
   'file-attachments': () =>
     record('file-attachments', { script: 'file-attachments.json' }, async (d) => {
+      // The files are made by setup.sh, on the demo HOME's Desktop.
       const desk = join(WORK, 'file-attachments', 'home', 'Desktop')
-      mkdirSync(desk, { recursive: true })
-      writeFileSync(join(desk, 'checkout-spec.md'), '# Checkout price table\n\nShow each fare with taxes and a total row.\n')
-      writeFileSync(join(desk, 'fares.csv'), 'route,fare,taxes\nDenver-Moab,129,18\nMoab-Boise,214,31\n')
-      writeFileSync(join(desk, 'old-notes.txt'), 'Superseded by the spec.\n')
-      writeFileSync(join(desk, 'price-table.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80"><rect width="200" height="80" fill="#eee"/></svg>\n')
       await d.wait(500)
       await d.menu('toggle-terminal')
       await startWorkspace(d, 'Add a price table to checkout')

@@ -99,4 +99,11 @@ J
 }
 make_repo trailhead-web web
 make_repo trailhead-api api
+
+# Loose files to attach to a message (the file-attachments scene).
+mkdir -p "$HOME/Desktop"
+printf '# Checkout price table\n\nShow each fare with taxes and a total row.\n' > "$HOME/Desktop/checkout-spec.md"
+printf 'route,fare,taxes\nDenver-Moab,129,18\nMoab-Boise,214,31\n' > "$HOME/Desktop/fares.csv"
+printf 'Superseded by the spec.\n' > "$HOME/Desktop/old-notes.txt"
+printf '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80"><rect width="200" height="80" fill="#eee"/></svg>\n' > "$HOME/Desktop/price-table.svg"
 echo "$root"
