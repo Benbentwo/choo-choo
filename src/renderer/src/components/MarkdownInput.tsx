@@ -136,7 +136,7 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, MarkdownInputProps>
       EditorView.domEventHandlers({
         keydown: (e) => !!latest.current.onKeyDown?.(e),
         paste: (e) => !!latest.current.onPaste?.(e),
-        // Dropped files are images for the message, handled by the box around the editor. Without
+        // Dropped files are attachments for the message, handled by the box around the editor. Without
         // this the editor would paste their bytes in as text.
         drop: (e) => !!e.dataTransfer?.files.length,
         blur: () => {

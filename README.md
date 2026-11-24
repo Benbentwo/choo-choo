@@ -35,8 +35,9 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 
 **Work in parallel**
 - **Agents in isolated worktrees.** Press + to start a workspace: a fresh git worktree and branch where a Claude Code agent works without touching your other checkouts.
-- **Chat built for coding agents.** Opus, Sonnet and Haiku with effort levels, plan mode, @file mentions, /slash commands and skills, image attachments, and "revert to here" checkpoints.
+- **Chat built for coding agents.** Opus, Sonnet and Haiku with effort levels, plan mode, @file mentions, /slash commands and skills, image and file attachments, and "revert to here" checkpoints.
 - **Stop that always stops.** Stop (or Esc) shows Stopping… right away and ends the turn within seconds. If Claude doesn't respond, Force stop ends it and everything it started, and queued messages go back to the message box.
+- **Attach any file.** Drop, paste or pick any file into the message box. Pictures go to Claude as images; other files show as chips and go as paths the agent reads in place.
 - **Markdown as you type.** The message box formats `code`, **bold**, lists, links and code blocks in place, Slack-style, and sends plain Markdown.
 - **Check in without stopping.** A running chat says what it's doing and for how long, such as "Waiting on run 48213 · 14m". Press Check in, type `/btw` and a question, or just ask "how's it going?" to get a quick answer while Claude keeps working.
 - **Orchestrator.** Tell a repo's orchestrator what you want and it splits the work into workspaces, briefs each agent, reads their diffs and follows up.
@@ -70,6 +71,10 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 
 <p align="center">
   <img src="docs/media/gifs/composer-markdown.gif" alt="Typing in the message box: backtick-wrapped names turn into inline code as soon as the closing backtick is typed, double asterisks turn bold, a list and a code block format as they're typed. Clicking into inline code shows its backticks again. Sent, the message looks the same in the chat." width="900">
+</p>
+
+<p align="center">
+  <img src="docs/media/gifs/file-attachments.gif" alt="Four files are picked with the attach button and show as chips above the message box. One is removed with its ×. The message is sent with the remaining three listed as paths, and Claude reads each one." width="900">
 </p>
 
 <p align="center">
