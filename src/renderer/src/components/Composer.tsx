@@ -9,6 +9,7 @@ import { FORCE_STOP_AFTER_MS } from '@shared/stop'
 import { CUSTOM_OUTPUT_STYLE, DEFAULT_OUTPUT_STYLE, outputStyleLabel } from '@shared/outputStyle'
 import { INLINE_IMAGE, addAttachedFiles, fileName, withAttachedFiles } from '@shared/attachments'
 import { MarkdownInput, type MarkdownInputHandle } from './MarkdownInput'
+import { ContextRing } from './ContextRing'
 
 export const MODELS: { id: ModelId; label: string }[] = [
   { id: 'opus', label: 'Opus' },
@@ -569,6 +570,7 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
             </button>
           )}
           <div className="flex-1" />
+          <ContextRing chat={chat} />
           <label className="cursor-pointer rounded p-1.5 text-muted hover:bg-hover hover:text-fg" title="Attach images or files">
             <IconImage />
             <input

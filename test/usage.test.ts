@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { contextTokens, guessContextWindow, parseTranscript, sessionUsage } from '../src/main/usage'
+import { contextNow, contextTokens, guessContextWindow, parseTranscript, sessionUsage } from '../src/main/usage'
 
 const assistant = (id: string, ts: string, usage: Record<string, number>, extra: Record<string, unknown> = {}) =>
   JSON.stringify({ type: 'assistant', timestamp: ts, requestedModel: 'claude-opus-5-5', message: { id, model: 'claude-opus-5-5', usage }, ...extra })
@@ -80,5 +80,45 @@ describe('what each response was about', () => {
     ])
     // Only the first response after the message is marked; the tool result doesn't count as a new message.
     expect(points.map((p) => !!p.afterMessage)).toEqual([true, false])
+  })
+})
+
+describe('contextNow', () => {
+  const setup = () => {
+    const root = mkdtempSync(join(tmpdir(), 'ctx-'))
+    const file = join(root, '-Users-me-repo', 'sess-c.jsonl')
+    mkdirSync(join(root, '-Users-me-repo'))
+    return { root, file }
+  }
+
+  it('reports the last main-chat response and counts compactions, skipping subagents and synthetic lines', () => {
+    const { root, file } = setup()
+    writeFileSync(file, transcript)
+    expect(contextNow('sess-c', { root })).toEqual({ used: 1221, contextWindow: 200_000, compactions: 1 })
+    expect(contextNow('sess-c', { root, contextWindow: 1_000_000 })?.contextWindow).toBe(1_000_000)
+    expect(contextNow(undefined)).toBeNull()
+    expect(contextNow('missing', { root })).toBeNull()
+  })
+
+  it('reads only what was appended, and waits for a line being written to finish', () => {
+    const { root, file } = setup()
+    writeFileSync(file, transcript)
+    contextNow('sess-c', { root })
+    const next = assistant('m4', '2026-11-06T20:02:00Z', { input_tokens: 10, cache_read_input_tokens: 5000, output_tokens: 90 }) + '\n'
+    appendFileSync(file, next.slice(0, 40))
+    expect(contextNow('sess-c', { root })?.used).toBe(1221)
+    appendFileSync(file, next.slice(40))
+    expect(contextNow('sess-c', { root })?.used).toBe(5100)
+    // Later lines of the same response raise its output count.
+    appendFileSync(file, assistant('m4', '2026-11-06T20:02:01Z', { input_tokens: 10, cache_read_input_tokens: 5000, output_tokens: 200 }) + '\n')
+    expect(contextNow('sess-c', { root })?.used).toBe(5210)
+  })
+
+  it('starts over when the file is rewritten shorter, and spots 1M models', () => {
+    const { root, file } = setup()
+    writeFileSync(file, transcript)
+    contextNow('sess-c', { root })
+    writeFileSync(file, assistant('z', '2026-11-06T21:00:00Z', { input_tokens: 7 }, { requestedModel: 'claude-opus-5-5[1m]' }) + '\n')
+    expect(contextNow('sess-c', { root })).toEqual({ used: 7, contextWindow: 1_000_000, compactions: 0 })
   })
 })

@@ -14,7 +14,7 @@ import { editMenuItems } from '@shared/editMenu'
 import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import { RESUME_PROMPT, chatsToResume, interruptNote } from '@shared/restart'
-import { sessionUsage } from './usage'
+import { contextNow, sessionUsage } from './usage'
 import * as store from './store'
 import * as git from './git'
 import * as agent from './agent'
@@ -1316,6 +1316,10 @@ function registerIpc() {
     // Claude Code reports a running total, so the last turn's cost covers the session.
     const last = [...store.chatItems(id)].reverse().find((x) => x.kind === 'result' && x.costUsd != null)
     return sessionUsage(chat.sdkSessionId, { contextWindow: chat.contextWindow, costUsd: last?.kind === 'result' ? last.costUsd : undefined })
+  })
+  h('chat:context', (id: string) => {
+    const chat = findChat(id)
+    return chat.model === 'codex' ? null : contextNow(chat.sdkSessionId, { contextWindow: chat.contextWindow })
   })
   h('chat:update', (id: string, patch: Partial<Chat>) => {
     const c = findChat(id)
