@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { LimitWindow, SubscriptionLimits } from '@shared/types'
-import { pace, paceText } from '@shared/limitPace'
+import { expireWindow, pace, paceText } from '@shared/limitPace'
 import { LimitsChart } from './LimitsChart'
 import { useStore, openContinuePage } from '../store'
 
@@ -71,16 +71,25 @@ export function LimitsFooter() {
     return () => window.removeEventListener('mousedown', down)
   }, [detail])
 
+  // Re-read right after the next reset, so the graph doesn't keep showing the old window.
+  useEffect(() => {
+    const next = Math.min(...limits.flatMap((l) => l.windows.map((w) => w.resetsAt ?? Infinity)).filter((t) => t > Date.now()))
+    if (!Number.isFinite(next)) return
+    const t = setTimeout(() => load(true), Math.min(next - Date.now() + 5000, 2 ** 31 - 1))
+    return () => clearTimeout(t)
+  }, [limits])
+
   if (!limits.length) return null
-  const cur = limits[i % limits.length]
   const now = Date.now()
+  const expired = limits.map((l) => ({ ...l, windows: l.windows.map((w) => expireWindow(w, now)) }))
+  const cur = expired[i % expired.length]
   // The graph follows the shortest window that has timing, since it moves first.
   const graphed = (l: SubscriptionLimits): LimitWindow | undefined => l.windows.find((w) => pace(w, now))
   const g = graphed(cur)
   const gp = g ? pace(g, now) : null
   // Keep the height of the tallest provider so the sidebar doesn't jump as it rotates.
-  const rows = Math.max(...limits.map((l) => Math.min(3, l.windows.length)))
-  const anyGraph = limits.some((l) => graphed(l))
+  const rows = Math.max(...expired.map((l) => Math.min(3, l.windows.length)))
+  const anyGraph = expired.some((l) => graphed(l))
   return (
     <div ref={box} className="relative">
       {detail && <LimitsDetail l={cur} now={now} />}

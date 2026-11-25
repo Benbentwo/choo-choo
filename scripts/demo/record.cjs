@@ -278,6 +278,36 @@ const scenes = {
       await d.shot?.('3-sent')
     }),
 
+  // Any file attaches to a message: non-image files show as chips with their name and go to the agent as paths it reads.
+  'file-attachments': () =>
+    record('file-attachments', { script: 'file-attachments.json' }, async (d) => {
+      // The files are made by setup.sh, on the demo HOME's Desktop.
+      const desk = join(WORK, 'file-attachments', 'home', 'Desktop')
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Add a price table to checkout')
+      await d.page.getByText('Send me the spec', { exact: false }).first().waitFor({ timeout: 40_000 })
+      await d.wait(1200)
+      d.startGif()
+      const attach = d.page.locator('label[title="Attach images or files"]').first()
+      await d.click(attach)
+      await attach.locator('input[type=file]').setInputFiles(['checkout-spec.md', 'fares.csv', 'old-notes.txt', 'price-table.svg'].map((f) => join(desk, f)))
+      await d.wait(1400)
+      await d.shot?.('1-chips')
+      // The × on a chip takes a file back off.
+      await d.click(d.page.locator('span[title$="old-notes.txt"] button[title="Remove file"]').first())
+      await d.wait(900)
+      const box = d.page.getByTestId('composer-input').first()
+      await d.click(box)
+      await d.type('Build this from the spec and the sample fares', 40)
+      await d.wait(800)
+      await d.shot?.('2-typed')
+      await d.page.keyboard.press('Enter')
+      await d.page.getByText('has the two sample', { exact: false }).first().waitFor({ timeout: 30_000 })
+      await d.wait(2500)
+      await d.shot?.('3-sent')
+    }),
+
   // Checks, no GIF: @mentions, /commands, Enter in a code block, the text sent, ⌘B and undo.
   'composer-checks': () =>
     record('composer-checks', { script: 'workspaces.json', opts: { noGif: true } }, async (d) => {

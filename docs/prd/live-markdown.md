@@ -41,7 +41,7 @@ Keys: Enter sends; ⇧Enter adds a line and continues a list (`- `, `1. `); Back
 
 ## Design
 
-- `src/renderer/src/components/MarkdownInput.tsx`: a CodeMirror 6 editor (`@codemirror/view`, `state`, `commands`, `lang-markdown`) with the GFM Markdown parser, history, line wrapping and `spellcheck="true"` on the content element, so Electron's existing context-menu handler (`editMenuItems`) offers suggestions. A view plugin turns spans from `livePreviewSpans` into decorations; hidden syntax is `Decoration.replace` and is atomic for the arrow keys. Paste and drop of image files go to the composer, not into the text.
+- `src/renderer/src/components/MarkdownInput.tsx`: a CodeMirror 6 editor (`@codemirror/view`, `state`, `commands`, `lang-markdown`) with the GFM Markdown parser, history, line wrapping and `spellcheck="true"` on the content element, so Electron's existing context-menu handler (`editMenuItems`) offers suggestions. A view plugin turns spans from `livePreviewSpans` into decorations; hidden syntax is `Decoration.replace` and is atomic for the arrow keys. Paste and drop of files go to the composer, not into the text.
 - `src/renderer/src/livePreview.ts`: pure functions over the Lezer syntax tree. `livePreviewSpans(state, selection)` returns marks, hidden ranges and line classes; `formatMessage(text)` uses the same spans to render a sent message (`FormattedUserText` in `GithubLink.tsx`, used by `ChatView`).
 - `Composer.tsx` and `NewWorkspace.tsx` use `MarkdownInput` in place of their textareas. The composer's key handling is unchanged in substance; it reads the caret from the editor.
 - The editor's content element carries `data-testid="composer-input"` (chat) or `new-workspace-input` (New workspace) for the demo recorder.

@@ -1,15 +1,24 @@
 # Claude issue to PR
 
-A maintainer adds the `claude` label to an issue, and Claude writes a draft pull request for it. The workflow is [.github/workflows/claude-issue.yml](../.github/workflows/claude-issue.yml). It runs on Ben's Anthropic API credits through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) (`.github/scripts/claude-issue-agent.mjs`).
+A maintainer adds a `claude` label to an issue, and Claude writes a draft pull request for it. The workflow is [.github/workflows/claude-issue.yml](../.github/workflows/claude-issue.yml). It runs on Ben's Anthropic API credits through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) (`.github/scripts/claude-issue-agent.mjs`).
 
 ## Using it
 
 1. Read the issue. Its text goes to Claude, so only label issues whose text you'd hand to a coworker as-is. Edit out anything odd first.
-2. Add the `claude` label. Only people with write access can start a run. Anyone else's label is ignored.
-3. Within about 30 minutes, Claude opens a draft PR from `claude-issue/<number>` with the `claude-issue` label, or comments on the issue to say why it made no change. The run removes the `claude` label when it ends.
-4. Review the PR like a stranger's. Then mark it ready and merge it yourself.
+2. Add a label. Only people with write access can start a run. Anyone else's label is ignored.
 
-To retry or to try again after editing the issue, add the label again. The new run replaces the branch and updates the open PR.
+   | Label | Model |
+   |---|---|
+   | `claude` or `claude/sonnet` | Sonnet |
+   | `claude/opus` | Opus, for harder issues. It costs about 5x as much per run. |
+3. Within about 30 minutes, Claude opens a draft PR from `claude-issue/<number>` with the `claude-issue` label, or comments on the issue to say why it made no change. The run removes the label when it ends.
+4. Read the status at the end of the issue comment and the PR description:
+   - **Done**: Claude thinks the issue is resolved.
+   - **Needs another run**: work is left (listed), or the run hit a turn or cost limit. Add the label again to continue.
+   - **Blocked**: Claude needs something from you, such as a decision or a change under `.github/` it isn't allowed to make.
+5. Review the PR like a stranger's. Then mark it ready and merge it yourself.
+
+To keep going, add a label again. If the issue has an open `claude-issue` PR, the new run checks out that PR's branch and continues from it: it sees the files changed so far and the PR description, keeps your own commits on the branch, adds one commit and rewrites the description to cover the whole PR. Use this after a run stops at a limit, after you push fixes, or after editing the issue. Switching from `claude` to `claude/opus` continues on Opus. To start over instead, close the PR first; a run with no open PR replaces the old branch.
 
 ## Never auto-merged
 
@@ -21,14 +30,14 @@ The repo is public, so anyone can file an issue, and an issue can carry instruct
 
 | Restraint | How |
 |---|---|
-| Only maintainers start it | Runs only on the `claude` label. The `gate` job checks that whoever added it has write, maintain or admin access, and that they are a person, not a bot. |
+| Only maintainers start it | Runs only on the `claude`, `claude/sonnet` and `claude/opus` labels. The `gate` job checks that whoever added it has write, maintain or admin access, and that they are a person, not a bot. |
 | Claude can't write to the repo | The `claude` job's token can only read, and Claude's process gets no GitHub token at all (only `PATH`, `HOME` and the API key). The checkout keeps no credentials. Claude's work leaves the job as a patch file. |
 | Claude can only edit files | No shell, web or GitHub tools, and no subagents. It can't run commands or reach the network, so it can't run repo code or send anything out. Reads of `/proc`, `/sys`, `/etc`, `~/.claude`, `~/.config`, `~/.ssh`, the runner temp folder and `.git` are denied. (Not the whole home folder: the checkout lives under it.) |
 | No other secrets | Only `ANTHROPIC_API_KEY` is referenced, and only by the `claude` job. Signing, notarization and Homebrew secrets are never available to this workflow. |
 | Risky files are refused | The `publish` job (plain shell, no Claude) refuses a patch that touches `.github/`, `.claude/`, `.husky/`, `.mcp.json`, `.npmrc`, `CLAUDE.md` or `package-lock.json`. A changed workflow could otherwise reach secrets once merged, or a changed agent config could steer later agents. |
 | Token-shaped text is refused | Added lines and the PR description are scanned for Anthropic and GitHub tokens and private keys. A match stops the run without printing the match, since logs on a public repo are public. |
 | Build files are flagged | Changes to `package.json`, `scripts/`, `build/` or `electron-builder.yml` get a warning at the top of the PR. |
-| Spend is capped | 40 turns and 30 minutes for the Claude job. One label starts one run, one run per issue at a time. |
+| Spend is capped | 100 turns, $3 (Sonnet) or $8 (Opus) estimated cost (`maxBudgetUsd`), and 45 minutes for the Claude job. One label starts one run, one run per issue at a time. |
 | Drafts only | PRs open as drafts, assigned to whoever added the label. |
 
 What's left: an injected issue can still ask for a bad change in ordinary code. The review catches that, which is why these PRs never auto-merge.
@@ -47,7 +56,7 @@ Pushes and PRs made with a workflow's own token don't start other workflows. So 
 
 The Claude GitHub App is not needed: the workflow uses its own job token so that Claude never holds a token that can push.
 
-A small change costs cents (the first run on #152 cost about $0.05). Runs use Sonnet to stretch the credits (`--model` in the workflow) and are capped at 40 turns and 30 minutes. To stop runs, delete the secret or revoke the key in the Console.
+A small change costs cents (the first run on #152 cost about $0.05). Runs use Sonnet unless the label is `claude/opus` (`CLAUDE_MODEL` in the workflow) and are capped at 100 turns, $3 (Sonnet) or $8 (Opus) of estimated cost, and 45 minutes. A run that hits the turn or cost cap still publishes what it changed as a draft PR marked unfinished; add the label again to continue it. (The first Opus run on #152 hit the old 40-turn cap after about $1.36.) To stop runs, delete the secret or revoke the key in the Console.
 
 ## Why the Agent SDK, not claude-code-action
 

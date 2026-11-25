@@ -1,4 +1,5 @@
-# Turns an issue into a draft PR when a maintainer adds the `claude` label.
+# Turns an issue into a draft PR when a maintainer adds a `claude` label:
+# `claude` or `claude/sonnet` runs Sonnet, `claude/opus` runs Opus.
 # See docs/claude-issues.md for the setup and the reasons behind each restraint.
 #
 # The repo is public, so anyone can write an issue and an issue can carry text aimed at Claude.
@@ -27,7 +28,7 @@ concurrency:
 jobs:
   gate:
     if: >-
-      github.event.label.name == 'claude' &&
+      contains(fromJSON('["claude", "claude/sonnet", "claude/opus"]'), github.event.label.name) &&
       github.event.sender.type == 'User' &&
       github.event.issue.pull_request == null &&
       github.event.issue.state == 'open'
@@ -52,11 +53,15 @@ jobs:
   claude:
     needs: gate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     outputs:
       error: ${{ steps.report.outputs.error }}
+      partial: ${{ steps.claude.outputs.partial }}
+      base: ${{ steps.earlier.outputs.base }}
+      continued: ${{ steps.earlier.outputs.continued }}
     permissions:
       contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,18 +81,50 @@ jobs:
           npm init -y > /dev/null
           npm install --no-audit --no-fund @anthropic-ai/claude-agent-sdk@0.3.330
 
+      # Relabeling an issue that already has an open claude-issue PR continues that PR's branch
+      # instead of starting over. The agent script above already came from the default branch, so
+      # the branch can't change it. A closed or merged PR starts fresh from the default branch.
+      - name: Continue an open PR for this issue
+        id: earlier
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: claude-issue/${{ github.event.issue.number }}
+        run: |
+          out="$RUNNER_TEMP/earlier"
+          mkdir -p "$out"
+          : > "$out/summary.md"
+          pr=$(gh pr list --head "$BRANCH" --state open --label claude-issue --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')
+          if [ -n "$pr" ]; then
+            git fetch --no-tags --depth=1 origin "refs/heads/$BRANCH"
+            git checkout -q --detach FETCH_HEAD
+            gh pr view "$pr" --json body --jq .body > "$out/summary.md"
+            gh pr view "$pr" --json files --jq '.files[].path' > "$out/files.txt"
+            echo "Continuing PR #$pr from $BRANCH at $(git rev-parse --short HEAD)"
+            echo "continued=$pr" >> "$GITHUB_OUTPUT"
+          fi
+          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Run Claude
         id: claude
         env:
           # Billed to the API key's org. Promotional API credits cover the Agent SDK, not Claude
           # Code, which is why this runs the SDK directly (docs/claude-issues.md).
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          CLAUDE_MODEL: claude-sonnet-5-5
+          # The label picks the model: claude/opus runs Opus, claude and claude/sonnet run Sonnet.
+          CLAUDE_MODEL: ${{ github.event.label.name == 'claude/opus' && 'claude-opus-5-5' || 'claude-sonnet-5-5' }}
+          # Per-run caps. Hitting one still publishes the work so far as a draft PR, marked unfinished.
+          CLAUDE_MAX_TURNS: 100
+          CLAUDE_MAX_BUDGET_USD: ${{ github.event.label.name == 'claude/opus' && '8' || '3' }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           REPOSITORY: ${{ github.repository }}
           EXECUTION_FILE: ${{ runner.temp }}/claude-execution-output.json
+          # Set when continuing an open PR: its number, description and changed files.
+          CONTINUED_PR: ${{ steps.earlier.outputs.continued }}
+          EARLIER_DIR: ${{ runner.temp }}/earlier
         run: node "$RUNNER_TEMP/agent/claude-issue-agent.mjs"
 
       # Without this, an API error (bad key, no credits) only shows as "is_error: true".
@@ -114,6 +151,7 @@ jobs:
           out="$RUNNER_TEMP/claude-out"
           mkdir -p "$out"
           if [ -f .claude-pr-body.md ]; then mv .claude-pr-body.md "$out/body.md"; else : > "$out/body.md"; fi
+          if [ -f .claude-status.md ]; then mv .claude-status.md "$out/status.md"; else : > "$out/status.md"; fi
           if [ -f "$EXECUTION_FILE" ]; then
             # Which tool calls the permission rules refused, so a run that did nothing can be explained.
             echo "Refused tool calls:"
@@ -151,11 +189,17 @@ jobs:
       NUMBER: ${{ github.event.issue.number }}
       TITLE: ${{ github.event.issue.title }}
       ACTOR: ${{ github.event.sender.login }}
+      LABEL: ${{ github.event.label.name }}
+      MODEL: ${{ github.event.label.name == 'claude/opus' && 'Opus' || 'Sonnet' }}
+      PARTIAL: ${{ needs.claude.outputs.partial }}
+      CONTINUED: ${{ needs.claude.outputs.continued }}
       BRANCH: claude-issue/${{ github.event.issue.number }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      # Same commit the claude job edited (for issue events, the default branch head).
+      # Same commit the claude job edited: the default branch head, or the PR branch it continued.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.claude.outputs.base }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -166,6 +210,45 @@ jobs:
         id: check
         run: |
           out="$RUNNER_TEMP/claude-out"
+
+          # Claude's status: first line done, needs-another-run or blocked; the rest says what's left
+          # or what it needs. A run cut off by a limit always needs another run.
+          state=$(head -n1 "$out/status.md" | tr -d '[:space:]`*' | tr '[:upper:]' '[:lower:]')
+          case "$state" in done|needs-another-run|blocked) ;; *) state=unreported ;; esac
+          [ "$PARTIAL" = true ] && state=needs-another-run
+          tail -n +2 "$out/status.md" | sed '/./,$!d' > "$out/status-details.md"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          {
+            case "$state" in
+              done)
+                echo "**Status: Done.** Claude thinks this resolves the issue. Review it, then mark it ready and merge it." ;;
+              needs-another-run)
+                if [ "$PARTIAL" = true ]; then
+                  echo "**Status: Needs another run.** Claude hit the per-run turn or cost limit before it was done. Add the \`$LABEL\` label again to continue."
+                else
+                  echo "**Status: Needs another run.** Add the \`$LABEL\` label again to continue."
+                fi ;;
+              blocked)
+                echo "**Status: Blocked.** Claude needs something from a maintainer before it can go on:" ;;
+              *)
+                echo "**Status: Not reported.** Claude didn't say whether it finished. Check the description below." ;;
+            esac
+            if [ -s "$out/status-details.md" ]; then
+              [ "$state" = needs-another-run ] && { echo; echo "What's left:"; }
+              echo
+              cat "$out/status-details.md"
+            fi
+          } > "$out/status-block.md"
+
+          # Never print the matching lines: Actions logs on a public repo are public.
+          # The description and status here; the patch's added lines after it is applied.
+          cat "$out/body.md" "$out/status.md" > "$out/added.txt"
+          if grep -qE 'sk-ant-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' "$out/added.txt"; then
+            echo "::error::The change or its description contains something shaped like a token or key. Not publishing."
+            echo "reason=its output contained something shaped like a token or key" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
           if [ ! -s "$out/changes.patch" ]; then
             echo "empty=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -174,19 +257,19 @@ jobs:
           git apply --index --whitespace=nowarn "$out/changes.patch"
           git diff --cached --name-only --no-renames > "$out/files.txt"
 
+          # The patch itself, binary files included, gets the same token check.
+          git diff --cached -U0 --text | grep '^+' > "$out/added-lines.txt" || true
+          if grep -qE 'sk-ant-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' "$out/added-lines.txt"; then
+            echo "::error::The change contains something shaped like a token or key. Not publishing."
+            echo "reason=its output contained something shaped like a token or key" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
           blocked=$(grep -E '^(\.github/|\.claude/|\.husky/|\.mcp\.json$|\.npmrc$|CLAUDE\.md$|package-lock\.json$)' "$out/files.txt" || true)
           if [ -n "$blocked" ]; then
             echo "::error::Claude's change touches files this workflow never publishes:"
             echo "$blocked"
             echo "reason=it changed files this workflow never publishes (workflows, agent settings, CLAUDE.md or the lockfile)" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          # Never print the matching lines: Actions logs on a public repo are public.
-          { git diff --cached -U0 --text | grep '^+' || true; cat "$out/body.md"; } > "$out/added.txt"
-          if grep -qE 'sk-ant-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' "$out/added.txt"; then
-            echo "::error::The change or its description contains something shaped like a token or key. Not publishing."
-            echo "reason=its output contained something shaped like a token or key" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
@@ -206,6 +289,8 @@ jobs:
             echo
             cat "$out/body.md"
             echo
+            cat "$out/status-block.md"
+            echo
             echo "[Run log]($RUN_URL)"
           } > "$out/comment.md"
           gh issue comment "$NUMBER" --body-file "$out/comment.md"
@@ -214,22 +299,35 @@ jobs:
         if: steps.check.outputs.empty != 'true'
         env:
           SENSITIVE: ${{ steps.check.outputs.sensitive }}
+          STATE: ${{ steps.check.outputs.state }}
         run: |
           out="$RUNNER_TEMP/claude-out"
           git config user.name "github-actions[bot]"
           git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
-          printf 'Resolve #%s: %s\n\nWritten by Claude from issue #%s after %s added the claude label.\n' \
-            "$NUMBER" "$TITLE" "$NUMBER" "$ACTOR" > "$out/commit.txt"
+          printf 'Resolve #%s: %s\n\nWritten by Claude from issue #%s after %s added the %s label.\n' \
+            "$NUMBER" "$TITLE" "$NUMBER" "$ACTOR" "$LABEL" > "$out/commit.txt"
           git commit -q -F "$out/commit.txt"
-          # A later run for the same issue replaces the branch.
-          git push --force origin "HEAD:refs/heads/$BRANCH"
+          if [ -n "$CONTINUED" ]; then
+            # Continuing an open PR adds a commit. If someone pushed to the branch since the claude
+            # job started, this push is refused rather than dropping their commits.
+            git push origin "HEAD:refs/heads/$BRANCH"
+          else
+            # No open PR: a closed or merged PR's old branch is replaced.
+            git push --force origin "HEAD:refs/heads/$BRANCH"
+          fi
 
           {
             echo "Closes #$NUMBER"
             echo
             echo "> [!IMPORTANT]"
-            echo "> Written by Claude from issue #$NUMBER after \`$ACTOR\` added the \`claude\` label. The issue text is untrusted input."
+            echo "> Written by Claude from issue #$NUMBER after \`$ACTOR\` added the \`$LABEL\` label (model: $MODEL). The issue text is untrusted input."
             echo "> **Never auto-merge.** A maintainer reviews every line before merging. See docs/claude-issues.md."
+            case "$STATE" in
+              needs-another-run|blocked)
+                echo
+                echo "> [!CAUTION]"
+                echo "> **Not finished** ($STATE). See the status at the end." ;;
+            esac
             if [ -n "$SENSITIVE" ]; then
               echo
               echo "> [!WARNING]"
@@ -239,17 +337,23 @@ jobs:
             echo
             cat "$out/body.md"
             echo
+            echo "## Status"
+            echo
+            cat "$out/status-block.md"
+            echo
             echo "---"
             echo "[Run log]($RUN_URL)"
           } > "$out/pr.md"
 
-          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          pr=$(gh pr list --head "$BRANCH" --state open --label claude-issue --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')
           if [ -n "$pr" ]; then
             gh pr edit "$pr" --body-file "$out/pr.md"
           else
             gh pr create --draft --base "${{ github.event.repository.default_branch }}" --head "$BRANCH" \
               --title "$TITLE" --body-file "$out/pr.md" --label claude-issue
-            pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')
+            pr=$(gh pr list --head "$BRANCH" --state open --label claude-issue --json number,isCrossRepository \
+              --jq '[.[] | select(.isCrossRepository | not)][0].number')
           fi
           gh pr edit "$pr" --add-assignee "$ACTOR" || true
 
@@ -257,7 +361,14 @@ jobs:
           gh workflow run ci.yml --ref "$BRANCH" || echo "::warning::Could not start CI"
           gh workflow run codeql.yml --ref "$BRANCH" || echo "::warning::Could not start CodeQL"
 
-          gh issue comment "$NUMBER" --body "Claude opened a draft PR for this: #$pr. It waits for a maintainer's review and is never auto-merged."
+          verb=opened
+          [ -n "$CONTINUED" ] && verb=continued
+          {
+            echo "Claude $verb the draft PR for this: #$pr. It waits for a maintainer's review and is never auto-merged."
+            echo
+            cat "$out/status-block.md"
+          } > "$out/comment.md"
+          gh issue comment "$NUMBER" --body-file "$out/comment.md"
 
   finish:
     needs: [gate, claude, publish]
@@ -270,6 +381,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       NUMBER: ${{ github.event.issue.number }}
+      LABEL: ${{ github.event.label.name }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       CLAUDE_RESULT: ${{ needs.claude.result }}
       CLAUDE_ERROR: ${{ needs.claude.outputs.error }}
@@ -279,9 +391,9 @@ jobs:
       - name: Remove the label and report failures
         run: |
           # One label, one run. Add the label again to retry.
-          gh issue edit "$NUMBER" --remove-label claude || true
+          gh issue edit "$NUMBER" --remove-label "$LABEL" || true
           if [ "$CLAUDE_RESULT" != success ] || [ "$PUBLISH_RESULT" != success ]; then
             why=${REASON:+ because $REASON}
             [ -n "$CLAUDE_ERROR" ] && why=" because Claude stopped with: \`$CLAUDE_ERROR\`"
-            gh issue comment "$NUMBER" --body "Claude couldn't open a PR for this issue$why (claude: $CLAUDE_RESULT, publish: $PUBLISH_RESULT). See the [run log]($RUN_URL). Add the \`claude\` label again to retry."
+            gh issue comment "$NUMBER" --body "Claude couldn't open a PR for this issue$why (claude: $CLAUDE_RESULT, publish: $PUBLISH_RESULT). See the [run log]($RUN_URL). Add the \`$LABEL\` label again to retry."
           fi
