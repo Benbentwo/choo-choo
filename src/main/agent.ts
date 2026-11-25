@@ -12,6 +12,7 @@ import * as orchestrator from './orchestrator'
 import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
 import * as notion from './integrations/notion'
 import { buildSystemPrompt } from '@shared/systemPrompt'
+import { resolveOutputStyle } from '@shared/outputStyle'
 import { onModelReported } from '@shared/modelSwitch'
 import { limitFromEvent, limitFromText, type ChatPause } from '@shared/continueWork'
 import type { InterruptReason } from '@shared/restart'
@@ -461,7 +462,9 @@ export async function send(
     const { query } = sdkMod
     const { settings, repos } = store.get()
     const extras = settings.extras
-    const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, systemAppend(extras, !!chat.planMode))
+    const style = resolveOutputStyle(chat.outputStyle, settings)
+    const appended = [systemAppend(extras, !!chat.planMode), style.append].filter(Boolean).join('\n\n')
+    const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, appended)
     // `autoAllowTools` is ours, not the SDK's: tools the caller vouches for as read-only.
     // `alwaysAskTools`: tools that need the person's OK even when the chat allows everything.
     // `turnPrefix`: context for Claude sent ahead of this turn's message but not shown in the chat.
@@ -504,7 +507,7 @@ export async function send(
       }
       return { behavior: 'allow', updatedInput: input }
     }
-    const session = chatSettings(chat, extras)
+    const session = chatSettings(chat, extras, style.style)
     const budget = budgetFor(chat, settings)
     const tasks = new Map<string, BackgroundTask>()
     const mcpServers: Record<string, unknown> = { ...(extra.mcpServers as Record<string, unknown> | undefined) }

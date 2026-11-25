@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReviewSettingsSection } from './ReviewSettings'
 import { ContinueSettingsSection } from './ContinueWork'
-import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, PromptCustom, Settings, Telemetry } from '@shared/types'
+import type { ExtraAgentId, Extras, GithubRepo, ImportPreview, ImportResult, ModelId, OutputStyleInfo, PromptCustom, Settings, Telemetry } from '@shared/types'
+import { CUSTOM_OUTPUT_STYLE, DEFAULT_OUTPUT_STYLE, outputStyleLabel } from '@shared/outputStyle'
 import { usageHistorySettings } from '@shared/usageHistory'
 import { IconFolder, IconLock } from '../icons'
 import { useStore, openGroupOrchestrator, addRepository, newWorkspace, newChatTab, refreshState, reportError, goToNextUnread, modelLabel } from '../store'
@@ -225,7 +226,7 @@ const SETTINGS_SECTIONS: { id: SettingsTab; label: string; hint: string }[] = [
   { id: 'continue', label: 'Continue work', hint: 'What happens when a chat hits your plan\'s usage limit, and what starts when the window resets.' },
   { id: 'usage', label: 'Usage history', hint: 'What the Usage page keeps: plan window readings and a summary of each Claude Code response. Stays on this Mac.' },
   { id: 'agents', label: 'Agents', hint: 'Extra agents and the advisor.' },
-  { id: 'prompts', label: 'Prompts', hint: 'Custom instructions added to chats, for every project or one.' },
+  { id: 'prompts', label: 'Prompts', hint: 'Output style and custom instructions for chats, for every project or one.' },
   { id: 'mcp', label: 'MCP', hint: 'MCP servers Claude Code loads for each project.' },
   { id: 'plugins', label: 'Plugins', hint: 'Claude Code plugins, marketplaces and your own skills.' },
   { id: 'addons', label: 'Add-ons', hint: 'Views, orchestrator tools and agent skills from git repos you can read.' },
@@ -467,7 +468,10 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         ) : tab === 'addons' ? (
           <AddonSettings />
         ) : tab === 'prompts' ? (
-          <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
+          <>
+            <OutputStyleSetting settings={settings} save={(patch) => void save(patch)} />
+            <PromptsSection global={settings.systemPrompt} saveGlobal={(systemPrompt) => void save({ systemPrompt })} />
+          </>
         ) : tab === 'telemetry' ? (
           <TelemetrySection t={settings.telemetry} save={(patch) => void save({ telemetry: { ...settings.telemetry, ...patch } })} />
         ) : tab === 'agents' ? (
@@ -646,6 +650,55 @@ function PromptEditor({ value, save, scope }: { value?: PromptCustom; save: (p: 
         onBlur={() => save(draft)}
       />
     </div>
+  )
+}
+
+/** Settings > Prompts: the output style chats use unless they pick their own, with a custom prompt option. */
+function OutputStyleSetting({ settings, save }: { settings: Settings; save: (patch: Partial<Settings>) => void }) {
+  const [styles, setStyles] = useState<OutputStyleInfo[] | null>(null)
+  const [custom, setCustom] = useState(settings.outputStyleCustom ?? '')
+  useEffect(() => {
+    void window.api.listOutputStyles().then(setStyles, () => setStyles([]))
+  }, [])
+  const value = settings.outputStyle ?? ''
+  const names = styles?.map((s) => s.name) ?? []
+  // A style saved earlier that Claude Code no longer lists stays selectable, so the menu shows the truth.
+  const extra = value && value !== DEFAULT_OUTPUT_STYLE && value !== CUSTOM_OUTPUT_STYLE && styles && !names.includes(value) ? [value] : []
+  const hint = styles?.find((s) => s.name === value)?.description
+  return (
+    <>
+      <Row
+        label="Output style"
+        hint={
+          hint ||
+          "How Claude writes its replies in chats: Claude Code's built-in styles, ones from your plugins and ~/.claude/output-styles, or your own prompt. A chat can pick a different one in its model menu. Chats that haven't picked their own use it from their next message."
+        }
+      >
+        <select className="rounded-md border border-line bg-bg px-2 py-1 outline-none" value={value} onChange={(e) => save({ outputStyle: e.target.value })}>
+          <option value="">{outputStyleLabel(undefined)}</option>
+          <option value={DEFAULT_OUTPUT_STYLE}>{outputStyleLabel(DEFAULT_OUTPUT_STYLE)}</option>
+          {[...names, ...extra].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+          <option value={CUSTOM_OUTPUT_STYLE}>{outputStyleLabel(CUSTOM_OUTPUT_STYLE)}</option>
+        </select>
+      </Row>
+      {value === CUSTOM_OUTPUT_STYLE && (
+        <div className="border-b border-line px-5 py-3.5">
+          <div>Custom output style</div>
+          <div className="mt-0.5 mb-2 text-[12px] text-faint">Added to the end of the system prompt, on top of Claude Code's default style. Your instructions above still apply.</div>
+          <textarea
+            className="h-32 w-full resize-y rounded-md border border-line bg-bg px-2 py-1 font-mono text-[12px] leading-relaxed outline-none"
+            value={custom}
+            placeholder="e.g. Answer in short paragraphs. Lead with the result, then the reasoning. Use tables only for comparisons."
+            onChange={(e) => setCustom(e.target.value)}
+            onBlur={() => save({ outputStyleCustom: custom })}
+          />
+        </div>
+      )}
+    </>
   )
 }
 

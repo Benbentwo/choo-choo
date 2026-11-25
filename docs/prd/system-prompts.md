@@ -4,7 +4,7 @@
 |---|---|
 | Status | Shipped (PR #32) |
 | Requested by | Ben, 2026-11-06 |
-| Last updated | 2026-11-06 |
+| Last updated | 2026-11-24 |
 
 ## Problem
 
@@ -25,6 +25,8 @@ While building this we found that chats were running with an **empty** system pr
 ## User experience
 
 Settings > Prompts: one editor for all repos and one per repo, each with a mode: **Add to Claude Code's prompt** (default) or **Replace Claude Code's prompt** (with a warning). Changes apply to new chats, since a session's prompt is fixed on its first request.
+
+The section also holds **Output style** (see [Claude Code session controls](claude-code-controls.md)). Its Custom option's text reaches `buildSystemPrompt` through `extra`, after the app's own hints, so it survives a replaced prompt.
 
 ## Requirements
 

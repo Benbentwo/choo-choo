@@ -33,11 +33,11 @@ export function questionReply(
 }
 
 /** Session settings for a chat (the SDK's `settings` option and extra env), or nothing to pass. */
-export function chatSettings(chat: Pick<Chat, 'fast' | 'outputStyle'>, extras: Extras): { settings?: Record<string, unknown>; env: Record<string, string> } {
+export function chatSettings(chat: Pick<Chat, 'fast'>, extras: Extras, outputStyle?: string): { settings?: Record<string, unknown>; env: Record<string, string> } {
   const advisor = claudeAdvisorOptions(extras.claudeAdvisor)
   const settings: Record<string, unknown> = { ...advisor.settings }
   if (chat.fast) settings.fastMode = true
-  if (chat.outputStyle) settings.outputStyle = chat.outputStyle
+  if (outputStyle) settings.outputStyle = outputStyle
   return { settings: Object.keys(settings).length ? settings : undefined, env: { ...advisor.env } }
 }
 
@@ -112,14 +112,26 @@ export function parseOutputStyle(file: string, text: string, source: 'user' | 'p
   return { name: field('name') || basename(file, '.md'), description: field('description') || '', source }
 }
 
-/** Output styles for a checkout: built-in, then ~/.claude/output-styles, then the repo's .claude/output-styles. */
-export function listOutputStyles(cwd: string, home = homedir()): OutputStyleInfo[] {
-  const out = [...BUILTIN_OUTPUT_STYLES]
+/** What we can say about a style Claude Code lists by name only. */
+const KNOWN_DESCRIPTIONS: Record<string, string> = {
+  Concise: 'Short, direct answers that lead with the result',
+  ...Object.fromEntries(BUILTIN_OUTPUT_STYLES.map((s) => [s.name, s.description]))
+}
+
+/**
+ * Output styles for a checkout: the ones Claude Code reports (built-in and from plugins; `cliNames`,
+ * the fallback list when it couldn't be asked), then ~/.claude/output-styles, then the repo's
+ * .claude/output-styles. Claude Code's "default" is left out; menus show it on its own.
+ */
+export function listOutputStyles(cwd: string, home = homedir(), cliNames?: string[]): OutputStyleInfo[] {
+  const out: OutputStyleInfo[] = cliNames?.length
+    ? cliNames.filter((n) => n && n !== 'default').map((name) => ({ name, description: KNOWN_DESCRIPTIONS[name] ?? '', source: 'built-in' }))
+    : [...BUILTIN_OUTPUT_STYLES]
   for (const [dir, source] of [
     [join(home, '.claude', 'output-styles'), 'user'],
     [join(cwd, '.claude', 'output-styles'), 'project']
   ] as const) {
-    if (!existsSync(dir)) continue
+    if (!existsSync(dir) || (source === 'project' && cwd === home)) continue
     for (const f of readdirSync(dir).filter((x) => x.endsWith('.md')).sort()) {
       try {
         const style = parseOutputStyle(f, readFileSync(join(dir, f), 'utf8'), source)
