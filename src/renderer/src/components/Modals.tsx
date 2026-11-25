@@ -23,6 +23,7 @@ import { CommandPalette } from './CommandPalette'
 import { UpdatesSettings } from './Updates'
 import { UsageGraphs } from './UsageGraphs'
 import { ProjectIcon, ProjectIconPicker } from './ProjectIcon'
+import { isMac } from '../platform'
 
 function Shell({ children, onClose, width = 'w-[560px]' }: { children: React.ReactNode; onClose: () => void; width?: string }) {
   useEffect(() => {
@@ -568,11 +569,13 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             <Row label="Workspaces folder" hint="Where new workspaces are created. Empty uses ~/choo-choo/workspaces.">
               <input className={`${select} w-44`} defaultValue={settings.workspacesRoot ?? ''} placeholder="~/choo-choo/workspaces" onBlur={(e) => void save({ workspacesRoot: e.target.value })} />
             </Row>
-            <Row label="Import from Conductor" hint="Bring over your projects, open workspaces, chats and settings. Conductor's own data is only read, never changed.">
-              <button className="rounded-md border border-line px-2.5 py-1 hover:bg-hover" onClick={() => useStore.getState().set({ modal: 'conductor' })}>
-                Import…
-              </button>
-            </Row>
+            {isMac() && (
+              <Row label="Import from Conductor" hint="Bring over your projects, open workspaces, chats and settings. Conductor's own data is only read, never changed.">
+                <button className="rounded-md border border-line px-2.5 py-1 hover:bg-hover" onClick={() => useStore.getState().set({ modal: 'conductor' })}>
+                  Import…
+                </button>
+              </Row>
+            )}
             <Row label="Delete archived workspaces after" hint="Archived worktrees, with their uncommitted files, are kept in ~/choo-choo/archive until then. The branch and chat history are never deleted, so you can still restore.">
               <select className={select} value={settings.archiveRetentionDays} onChange={(e) => void save({ archiveRetentionDays: Number(e.target.value) })}>
                 {RETENTION.map(([d, label]) => (

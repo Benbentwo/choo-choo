@@ -1967,12 +1967,14 @@ function createWindow() {
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
-// GUI apps on macOS start with a minimal PATH. Pick up the login shell's PATH so git, gh and claude resolve.
+// GUI apps on macOS, and Linux apps started from a desktop launcher, can start with a minimal PATH.
+// Pick up the login shell's PATH so git, gh and claude resolve. On Linux only packaged builds do
+// this, so dev runs and the demo recorder (which puts a stand-in gh on PATH) keep the PATH they got.
 async function fixPath() {
-  if (process.platform !== 'darwin') return
+  if (process.platform !== 'darwin' && !(process.platform === 'linux' && app.isPackaged)) return
   const { execFile } = await import('node:child_process')
   await new Promise<void>((resolve) => {
-    execFile(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf "%s" "$PATH"'], { timeout: 5000 }, (err, out) => {
+    execFile(process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash'), ['-ilc', 'printf "%s" "$PATH"'], { timeout: 5000 }, (err, out) => {
       if (!err && out) process.env.PATH = out.trim().split('\n').pop()
       resolve()
     })
@@ -1993,6 +1995,23 @@ app.on('open-url', (e, url) => {
   e.preventDefault()
   openLink(url)
 })
+// Linux delivers links on the command line: the first launch gets it in argv, and a second launch
+// hands its argv to the running app and quits. Packaged builds only, so dev runs are unchanged.
+if (process.platform === 'linux' && app.isPackaged) {
+  const linkIn = (argv: string[]) => argv.find((a) => a.startsWith('choo-choo://'))
+  if (!app.requestSingleInstanceLock()) app.exit(0)
+  app.on('second-instance', (_e, argv) => {
+    const url = linkIn(argv)
+    if (url) openLink(url)
+    else if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    }
+  })
+  const first = linkIn(process.argv)
+  if (first) pendingLink = first
+}
 if (process.defaultApp) {
   if (process.argv[1]) app.setAsDefaultProtocolClient('choo-choo', process.execPath, [resolve(process.argv[1])])
 } else app.setAsDefaultProtocolClient('choo-choo')

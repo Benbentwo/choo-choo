@@ -3,6 +3,7 @@ import { useStore, addRepository, openOrchestrator } from '../store'
 import { IconAddon, IconEye, IconFolder, IconFolderPlus, IconGear, IconGlobe, IconOrchestrator, IconSidebar, IconTool } from '../icons'
 import { BrandMark } from './BrandMark'
 import { ContinueCard } from './ContinueWork'
+import { isMac } from '../platform'
 
 export function Home() {
   const s = useStore()
@@ -28,7 +29,10 @@ export function Home() {
     { title: 'MCP servers', body: 'See and manage the tools your agents can reach, per project.', icon: <IconGear width={16} height={16} />, run: settings('mcp') },
     { title: 'Integrations', body: 'Connect Linear and Notion so agents can use them.', icon: <IconGlobe width={16} height={16} />, run: settings('integrations') },
     { title: 'Themes', body: 'Colors, accent, font size and density.', icon: <IconEye width={16} height={16} />, run: settings('appearance') },
-    { title: 'Import from Conductor', body: 'Bring over projects, workspaces and chats.', icon: <IconFolder width={16} height={16} />, run: () => s.set({ modal: 'conductor' }) }
+    // Conductor is Mac only, so its import is too.
+    ...(isMac()
+      ? [{ title: 'Import from Conductor', body: 'Bring over projects, workspaces and chats.', icon: <IconFolder width={16} height={16} />, run: () => s.set({ modal: 'conductor' }) }]
+      : [])
   ]
   const actions = [
     { label: 'Open project', icon: <IconFolder width={18} height={18} />, run: () => void addRepository() },

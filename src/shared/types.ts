@@ -1215,6 +1215,8 @@ export interface Api {
   pickFiles(): Promise<string[]>
   /** Current versions behind the Claude model aliases, from the Agent SDK. Empty if it couldn't be read. */
   modelDetails(): Promise<Partial<Record<ModelId, ModelDetails>>>
+  /** process.platform of the main process. Missing in test and browser stand-ins, which count as macOS. */
+  platform?: string
   previewConductorImport(): Promise<ImportPreview>
   importFromConductor(opts: { useWorkspacesRoot: boolean }): Promise<ImportResult>
   listGithubRepos(): Promise<GithubRepo[]>

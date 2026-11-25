@@ -62,6 +62,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Live status and check-ins](prd/check-in.md) | Shipped (PR #128) |
 | [Live Markdown in the message box](prd/live-markdown.md) | Shipped (PR #132) |
 | [Attach files to a message](prd/file-attachments.md) | Shipped (PR #162) |
+| [Linux builds](prd/linux.md) | Shipped (PR #156); Linux title bar and shortcuts to do |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 
@@ -90,6 +91,7 @@ New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and a
 | [0022](decisions/0022-orchestrator-prompt-stays-stable.md) | Orchestrator system prompts stay stable; context that changes, like project memory, is sent with a turn only when the session lacks that version |
 | [0023](decisions/0023-projects-on-by-default.md) | Projects are on by default; the switch lives in Settings › Projects and earlier opt-outs still count |
 | [0024](decisions/0024-issue-prs-are-sandboxed-and-reviewed.md) | PRs from `claude`-labeled issues come from a sandboxed, read-only Claude job and are never auto-merged |
+| [0025](decisions/0025-linux-appimage-deb-unsigned.md) | Linux ships AppImage + deb, unsigned |
 
 New decision? Copy [decisions/TEMPLATE.md](decisions/TEMPLATE.md) to the next number.
 
