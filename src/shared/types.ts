@@ -621,6 +621,8 @@ export interface Settings extends AppearanceSettings {
   claudeBinary: 'bundled' | 'installed'
   /** Check GitHub Releases for new Choo Choo versions. Checking by hand still works when off. */
   checkAppUpdates: boolean
+  /** Signed builds download a found update right away. Off: they wait for Download update. Restarting always waits for you. */
+  autoDownloadUpdates: boolean
   /** stable: published releases. beta: also the signed prerelease built from every merge to main. */
   updateChannel: 'stable' | 'beta'
   /** Check npm for new Claude Code versions. Checking by hand still works when off. */
@@ -795,6 +797,7 @@ export const DEFAULT_SETTINGS: Settings = {
   experimentalProjects: true,
   claudeBinary: 'bundled',
   checkAppUpdates: true,
+  autoDownloadUpdates: true,
   updateChannel: 'stable',
   checkClaudeUpdates: true,
   resumeAfterRestart: true,

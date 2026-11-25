@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Status | Shipped (PR #39); beta channel added; What's new and Restart when idle added |
+| Status | Shipped (PR #39); beta channel added; What's new and Restart when idle added; Auto-download toggle, dismissible update card and footer Update button added |
 | Owner | Claude |
 | Requested by | Ben, 2026-11-06 |
-| Last updated | 2026-11-13 |
+| Last updated | 2026-11-25 |
 
 ## Problem
 
@@ -14,6 +14,8 @@ Ben asked whether the app runs real Claude Code or the API, because "we'll want 
 On 2026-11-10, with signing working, Ben asked that "every PR we merge is an update to the application" for people who opt into a beta or bleeding-edge setting, while everyone else stays on manually published releases.
 
 On 2026-11-13 Ben asked for two more things. When an update is ready, explain what's in it, for example with a button next to "Restart to update". And restarting shouldn't kill running work: either sessions survive a restart, or the restart waits until no session is in progress.
+
+On 2026-11-25 Ben asked for an "auto-download new updates" setting, with restarting still up to the person. The "time to restart" card should be dismissible too. Once it's dismissed, a small Update button should sit left of the Settings gear in the sidebar footer, next to "Choo Choo" and the version.
 
 Agents run the real Claude Code binary. By default it's the copy bundled with the Agent SDK; Settings can pick your installed `claude` instead. Before this, only signed builds could find app updates, and nothing showed the Claude Code version.
 
@@ -35,7 +37,9 @@ Agents run the real Claude Code binary. By default it's the copy bundled with th
 
 ## User experience
 
-Settings > Updates has an **Update channel** menu (Stable or Beta, Stable by default), a toggle for each check (both on by default), the current versions, the result of the last check, "Check now" buttons that work even with a toggle off, and an install or update button when one applies. The sidebar shows a card when a Choo Choo update is available or downloaded, and a dismissible card for a new Claude Code. The app menu's "Check for Updates…" uses the same paths.
+Settings > Updates has an **Update channel** menu (Stable or Beta, Stable by default), a toggle for each check (both on by default), the current versions, the result of the last check, "Check now" buttons that work even with a toggle off, and an install or update button when one applies. Below the check toggle, **Auto-download new updates** (on by default) controls whether a signed build downloads an update as soon as it's found. Turned off, the card and Settings offer **Download update** instead, and restarting still waits for you either way. The sidebar shows a card when a Choo Choo update is available or downloaded, and a dismissible card for a new Claude Code.
+
+**Dismissing a downloaded update.** The Update ready card has a **Dismiss** button, which hides it for that version. The sidebar footer then shows a small **Update** button between the version and the Settings gear. Clicking it restarts into the update. With chats running, it waits for them like Restart when idle, and the card comes back so Cancel and Restart now stay in reach. A newer download shows the card again. The app menu's "Check for Updates…" uses the same paths.
 
 ![The update card while a chat runs](../media/updates/1-update-ready-while-running.png)
 
@@ -54,7 +58,7 @@ Settings > Updates has an **Update channel** menu (Stable or Beta, Stable by def
 ## Requirements
 
 1. With its toggle on, each check runs 5 seconds after start and every 6 hours.
-2. Signed builds download the update in place and offer "Restart to update".
+2. Signed builds download the update in place and offer "Restart to update". With Auto-download off they stop at "Download update". Turning it back on starts a pending download.
 3. Unsigned builds offer `brew upgrade --cask choo-choo` (then relaunch) when Homebrew installed the app, otherwise the release page.
 4. The Claude Code version comes from the SDK's `claudeCodeVersion` (bundled) or `claude --version` (installed), compared with `@anthropic-ai/claude-code` on npm.
 5. An installed `claude` updates with `claude update`. A bundled one that's behind offers switching to the installed `claude` when one exists.
@@ -73,9 +77,9 @@ Settings > Updates has an **Update channel** menu (Stable or Beta, Stable by def
 
 - [`src/main/updater.ts`](../../src/main/updater.ts): both checks, update method detection (`codesign` Developer ID check, Homebrew Caskroom), installs, menu dialog.
 - [`src/shared/updates.ts`](../../src/shared/updates.ts): `UpdateStatus` and version parsing and comparison.
-- [`src/renderer/src/components/Updates.tsx`](../../src/renderer/src/components/Updates.tsx): Settings tab and sidebar cards.
+- [`src/renderer/src/components/Updates.tsx`](../../src/renderer/src/components/Updates.tsx): Settings tab, sidebar cards and the footer Update button (`FooterUpdateButton`). The dismissed version is kept in localStorage (`choo-choo:dismissed-app-update`), shared by the card and the footer.
 - `Api`: `updateStatus`, `checkForUpdates`, `installAppUpdate`, `updateClaude`, `onUpdateStatus`.
-- Settings: `checkAppUpdates`, `updateChannel`, `checkClaudeUpdates`, `resumeAfterRestart`.
+- Settings: `checkAppUpdates`, `autoDownloadUpdates`, `updateChannel`, `checkClaudeUpdates`, `resumeAfterRestart`.
 - [`src/shared/releaseNotes.ts`](../../src/shared/releaseNotes.ts): parses release bodies (`parseNotes`, `cleanItem`) and picks the releases between two versions (`notesBetween`). The main process fetches the 100 most recent releases once per update (`Api.releaseNotes`).
 - [`src/shared/restart.ts`](../../src/shared/restart.ts): `Chat.interrupted`, the resume message, which chats to resume, and the card's wording. Why resume the session rather than keep the process alive: [decision 0021](../decisions/0021-restart-waits-then-resumes.md).
 - `src/main/updater.ts` takes a `busy` count from `agent.runningCount()`; `installAppUpdate({ now })` and `cancelRestart()` drive the wait. `agent.markInterrupted()` runs in `before-quit`; `resumeInterrupted()` in `src/main/index.ts` runs 3 seconds after launch. `store.load()` marks chats still saved as running.
