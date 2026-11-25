@@ -54,6 +54,7 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { section: 'general', label: 'Workspaces folder', hint: 'Where new workspaces are created.', keywords: 'directory path worktree location disk' },
   { section: 'general', label: 'Import from Conductor', keywords: 'migrate conductor import move' },
   { section: 'general', label: 'Delete archived workspaces after', keywords: 'archive retention cleanup days' },
+  { section: 'general', label: 'Also delete their branches', keywords: 'archive branch delete cleanup workspace names reuse' },
 
   // Appearance
   { section: 'appearance', label: 'Theme', keywords: 'dark light mode color scheme skin' },

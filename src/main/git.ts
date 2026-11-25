@@ -53,6 +53,39 @@ export async function addWorktree(repo: string, path: string, branch: string, ba
   await git(repo, ['worktree', 'add', '-b', branch, path, baseRef])
 }
 
+/** Names after `<prefix>/` of local branches and origin's remote-tracking branches, e.g. `paris` for `me/paris`. */
+export async function branchesUnder(repo: string, prefix: string): Promise<string[]> {
+  const out = await tryGit(repo, ['for-each-ref', '--format=%(refname)', `refs/heads/${prefix}/`, `refs/remotes/origin/${prefix}/`])
+  const names = new Set<string>()
+  for (const ref of (out ?? '').split('\n')) {
+    const m = ref.trim().match(/^refs\/(?:heads|remotes\/origin)\/(.+)$/)
+    if (m && m[1].startsWith(`${prefix}/`)) names.add(m[1].slice(prefix.length + 1))
+  }
+  return [...names]
+}
+
+/**
+ * Whether deleting a local branch loses no commits: it's gone already, it's merged into `baseRef`,
+ * or it tracks a remote branch that it isn't ahead of.
+ */
+export async function branchIsSafeToDelete(repo: string, branch: string, baseRef: string): Promise<boolean> {
+  if (!(await localBranchExists(repo, branch))) return true
+  if ((await tryGit(repo, ['merge-base', '--is-ancestor', `refs/heads/${branch}`, baseRef])) !== null) return true
+  const upstream = (await tryGit(repo, ['for-each-ref', '--format=%(upstream)', `refs/heads/${branch}`]))?.trim()
+  if (!upstream?.startsWith('refs/remotes/')) return false
+  const ahead = await tryGit(repo, ['rev-list', '--count', `${upstream}..refs/heads/${branch}`])
+  return ahead !== null && ahead.trim() === '0'
+}
+
+export async function localBranchExists(repo: string, branch: string): Promise<boolean> {
+  return !!(await tryGit(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]))
+}
+
+/** Deletes a local branch. Returns false when git refuses, e.g. another worktree has it checked out. */
+export async function deleteBranch(repo: string, branch: string): Promise<boolean> {
+  return (await tryGit(repo, ['branch', '-D', branch])) !== null
+}
+
 export async function removeWorktree(repo: string, path: string) {
   await tryGit(repo, ['worktree', 'remove', '--force', path])
   await tryGit(repo, ['worktree', 'prune'])

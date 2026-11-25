@@ -612,6 +612,11 @@ export interface Settings extends AppearanceSettings {
   workspacesRoot?: string
   /** Days to keep archived worktrees before deleting them. 0 keeps them forever. */
   archiveRetentionDays: number
+  /**
+   * When retention cleanup deletes an archived workspace, also delete its local branch (only when no commits
+   * would be lost) and drop it from the Archived list, so its name can be used again.
+   */
+  archiveDeleteBranches?: boolean
   /** Which Claude Code to run: the copy bundled with the app, or the `claude` you installed. */
   claudeBinary: 'bundled' | 'installed'
   /** Check GitHub Releases for new Choo Choo versions. Checking by hand still works when off. */

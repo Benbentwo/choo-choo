@@ -7,7 +7,7 @@ import * as store from './store'
 import * as git from './git'
 import * as gh from './github'
 import * as share from './share'
-import { pickCityName } from './names'
+import { namesInUse, pickCityName } from './names'
 
 export interface ShareDeps {
   workspacesRoot: string
@@ -127,12 +127,12 @@ async function importShare(repo: Repo, id: string, deps: ShareDeps) {
     return { workspace: existing, chat }
   }
   const { bundle, ref } = await share.fetchShare(repo.path, id)
-  const taken = new Set(s.workspaces.filter((w) => w.repoId === repo.id).map((w) => w.name))
-  const name = pickCityName(taken)
+  const dir = join(deps.workspacesRoot, repo.name)
+  const prefix = s.settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
+  const name = pickCityName(await namesInUse(repo.path, dir, s.workspaces.filter((w) => w.repoId === repo.id).map((w) => w.name), prefix))
   // Keep the sharer's branch name so a push lands on the same branch and pull request.
   let branch = bundle.branch
   if (await share.branchExists(repo.path, branch)) branch = `${branch}-${name}`
-  const dir = join(deps.workspacesRoot, repo.name)
   mkdirSync(dir, { recursive: true })
   const path = join(dir, name)
   await share.checkoutShare(repo.path, path, branch, ref)
