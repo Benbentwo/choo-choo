@@ -882,6 +882,15 @@ export interface UsagePoint {
   did?: string
 }
 
+/** How full a chat's context window is now. See docs/prd/context-ring.md. */
+export interface ChatContext {
+  /** Tokens in the main context window after the last response. */
+  used: number
+  contextWindow: number
+  /** Times the conversation was compacted. */
+  compactions: number
+}
+
 export interface SessionUsage {
   points: UsagePoint[]
   /** Times the conversation was compacted. */
@@ -1060,6 +1069,7 @@ export interface Api {
   closeChat(chatId: string): Promise<void>
   getChatItems(chatId: string): Promise<ChatItem[]>
   getChatUsage(chatId: string): Promise<SessionUsage>
+  getChatContext(chatId: string): Promise<ChatContext | null>
   /** Resolves a project thread (hides it, keeps it) or reopens it. */
   resolveThread(chatId: string, resolved: boolean): Promise<Chat>
   updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'reviewKind' | 'permission' | 'advisor' | 'advisorBlocker' | 'fast' | 'budgetUsd' | 'outputStyle'>>): Promise<Chat>

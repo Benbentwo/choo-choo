@@ -1,7 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { SessionUsage, UsagePoint } from '@shared/types'
+import type { ChatContext, SessionUsage, UsagePoint } from '@shared/types'
 
 /**
  * Per-response token usage for a Claude chat, read from the transcript Claude Code keeps at
@@ -149,4 +149,76 @@ export function sessionUsage(sessionId: string | undefined, opts: { contextWindo
     costUsd: opts.costUsd,
     ...(points.length ? {} : { empty: 'No messages yet. Usage shows after the first reply.' })
   }
+}
+
+/** What contextNow has read of a transcript so far. */
+interface ContextScan {
+  /** Bytes read: always up to the end of a complete line. */
+  size: number
+  compactions: number
+  oneM: boolean
+  /** Context tokens after the last main-chat response, and that response's id (its lines repeat). */
+  used: number
+  lastId?: string
+}
+const scans = new Map<string, ContextScan>()
+
+/** Reads complete lines appended since the last scan. Only compaction and assistant lines are parsed. */
+function scanLines(scan: ContextScan, text: string) {
+  for (const line of text.split('\n')) {
+    const compact = line.includes('compact_boundary')
+    if (!compact && !line.includes('"assistant"')) continue
+    let e: any
+    try {
+      e = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (e.type === 'system' && e.subtype === 'compact_boundary') scan.compactions++
+    if (e.type !== 'assistant' || e.isSidechain || !e.message?.usage || e.message.model === '<synthetic>') continue
+    if (typeof e.requestedModel === 'string' && /\[1m\]/i.test(e.requestedModel)) scan.oneM = true
+    const u = e.message.usage
+    const used = num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens) + num(u.output_tokens)
+    // Later lines of one response can only raise its output count.
+    scan.used = e.message.id && e.message.id === scan.lastId ? Math.max(scan.used, used) : used
+    scan.lastId = e.message.id
+  }
+}
+
+/**
+ * How full a chat's context window is now, for the composer's ring. Unlike sessionUsage it reads
+ * only what was appended since the last call, so it stays cheap on long transcripts.
+ */
+export function contextNow(sessionId: string | undefined, opts: { contextWindow?: number; root?: string } = {}): ChatContext | null {
+  if (!sessionId) return null
+  const file = transcriptFiles(sessionId, opts.root).main
+  if (!file) return null
+  let size: number
+  try {
+    size = statSync(file).size
+  } catch {
+    return null
+  }
+  let scan = scans.get(file)
+  // A file that shrank was rewritten: start over.
+  if (!scan || size < scan.size) scan = { size: 0, compactions: 0, oneM: false, used: 0 }
+  if (size > scan.size) {
+    const fd = openSync(file, 'r')
+    try {
+      const buf = Buffer.alloc(size - scan.size)
+      const n = readSync(fd, buf, 0, buf.length, scan.size)
+      // Stop at the last newline: a line still being written is read whole next time.
+      const end = buf.subarray(0, n).lastIndexOf(0x0a) + 1
+      if (end) {
+        scanLines(scan, buf.subarray(0, end).toString('utf8'))
+        scan.size += end
+      }
+    } finally {
+      closeSync(fd)
+    }
+  }
+  scans.set(file, scan)
+  if (!scan.lastId && !scan.used) return null
+  const contextWindow = opts.contextWindow ?? (scan.oneM || scan.used > 200_000 ? 1_000_000 : 200_000)
+  return { used: scan.used, contextWindow, compactions: scan.compactions }
 }

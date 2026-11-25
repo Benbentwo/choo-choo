@@ -52,6 +52,7 @@ const api: Api = {
   closeChat: inv('chat:close') as Api['closeChat'],
   getChatItems: inv('chat:items') as Api['getChatItems'],
   getChatUsage: inv('chat:usage') as Api['getChatUsage'],
+  getChatContext: inv('chat:context') as Api['getChatContext'],
   updateChat: inv('chat:update') as Api['updateChat'],
   resolveThread: inv('chat:resolve') as Api['resolveThread'],
   sendMessage: inv('chat:send') as Api['sendMessage'],
