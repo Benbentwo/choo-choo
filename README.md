@@ -124,7 +124,12 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Add-ons.** Claude Code plugins with a Choo Choo manifest add views, buttons and tools. Install them from any git repo, including private ones for your team. See [Writing an add-on](docs/addon-api.md).
 - **Integrations.** Sign in to Notion and start a workspace from a page; agents can search and update it too. MCP servers, plugins and skills are managed in Settings.
 - **Appearance.** Themes, accents, fonts, size and density.
+- **Output style.** Pick how Claude writes in every chat: Claude Code's built-in styles, ones from your plugins, or your own prompt. A chat can still pick its own from its model menu.
 - **Searchable Settings.** Press ⌘F in Settings and type; Enter jumps to the setting and highlights it.
+
+<p align="center">
+  <img src="docs/media/gifs/output-style.gif" alt="In Settings, Prompts, Output style is set to Custom and a short prompt is typed: lead with the result, then at most three bullets. In a chat's model menu, the Output style section shows Settings default (Custom) checked, with Default, Proactive, Concise, Explanatory, Learning and Custom to pick from." width="900">
+</p>
 
 <p align="center">
   <img src="docs/media/gifs/settings-search.gif" alt="Typing notif in Settings search lists matching settings from General, Reviews and Continue work. Enter opens one and highlights it, then dark mode finds Theme." width="900">

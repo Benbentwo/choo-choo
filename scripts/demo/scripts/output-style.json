@@ -1,0 +1,12 @@
+{
+  "titles": [{ "match": "booking page", "title": "Speed up booking page", "branch": "speed-up-booking-page" }],
+  "turns": [
+    {
+      "match": "booking page",
+      "steps": [
+        { "tool": "Read", "input": { "file_path": "src/pages/booking.ts" }, "result": "…", "wait": 900 },
+        { "text": "Three requests run one after another before the page draws.\n\n- `loadTrip`, `loadSeats` and `loadPrices` each wait for the one before.\n- None of them depend on each other.\n- Running them together with `Promise.all` should cut load time by about two thirds." }
+      ]
+    }
+  ]
+}

@@ -479,6 +479,42 @@ const scenes = {
       console.log(left ? `stop-queued: test run still alive (${left})` : 'stop-queued: test run process is gone')
     }),
 
+  // Settings > Prompts > Output style sets how Claude writes in every chat; a chat can still pick its own.
+  'output-style': () =>
+    record('output-style', { script: 'output-style.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      // The chat is set up before the GIF starts; the GIF shows the setting, then the chat's menu.
+      await startWorkspace(d, 'Why does the booking page load slowly?')
+      await d.page.getByText('Three requests run one after another', { exact: false }).waitFor({ timeout: 30_000 })
+      await d.wait(1000)
+      await d.startGif()
+      await d.menu('settings')
+      await d.wait(700)
+      await d.click(d.page.getByText('Prompts', { exact: true }).first())
+      await d.wait(500)
+      const select = d.page.locator('select').filter({ has: d.page.locator('option[value="@custom"]') }).first()
+      await d.click(select)
+      await select.selectOption('@custom')
+      await d.wait(900)
+      const box = d.page.getByPlaceholder('Answer in short paragraphs', { exact: false })
+      await d.click(box)
+      await d.type('Lead with the result. Then at most three bullets.', 25)
+      await d.page.getByText('Custom output style', { exact: true }).click()
+      await d.wait(700)
+      await d.shot?.('1-settings')
+      await d.page.keyboard.press('Escape')
+      await d.wait(600)
+      await d.click(d.page.getByRole('button', { name: /Opus/ }).last())
+      await d.wait(500)
+      const section = d.page.getByText('Output style', { exact: true }).last()
+      await section.scrollIntoViewIfNeeded()
+      await d.wait(600)
+      await d.moveTo(d.page.getByText('Settings default', { exact: false }).first())
+      await d.wait(1400)
+      await d.shot?.('2-chat-menu')
+    }),
+
   'settings-search': () =>
     record('settings-search', {}, async (d) => {
       await d.wait(600)
