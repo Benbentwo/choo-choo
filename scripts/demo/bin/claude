@@ -95,6 +95,11 @@ async function playTurn(prompt) {
     for (const step of turn.steps) {
       if (interrupted) break
       if (step.sleep) await sleep(step.sleep)
+      // Claude Code's status messages: "compacting" while it summarizes the conversation, then null.
+      if ('status' in step) {
+        out({ type: 'system', subtype: 'status', status: step.status, session_id: sessionId, uuid: randomUUID() })
+        if (step.status === null) out({ type: 'system', subtype: 'compact_boundary', session_id: sessionId, uuid: randomUUID(), compact_metadata: { trigger: 'auto', pre_tokens: 180000 } })
+      }
       if (step.text) await streamText(step.text)
       if (step.tool) {
         const id = `toolu_${randomUUID().replace(/-/g, '').slice(0, 20)}`

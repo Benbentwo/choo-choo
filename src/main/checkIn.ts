@@ -4,7 +4,7 @@ import { CHECK_IN_QUESTION, statusBlock, turnStart } from '@shared/liveStatus'
 import * as store from './store'
 import { claudeExecutable } from './claudeBinary'
 import { redactSecrets, renderTurn } from './extras'
-import { isRunning, liveTasks } from './agent'
+import { isRunning, liveCompacting, liveTasks } from './agent'
 
 type Emit = (chatId: string, payload: { item?: ChatItem }) => void
 
@@ -51,7 +51,7 @@ export async function checkIn(chat: Chat, ws: Workspace, question: string | unde
   put()
   try {
     const { query } = await import('@anthropic-ai/claude-agent-sdk')
-    const prompt = `<status>\n${statusBlock(all, liveTasks(chat.id), running)}\n</status>\n\n${checkInContext(all)}\n\nThe person asks: ${q}`
+    const prompt = `<status>\n${statusBlock(all, liveTasks(chat.id), running, Date.now(), liveCompacting(chat.id))}\n</status>\n\n${checkInContext(all)}\n\nThe person asks: ${q}`
     const res = query({
       prompt,
       options: {
