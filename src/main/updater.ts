@@ -111,18 +111,30 @@ export function checkApp(): Promise<void> {
       const { latest, url } = await newestRelease(ch)
       if (!isNewer(latest, status.app.current)) return setApp({ state: 'up-to-date', latest, url, checkedAt: Date.now() })
       setApp({ state: 'available', latest, url, checkedAt: Date.now() })
-      if (status.app.method === 'auto') {
-        setApp({ state: 'downloading' })
-        // The updater turns prereleases on by itself when the running build is one, so set both every time.
-        // Never downgrade: someone leaving beta stays on their build until a newer stable release.
-        autoUpdater.allowPrerelease = ch === 'beta'
-        autoUpdater.allowDowngrade = false
-        await autoUpdater.checkForUpdates()
-      }
+      if (status.app.method === 'auto' && store.get().settings.autoDownloadUpdates) await downloadApp()
     } catch (e) {
       setApp({ state: 'error', error: message(e), checkedAt: Date.now() })
     }
   })().finally(() => (checkingApp = null)))
+}
+
+/**
+ * Signed builds: downloads the update found by checkApp. `autoUpdater.autoDownload` stays on, so asking it to
+ * check is what starts the download; with Auto-download off, that waits for the Download update button.
+ */
+async function downloadApp() {
+  if (status.app.method !== 'auto' || status.app.state !== 'available') return
+  setApp({ state: 'downloading', error: undefined })
+  // The updater turns prereleases on by itself when the running build is one, so set both every time.
+  // Never downgrade: someone leaving beta stays on their build until a newer stable release.
+  autoUpdater.allowPrerelease = channel() === 'beta'
+  autoUpdater.allowDowngrade = false
+  try {
+    await autoUpdater.checkForUpdates()
+  } catch (e) {
+    // Downloading in place failed; the release page still works. (The 'error' event may have done this already.)
+    if ((status.app.state as UpdateStatus['app']['state']) === 'downloading') setApp({ state: 'available', method: 'download', error: message(e) })
+  }
 }
 
 function brewBinary() {
@@ -142,6 +154,7 @@ const restarts = () => status.app.state === 'ready' || (status.app.method === 'b
 export async function installAppUpdate(opts: { now?: boolean } = {}) {
   if (restarts() && !opts.now && busy() > 0) return setApp({ restartWhenIdle: true, running: busy() })
   if (status.app.restartWhenIdle) setApp({ restartWhenIdle: false })
+  if (status.app.method === 'auto' && status.app.state === 'available') return downloadApp()
   if (status.app.state === 'ready') {
     if (demoReleases) return setApp({ state: 'installing' })
     restarting = true
@@ -312,6 +325,7 @@ export function onSettingsChanged(keys: string[]) {
     if (store.get().settings.checkAppUpdates) void checkApp()
   }
   if (keys.includes('checkClaudeUpdates') && store.get().settings.checkClaudeUpdates) void checkClaude()
+  if (keys.includes('autoDownloadUpdates') && store.get().settings.autoDownloadUpdates) void downloadApp()
 }
 
 /** For the menu item: tells the user the outcome either way. */
@@ -331,7 +345,7 @@ export async function checkNow(win: BrowserWindow | null) {
   if (a.state === 'error') return void show('Could not check for updates.', a.error)
   if (a.state === 'up-to-date') return void show(`Choo Choo ${a.current} is up to date.`)
   if (a.state === 'downloading') return void show(`Downloading Choo Choo ${a.latest}…`, 'You will be asked to restart when it is ready.')
-  const action = a.method === 'brew' ? 'Update with Homebrew' : 'Open download page'
+  const action = a.method === 'brew' ? 'Update with Homebrew' : a.method === 'auto' ? 'Download update' : 'Open download page'
   const r = await show(`Choo Choo ${a.latest} is available.`, `You have ${a.current}.`, [action, 'Later'])
   if (r?.response === 0) await installAppUpdate()
 }

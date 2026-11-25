@@ -17,7 +17,7 @@ import { StackRows } from './Stack'
 import { Stats } from './Stats'
 import { prMenuItems, usePrState } from '../prState'
 import { BrandMark } from './BrandMark'
-import { UpdateBanners } from './Updates'
+import { FooterUpdateButton, UpdateBanners } from './Updates'
 import { AddonActions, addonViews } from './Addons'
 import { ProjectsSection } from './Projects'
 import { askToQueue, setQueueDrag, useQueueDrop } from './ContinueWork'
@@ -453,6 +453,7 @@ export function Sidebar() {
         <BrandMark size={14} />
         <span className="text-[11px]">Choo Choo</span>
         <AppVersion />
+        <FooterUpdateButton />
         <button className="rounded p-1 hover:bg-hover hover:text-fg" title="Settings (⌘,)" onClick={() => s.set({ modal: 'settings' })}>
           <IconGear />
         </button>

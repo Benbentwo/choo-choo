@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import type { Settings } from '@shared/types'
 import { isNewer, type UpdateStatus } from '@shared/updates'
@@ -29,7 +29,7 @@ function appAction(a: UpdateStatus['app']): string | null {
   if (a.state === 'ready') return a.running ? 'Restart when idle' : 'Restart to update'
   if (a.state === 'installing') return a.method === 'brew' ? 'Updating…' : 'Restarting…'
   if (a.state !== 'available') return null
-  return a.method === 'brew' ? 'Update with Homebrew' : 'Download'
+  return a.method === 'brew' ? 'Update with Homebrew' : a.method === 'auto' ? 'Download update' : 'Download'
 }
 
 function appLine(a: UpdateStatus['app']): string {
@@ -96,6 +96,14 @@ export function UpdatesSettings({ settings, save }: { settings: Settings; save: 
     <>
       <Row label="Check for Choo Choo updates" hint="Looks for new releases on GitHub when the app starts and every 6 hours.">
         <input type="checkbox" aria-label="Check for Choo Choo updates" checked={settings.checkAppUpdates} onChange={(e) => save({ checkAppUpdates: e.target.checked })} />
+      </Row>
+      <Row label="Auto-download new updates" hint="Downloads a new version in the background as soon as it's found. You still pick when to restart.">
+        <input
+          type="checkbox"
+          aria-label="Auto-download new updates"
+          checked={settings.autoDownloadUpdates}
+          onChange={(e) => save({ autoDownloadUpdates: e.target.checked })}
+        />
       </Row>
       <Row
         label="Update channel"
@@ -177,14 +185,35 @@ export function UpdatesSettings({ settings, save }: { settings: Settings; save: 
 }
 
 const DISMISS_KEY = 'choo-choo:dismissed-claude-update'
+const DISMISS_APP_KEY = 'choo-choo:dismissed-app-update'
+
+// The dismissed app update version, shared by the sidebar card and the footer's Update button.
+const appDismissListeners = new Set<() => void>()
+const subscribeAppDismissed = (fn: () => void) => (appDismissListeners.add(fn), () => void appDismissListeners.delete(fn))
+const readAppDismissed = () => localStorage.getItem(DISMISS_APP_KEY)
+function setAppDismissed(version: string | null) {
+  if (version) localStorage.setItem(DISMISS_APP_KEY, version)
+  else localStorage.removeItem(DISMISS_APP_KEY)
+  appDismissListeners.forEach((fn) => fn())
+}
+const useAppDismissed = () => useSyncExternalStore(subscribeAppDismissed, readAppDismissed)
+
+/**
+ * A downloaded update whose card was dismissed. It comes back while a restart waits or runs, so Cancel
+ * and the progress stay in reach.
+ */
+const appCardHidden = (a: UpdateStatus['app'], dismissed: string | null) =>
+  a.state === 'ready' && !!a.latest && dismissed === a.latest && !a.restartWhenIdle
 
 /** Sidebar cards for an app update and, until dismissed, a newer Claude Code. */
 export function UpdateBanners({ openSettings }: { openSettings: () => void }) {
   const st = useUpdateStatus()
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(DISMISS_KEY))
+  const appDismissed = useAppDismissed()
   if (!st) return null
   const { app: a, claude: c } = st
   const action = appAction(a)
+  const showApp = !!action && !appCardHidden(a, appDismissed)
   const showClaude = c.state === 'available' && c.latest && dismissed !== c.latest
   const dismiss = () => {
     if (!c.latest) return
@@ -193,7 +222,7 @@ export function UpdateBanners({ openSettings }: { openSettings: () => void }) {
   }
   return (
     <>
-      {action && (
+      {showApp && (
         <div className="mx-2 mb-2 rounded-lg border border-line bg-raised p-3" data-testid="update-card">
           <div className="mb-1 font-medium">{a.state === 'ready' || (a.state === 'installing' && a.method !== 'brew') ? 'Update ready' : 'Update available'}</div>
           <div className="mb-2 text-[12px] text-muted">
@@ -208,6 +237,11 @@ export function UpdateBanners({ openSettings }: { openSettings: () => void }) {
           <div className="flex flex-wrap gap-2">
             <RestartButtons app={a} action={action} />
             <WhatsNewButton app={a} />
+            {a.state === 'ready' && !a.restartWhenIdle && (
+              <button className={`${btn} text-[12px]`} title="Hide this card. Update in the sidebar footer restarts into it later." onClick={() => setAppDismissed(a.latest ?? null)}>
+                Dismiss
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -235,6 +269,26 @@ export function UpdateBanners({ openSettings }: { openSettings: () => void }) {
         </div>
       )}
     </>
+  )
+}
+
+/**
+ * Sidebar footer, left of the Settings gear: once a downloaded update's card is dismissed, Update restarts
+ * into it. With chats running it waits for them like Restart when idle, and the card comes back with Cancel.
+ */
+export function FooterUpdateButton() {
+  const st = useUpdateStatus()
+  const dismissed = useAppDismissed()
+  if (!st || !appCardHidden(st.app, dismissed)) return null
+  const a = st.app
+  return (
+    <button
+      className="rounded px-1.5 py-0.5 text-[11px] font-medium text-accent hover:bg-hover"
+      title={`Restart into Choo Choo ${a.latest}${a.running ? `. ${busyLine(a.running)}` : ''}`}
+      onClick={() => void window.api.installAppUpdate().catch(reportError)}
+    >
+      Update
+    </button>
   )
 }
 
