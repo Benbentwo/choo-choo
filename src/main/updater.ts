@@ -68,6 +68,9 @@ const appBundle = () => join(dirname(app.getPath('exe')), '..', '..')
 let method: Promise<AppUpdateMethod> | null = null
 function updateMethod(): Promise<AppUpdateMethod> {
   return (method ??= (async () => {
+    // Linux: only the AppImage updates itself (electron-updater sets APPIMAGE when run from one).
+    // deb installs and unpacked builds get the release-page link (decision 0025).
+    if (process.platform === 'linux') return process.env.APPIMAGE ? 'auto' : 'download'
     if (process.platform !== 'darwin') return 'auto'
     try {
       const { stderr } = await run('/usr/bin/codesign', ['-dv', '--verbose=2', appBundle()])
