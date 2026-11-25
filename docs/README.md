@@ -49,7 +49,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Arranging and renaming workspaces](prd/sidebar-workspaces.md) | Shipped (PR #62, #68) |
 | [Stacked PRs](prd/stacked-prs.md) | Shipped (PR #65, #72) |
 | [Subscription limits in the sidebar](prd/subscription-limits.md) | Shipped (PR #75, #76) |
-| [Context ring in the composer](prd/context-ring.md) | In progress |
+| [Context ring in the composer](prd/context-ring.md) | In review (PR #167) |
 | [Split panels](prd/split-panels.md) | Shipped (PR #73, #144) |
 | [Build and Review workspace modes](prd/workspace-modes.md) | Shipped |
 | [Resizable sidebar and right panel](prd/resizable-panels.md) | Shipped (PR #112, #124) |
