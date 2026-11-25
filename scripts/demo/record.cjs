@@ -456,6 +456,33 @@ const scenes = {
       await d.wait(800)
     }),
 
+  // The ring in the message box shows how full this chat's context window is; click it for the graphs.
+  'context-ring': () =>
+    record('context-ring', { script: 'context-ring.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Add a seat map to the booking page')
+      await d.page.getByText('clicking a free seat picks it', { exact: false }).waitFor({ timeout: 30_000 })
+      const ring = d.page.getByTestId('context-ring')
+      await ring.waitFor({ timeout: 15_000 })
+      await d.moveTo(ring)
+      await d.wait(1800)
+      await d.shot?.('1-ring')
+      await d.click(d.page.getByTestId('composer-input').first())
+      await d.type('Add a legend for the seat colors', 35)
+      await d.page.keyboard.press('Enter')
+      await d.page.getByText('Added a legend', { exact: false }).waitFor({ timeout: 30_000 })
+      await d.page.getByText('73%', { exact: true }).waitFor({ timeout: 15_000 })
+      await d.moveTo(ring)
+      await d.wait(1800)
+      await d.shot?.('2-amber')
+      await d.click(ring)
+      await d.wait(2500)
+      await d.shot?.('3-graphs')
+      await d.page.keyboard.press('Escape')
+      await d.wait(600)
+    }),
+
   'stop-queued': () =>
     record('stop-queued', { script: 'stop.json', settings: { whileRunning: 'queue' }, opts: { noGif: true } }, async (d) => {
       await d.wait(500)

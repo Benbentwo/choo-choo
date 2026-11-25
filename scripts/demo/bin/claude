@@ -24,7 +24,9 @@ if (args[0] && !args[0].startsWith('-')) {
 
 const script = process.env.CHOO_DEMO_SCRIPT ? JSON.parse(readFileSync(process.env.CHOO_DEMO_SCRIPT, 'utf8')) : { turns: [] }
 const speed = Number(process.env.CHOO_DEMO_SPEED || 1)
-const sessionId = randomUUID()
+// A resumed chat keeps its session, so its transcript (and usage graphs) carry on.
+const argValue = (flag) => (args.find((a) => a.startsWith(`${flag}=`)) ?? '').slice(flag.length + 1) || (args.includes(flag) ? args[args.indexOf(flag) + 1] : '')
+const sessionId = argValue('--resume') || randomUUID()
 const modelArg = (args.find((a) => a.startsWith('--model=')) ?? '').slice(8) || (args.includes('--model') ? args[args.indexOf('--model') + 1] : 'opus')
 const model = { opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5', haiku: 'claude-haiku-5-5', fable: 'claude-fable-5-2' }[modelArg] || modelArg
 const out = (m) => process.stdout.write(JSON.stringify(m) + '\n')
@@ -68,14 +70,25 @@ function pickTurn(prompt) {
   return null
 }
 
-async function streamText(text) {
+// A step's `usage` is also written to a transcript where Claude Code keeps one, so the app's context ring
+// and usage graphs have something to read.
+function writeTranscript(id, usage) {
+  const dir = resolve(process.env.CLAUDE_CONFIG_DIR || resolve(require('node:os').homedir(), '.claude'), 'projects', process.cwd().replace(/[^A-Za-z0-9]/g, '-'))
+  mkdirSync(dir, { recursive: true })
+  const line = { type: 'assistant', timestamp: new Date().toISOString(), sessionId, requestedModel: model, message: { id, role: 'assistant', model, usage } }
+  require('node:fs').appendFileSync(resolve(dir, `${sessionId}.jsonl`), JSON.stringify(line) + '\n')
+}
+
+async function streamText(text, usage) {
   out({ type: 'stream_event', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } })
   const words = text.split(/(\s+)/)
   for (let i = 0; i < words.length; i += 3) {
     out({ type: 'stream_event', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: words.slice(i, i + 3).join('') } } })
     await sleep(45)
   }
-  out({ type: 'assistant', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), message: { id: randomUUID(), role: 'assistant', model, content: [{ type: 'text', text }] } })
+  const id = randomUUID()
+  out({ type: 'assistant', session_id: sessionId, parent_tool_use_id: null, uuid: randomUUID(), message: { id, role: 'assistant', model, content: [{ type: 'text', text }], ...(usage ? { usage } : {}) } })
+  if (usage) writeTranscript(id, usage)
 }
 
 async function playTurn(prompt) {
@@ -95,7 +108,7 @@ async function playTurn(prompt) {
     for (const step of turn.steps) {
       if (interrupted) break
       if (step.sleep) await sleep(step.sleep)
-      if (step.text) await streamText(step.text)
+      if (step.text) await streamText(step.text, step.usage)
       if (step.tool) {
         const id = `toolu_${randomUUID().replace(/-/g, '').slice(0, 20)}`
         const name = step.mcp ? `mcp__${step.mcp}__${step.tool}` : step.tool
@@ -123,7 +136,7 @@ async function playTurn(prompt) {
   out({
     type: 'result', subtype: 'success', is_error: false, session_id: sessionId, uuid: randomUUID(), queued_turn_count: pending,
     duration_ms: Date.now() - started, num_turns: 1, result: '', total_cost_usd: turn?.cost ?? 0.01,
-    modelUsage: { [model]: { inputTokens: 1000, outputTokens: 200, contextWindow: 1000000 } }
+    modelUsage: { [model]: { inputTokens: 1000, outputTokens: 200, contextWindow: turn?.contextWindow ?? 1000000 } }
   })
 }
 

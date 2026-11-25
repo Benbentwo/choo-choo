@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ChatContext, SessionUsage, UsagePoint } from '@shared/types'
@@ -193,18 +193,19 @@ export function contextNow(sessionId: string | undefined, opts: { contextWindow?
   if (!sessionId) return null
   const file = transcriptFiles(sessionId, opts.root).main
   if (!file) return null
-  let size: number
+  // Open first and size the open file, so what's read is the file that was measured.
+  let fd: number
   try {
-    size = statSync(file).size
+    fd = openSync(file, 'r')
   } catch {
     return null
   }
   let scan = scans.get(file)
-  // A file that shrank was rewritten: start over.
-  if (!scan || size < scan.size) scan = { size: 0, compactions: 0, oneM: false, used: 0 }
-  if (size > scan.size) {
-    const fd = openSync(file, 'r')
-    try {
+  try {
+    const size = fstatSync(fd).size
+    // A file that shrank was rewritten: start over.
+    if (!scan || size < scan.size) scan = { size: 0, compactions: 0, oneM: false, used: 0 }
+    if (size > scan.size) {
       const buf = Buffer.alloc(size - scan.size)
       const n = readSync(fd, buf, 0, buf.length, scan.size)
       // Stop at the last newline: a line still being written is read whole next time.
@@ -213,9 +214,9 @@ export function contextNow(sessionId: string | undefined, opts: { contextWindow?
         scanLines(scan, buf.subarray(0, end).toString('utf8'))
         scan.size += end
       }
-    } finally {
-      closeSync(fd)
     }
+  } finally {
+    closeSync(fd)
   }
   scans.set(file, scan)
   if (!scan.lastId && !scan.used) return null
