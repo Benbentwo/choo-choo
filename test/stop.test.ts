@@ -138,6 +138,24 @@ describe('Stop', () => {
     expect(marker(chat)?.text).toBe('Stopped by you')
   })
 
+  it('reports compacting while Claude Code compacts, and clears it after and when the turn ends', async () => {
+    const chat = newChat('c-compacting')
+    const t = await startTurn(chat)
+    const compacting = () => (t.events as { compacting?: number | null }[]).filter((e) => e.compacting !== undefined).map((e) => e.compacting)
+    lastQuery!.emit({ type: 'system', subtype: 'status', status: 'compacting' })
+    lastQuery!.emit({ type: 'system', subtype: 'status', status: 'compacting' })
+    await vi.waitFor(() => expect(agent.liveCompacting(chat.id)).toBeTypeOf('number'))
+    lastQuery!.emit({ type: 'system', subtype: 'status', status: null, compact_result: 'success' })
+    await vi.waitFor(() => expect(agent.liveCompacting(chat.id)).toBeUndefined())
+    expect(compacting()).toEqual([expect.any(Number), null])
+    lastQuery!.emit({ type: 'system', subtype: 'status', status: 'compacting' })
+    await vi.waitFor(() => expect(agent.liveCompacting(chat.id)).toBeTypeOf('number'))
+    await agent.stop(chat.id)
+    await t.turn
+    expect(agent.liveCompacting(chat.id)).toBeUndefined()
+    expect(compacting().at(-1)).toBeNull()
+  })
+
   it('shows Stopping… right away, before Claude Code answers', async () => {
     behave.interrupt = 'hang'
     const chat = newChat('c-feedback')
