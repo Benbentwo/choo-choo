@@ -62,7 +62,7 @@ Start here when you join the project, human or agent. These docs hold what the c
 | [Live status and check-ins](prd/check-in.md) | Shipped (PR #128) |
 | [Live Markdown in the message box](prd/live-markdown.md) | Shipped (PR #132) |
 | [Attach files to a message](prd/file-attachments.md) | Shipped (PR #162) |
-| [Linux builds](prd/linux.md) | In progress: packaging and some app fixes |
+| [Linux builds](prd/linux.md) | Shipped (PR #156); Linux title bar and shortcuts to do |
 
 New feature? Copy [prd/TEMPLATE.md](prd/TEMPLATE.md) to `prd/<feature>.md` and add a row above.
 

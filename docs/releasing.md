@@ -16,7 +16,7 @@ Unsigned test copies of every push to `main` are also on the [Preview build](../
 
 ## Linux
 
-Linux builds are unsigned x64 `ChooChoo-<version>-x86_64.AppImage` and `choo-choo_<version>_amd64.deb` files, plus `latest-linux.yml`. Build locally with `npm run dist:linux`. Wiring them into the release, beta and preview workflows is still to do (see [the Linux PRD](prd/linux.md)). Homebrew stays Mac only.
+Linux builds are unsigned x64 `ChooChoo-<version>-x86_64.AppImage` and `choo-choo_<version>_amd64.deb` files, plus `latest-linux.yml`. Build locally with `npm run dist:linux`. The Release and Beta workflows build them on Ubuntu after the Mac job, upload them to the same draft, and publish only when both platforms are in; a Linux failure leaves a stable release as a draft and deletes a beta draft. Homebrew stays Mac only. See [the Linux PRD](prd/linux.md).
 
 ## Homebrew cask
 

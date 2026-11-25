@@ -26,3 +26,31 @@ jobs:
             ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@anthropic-ai/"
             file "$app"/Contents/Resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node
           done
+  # Linux: package (no installer) and check the build starts. Typecheck and tests run in the Mac job.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/install-claude-binaries.cjs linux
+      - run: npx electron-builder --linux dir --x64 --publish never
+      - name: Check the bundled Claude binary and terminal module
+        run: |
+          dir=dist/linux-unpacked/resources/app.asar.unpacked/node_modules
+          ls "$dir/@anthropic-ai/"
+          "$dir/@anthropic-ai/claude-agent-sdk-linux-x64/claude" --version
+          file "$dir/node-pty/build/Release/pty.node"
+      - name: Smoke launch
+        run: |
+          # The app should still be running after 20 seconds; timeout's exit code 124 means it was.
+          set +e
+          mkdir -p "$RUNNER_TEMP/home"
+          HOME="$RUNNER_TEMP/home" timeout 20 xvfb-run -a dist/linux-unpacked/choo-choo --no-sandbox > smoke.log 2>&1
+          code=$?
+          cat smoke.log
+          if [ "$code" != 124 ]; then echo "::error::The app exited early (code $code)."; exit 1; fi

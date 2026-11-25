@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In progress: packaging and some app fixes |
+| Status | Shipped: builds and releases; Linux title bar and Ctrl shortcuts still to do |
 | Decision | [0025](../decisions/0025-linux-appimage-deb-unsigned.md) |
 
 ## Problem
@@ -26,11 +26,13 @@ Choo Choo ships only for macOS. Linux is the smallest step to a second platform:
 - PATH: packaged Linux builds pick up the login shell's PATH, as on macOS. Dev runs keep the PATH they started with.
 - Preload exposes `window.api.platform`. Import from Conductor (Home and Settings › General) shows only on macOS.
 - The mono font stacks fall back to `DejaVu Sans Mono` and `Ubuntu Mono`.
+- Updates: the AppImage updates itself (`latest-linux.yml`, `beta-linux.yml`); a deb or unpacked build shows the release-page link (`updateMethod()` in `src/main/updater.ts`).
+- The sidebar header drops the 84px macOS window-button gap on Linux, which keeps its native title bar.
+- Workflows: `ci.yml` packages a Linux build, checks the bundled `claude --version` and smoke-launches it under `xvfb-run`. `release.yml` and `beta.yml` build the AppImage and deb after the Mac job and upload them to the same draft; a final `publish` job publishes only once both platforms are in. `preview.yml` keeps an unsigned `choo-choo-linux` artifact.
 
 ## Future work (not done yet)
 
-- Workflows: a `linux` job in `ci.yml`, `release.yml` (publish job moves to a final job needing both), `beta.yml`, and an unsigned `choo-choo-linux` artifact in `preview.yml`. Workflow files need a maintainer.
-- Title bar: `titleBarStyle: 'hidden'` with `titleBarOverlay` from the theme; use `window.api.platform` to move the sidebar padding to the right.
+- Title bar: `titleBarStyle: 'hidden'` with `titleBarOverlay` from the theme, instead of the native frame.
 - Keyboard: a shared `mod(e)` and `keyLabel()` so Linux shows `Ctrl+…`.
 - MCP sign-in without AppleScript.
 
