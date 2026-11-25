@@ -5,6 +5,8 @@ on:
   workflow_dispatch:
   pull_request:
     paths: ['.github/workflows/preview.yml', 'electron-builder.yml']
+permissions:
+  contents: read
 jobs:
   dmg:
     runs-on: macos-latest
@@ -30,3 +32,21 @@ jobs:
           path: |
             dist/*.dmg
             !dist/*-arm64.dmg
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/install-claude-binaries.cjs linux
+      - run: npx electron-builder --linux --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: choo-choo-linux
+          path: |
+            dist/*.AppImage
+            dist/*.deb

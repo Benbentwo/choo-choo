@@ -14,6 +14,10 @@ Every merge to `main` ships a beta: the [Beta workflow](../.github/workflows/bet
 
 Unsigned test copies of every push to `main` are also on the [Preview build](../.github/workflows/preview.yml) runs, as the `choo-choo-apple-silicon` and `choo-choo-intel` artifacts.
 
+## Linux
+
+Linux builds are unsigned x64 `ChooChoo-<version>-x86_64.AppImage` and `choo-choo_<version>_amd64.deb` files, plus `latest-linux.yml`. Build locally with `npm run dist:linux`. The Release and Beta workflows build them on Ubuntu after the Mac job, upload them to the same draft, and publish only when both platforms are in; a Linux failure leaves a stable release as a draft and deletes a beta draft. Homebrew stays Mac only. See [the Linux PRD](prd/linux.md).
+
 ## Homebrew cask
 
 The cask lives in [Benbentwo/homebrew-tap](https://github.com/Benbentwo/homebrew-tap). Each stable release updates it through the [Homebrew cask workflow](../.github/workflows/homebrew.yml), which writes the cask with `scripts/homebrew-cask.sh`. Run that workflow by hand to point the cask at an existing release. Betas never go in the cask; beta testers install the stable cask and switch channel in Settings.

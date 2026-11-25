@@ -10,6 +10,7 @@ import * as L from '@shared/layout'
 import { useStore, showView, viewFor, openAddonPage, type DragItem, pinsToSetUp, newWorkspace, restoreWorkspace, openOrchestrator, openGroupOrchestrator, editGroup, archiveWorkspace, openPalette, openPrsPage, openAutomationsPage, openContinuePage, openUsagePage, reportError, setSidebarRowHidden, setRepoCollapsed, savePanelWidth } from '../store'
 import { SIDEBAR, sidebarWidth } from '@shared/panelWidths'
 import { PanelEdge } from './PanelEdge'
+import { isMac } from '../platform'
 import { useHoverCard, WorkspacePreviewCard } from './WorkspacePreview'
 import { IconAddon, IconArchive, IconBranch, IconDots, IconDown, IconGear, IconHome, IconLeft, IconMerged, IconOrchestrator, IconPlus, IconPR, IconRefresh, IconRepo, IconRight, IconSearch, IconSidebar, IconStack, IconUpNext, IconUsage } from '../icons'
 import { StackRows } from './Stack'
@@ -180,7 +181,8 @@ export function Sidebar() {
         onReset={() => savePanelWidth('sidebarWidth', SIDEBAR.def)}
         onClose={() => s.set({ sidebarOpen: false })}
       />
-      <div className="drag flex h-11 items-center gap-1 pr-2 pl-[84px]">
+      {/* macOS draws its window buttons over the first 84px; Linux has a native title bar instead. */}
+      <div className={`drag flex h-11 items-center gap-1 pr-2 ${isMac() ? 'pl-[84px]' : 'pl-3'}`}>
         <button className="no-drag rounded p-1 text-muted hover:bg-hover hover:text-fg" onClick={() => s.set({ sidebarOpen: false })} title="Hide sidebar (⌘B)">
           <IconSidebar width={16} height={16} />
         </button>
