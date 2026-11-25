@@ -1,7 +1,7 @@
 name: Release
 # Two ways to release:
 # - Actions > Release > Run workflow. Publishes Release Drafter's draft (optionally under a version you type),
-#   after building the app and attaching the .dmg and .zip files to it.
+#   after building the app and attaching the .dmg, .zip, .AppImage and .deb files to it.
 # - Publish the draft yourself on the Releases page. This workflow then builds and attaches the files.
 # The app's version comes from the release tag, so package.json's version doesn't need bumping.
 on:
@@ -117,9 +117,6 @@ jobs:
             codesign --verify --verbose=2 "$dmg"
             spctl -a -vv -t open --context context:primary-signature "$dmg" || echo "::warning::$dmg is not notarized itself (the app inside is)."
           done
-      - name: Publish the release
-        if: github.event_name == 'workflow_dispatch' && !inputs.test_only
-        run: gh release edit "${{ steps.rel.outputs.tag }}" --draft=false --latest
       - uses: actions/upload-artifact@v4
         with:
           name: choo-choo-mac
@@ -127,10 +124,55 @@ jobs:
             dist/*.dmg
             dist/*.zip
 
+  # Unsigned x64 AppImage and deb (decision 0025), uploaded to the release the mac job picked.
+  linux:
+    needs: mac
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.mac.outputs.tag }}
+      VERSION: ${{ needs.mac.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: node scripts/install-claude-binaries.cjs linux
+      - name: Build
+        run: |
+          npx electron-vite build
+          npx electron-builder --linux --publish never -c.extraMetadata.version="$VERSION"
+          ls dist
+          dist/linux-unpacked/resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude --version
+      # latest-linux.yml is what the AppImage's updater reads.
+      - name: Upload to the release
+        if: ${{ !inputs.test_only }}
+        run: gh release upload "$TAG" dist/*.AppImage dist/*.deb dist/latest-linux.yml --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: choo-choo-linux
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+
+  # Publishes the draft once both platforms have uploaded, so a release never goes out half-built.
+  publish:
+    needs: [mac, linux]
+    if: github.event_name == 'workflow_dispatch' && !inputs.test_only
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - run: gh release edit "${{ needs.mac.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+
   # Points the cask in Benbentwo/homebrew-tap at this release (see homebrew.yml).
   homebrew:
-    needs: mac
-    if: ${{ !inputs.test_only }}
+    needs: [mac, publish]
+    # publish only runs for Run workflow; a release published by hand updates the cask without it.
+    if: ${{ always() && !inputs.test_only && needs.mac.result == 'success' && (needs.publish.result == 'success' || github.event_name == 'release') }}
     uses: ./.github/workflows/homebrew.yml
     with:
       tag: ${{ needs.mac.outputs.tag }}
