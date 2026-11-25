@@ -569,7 +569,14 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 Import…
               </button>
             </Row>
-            <Row label="Delete archived workspaces after" hint="Archived worktrees, with their uncommitted files, are kept in ~/choo-choo/archive until then. The branch and chat history are never deleted, so you can still restore.">
+            <Row
+              label="Delete archived workspaces after"
+              hint={
+                settings.archiveDeleteBranches
+                  ? 'Archived worktrees, with their uncommitted files, are kept in ~/choo-choo/archive until then. Branches that are merged or pushed are then deleted too.'
+                  : 'Archived worktrees, with their uncommitted files, are kept in ~/choo-choo/archive until then. The branch and chat history are kept, so you can still restore.'
+              }
+            >
               <select className={select} value={settings.archiveRetentionDays} onChange={(e) => void save({ archiveRetentionDays: Number(e.target.value) })}>
                 {RETENTION.map(([d, label]) => (
                   <option key={d} value={d}>
@@ -577,6 +584,12 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                   </option>
                 ))}
               </select>
+            </Row>
+            <Row
+              label="Also delete their branches"
+              hint="When an archived workspace is deleted after the period above, or you delete a workspace, delete its local branch too and remove it from the Archived list, so its name can be reused. Only branches that are merged, or pushed with nothing unpushed, are deleted; others are kept."
+            >
+              <input type="checkbox" checked={!!settings.archiveDeleteBranches} onChange={(e) => void save({ archiveDeleteBranches: e.target.checked })} />
             </Row>
           </>
         )}

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { ChatItem, Workspace, WorkspacePreview } from '@shared/types'
 import * as store from './store'
 import * as git from './git'
+import * as gh from './github'
 
 /** Archived worktrees are moved here so their uncommitted work survives until cleanup. */
 export const ARCHIVE_ROOT = join(homedir(), 'choo-choo', 'archive')
@@ -47,25 +48,71 @@ export async function unstashWorktree(ws: Workspace): Promise<boolean> {
   return true
 }
 
-/** Deletes archived worktrees older than the retention setting. The branch and transcript stay, so restore still works. */
+/** Drops a workspace and its chats from the store. */
+export function forgetWorkspace(ws: Workspace) {
+  const s = store.get()
+  for (const c of s.chats.filter((c) => c.workspaceId === ws.id)) store.deleteChatItems(c.id)
+  s.chats = s.chats.filter((c) => c.workspaceId !== ws.id)
+  s.workspaces = s.workspaces.filter((w) => w.id !== ws.id)
+}
+
+/** Whether a branch's commits are safe on GitHub or in the base branch, so deleting it locally loses nothing. */
+async function branchDone(repoPath: string, ws: Workspace): Promise<boolean> {
+  if (await git.branchIsSafeToDelete(repoPath, ws.branch, ws.baseRef)) return true
+  // Squash merges leave the local branch unmerged and, once GitHub deletes the head, without an upstream.
+  const pr = await gh.prForBranch(repoPath, ws.prNumber ? String(ws.prNumber) : ws.branch)
+  if (pr?.state !== 'MERGED' || !pr.headRefOid) return false
+  const tip = (await git.git(repoPath, ['rev-parse', `refs/heads/${ws.branch}`]).catch(() => '')).trim()
+  return tip === pr.headRefOid
+}
+
+/**
+ * Deletes a workspace's local branch when no commits would be lost. Returns whether the branch is gone.
+ * Orchestrators (the main checkout) and stacks are never touched.
+ */
+export async function deleteBranchIfDone(repoPath: string, ws: Workspace): Promise<boolean> {
+  if (ws.orchestrator || ws.stack || !existsSync(repoPath)) return false
+  if (!(await branchDone(repoPath, ws))) return false
+  // git refuses when another worktree has the branch checked out.
+  return (await git.deleteBranch(repoPath, ws.branch)) || !(await git.localBranchExists(repoPath, ws.branch))
+}
+
+let onForget: () => void = () => {}
+
+/**
+ * Deletes archived worktrees older than the retention setting. The branch and transcript stay, so restore still works,
+ * unless "archiveDeleteBranches" is on: then a workspace whose branch is merged or pushed also loses its local
+ * branch and its Archived entry, freeing its name.
+ */
 export async function cleanupArchives(now = Date.now()) {
-  const days = store.get().settings.archiveRetentionDays
+  const { archiveRetentionDays: days, archiveDeleteBranches } = store.get().settings
   if (!days || days <= 0) return 0
   let n = 0
-  for (const ws of store.get().workspaces) {
-    if (!ws.archived || !ws.archivePath || (ws.archivedAt ?? now) > now - days * DAY) continue
+  let forgot = false
+  for (const ws of [...store.get().workspaces]) {
+    if (!ws.archived || (ws.archivedAt ?? now) > now - days * DAY) continue
     const repo = repoOf(ws)
-    if (repo) await git.removeWorktree(repo.path, ws.archivePath)
-    rmSync(ws.archivePath, { recursive: true, force: true })
-    ws.archivePath = undefined
+    if (ws.archivePath) {
+      if (repo) await git.removeWorktree(repo.path, ws.archivePath)
+      rmSync(ws.archivePath, { recursive: true, force: true })
+      ws.archivePath = undefined
+      n++
+    }
+    // A branch that stays keeps its entry, so restore still works and the name stays reserved.
+    if (!archiveDeleteBranches || !repo || !(await deleteBranchIfDone(repo.path, ws))) continue
+    forgetWorkspace(ws)
+    forgot = true
     n++
   }
   if (n) store.save()
+  if (forgot) onForget()
   return n
 }
 
 let timer: NodeJS.Timeout | null = null
-export function startArchiveCleanup() {
+/** `changed` runs when cleanup removed workspaces from the store, so the window can refresh. */
+export function startArchiveCleanup(changed: () => void) {
+  onForget = changed
   setTimeout(() => void cleanupArchives(), 15_000)
   timer ??= setInterval(() => void cleanupArchives(), 6 * 60 * 60 * 1000)
 }

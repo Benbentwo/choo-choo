@@ -19,7 +19,7 @@ import * as store from './store'
 import * as git from './git'
 import * as agent from './agent'
 import * as pty from './pty'
-import { pickCityName } from './names'
+import { namesInUse, pickCityName } from './names'
 import { readScripts } from './scripts'
 import { listCommands } from './commands'
 import * as gh from './github'
@@ -172,10 +172,10 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
   const s = store.get()
   const repo = s.repos.find((r) => r.id === repoId)
   if (!repo) throw new Error('Unknown repo')
-  const taken = new Set(s.workspaces.filter((w) => w.repoId === repoId).map((w) => w.name))
-  const name = pickCityName(taken)
-  let baseRef = opts.baseRef ?? (await git.baseRefFor(repo.path, repo.defaultBranch))
+  const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
   const dir = join(workspacesRoot(), repo.name)
+  const name = pickCityName(await namesInUse(repo.path, dir, s.workspaces.filter((w) => w.repoId === repoId).map((w) => w.name), prefix))
+  let baseRef = opts.baseRef ?? (await git.baseRefFor(repo.path, repo.defaultBranch))
   mkdirSync(dir, { recursive: true })
   const path = join(dir, name)
   let branch: string
@@ -199,9 +199,17 @@ async function createWorkspace(repoId: string, source?: WorkspaceSource, folders
     // Compare with the branch the PR merges into, which isn't always the default branch.
     if (pr.baseRefName && !opts.baseRef) baseRef = await git.baseRefFor(repo.path, pr.baseRefName)
   } else {
-    const prefix = store.get().settings.branchPrefix.trim() || (await git.branchPrefix(repo.path))
     branch = opts.branch ?? `${prefix}/${name}`
-    await git.addWorktree(repo.path, path, branch, baseRef)
+    try {
+      await git.addWorktree(repo.path, path, branch, baseRef)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!/already exists/.test(msg)) throw e
+      throw new Error(
+        `Workspace name "${name}" collided with something left over: ${msg.split('\n').find((l) => l.includes('already exists'))?.trim() ?? msg}. ` +
+          `Delete the leftover branch (git branch -D ${branch}) or folder (${path}) and try again.`
+      )
+    }
     if (source?.kind === 'issue') {
       const issue = await gh.issueText(repo.path, source.number)
       context = gh.issueContext(source.number, issue)
@@ -1120,19 +1128,13 @@ async function stopWorkspace(ws: Workspace) {
   pty.killPrefix(`${ws.id}:`)
 }
 
-function forgetWorkspace(ws: Workspace) {
-  const s = store.get()
-  for (const c of s.chats.filter((c) => c.workspaceId === ws.id)) store.deleteChatItems(c.id)
-  s.chats = s.chats.filter((c) => c.workspaceId !== ws.id)
-  s.workspaces = s.workspaces.filter((w) => w.id !== ws.id)
-}
-
 async function deleteWorkspace(id: string) {
   const ws = findWs(id)
   const repo = store.get().repos.find((r) => r.id === ws.repoId)
   await stopWorkspace(ws)
   for (const p of workspaceFolders(ws, repo)) await deleteFolder(repo?.path ?? '', p)
-  forgetWorkspace(ws)
+  if (repo && store.get().settings.archiveDeleteBranches) await archive.deleteBranchIfDone(repo.path, ws)
+  archive.forgetWorkspace(ws)
   store.save()
   send('state:changed')
 }
@@ -1148,7 +1150,7 @@ async function removeProject(id: string, opts: { deleteFiles: boolean }) {
     const folders = workspaceFolders(ws, repo)
     if (opts.deleteFiles) for (const p of folders) await deleteFolder(repo.path, p)
     else kept.push(...folders)
-    forgetWorkspace(ws)
+    archive.forgetWorkspace(ws)
   }
   if (kept.length) s.leftovers = [...(s.leftovers ?? []), { id: randomUUID(), repoName: repo.name, repoPath: repo.path, paths: kept, removedAt: Date.now() }]
   s.repos = s.repos.filter((r) => r.id !== id)
@@ -1505,7 +1507,7 @@ function registerIpc() {
     s.settings.telemetry = normalizeTelemetry(s.settings.telemetry)
     store.save()
     if ('theme' in patch) applyNativeTheme(s.settings)
-    if ('archiveRetentionDays' in patch) void archive.cleanupArchives()
+    if ('archiveRetentionDays' in patch || 'archiveDeleteBranches' in patch) void archive.cleanupArchives()
     updates.onSettingsChanged(Object.keys(patch))
     if ('reviews' in patch) reviewWatch.reschedule()
     if ('usageHistory' in patch) usageHistory.configureUsageHistory(usageHistorySettings(s.settings.usageHistory))
@@ -2019,7 +2021,7 @@ app.whenReady().then(async () => {
   addonHost.start(addonDeps)
   cloud.recoverAfterRestart()
   void remote.recoverAfterRestart((id) => store.get().workspaces.find((w) => w.id === id), emitChat)
-  archive.startArchiveCleanup()
+  archive.startArchiveCleanup(() => send('state:changed'))
   registerShareIpc({
     workspacesRoot: WORKSPACES_ROOT,
     reposRoot: REPOS_ROOT,
