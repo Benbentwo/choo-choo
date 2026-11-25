@@ -1,0 +1,23 @@
+{
+  "titles": [{ "match": "seat map", "title": "Add seat map", "branch": "add-seat-map" }],
+  "turns": [
+    {
+      "match": "legend",
+      "contextWindow": 200000,
+      "steps": [
+        { "tool": "Read", "input": { "file_path": "src/seats/SeatMap.tsx" }, "result": "…", "wait": 700 },
+        { "tool": "Edit", "input": { "file_path": "src/seats/SeatMap.tsx" }, "result": "ok", "wait": 700 },
+        { "text": "Added a legend under the seat map: available, taken, extra legroom and your pick.", "usage": { "input_tokens": 40, "cache_read_input_tokens": 141000, "cache_creation_input_tokens": 4200, "output_tokens": 900 } }
+      ]
+    },
+    {
+      "match": "seat map",
+      "contextWindow": 200000,
+      "steps": [
+        { "tool": "Read", "input": { "file_path": "src/seats/layout.ts" }, "result": "…", "wait": 700 },
+        { "tool": "Write", "input": { "file_path": "src/seats/SeatMap.tsx" }, "result": "ok", "wait": 900 },
+        { "text": "The seat map draws each row from the plane's layout, and clicking a free seat picks it.", "usage": { "input_tokens": 30, "cache_read_input_tokens": 52000, "cache_creation_input_tokens": 9800, "output_tokens": 1400 } }
+      ]
+    }
+  ]
+}

@@ -14,7 +14,7 @@ import { editMenuItems } from '@shared/editMenu'
 import type { ReviewDraft, ReviewEvent } from '@shared/prReview'
 import { normalizeExtras, normalizeTelemetry, telemetryEnv } from '@shared/types'
 import { RESUME_PROMPT, chatsToResume, interruptNote } from '@shared/restart'
-import { sessionUsage } from './usage'
+import { contextNow, sessionUsage } from './usage'
 import * as store from './store'
 import * as git from './git'
 import * as agent from './agent'
@@ -29,7 +29,7 @@ import { suggestName, suggestTitleFromChats } from './naming'
 import * as updates from './updater'
 import { registerUiComment } from './uiComment'
 import * as conductor from './conductorImport'
-import { modelDetails } from './models'
+import { cliOutputStyles, modelDetails } from './models'
 import { initLimitsHistory, subscriptionLimits } from './limits'
 import * as usageHistory from './usageHistory'
 import { buildDashboard, usageCsv, usageHistorySettings, windowDetail } from '@shared/usageHistory'
@@ -1319,6 +1319,10 @@ function registerIpc() {
     const last = [...store.chatItems(id)].reverse().find((x) => x.kind === 'result' && x.costUsd != null)
     return sessionUsage(chat.sdkSessionId, { contextWindow: chat.contextWindow, costUsd: last?.kind === 'result' ? last.costUsd : undefined })
   })
+  h('chat:context', (id: string) => {
+    const chat = findChat(id)
+    return chat.model === 'codex' ? null : contextNow(chat.sdkSessionId, { contextWindow: chat.contextWindow })
+  })
   h('chat:update', (id: string, patch: Partial<Chat>) => {
     const c = findChat(id)
     if (patch.model) {
@@ -1528,7 +1532,10 @@ function registerIpc() {
   // Opening a PR you review, or the PRs page: look at GitHub unless it was just looked at.
   h('reviews:checkSoon', () => reviewWatch.checkSoon())
   h('reviews:seen', (keys: string[]) => reviewWatch.seen(keys))
-  h('models:details', () => modelDetails())
+  h('models:details', () => {
+    void cliOutputStyles() // warm the style list so the first menu that shows it isn't empty
+    return modelDetails()
+  })
   h('usage:dashboard', async (range: { from: number; to: number }) => {
     await usageHistory.syncTranscripts().catch(() => 0)
     const st = store.get()
@@ -1641,7 +1648,7 @@ function registerIpc() {
   })
   h('chat:stop', (id: string, opts?: { force?: boolean }) => agent.stop(id, { force: !!opts?.force }))
   h('chat:stopTask', (id: string, taskId: string) => agent.stopTask(id, taskId))
-  h('chat:outputStyles', (wsId: string) => listOutputStyles(findWs(wsId).path))
+  h('chat:outputStyles', async (wsId?: string) => listOutputStyles(wsId ? findWs(wsId).path : homedir(), homedir(), await cliOutputStyles()))
   // MCP servers, managed through Claude Code itself in the repo's main checkout.
   const mcpRepo = (repoId: string) => {
     const repo = store.get().repos.find((r) => r.id === repoId)

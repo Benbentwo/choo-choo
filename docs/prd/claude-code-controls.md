@@ -5,7 +5,7 @@
 | Status | Shipped (PR #49) |
 | Owner | Claude (project thread) |
 | Requested by | Ben, 2026-11-06 ("Quick wins, then managers" from the Claude Code docs survey) |
-| Last updated | 2026-11-12 |
+| Last updated | 2026-11-24 |
 
 ## Problem
 
@@ -32,7 +32,7 @@ Claude Code has session features that Choo Choo chats couldn't reach: auto mode,
 - **Fast mode.** A toggle in the model menu's Session section. The model button shows "· fast".
 - **Spend cap per message.** A number in the model menu, with a default in Settings > General. A run that hits it stops with a message saying so.
 - **Compact conversation.** Sends `/compact`.
-- **Output style.** The model menu lists Default, Explanatory, Learning, and the styles in `~/.claude/output-styles` and the repo's `.claude/output-styles`.
+- **Output style.** Settings > Prompts > Output style sets the style for every Claude chat: Claude Code's setting (the default: whatever `~/.claude/settings.json` says), Default, each style Claude Code reports (its built-ins, such as Concise, Explanatory, Learning and Proactive, plus styles from plugins and `~/.claude/output-styles`), or Custom, which shows a box for your own prompt. Custom runs on top of Claude Code's Default style and adds the prompt to the end of the system prompt under "# Output style". The model menu's Output style section lets one chat pick its own: Settings default (shows which), Default, the same styles plus the repo's `.claude/output-styles`, and Custom when a custom prompt is saved. A change applies from a chat's next message.
 - **Claude Code /code-review.** A button in the Review tab runs Claude Code's built-in review skill. Findings it reports with its ReportFindings tool show in the Review list and inline in diffs. CONFIRMED findings count as high and PLAUSIBLE ones as medium.
 - **Background tasks.** While a turn runs, background shells, subagents and workflows are listed above the composer with their latest progress and a Stop button.
 
@@ -43,15 +43,17 @@ Claude Code has session features that Choo Choo chats couldn't reach: auto mode,
 3. A goal clears when Claude Code reports it cleared (`active_goal` with no value), when the person sends `/goal clear`, or when a turn finishes successfully. Claude Code only ends a turn under a goal once the goal is resolved.
 4. A spend cap of 0 or empty means no cap. A chat's cap overrides the Settings default.
 5. A message sent while Claude is working goes into the running turn's streaming input. Settings > General "Messages sent while Claude works" picks how: Steer (default) sends it with priority `next`, so Claude Code folds it in at the next tool step; Queue sends it with priority `later`, so it runs as its own turn afterwards. The turn's input stays open while Claude Code reports queued sends (`queued_turn_count`). When the turn can't take a message (Codex, or the turn is ending), it waits and is sent when the turn finishes.
+6. A chat's output style wins over the Settings one. With neither, Choo Choo passes no style, so Claude Code's own setting applies. Custom with an empty prompt behaves like no style.
+7. The style list comes from Claude Code (`available_output_styles` from an idle session started with user settings, once per launch), so new built-in and plugin styles show up without an app change. When Claude Code can't be asked, the list falls back to Explanatory and Learning.
 
 ## Design
 
-- `src/main/claudeOptions.ts`: `permissionMode`, `questionReply`, `chatSettings`, `budgetFor`, `goalCommand`, `goalFrom`, `applyTaskEvent`, `listOutputStyles`.
+- `src/main/claudeOptions.ts`: `permissionMode`, `questionReply`, `chatSettings`, `budgetFor`, `goalCommand`, `goalFrom`, `applyTaskEvent`, `listOutputStyles`. `src/shared/outputStyle.ts`: `resolveOutputStyle` (chat over Settings, Custom to `default` plus appended text). `src/main/models.ts`: `cliOutputStyles`.
 - `src/main/agent.ts`: passes `permissionMode`, `settings`, `maxBudgetUsd`, handles `active_goal` and `task_*` messages, and emits `tasks` with chat events. `stopTask` calls the query's `stopTask`.
 - `src/shared/modelSwitch.ts`: `onModelPicked` (from `chat:update`) and `onModelReported` (from the `system`/`init` message's `model`) add, update or drop the `model` chat item. `Chat.reportedModel` keeps the last reported model.
-- `Chat` adds `fast`, `budgetUsd`, `outputStyle` and `goal`. `Settings` adds `defaultBudgetUsd`. `Effort` adds `xhigh` and `max`. `Permission` adds `auto`.
-- IPC: `listOutputStyles(wsId)` and `stopTask(chatId, taskId)`.
-- Renderer: `Composer.tsx` (Goal, tasks, Session and Output style sections), `RightTabs.tsx` (the /code-review button), and `review.ts` (`reportedFindings`).
+- `Chat` adds `fast`, `budgetUsd`, `outputStyle` and `goal`. `Settings` adds `defaultBudgetUsd`, `outputStyle` and `outputStyleCustom`. `Effort` adds `xhigh` and `max`. `Permission` adds `auto`.
+- IPC: `listOutputStyles(wsId?)` (no workspace: Settings, without repo styles) and `stopTask(chatId, taskId)`.
+- Renderer: `Composer.tsx` (Goal, tasks, Session and Output style sections), `Modals.tsx` (`OutputStyleSetting` in Settings > Prompts), `RightTabs.tsx` (the /code-review button), and `review.ts` (`reportedFindings`).
 
 ## Compliance, privacy and security
 

@@ -6,6 +6,7 @@ import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, listOut
 import { alwaysAskNeedsOk, needsApproval } from '../src/main/agent'
 import { codexEffort } from '../src/main/codex'
 import { reportedFindings, findingsFromItems } from '../src/renderer/src/review'
+import { CUSTOM_OUTPUT_STYLE, resolveOutputStyle } from '../src/shared/outputStyle'
 import { DEFAULT_EXTRAS, type BackgroundTask, type ChatItem } from '../src/shared/types'
 
 describe('permission modes', () => {
@@ -27,7 +28,7 @@ describe('chat session settings', () => {
     expect(chatSettings({}, DEFAULT_EXTRAS)).toEqual({ settings: undefined, env: {} })
   })
   it('combines fast mode, output style and the advisor', () => {
-    expect(chatSettings({ fast: true, outputStyle: 'Explanatory' }, { ...DEFAULT_EXTRAS, claudeAdvisor: 'opus' }).settings).toEqual({
+    expect(chatSettings({ fast: true }, { ...DEFAULT_EXTRAS, claudeAdvisor: 'opus' }, 'Explanatory').settings).toEqual({
       advisorModel: 'opus',
       fastMode: true,
       outputStyle: 'Explanatory'
@@ -86,6 +87,36 @@ describe('output styles', () => {
     const styles = listOutputStyles(repo, home)
     expect(styles.map((s) => s.name)).toEqual(['Explanatory', 'Learning', 'Terse', 'pirate'])
     expect(styles.find((s) => s.name === 'Terse')).toMatchObject({ source: 'project', description: 'Team version' })
+  })
+  it('lists what Claude Code reports, without its default, and merges files by name', () => {
+    const home = mkdtempSync(join(tmpdir(), 'cc-home-'))
+    mkdirSync(join(home, '.claude', 'output-styles'), { recursive: true })
+    writeFileSync(join(home, '.claude', 'output-styles', 'terse.md'), '---\nname: Terse\ndescription: Short answers\n---\nBe brief.')
+    const styles = listOutputStyles(home, home, ['default', 'Concise', 'Explanatory', 'some-plugin:Pirate', 'Terse'])
+    expect(styles.map((s) => s.name)).toEqual(['Concise', 'Explanatory', 'some-plugin:Pirate', 'Terse'])
+    expect(styles.find((s) => s.name === 'Explanatory')!.description).toBeTruthy()
+    expect(styles.find((s) => s.name === 'Terse')).toMatchObject({ source: 'user', description: 'Short answers' })
+  })
+  it('falls back to the built-ins when Claude Code could not be asked', () => {
+    const home = mkdtempSync(join(tmpdir(), 'cc-home-'))
+    expect(listOutputStyles(home, home, []).map((s) => s.name)).toEqual(['Explanatory', 'Learning'])
+  })
+})
+
+describe('resolveOutputStyle', () => {
+  it('leaves it to Claude Code when neither the chat nor Settings picks one', () => {
+    expect(resolveOutputStyle(undefined, {})).toEqual({})
+  })
+  it('uses the Settings default, and the chat pick over it', () => {
+    expect(resolveOutputStyle(undefined, { outputStyle: 'Concise' })).toEqual({ style: 'Concise' })
+    expect(resolveOutputStyle('default', { outputStyle: 'Concise' })).toEqual({ style: 'default' })
+  })
+  it('sends a custom prompt on top of the default style', () => {
+    expect(resolveOutputStyle(undefined, { outputStyle: CUSTOM_OUTPUT_STYLE, outputStyleCustom: ' Be terse. ' })).toEqual({ style: 'default', append: '# Output style\n\nBe terse.' })
+    expect(resolveOutputStyle(CUSTOM_OUTPUT_STYLE, { outputStyle: 'Learning', outputStyleCustom: 'Be terse.' }).append).toContain('Be terse.')
+  })
+  it('falls back to Claude Code when Custom has no prompt', () => {
+    expect(resolveOutputStyle(undefined, { outputStyle: CUSTOM_OUTPUT_STYLE, outputStyleCustom: '  ' })).toEqual({})
   })
 })
 
