@@ -53,6 +53,8 @@ interface UI {
   permissions: Record<string, PermissionRequest[]>
   /** Background tasks of each chat's running turn. */
   tasks: Record<string, BackgroundTask[]>
+  /** When each chat's running turn started compacting the conversation, while it still is. */
+  compacting: Record<string, number>
   /** The focused pane's workspace, when it shows one. */
   selectedWs: string | null
   /** Split panels: how the center is divided (shared/layout.ts). Kept while Home, PRs or a new-workspace composer is shown. */
@@ -170,6 +172,7 @@ export const useStore = create<UI>((set, get) => ({
   stats: {},
   permissions: {},
   tasks: {},
+  compacting: {},
   selectedWs: null,
   layout: null,
   rightWs: null,

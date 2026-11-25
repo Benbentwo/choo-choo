@@ -350,7 +350,7 @@ export interface Chat {
   fast?: boolean
   /** Stop a message's run once it has cost this many dollars. Missing uses the Settings default. */
   budgetUsd?: number
-  /** Claude Code output style, such as Explanatory or Learning. Missing means the default. */
+  /** Claude Code output style, such as Explanatory or Learning, or "@custom". Missing uses the Settings default. */
   outputStyle?: string
   /** Set while a /goal is active. */
   goal?: ChatGoal
@@ -596,6 +596,13 @@ export interface Settings extends AppearanceSettings {
   savedLayouts?: SavedLayout[]
   /** Spend cap per message for new chats, in dollars. 0 means no cap. */
   defaultBudgetUsd?: number
+  /**
+   * Output style for Claude chats that haven't picked their own (shared/outputStyle.ts): a Claude Code
+   * style name, "default", or "@custom" for outputStyleCustom. Missing or empty leaves it to Claude Code's own setting.
+   */
+  outputStyle?: string
+  /** The prompt for the Custom output style. */
+  outputStyleCustom?: string
   /** Branch prefix; empty uses the GitHub user or git user.name. */
   branchPrefix: string
   /** Optional. Without it the agent uses your Claude Code login. */
@@ -911,6 +918,8 @@ export interface ChatEvent {
   permissionDone?: string
   /** Background tasks of the running turn. Empty when none are running. */
   tasks?: BackgroundTask[]
+  /** When Claude Code started compacting the conversation (ms), or null once it's done. */
+  compacting?: number | null
   /** Text to put back in the chat's message box, such as queued messages a stop kept from sending. */
   draft?: string
 }
@@ -1074,7 +1083,8 @@ export interface Api {
   resolveThread(chatId: string, resolved: boolean): Promise<Chat>
   updateChat(chatId: string, patch: Partial<Pick<Chat, 'model' | 'effort' | 'title' | 'unread' | 'planMode' | 'review' | 'reviewKind' | 'permission' | 'advisor' | 'advisorBlocker' | 'fast' | 'budgetUsd' | 'outputStyle'>>): Promise<Chat>
   /** Output styles for a workspace's chats: built-in, user and project. */
-  listOutputStyles(wsId: string): Promise<OutputStyleInfo[]>
+  /** Output styles for a workspace's checkout, or without one only those outside any repo (for Settings). */
+  listOutputStyles(wsId?: string): Promise<OutputStyleInfo[]>
   /** Stops one background task of a running Claude turn. */
   stopTask(chatId: string, taskId: string): Promise<void>
   mcpStatus(repoId: string): Promise<McpServerView[]>

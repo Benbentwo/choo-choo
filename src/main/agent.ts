@@ -12,6 +12,7 @@ import * as orchestrator from './orchestrator'
 import { revisePlanMessage, reviewPlan as runPlanReview } from './planReview'
 import * as notion from './integrations/notion'
 import { buildSystemPrompt } from '@shared/systemPrompt'
+import { resolveOutputStyle } from '@shared/outputStyle'
 import { onModelReported } from '@shared/modelSwitch'
 import { limitFromEvent, limitFromText, type ChatPause } from '@shared/continueWork'
 import type { InterruptReason } from '@shared/restart'
@@ -19,7 +20,7 @@ import { killLeftovers, killTree, snapshotTree, type Proc } from './processTree'
 import { stoppedText } from '@shared/stop'
 import { applyTaskEvent, budgetFor, chatSettings, goalCommand, goalFrom, permissionMode, questionReply, runningTasks } from './claudeOptions'
 
-type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[]; draft?: string }) => void
+type Emit = (chatId: string, payload: { item?: ChatItem; chat?: Chat; permission?: PermissionRequest; permissionDone?: string; tasks?: BackgroundTask[]; compacting?: number | null; draft?: string }) => void
 
 interface Running {
   abort: AbortController
@@ -52,6 +53,12 @@ const stoppedChats = new Set<string>()
 const liveTaskList = new Map<string, BackgroundTask[]>()
 export function liveTasks(chatId: string): BackgroundTask[] {
   return liveTaskList.get(chatId) ?? []
+}
+
+/** When each chat's running turn started compacting the conversation, while it still is. */
+const compactingSince = new Map<string, number>()
+export function liveCompacting(chatId: string): number | undefined {
+  return compactingSince.get(chatId)
 }
 
 /** True when the chat's last turn was stopped, so nothing should pick it up again on its own. */
@@ -461,7 +468,9 @@ export async function send(
     const { query } = sdkMod
     const { settings, repos } = store.get()
     const extras = settings.extras
-    const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, systemAppend(extras, !!chat.planMode))
+    const style = resolveOutputStyle(chat.outputStyle, settings)
+    const appended = [systemAppend(extras, !!chat.planMode), style.append].filter(Boolean).join('\n\n')
+    const systemPrompt = buildSystemPrompt(settings.systemPrompt, repos.find((x) => x.id === ws.repoId)?.systemPrompt, appended)
     // `autoAllowTools` is ours, not the SDK's: tools the caller vouches for as read-only.
     // `alwaysAskTools`: tools that need the person's OK even when the chat allows everything.
     // `turnPrefix`: context for Claude sent ahead of this turn's message but not shown in the chat.
@@ -504,7 +513,7 @@ export async function send(
       }
       return { behavior: 'allow', updatedInput: input }
     }
-    const session = chatSettings(chat, extras)
+    const session = chatSettings(chat, extras, style.style)
     const budget = budgetFor(chat, settings)
     const tasks = new Map<string, BackgroundTask>()
     const mcpServers: Record<string, unknown> = { ...(extra.mcpServers as Record<string, unknown> | undefined) }
@@ -590,6 +599,15 @@ export async function send(
             // Compaction may summarize away memory sent with an earlier turn; send it again next turn.
             chat.memoryHash = undefined
             store.save()
+            if (compactingSince.delete(chat.id)) emit(chat.id, { compacting: null })
+          } else if (msg.subtype === 'status') {
+            // Claude Code reports 'compacting' while it summarizes the conversation, then another status.
+            if (msg.status === 'compacting') {
+              if (!compactingSince.has(chat.id)) {
+                compactingSince.set(chat.id, Date.now())
+                emit(chat.id, { compacting: compactingSince.get(chat.id) })
+              }
+            } else if (compactingSince.delete(chat.id)) emit(chat.id, { compacting: null })
           } else if (msg.subtype === 'commands_changed' && Array.isArray(msg.commands)) {
             reportedCommands.set(ws.id, msg.commands.map((c: { name: string }) => c.name))
           }
@@ -738,6 +756,7 @@ export async function send(
     if (stopped) chat.status = 'idle'
     liveTaskList.delete(chat.id)
     emit(chat.id, { tasks: [] })
+    if (compactingSince.delete(chat.id)) emit(chat.id, { compacting: null })
     for (const [id, p] of pending) if (p.req.chatId === chat.id) respondPermission(id, 'deny')
     if (streamItem) put({ ...streamItem, streaming: false })
     // Tool calls the stop cut off (a subagent's too) would otherwise spin forever.

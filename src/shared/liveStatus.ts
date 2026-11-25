@@ -8,7 +8,7 @@ type Tool = Extract<ChatItem, { kind: 'tool' }>
  * working on?" without interrupting the turn.
  */
 export interface LiveStatus {
-  /** "Running tests", "Waiting on run 123", "Thinking". */
+  /** "Running tests", "Waiting on run 123", "Compacting", "Thinking". */
   label: string
   /** The step is a wait or a polling loop: it will sit quiet until something outside finishes. */
   waiting: boolean
@@ -97,9 +97,13 @@ export function turnStart(items: ChatItem[]): number | undefined {
   return undefined
 }
 
-/** What a running chat is doing now. Only meaningful while the chat is running. */
-export function liveStatus(items: ChatItem[]): LiveStatus {
+/**
+ * What a running chat is doing now. Only meaningful while the chat is running. `compactingSince` is
+ * when Claude Code started compacting the conversation, while it still is.
+ */
+export function liveStatus(items: ChatItem[], compactingSince?: number): LiveStatus {
   const turnSince = turnStart(items)
+  if (compactingSince !== undefined) return { label: 'Compacting', waiting: false, since: compactingSince, turnSince }
   // The step in flight: the latest tool call still without a result (a subagent's own calls count).
   let pending: Tool | undefined
   for (let i = items.length - 1; i >= 0; i--) {
@@ -156,11 +160,11 @@ export const CHECK_IN_COMMAND = /^\/btw(?:\s+([\s\S]*))?$/i
  * The status block given to the check-in model ahead of the transcript: what is running and for how
  * long, and Claude Code's background tasks.
  */
-export function statusBlock(items: ChatItem[], tasks: BackgroundTask[], running: boolean, now = Date.now()): string {
+export function statusBlock(items: ChatItem[], tasks: BackgroundTask[], running: boolean, now = Date.now(), compactingSince?: number): string {
   const lines: string[] = []
   if (!running) lines.push('The agent is not running right now; its last turn has ended.')
   else {
-    const s = liveStatus(items)
+    const s = liveStatus(items, compactingSince)
     lines.push(`Current step: ${s.label} (for ${formatElapsed(now - s.since)})${s.waiting ? ', a wait or polling loop' : ''}`)
     if (s.detail) lines.push(`Current command: ${clip(s.detail, 600)}`)
     if (s.turnSince !== undefined) lines.push(`This turn has run for ${formatElapsed(now - s.turnSince)}.`)

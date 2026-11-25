@@ -6,6 +6,7 @@ import { useStore, reportError, modelLabel, setCodeComments, codeCommentsMessage
 import { IconDown, IconFile, IconImage, IconPlus, IconStop, IconUp, IconX } from '../icons'
 import { applyCompletion, findTrigger, rank, type Trigger } from '../autocomplete'
 import { FORCE_STOP_AFTER_MS } from '@shared/stop'
+import { CUSTOM_OUTPUT_STYLE, DEFAULT_OUTPUT_STYLE, outputStyleLabel } from '@shared/outputStyle'
 import { INLINE_IMAGE, addAttachedFiles, fileName, withAttachedFiles } from '@shared/attachments'
 import { MarkdownInput, type MarkdownInputHandle } from './MarkdownInput'
 import { ContextRing } from './ContextRing'
@@ -123,6 +124,8 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
   const running = chat.status === 'running'
   const whileRunning = useStore((s) => s.settings.whileRunning ?? 'steer')
   const extras = useStore((s) => s.settings.extras)
+  const defaultStyle = useStore((s) => s.settings.outputStyle)
+  const customStyle = useStore((s) => !!s.settings.outputStyleCustom?.trim())
   const claude = chat.model !== 'codex'
   const advisorOn = extras.advisor && chat.advisor !== false
 
@@ -520,14 +523,19 @@ export function Composer({ chat, ws }: { chat: Chat; ws: Workspace }) {
                       Compact conversation
                     </button>
                     <div className="mt-1 border-t border-line px-2 pt-2 pb-1 text-[11px] text-faint">Output style</div>
-                    {[{ name: '', description: "Claude Code's default", source: 'built-in' as const }, ...(styles ?? [])].map((st) => (
+                    {[
+                      { name: '', description: `From Settings: ${outputStyleLabel(defaultStyle)}`, source: 'built-in' as const },
+                      { name: DEFAULT_OUTPUT_STYLE, description: "Claude Code's default", source: 'built-in' as const },
+                      ...(styles ?? []),
+                      ...(customStyle || chat.outputStyle === CUSTOM_OUTPUT_STYLE ? [{ name: CUSTOM_OUTPUT_STYLE, description: 'Your prompt from Settings > Prompts', source: 'user' as const }] : [])
+                    ].map((st) => (
                       <button
                         key={st.name || 'default'}
                         onClick={() => void update({ outputStyle: st.name })}
                         className={`block w-full rounded px-2 py-1 text-left hover:bg-hover ${(chat.outputStyle ?? '') === st.name ? 'text-fg' : 'text-muted'}`}
                       >
                         {(chat.outputStyle ?? '') === st.name ? '✓ ' : '  '}
-                        {st.name || 'Default'}
+                        {st.name ? outputStyleLabel(st.name) : 'Settings default'}
                         {st.description && <div className="truncate pl-3.5 text-[11px] text-faint">{st.description}</div>}
                       </button>
                     ))}

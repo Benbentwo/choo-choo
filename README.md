@@ -39,7 +39,7 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Stop that always stops.** Stop (or Esc) shows Stopping… right away and ends the turn within seconds. If Claude doesn't respond, Force stop ends it and everything it started, and queued messages go back to the message box.
 - **Attach any file.** Drop, paste or pick any file into the message box. Pictures go to Claude as images; other files show as chips and go as paths the agent reads in place.
 - **Markdown as you type.** The message box formats `code`, **bold**, lists, links and code blocks in place, Slack-style, and sends plain Markdown.
-- **Check in without stopping.** A running chat says what it's doing and for how long, such as "Waiting on run 48213 · 14m". Press Check in, type `/btw` and a question, or just ask "how's it going?" to get a quick answer while Claude keeps working.
+- **Check in without stopping.** A running chat says what it's doing and for how long, such as "Waiting on run 48213 · 14m", or "Compacting" while Claude Code summarizes a long conversation. Press Check in, type `/btw` and a question, or just ask "how's it going?" to get a quick answer while Claude keeps working.
 - **Orchestrator.** Tell a repo's orchestrator what you want and it splits the work into workspaces, briefs each agent, reads their diffs and follows up.
 - **Projects** (on by default). One project per big goal, across several repos. The project chat routes each message to a thread, and each thread owns its workspaces and PRs. A thread whose work is all merged or closed resolves itself and leaves the sidebar, still a click or ⌘K away. Rename a thread, or let Haiku name it from the conversation. Drag projects to put them in any order. Automations run checks on a schedule or on GitHub events and open a workspace per finding.
 - **Split panels and resizable panes.** Put workspaces and chats side by side, drag either sidebar to size it, and expand the right panel with ⌘⇧E. With a chat beside your files, the next file you click opens on the file side; drag file tabs between panes, and right-click one to close the others, the ones to its right, or all of them.
@@ -79,6 +79,10 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 
 <p align="center">
   <img src="docs/media/gifs/check-in.gif" alt="Claude waits on a CI run. The line under the chat reads Waiting on run 48213 with a running timer. Check in adds a card explaining what it's waiting on and what comes next; typing How's it going? gets another quick answer while the run keeps going." width="900">
+</p>
+
+<p align="center">
+  <img src="docs/media/gifs/compacting.gif" alt="Claude runs the booking tests, then the line under the chat reads Compacting with a timer while Claude Code compacts the long conversation. When it finishes, Claude picks up where it was." width="900">
 </p>
 
 <p align="center">
@@ -129,7 +133,12 @@ Choo Choo is an open-source, community-driven option for people who want to keep
 - **Add-ons.** Claude Code plugins with a Choo Choo manifest add views, buttons and tools. Install them from any git repo, including private ones for your team. See [Writing an add-on](docs/addon-api.md).
 - **Integrations.** Sign in to Notion and start a workspace from a page; agents can search and update it too. MCP servers, plugins and skills are managed in Settings.
 - **Appearance.** Themes, accents, fonts, size and density.
+- **Output style.** Pick how Claude writes in every chat: Claude Code's built-in styles, ones from your plugins, or your own prompt. A chat can still pick its own from its model menu.
 - **Searchable Settings.** Press ⌘F in Settings and type; Enter jumps to the setting and highlights it.
+
+<p align="center">
+  <img src="docs/media/gifs/output-style.gif" alt="In Settings, Prompts, Output style is set to Custom and a short prompt is typed: lead with the result, then at most three bullets. In a chat's model menu, the Output style section shows Settings default (Custom) checked, with Default, Proactive, Concise, Explanatory, Learning and Custom to pick from." width="900">
+</p>
 
 <p align="center">
   <img src="docs/media/gifs/settings-search.gif" alt="Typing notif in Settings search lists matching settings from General, Reviews and Continue work. Enter opens one and highlights it, then dark mode finds Theme." width="900">

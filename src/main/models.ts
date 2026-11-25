@@ -15,7 +15,22 @@ export function modelDetails() {
   return cached
 }
 
-async function load() {
+let stylesCached: Promise<string[]> | null = null
+
+/**
+ * Asks Claude Code which output styles it has: its built-ins and those from your plugins and
+ * ~/.claude. Runs once per launch; an empty list when it can't be asked.
+ */
+export function cliOutputStyles() {
+  stylesCached ??= probe(['user'], async (q) => ((await q.initializationResult()) as { available_output_styles?: string[] }).available_output_styles ?? []).catch(() => {
+    stylesCached = null
+    return []
+  })
+  return stylesCached
+}
+
+/** Starts an idle Claude Code session, asks it one thing, then stops it. */
+async function probe<T>(settingSources: string[], ask: (q: any) => Promise<T>): Promise<T> {
   let release!: () => void
   const gate = new Promise<void>((r) => (release = r))
   async function* idle() {
@@ -24,17 +39,30 @@ async function load() {
   const abort = new AbortController()
   const q = query({
     prompt: idle(),
-    options: { abortController: abort, cwd: tmpdir(), pathToClaudeCodeExecutable: claudeExecutable(), persistSession: false, settingSources: [] } as never
+    // No hooks or MCP servers: this session only answers a question, it should have no side effects.
+    options: {
+      abortController: abort,
+      cwd: tmpdir(),
+      pathToClaudeCodeExecutable: claudeExecutable(),
+      persistSession: false,
+      settingSources,
+      settings: { disableAllHooks: true },
+      strictMcpConfig: true
+    } as never
   })
   try {
-    const list = await Promise.race([q.supportedModels(), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 30_000))])
-    const out: Partial<Record<ModelId, ModelDetails>> = {}
-    for (const m of list) {
-      if (ALIASES.includes(m.value as ModelId)) out[m.value as ModelId] = { displayName: m.displayName, description: m.description, resolvedModel: m.resolvedModel }
-    }
-    return out
+    return await Promise.race([ask(q), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 30_000))])
   } finally {
     release()
     abort.abort()
   }
+}
+
+async function load() {
+  const list: { value: string; displayName: string; description: string; resolvedModel?: string }[] = await probe([], (q) => q.supportedModels())
+  const out: Partial<Record<ModelId, ModelDetails>> = {}
+  for (const m of list) {
+    if (ALIASES.includes(m.value as ModelId)) out[m.value as ModelId] = { displayName: m.displayName, description: m.description, resolvedModel: m.resolvedModel }
+  }
+  return out
 }

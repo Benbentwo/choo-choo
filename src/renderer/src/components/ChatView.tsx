@@ -797,7 +797,8 @@ function Elapsed({ since, className }: { since: number; className?: string }) {
  */
 function LiveLine({ chat, items, spinner }: { chat: Chat; items: ChatItem[]; spinner: boolean }) {
   const now = useNow()
-  const status = useMemo(() => liveStatus(items), [items])
+  const compactingSince = useStore((s) => s.compacting[chat.id])
+  const status = useMemo(() => liveStatus(items, compactingSince), [items, compactingSince])
   const asking = items.some((x) => x.kind === 'checkin' && x.pending)
   const step = now - status.since
   const turn = status.turnSince !== undefined ? now - status.turnSince : undefined
