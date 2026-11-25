@@ -290,10 +290,11 @@ export const UI_FONTS: { id: string; label: string; stack: string }[] = [
 ]
 
 export const MONO_FONTS: { id: string; label: string; stack: string }[] = [
-  { id: 'sf', label: 'SF Mono', stack: "'SF Mono', 'JetBrains Mono', Menlo, monospace" },
-  { id: 'jetbrains', label: 'JetBrains Mono', stack: "'JetBrains Mono', 'SF Mono', Menlo, monospace" },
-  { id: 'fira', label: 'Fira Code', stack: "'Fira Code', 'SF Mono', Menlo, monospace" },
-  { id: 'menlo', label: 'Menlo', stack: "Menlo, Monaco, monospace" }
+  // DejaVu Sans Mono and Ubuntu Mono are the Linux fallbacks; macOS has neither, so it never reaches them.
+  { id: 'sf', label: 'SF Mono', stack: "'SF Mono', 'JetBrains Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace" },
+  { id: 'jetbrains', label: 'JetBrains Mono', stack: "'JetBrains Mono', 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace" },
+  { id: 'fira', label: 'Fira Code', stack: "'Fira Code', 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace" },
+  { id: 'menlo', label: 'Menlo', stack: "Menlo, Monaco, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace" }
 ]
 
 export const UI_SCALES = [0.9, 1, 1.1, 1.25] as const
