@@ -1,0 +1,15 @@
+{
+  "titles": [{ "match": "booking", "title": "Refactor booking flow", "branch": "refactor-booking-flow" }],
+  "turns": [
+    {
+      "match": "booking",
+      "steps": [
+        { "text": "Moving the booking steps into one state machine. First, the tests that cover them." },
+        { "tool": "Bash", "input": { "command": "npm test -- booking", "description": "Run the booking tests" }, "result": "18 passed", "wait": 1500 },
+        { "sleep": 600, "status": "compacting" },
+        { "sleep": 6500, "status": null },
+        { "text": "The conversation was getting long, so Claude Code compacted it. Picking up where I was: the state machine now drives all four booking steps, and the 18 tests still pass." }
+      ]
+    }
+  ]
+}

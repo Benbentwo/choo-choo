@@ -456,6 +456,20 @@ const scenes = {
       await d.wait(800)
     }),
 
+  // The live line says Compacting, not Thinking, while Claude Code compacts the conversation.
+  compacting: () =>
+    record('compacting', { script: 'compacting.json' }, async (d) => {
+      await d.wait(500)
+      await d.menu('toggle-terminal')
+      await startWorkspace(d, 'Refactor the booking flow into one state machine')
+      await d.page.getByText('Compacting', { exact: false }).first().waitFor({ timeout: 30_000 })
+      await d.wait(3500)
+      await d.shot?.('1-compacting')
+      await d.page.getByText('Claude Code compacted it', { exact: false }).waitFor({ timeout: 30_000 })
+      await d.wait(2500)
+      await d.shot?.('2-done')
+    }),
+
   'stop-queued': () =>
     record('stop-queued', { script: 'stop.json', settings: { whileRunning: 'queue' }, opts: { noGif: true } }, async (d) => {
       await d.wait(500)
