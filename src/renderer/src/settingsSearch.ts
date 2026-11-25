@@ -119,6 +119,8 @@ export const SETTINGS_INDEX: SettingEntry[] = [
   { section: 'agents', label: 'Claude Code advisor', keywords: 'advisor built in' },
 
   // Prompts
+  { section: 'prompts', label: 'Output style', hint: 'How Claude writes its replies in chats.', keywords: 'tone format concise explanatory learning proactive custom style verbosity' },
+  { section: 'prompts', label: 'Custom output style', hint: 'Your own prompt for how Claude writes.', keywords: 'tone format custom prompt style', needs: 'Shown once Output style is Custom.' },
   { section: 'prompts', label: 'All repos', hint: 'Instructions added to every chat.', keywords: 'system prompt custom instructions global' },
   { section: 'prompts', label: 'This repo', hint: 'Instructions added to chats in one repo.', keywords: 'system prompt custom instructions project' },
 

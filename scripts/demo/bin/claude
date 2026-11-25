@@ -151,7 +151,7 @@ rl.on('line', (line) => {
   if (m.type === 'control_request') {
     const sub = m.request?.subtype
     const response = sub === 'initialize'
-      ? { commands: [], agents: [], output_style: 'default', available_output_styles: ['default'], models: [], account: {} }
+      ? { commands: [], agents: [], output_style: 'default', available_output_styles: ['default', 'Proactive', 'Concise', 'Explanatory', 'Learning'], models: [], account: {} }
       : {}
     out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response } })
     if (sub === 'interrupt' && !stuck) {
