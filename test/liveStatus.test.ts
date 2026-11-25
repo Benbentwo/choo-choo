@@ -53,6 +53,11 @@ describe('liveStatus', () => {
     const items: ChatItem[] = [user(100), bash('sleep 100', {}, 200), user(250, 'steer')]
     expect(liveStatus(items).turnSince).toBe(100)
   })
+  it('says Compacting, not Thinking, while Claude Code compacts the conversation', () => {
+    const items: ChatItem[] = [user(100), { ...bash('ls'), result: 'ok', ts: 200 }]
+    expect(liveStatus(items, 500)).toMatchObject({ label: 'Compacting', waiting: false, since: 500, turnSince: 100 })
+    expect(statusBlock(items, [], true, 2500, 500)).toContain('Current step: Compacting (for 2s)')
+  })
   it('says Thinking between steps, from the last thing that happened', () => {
     const items: ChatItem[] = [user(100), { ...bash('ls'), result: 'ok', ts: 200 }]
     expect(liveStatus(items)).toMatchObject({ label: 'Thinking', since: 200 })

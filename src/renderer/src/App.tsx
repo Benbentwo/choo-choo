@@ -75,6 +75,10 @@ export function App() {
       if (e.permission) addPermission(e.permission)
       if (e.permissionDone) removePermission(e.permissionDone)
       if (e.tasks) st.set({ tasks: { ...st.tasks, [e.chatId]: e.tasks } })
+      if (e.compacting !== undefined) {
+        const { [e.chatId]: _, ...rest } = st.compacting
+        st.set({ compacting: e.compacting === null ? rest : { ...rest, [e.chatId]: e.compacting } })
+      }
       if (e.draft) appendDraft(e.chatId, e.draft)
       if (e.chat) {
         st.upsertChat(e.chat)

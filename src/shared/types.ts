@@ -909,6 +909,8 @@ export interface ChatEvent {
   permissionDone?: string
   /** Background tasks of the running turn. Empty when none are running. */
   tasks?: BackgroundTask[]
+  /** When Claude Code started compacting the conversation (ms), or null once it's done. */
+  compacting?: number | null
   /** Text to put back in the chat's message box, such as queued messages a stop kept from sending. */
   draft?: string
 }
